@@ -450,6 +450,94 @@ remove_all() {
     echo -e "${GREEN}✅ Все компоненты удалены!${NC}"
 }
 
+# Функция установки AWG v1
+install_awg_v1() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Установка AWG v1${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+    
+    # Проверка что бот установлен
+    if ! docker ps --filter name=netcrazybot --format "{{.Names}}" | grep -q netcrazybot; then
+        echo -e "${RED}❌ NetCrazyBot не установлен!${NC}"
+        echo -e "${YELLOW}Сначала установите бот (пункт 1)${NC}"
+        return
+    fi
+    
+    read -p "Введите порт для AWG v1 (по умолчанию 51820): " AWG_PORT
+    AWG_PORT=${AWG_PORT:-51820}
+    
+    echo -e "${YELLOW}🔧 Установка AWG v1 на порту $AWG_PORT...${NC}"
+    
+    # Запускаем установку через бот
+    docker exec netcrazybot node -e "
+    import('./src/awgInstaller.js').then(async (module) => {
+        const result = await module.installServer('v1', $AWG_PORT, (msg) => console.log(msg));
+        if (result.success) {
+            console.log('✅ AWG v1 установлен успешно!');
+            console.log('Порт:', result.port);
+            console.log('Путь к конфигурации:', result.configPath);
+            process.exit(0);
+        } else {
+            console.error('❌ Ошибка установки:', result.error);
+            process.exit(1);
+        }
+    }).catch(err => {
+        console.error('❌ Ошибка:', err.message);
+        process.exit(1);
+    });
+    "
+    
+    if [ $? -eq 0 ]; then
+        echo -e "\n${GREEN}✅ AWG v1 успешно установлен!${NC}"
+    else
+        echo -e "\n${RED}❌ Ошибка установки AWG v1${NC}"
+    fi
+}
+
+# Функция установки AWG v2
+install_awg_v2() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Установка AWG v2${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+    
+    # Проверка что бот установлен
+    if ! docker ps --filter name=netcrazybot --format "{{.Names}}" | grep -q netcrazybot; then
+        echo -e "${RED}❌ NetCrazyBot не установлен!${NC}"
+        echo -e "${YELLOW}Сначала установите бот (пункт 1)${NC}"
+        return
+    fi
+    
+    read -p "Введите порт для AWG v2 (по умолчанию 51821): " AWG_PORT
+    AWG_PORT=${AWG_PORT:-51821}
+    
+    echo -e "${YELLOW}🔧 Установка AWG v2 на порту $AWG_PORT...${NC}"
+    
+    # Запускаем установку через бот
+    docker exec netcrazybot node -e "
+    import('./src/awgInstaller.js').then(async (module) => {
+        const result = await module.installServer('v2', $AWG_PORT, (msg) => console.log(msg));
+        if (result.success) {
+            console.log('✅ AWG v2 установлен успешно!');
+            console.log('Порт:', result.port);
+            console.log('Путь к конфигурации:', result.configPath);
+            process.exit(0);
+        } else {
+            console.error('❌ Ошибка установки:', result.error);
+            process.exit(1);
+        }
+    }).catch(err => {
+        console.error('❌ Ошибка:', err.message);
+        process.exit(1);
+    });
+    "
+    
+    if [ $? -eq 0 ]; then
+        echo -e "\n${GREEN}✅ AWG v2 успешно установлен!${NC}"
+    else
+        echo -e "\n${RED}❌ Ошибка установки AWG v2${NC}"
+    fi
+}
+
 # Главное меню
 show_menu() {
     echo -e "\n${BLUE}========================================${NC}"
@@ -459,10 +547,12 @@ show_menu() {
     echo -e "${GREEN}2)${NC} Логи Бота"
     echo -e "${GREEN}3)${NC} Обновление Бота"
     echo -e "${GREEN}4)${NC} Удаление Бота"
-    echo -e "${GREEN}5)${NC} Удаление AWG v1"
-    echo -e "${GREEN}6)${NC} Удаление AWG v2"
-    echo -e "${GREEN}8)${NC} Удалить AWG + Бот"
-    echo -e "${GREEN}9)${NC} Выход"
+    echo -e "${GREEN}5)${NC} Установка AWG v1"
+    echo -e "${GREEN}6)${NC} Установка AWG v2"
+    echo -e "${GREEN}7)${NC} Удаление AWG v1"
+    echo -e "${GREEN}8)${NC} Удаление AWG v2"
+    echo -e "${GREEN}9)${NC} Удалить AWG + Бот"
+    echo -e "${GREEN}0)${NC} Выход"
     echo -e "${BLUE}========================================${NC}"
 }
 
@@ -488,15 +578,21 @@ while true; do
             remove_bot
             ;;
         5)
-            remove_awg_v1
+            install_awg_v1
             ;;
         6)
-            remove_awg_v2
+            install_awg_v2
+            ;;
+        7)
+            remove_awg_v1
             ;;
         8)
-            remove_all
+            remove_awg_v2
             ;;
         9)
+            remove_all
+            ;;
+        0)
             echo -e "\n${GREEN}👋 До свидания!${NC}"
             exit 0
             ;;
