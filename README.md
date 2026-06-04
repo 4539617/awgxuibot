@@ -5,7 +5,7 @@
 ## 🚀 Установка
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/4539617/main/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/4539617/awgxuibot/main/install.sh)
 ```
 
 ## 🔄 Перезапуск
