@@ -1,11 +1,11 @@
-# Unified VPN Bot
+# Unified Bot
 
-Объединенный Telegram бот для управления VPN инфраструктурой (NetCrazyBot + XUIBot).
+Объединенный Telegram бот для управления сервисами.
 
 ## 🚀 Установка
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/your-repo/main/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/4539617/main/install.sh)
 ```
 
 ## 🔄 Перезапуск
