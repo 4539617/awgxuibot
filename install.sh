@@ -18,6 +18,16 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+# Проверка наличия файлов проекта
+if [ ! -f "docker-compose.yml" ] || [ ! -f "Dockerfile" ] || [ ! -f "package.json" ]; then
+    echo -e "${RED}❌ Файлы проекта не найдены!${NC}"
+    echo -e "${YELLOW}Пожалуйста, сначала склонируйте репозиторий:${NC}"
+    echo -e "${BLUE}  git clone https://github.com/4539617/awgxuibot.git${NC}"
+    echo -e "${BLUE}  cd awgxuibot${NC}"
+    echo -e "${BLUE}  bash install.sh${NC}"
+    exit 1
+fi
+
 # Функция установки Docker
 install_docker() {
     if ! command -v docker &> /dev/null; then
