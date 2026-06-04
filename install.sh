@@ -18,58 +18,6 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-# Определяем рабочую директорию
-WORK_DIR="/opt/unified-vpn-bot"
-
-# Проверка наличия необходимых файлов в текущей директории
-if [ -f "docker-compose.yml" ] && [ -f "Dockerfile" ]; then
-    # Файлы найдены в текущей директории
-    WORK_DIR="$(pwd)"
-    echo -e "${GREEN}📁 Рабочая директория: $WORK_DIR${NC}"
-    echo -e "${GREEN}✅ Все необходимые файлы найдены${NC}\n"
-else
-    # Файлы не найдены - нужно клонировать репозиторий
-    echo -e "${YELLOW}📦 Файлы проекта не найдены в текущей директории${NC}"
-    echo -e "${YELLOW}Клонирование репозитория...${NC}\n"
-    
-    # Проверка наличия git
-    if ! command -v git &> /dev/null; then
-        echo -e "${YELLOW}📦 Установка git...${NC}"
-        apt-get update -qq
-        apt-get install -y git
-    fi
-    
-    # Клонирование репозитория
-    if [ -d "$WORK_DIR" ]; then
-        echo -e "${YELLOW}Директория $WORK_DIR уже существует${NC}"
-        read -p "Удалить и клонировать заново? (y/n): " confirm
-        if [[ "$confirm" =~ ^[Yy]$ ]]; then
-            rm -rf "$WORK_DIR"
-        else
-            echo -e "${YELLOW}Использую существующую директорию${NC}"
-        fi
-    fi
-    
-    if [ ! -d "$WORK_DIR" ]; then
-        echo -e "${YELLOW}Клонирование из GitHub...${NC}"
-        git clone https://github.com/your-repo/unified-vpn-bot.git "$WORK_DIR" || {
-            echo -e "${RED}❌ Не удалось клонировать репозиторий${NC}"
-            echo -e "${YELLOW}Попробуйте вручную:${NC}"
-            echo -e "  git clone https://github.com/your-repo/unified-vpn-bot.git"
-            echo -e "  cd unified-vpn-bot"
-            echo -e "  sudo ./install.sh"
-            exit 1
-        }
-    fi
-    
-    cd "$WORK_DIR"
-    echo -e "${GREEN}✅ Репозиторий клонирован: $WORK_DIR${NC}\n"
-fi
-
-# Переходим в рабочую директорию
-cd "$WORK_DIR"
-echo -e "${GREEN}📁 Текущая директория: $(pwd)${NC}\n"
-
 # Функция установки Docker
 install_docker() {
     if ! command -v docker &> /dev/null; then
