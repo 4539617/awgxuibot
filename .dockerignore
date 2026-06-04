@@ -2,18 +2,21 @@
 node_modules/
 npm-debug.log
 
-# Environment files
+# Environment files (CRITICAL: Never include in Docker image)
 .env
 .env.local
 .env.*.local
+*.env
 
 # Git
 .git/
 .gitignore
+.gitattributes
 
 # Documentation
 README.md
 DEPLOYMENT.md
+*.md
 
 # Output directory
 output/
@@ -36,3 +39,42 @@ logs/
 tmp/
 temp/
 *.tmp
+
+# Data directories
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# SSH Keys
+*.pem
+*.key
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+id_ecdsa
+id_ecdsa.pub
+
+# Backup files
+*.bak
+*.backup
+
+# CI/CD
+.gitlab-ci.yml
+.github/
+
+# Docker
+docker-compose.yml
+Dockerfile
+.dockerignore
+
+# Scripts
+install.sh
+disk_analyzer.sh
