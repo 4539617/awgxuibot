@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  # NetCrazyBot - AmneziaWG Management
+  netcrazybot:
+    build:
+      context: .
+      target: netcrazybot
+    container_name: netcrazybot
+    restart: unless-stopped
+    privileged: true
+    env_file:
+      - .env
+    volumes:
+      - ./output:/app/output
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /opt/amnezia:/opt/amnezia
+    environment:
+      - NODE_ENV=production
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # XUIBot - User & VLESS Management
+  xuibot:
+    build:
+      context: .
+      target: xuibot
+    container_name: xuibot
+    restart: always
+    network_mode: host
+    env_file:
+      - .env
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+      - /etc/x-ui/x-ui.db:/etc/x-ui/x-ui.db:ro
+
+# Made with Bob

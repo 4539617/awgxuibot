@@ -1,0 +1,127 @@
+stages:
+  - deploy
+
+variables:
+  PROJECT_DIR: /opt/unified-vpn-bot
+
+deploy_production:
+  stage: deploy
+  image: docker:24.0
+  services:
+    - docker:dind
+  before_script:
+    - apk add --no-cache rsync openssh-client
+    - mkdir -p ~/.ssh
+    - echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+    - chmod 600 ~/.ssh/id_rsa
+    - echo -e "Host *\n\tStrictHostKeyChecking no\n" > ~/.ssh/config
+    
+    # Создание .env из переменных CI/CD
+    - |
+      cat > .env << EOF
+      # NetCrazyBot Configuration
+      TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      ADMIN_IDS=${ADMIN_IDS}
+      OUTPUT_DIR=/app/output
+      LOG_LEVEL=${LOG_LEVEL:-info}
+      
+      # XUIBot Configuration
+      BOT_TOKEN=${BOT_TOKEN}
+      ADMIN_USERNAME=${ADMIN_USERNAME}
+      
+      # X-UI Panel
+      XUI_URL=${XUI_URL}
+      XUI_USERNAME=${XUI_USERNAME}
+      XUI_PASSWORD=${XUI_PASSWORD}
+      INBOUND_ID=${INBOUND_ID}
+      XUI_DB_PATH=/etc/x-ui/x-ui.db
+      API_TIMEOUT=30
+      
+      # VPN Server
+      SERVER_ADDRESS=${SERVER_ADDRESS}
+      SERVER_PORT=${SERVER_PORT}
+      
+      # Transport & Security
+      TRANSPORT=${TRANSPORT:-tcp}
+      SECURITY=${SECURITY:-tls}
+      
+      # TLS Settings
+      TLS_SNI=${TLS_SNI}
+      TLS_FINGERPRINT=${TLS_FINGERPRINT:-chrome}
+      TLS_ALPN=${TLS_ALPN:-http/1.1}
+      
+      # Reality Settings
+      REALITY_SNI=${REALITY_SNI:-google.com}
+      REALITY_FINGERPRINT=${REALITY_FINGERPRINT:-firefox}
+      REALITY_PUBLIC_KEY=${REALITY_PUBLIC_KEY}
+      REALITY_SHORT_ID=${REALITY_SHORT_ID}
+      
+      # xHTTP Settings
+      XHTTP_MODE=${XHTTP_MODE:-auto}
+      
+      # Limits
+      MAX_TRAFFIC_GB=${MAX_TRAFFIC_GB:-1000}
+      MAX_DAYS=${MAX_DAYS:-3650}
+      MIN_DAYS=${MIN_DAYS:-1}
+      DEFAULT_TRAFFIC_GB=${DEFAULT_TRAFFIC_GB:-1000}
+      DEFAULT_DAYS=${DEFAULT_DAYS:-30}
+      
+      # Database
+      DB_PATH=/app/data/bot_users.db
+      DB_BACKUP_ENABLED=true
+      DB_BACKUP_INTERVAL=24
+      
+      # Logging
+      LOG_FILE_ENABLED=true
+      LOG_FILE_PATH=/app/logs/bot.log
+      LOG_MAX_SIZE_MB=10
+      LOG_BACKUP_COUNT=5
+      EOF
+
+  script:
+    # Создание структуры директорий
+    - ssh root@$SERVER_IP "mkdir -p $PROJECT_DIR/{src,python,output,logs,data}"
+    
+    # Копирование файлов
+    - echo "📦 Копирование файлов на сервер..."
+    - rsync -avz --delete src/ root@$SERVER_IP:$PROJECT_DIR/src/
+    - rsync -avz --delete python/ root@$SERVER_IP:$PROJECT_DIR/python/
+    - scp Dockerfile root@$SERVER_IP:$PROJECT_DIR/
+    - scp docker-compose.yml root@$SERVER_IP:$PROJECT_DIR/
+    - scp package.json root@$SERVER_IP:$PROJECT_DIR/
+    - scp package-lock.json root@$SERVER_IP:$PROJECT_DIR/ || true
+    - scp requirements.txt root@$SERVER_IP:$PROJECT_DIR/
+    - scp type*.json root@$SERVER_IP:$PROJECT_DIR/ || true
+    - scp .env root@$SERVER_IP:$PROJECT_DIR/
+    
+    # Остановка и удаление старых контейнеров
+    - echo "🛑 Остановка старых контейнеров..."
+    - ssh root@$SERVER_IP "cd $PROJECT_DIR && docker compose down || true"
+    - ssh root@$SERVER_IP "docker stop netcrazybot xuibot || true"
+    - ssh root@$SERVER_IP "docker rm -f netcrazybot xuibot || true"
+    
+    # Очистка старых образов (опционально)
+    - ssh root@$SERVER_IP "docker image prune -f || true"
+    
+    # Запуск новых контейнеров
+    - echo "🐳 Сборка и запуск контейнеров..."
+    - ssh root@$SERVER_IP "cd $PROJECT_DIR && docker compose up -d --build"
+    
+    # Проверка статуса
+    - echo "✅ Проверка статуса контейнеров..."
+    - ssh root@$SERVER_IP "docker ps --filter name=netcrazybot --filter name=xuibot"
+    - sleep 5
+    
+    # Вывод логов для проверки
+    - echo "📋 Логи NetCrazyBot:"
+    - ssh root@$SERVER_IP "docker logs --tail=20 netcrazybot"
+    - echo "📋 Логи XUIBot:"
+    - ssh root@$SERVER_IP "docker logs --tail=20 xuibot"
+
+  after_script:
+    - rm -f .env
+
+  only:
+    - main
+
+# Made with Bob
