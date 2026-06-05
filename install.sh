@@ -465,14 +465,15 @@ remove_awg_v2() {
 # Функция удаления всего
 remove_all() {
     echo -e "\n${BLUE}========================================${NC}"
-    echo -e "${BLUE}   Удалить Всё (AWG + Бот)${NC}"
+    echo -e "${BLUE}   Удалить ВСЁ${NC}"
     echo -e "${BLUE}========================================${NC}\n"
     
     echo -e "${RED}⚠️  ВНИМАНИЕ! Это удалит:${NC}"
     echo -e "  - Объединенный бот (NetCrazyBot + XUIBot)"
+    echo -e "  - 3x-ui панель"
     echo -e "  - AWG v1 сервер"
     echo -e "  - AWG v2 сервер"
-    echo -e "  - Все конфигурации"
+    echo -e "  - Все конфигурации и данные"
     echo -e ""
     read -p "Вы уверены? (y/n): " confirm
     
@@ -497,7 +498,82 @@ remove_all() {
     rm -rf /opt/amnezia/amnezia-awg 2>/dev/null || true
     rm -rf /opt/amnezia/amnezia-awg2 2>/dev/null || true
     
+    # Удаление 3x-ui панели
+    echo -e "${YELLOW}🗑️  Удаление 3x-ui панели...${NC}"
+    systemctl stop x-ui 2>/dev/null || true
+    systemctl disable x-ui 2>/dev/null || true
+    rm -rf /usr/local/x-ui 2>/dev/null || true
+    rm -f /etc/systemd/system/x-ui.service 2>/dev/null || true
+    systemctl daemon-reload
+    
     echo -e "${GREEN}✅ Все компоненты удалены!${NC}"
+}
+
+# Функция установки 3x-ui панели
+install_3xui() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Установка 3x-ui Panel${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+    
+    # Проверка установлена ли уже панель
+    if systemctl is-active --quiet x-ui; then
+        echo -e "${YELLOW}⚠ 3x-ui панель уже установлена${NC}"
+        read -p "Переустановить? (y/n): " reinstall
+        if [[ ! "$reinstall" =~ ^[Yy]$ ]]; then
+            echo -e "${YELLOW}Отменено${NC}"
+            return
+        fi
+    fi
+    
+    echo -e "${YELLOW}📦 Загрузка установочного скрипта 3x-ui...${NC}"
+    
+    # Установка в silent режиме
+    if bash <(curl -Ls https://raw.githubusercontent.com/MHSanaei/3x-ui/master/install.sh) << EOF
+y
+admin
+admin
+2053
+/
+EOF
+    then
+        echo -e "\n${GREEN}✅ 3x-ui панель успешно установлена!${NC}"
+        echo -e "${BLUE}========================================${NC}"
+        echo -e "${GREEN}📋 Информация о панели:${NC}"
+        echo -e "  URL: ${YELLOW}http://$(curl -s ifconfig.me):2053/${NC}"
+        echo -e "  Логин: ${YELLOW}admin${NC}"
+        echo -e "  Пароль: ${YELLOW}admin${NC}"
+        echo -e "${RED}⚠ ВАЖНО: Смените пароль после первого входа!${NC}"
+        echo -e "${BLUE}========================================${NC}"
+    else
+        echo -e "\n${RED}❌ Ошибка установки 3x-ui панели${NC}"
+    fi
+}
+
+# Функция удаления 3x-ui панели
+remove_3xui() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Удаление 3x-ui Panel${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+    
+    read -p "⚠️  Вы уверены что хотите удалить 3x-ui панель? (y/n): " confirm
+    
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+        echo -e "${YELLOW}Отменено${NC}"
+        return
+    fi
+    
+    echo -e "${YELLOW}🗑️  Удаление 3x-ui панели...${NC}"
+    
+    # Остановка сервиса
+    systemctl stop x-ui 2>/dev/null || true
+    systemctl disable x-ui 2>/dev/null || true
+    
+    # Удаление файлов
+    rm -rf /usr/local/x-ui 2>/dev/null || true
+    rm -f /etc/systemd/system/x-ui.service 2>/dev/null || true
+    systemctl daemon-reload
+    
+    echo -e "${GREEN}✅ 3x-ui панель удалена!${NC}"
 }
 
 # Функция установки AWG v1
@@ -597,11 +673,16 @@ show_menu() {
     echo -e "${GREEN}2)${NC} Логи Бота"
     echo -e "${GREEN}3)${NC} Обновление Бота"
     echo -e "${GREEN}4)${NC} Удаление Бота"
-    echo -e "${GREEN}5)${NC} Установка AWG v1"
-    echo -e "${GREEN}6)${NC} Установка AWG v2"
-    echo -e "${GREEN}7)${NC} Удаление AWG v1"
-    echo -e "${GREEN}8)${NC} Удаление AWG v2"
-    echo -e "${GREEN}9)${NC} Удалить AWG + Бот"
+    echo -e "${BLUE}---${NC}"
+    echo -e "${GREEN}5)${NC} Установка 3x-ui Panel"
+    echo -e "${GREEN}6)${NC} Удаление 3x-ui Panel"
+    echo -e "${BLUE}---${NC}"
+    echo -e "${GREEN}7)${NC} Установка AWG v1"
+    echo -e "${GREEN}8)${NC} Установка AWG v2"
+    echo -e "${GREEN}9)${NC} Удаление AWG v1"
+    echo -e "${GREEN}10)${NC} Удаление AWG v2"
+    echo -e "${BLUE}---${NC}"
+    echo -e "${GREEN}11)${NC} Удалить ВСЁ (AWG + Бот + 3x-ui)"
     echo -e "${GREEN}0)${NC} Выход"
     echo -e "${BLUE}========================================${NC}"
 }
@@ -628,18 +709,24 @@ while true; do
             remove_bot
             ;;
         5)
-            install_awg_v1
+            install_3xui
             ;;
         6)
-            install_awg_v2
+            remove_3xui
             ;;
         7)
-            remove_awg_v1
+            install_awg_v1
             ;;
         8)
-            remove_awg_v2
+            install_awg_v2
             ;;
         9)
+            remove_awg_v1
+            ;;
+        10)
+            remove_awg_v2
+            ;;
+        11)
             remove_all
             ;;
         0)
