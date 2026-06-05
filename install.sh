@@ -578,13 +578,13 @@ install_3xui() {
         fi
     fi
     
-    # Генерация случайных логина и пароля
+    # Генерация случайных параметров
     XUI_USERNAME=$(generate_random_string 10)
     XUI_PASSWORD=$(generate_random_password 10)
-    XUI_PORT="2053"
-    XUI_PATH="/"
+    XUI_PORT=$((RANDOM % 55535 + 10000))  # Случайный порт от 10000 до 65535
+    XUI_PATH="/$(generate_random_string 18)"  # Случайный путь
     SERVER_IP=$(curl -s ifconfig.me)
-    XUI_URL="http://${SERVER_IP}:${XUI_PORT}${XUI_PATH}"
+    XUI_URL="https://${SERVER_IP}:${XUI_PORT}${XUI_PATH}"
     
     echo -e "${YELLOW}🔐 Генерация учетных данных...${NC}"
     echo -e "${GREEN}Логин: ${YELLOW}${XUI_USERNAME}${NC}"
