@@ -11,8 +11,8 @@ NC='\033[0m'
 WORK_DIR="/opt/awgxuibot"
 
 echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}   awgxuibot Installer${NC}"
-echo -e "${BLUE}   NetCrazy + XUI Management${NC}"
+echo -e "${BLUE}   awgbot + xuibot Installer${NC}"
+echo -e "${BLUE}   AWG + XUI Management${NC}"
 echo -e "${BLUE}========================================${NC}\n"
 
 # Проверка прав root
@@ -422,6 +422,286 @@ remove_bot() {
     
     echo -e "${GREEN}✅ Бот удален!${NC}"
 }
+# ============================================
+# XUI Bot Functions (отдельные функции для XUI бота)
+# ============================================
+
+# Функция установки XUI бота
+install_xuibot() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Установка XUI Бота${NC}"
+    echo -e "${BLUE}   3x-ui Panel Management${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+    
+    # Проверка наличия .env
+    if [ ! -f ".env" ]; then
+        echo -e "${RED}❌ Файл .env не найден!${NC}"
+        echo -e "${YELLOW}Сначала установите 3x-ui Panel (пункт 9)${NC}"
+        return
+    fi
+    
+    # Проверка TELEGRAM_BOT_TOKEN
+    if ! grep -q "^TELEGRAM_BOT_TOKEN=.\+" .env; then
+        echo -e "${YELLOW}📱 Настройка Telegram Bot для XUI${NC}\n"
+        read -p "Введите TELEGRAM_BOT_TOKEN для XUI бота: " xui_token
+        update_env_value "TELEGRAM_BOT_TOKEN" "$xui_token"
+    fi
+    
+    # Проверка ADMIN_IDS
+    if ! grep -q "^ADMIN_IDS=.\+" .env; then
+        read -p "Введите ADMIN_IDS (через запятую): " admin_ids
+        update_env_value "ADMIN_IDS" "$admin_ids"
+    fi
+    
+    # Остановка старого контейнера
+    echo -e "\n${YELLOW}🛑 Остановка старого контейнера XUI бота...${NC}"
+    docker stop xuibot 2>/dev/null || true
+    docker rm xuibot 2>/dev/null || true
+    
+    # Запуск только XUI бота
+    echo -e "\n${YELLOW}🐳 Сборка и запуск XUI бота...${NC}"
+    echo -e "${BLUE}Это может занять несколько минут...${NC}\n"
+    
+    if ! docker compose up -d --build xuibot; then
+        echo -e "\n${RED}❌ Ошибка при запуске XUI бота${NC}"
+        echo -e "${YELLOW}Проверьте логи: docker logs xuibot${NC}"
+        return
+    fi
+    
+    # Проверка
+    echo -e "\n${YELLOW}⏳ Ожидание запуска контейнера...${NC}"
+    sleep 5
+    
+    XUI_STATUS=$(docker ps --filter name=xuibot --format "{{.Status}}" 2>/dev/null || echo "not found")
+    
+    echo -e "\n${GREEN}✅ XUI Бот установлен!${NC}"
+    echo -e "${BLUE}========================================${NC}"
+    
+    if [[ "$XUI_STATUS" == *"Up"* ]]; then
+        echo -e "${GREEN}📊 Статус: ✓ Работает${NC}"
+    else
+        echo -e "${RED}📊 Статус: ✗ Не запущен ($XUI_STATUS)${NC}"
+    fi
+    
+    echo -e "\n${YELLOW}📋 Логи XUI бота (последние 15 строк):${NC}"
+    docker logs --tail=15 xuibot 2>&1 || echo -e "${RED}Не удалось получить логи${NC}"
+    
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${GREEN}💡 Полезные команды:${NC}"
+    echo -e "  Логи: ${YELLOW}docker logs -f xuibot${NC}"
+    echo -e "  Статус: ${YELLOW}docker ps | grep xuibot${NC}"
+    echo -e "  Перезапуск: ${YELLOW}docker restart xuibot${NC}"
+}
+
+# Функция показа логов XUI бота
+show_xuibot_logs() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Логи XUI Бота${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+    
+    echo -e "${YELLOW}📋 Логи XUI бота (последние 50 строк):${NC}"
+    docker logs --tail=50 xuibot 2>/dev/null || echo -e "${RED}Контейнер xuibot не запущен${NC}"
+    
+    echo -e "\n${YELLOW}Для просмотра в реальном времени:${NC}"
+    echo -e "${BLUE}docker logs -f xuibot${NC}"
+}
+
+# Функция обновления XUI бота
+update_xuibot() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Обновление XUI Бота${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+    
+    echo -e "${YELLOW}🔄 Обновление XUI бота...${NC}"
+    
+    # Остановка контейнера
+    echo -e "${YELLOW}🛑 Остановка контейнера...${NC}"
+    docker stop xuibot 2>/dev/null || true
+    docker rm xuibot 2>/dev/null || true
+    
+    # Пересборка образа
+    echo -e "${YELLOW}🐳 Пересборка образа...${NC}"
+    docker compose build --no-cache xuibot
+    
+    # Запуск
+    echo -e "${YELLOW}🚀 Запуск обновленного контейнера...${NC}"
+    docker compose up -d xuibot
+    
+    sleep 5
+    echo -e "\n${GREEN}✅ XUI Бот обновлен!${NC}"
+    echo -e "${GREEN}📊 Статус:${NC}"
+    docker ps --filter name=xuibot
+}
+
+# Функция удаления XUI бота
+remove_xuibot() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Удаление XUI Бота${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+    
+    read -p "⚠️  Вы уверены что хотите удалить XUI бот? (y/n): " confirm
+    
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+        echo -e "${YELLOW}Отменено${NC}"
+        return
+    fi
+    
+    echo -e "${YELLOW}🗑️  Удаление XUI бота...${NC}"
+    
+    # Остановка и удаление контейнера
+    echo -e "${YELLOW}🛑 Остановка контейнера...${NC}"
+    docker stop xuibot 2>/dev/null || true
+    docker rm xuibot 2>/dev/null || true
+    
+    # Удаление образа
+    echo -e "${YELLOW}🗑️  Удаление образа...${NC}"
+    docker rmi awgxuibot-xuibot 2>/dev/null || true
+    
+    echo -e "${GREEN}✅ XUI Бот удален!${NC}"
+}
+
+# ============================================
+# AWG Bot Functions (отдельные функции для AWG бота)
+# ============================================
+
+# Функция установки AWG бота
+install_awgbot() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Установка AWG Бота${NC}"
+    echo -e "${BLUE}   AmneziaWG Management${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+    
+    # Проверка наличия .env
+    if [ ! -f ".env" ]; then
+        create_env_if_not_exists
+    fi
+    
+    # Проверка AWG_BOT_TOKEN
+    if ! grep -q "^AWG_BOT_TOKEN=.\+" .env; then
+        echo -e "${YELLOW}📱 Настройка Telegram Bot для AWG${NC}\n"
+        read -p "Введите TELEGRAM_BOT_TOKEN для AWG бота: " awg_token
+        
+        # Добавляем AWG_BOT_TOKEN если его нет
+        if ! grep -q "^AWG_BOT_TOKEN=" .env; then
+            echo "AWG_BOT_TOKEN=$awg_token" >> .env
+        else
+            update_env_value "AWG_BOT_TOKEN" "$awg_token"
+        fi
+    fi
+    
+    # Проверка ADMIN_IDS
+    if ! grep -q "^ADMIN_IDS=.\+" .env; then
+        read -p "Введите ADMIN_IDS (через запятую): " admin_ids
+        update_env_value "ADMIN_IDS" "$admin_ids"
+    fi
+    
+    # Остановка старого контейнера
+    echo -e "\n${YELLOW}🛑 Остановка старого контейнера AWG бота...${NC}"
+    docker stop awgbot 2>/dev/null || true
+    docker rm awgbot 2>/dev/null || true
+    
+    # Запуск только AWG бота
+    echo -e "\n${YELLOW}🐳 Сборка и запуск AWG бота...${NC}"
+    echo -e "${BLUE}Это может занять несколько минут...${NC}\n"
+    
+    if ! docker compose up -d --build awgbot; then
+        echo -e "\n${RED}❌ Ошибка при запуске AWG бота${NC}"
+        echo -e "${YELLOW}Проверьте логи: docker logs awgbot${NC}"
+        return
+    fi
+    
+    # Проверка
+    echo -e "\n${YELLOW}⏳ Ожидание запуска контейнера...${NC}"
+    sleep 5
+    
+    AWG_STATUS=$(docker ps --filter name=awgbot --format "{{.Status}}" 2>/dev/null || echo "not found")
+    
+    echo -e "\n${GREEN}✅ AWG Бот установлен!${NC}"
+    echo -e "${BLUE}========================================${NC}"
+    
+    if [[ "$AWG_STATUS" == *"Up"* ]]; then
+        echo -e "${GREEN}📊 Статус: ✓ Работает${NC}"
+    else
+        echo -e "${RED}📊 Статус: ✗ Не запущен ($AWG_STATUS)${NC}"
+    fi
+    
+    echo -e "\n${YELLOW}📋 Логи AWG бота (последние 15 строк):${NC}"
+    docker logs --tail=15 awgbot 2>&1 || echo -e "${RED}Не удалось получить логи${NC}"
+    
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${GREEN}💡 Полезные команды:${NC}"
+    echo -e "  Логи: ${YELLOW}docker logs -f awgbot${NC}"
+    echo -e "  Статус: ${YELLOW}docker ps | grep awgbot${NC}"
+    echo -e "  Перезапуск: ${YELLOW}docker restart awgbot${NC}"
+}
+
+# Функция показа логов AWG бота
+show_awgbot_logs() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Логи AWG Бота${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+    
+    echo -e "${YELLOW}📋 Логи AWG бота (последние 50 строк):${NC}"
+    docker logs --tail=50 awgbot 2>/dev/null || echo -e "${RED}Контейнер awgbot не запущен${NC}"
+    
+    echo -e "\n${YELLOW}Для просмотра в реальном времени:${NC}"
+    echo -e "${BLUE}docker logs -f awgbot${NC}"
+}
+
+# Функция обновления AWG бота
+update_awgbot() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Обновление AWG Бота${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+    
+    echo -e "${YELLOW}🔄 Обновление AWG бота...${NC}"
+    
+    # Остановка контейнера
+    echo -e "${YELLOW}🛑 Остановка контейнера...${NC}"
+    docker stop awgbot 2>/dev/null || true
+    docker rm awgbot 2>/dev/null || true
+    
+    # Пересборка образа
+    echo -e "${YELLOW}🐳 Пересборка образа...${NC}"
+    docker compose build --no-cache awgbot
+    
+    # Запуск
+    echo -e "${YELLOW}🚀 Запуск обновленного контейнера...${NC}"
+    docker compose up -d awgbot
+    
+    sleep 5
+    echo -e "\n${GREEN}✅ AWG Бот обновлен!${NC}"
+    echo -e "${GREEN}📊 Статус:${NC}"
+    docker ps --filter name=awgbot
+}
+
+# Функция удаления AWG бота
+remove_awgbot() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Удаление AWG Бота${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+    
+    read -p "⚠️  Вы уверены что хотите удалить AWG бот? (y/n): " confirm
+    
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+        echo -e "${YELLOW}Отменено${NC}"
+        return
+    fi
+    
+    echo -e "${YELLOW}🗑️  Удаление AWG бота...${NC}"
+    
+    # Остановка и удаление контейнера
+    echo -e "${YELLOW}🛑 Остановка контейнера...${NC}"
+    docker stop awgbot 2>/dev/null || true
+    docker rm awgbot 2>/dev/null || true
+    
+    # Удаление образа
+    echo -e "${YELLOW}🗑️  Удаление образа...${NC}"
+    docker rmi awgxuibot-awgbot 2>/dev/null || true
+    
+    echo -e "${GREEN}✅ AWG Бот удален!${NC}"
+}
+
 
 # Функция удаления AWG v1
 remove_awg_v1() {
@@ -486,7 +766,8 @@ remove_all() {
     echo -e "${BLUE}========================================${NC}\n"
     
     echo -e "${RED}⚠️  ВНИМАНИЕ! Это удалит:${NC}"
-    echo -e "  - awgxuibot (NetCrazy + XUI)"
+    echo -e "  - AWG Бот (AmneziaWG Management)"
+    echo -e "  - XUI Бот (3x-ui Management)"
     echo -e "  - 3x-ui панель"
     echo -e "  - AWG v1 сервер"
     echo -e "  - AWG v2 сервер"
@@ -503,12 +784,12 @@ remove_all() {
     
     # Остановка всех контейнеров
     echo -e "${YELLOW}🛑 Остановка контейнеров...${NC}"
-    docker stop netcrazybot xuibot amnezia-awg amnezia-awg2 2>/dev/null || true
-    docker rm netcrazybot xuibot amnezia-awg amnezia-awg2 2>/dev/null || true
+    docker stop awgbot xuibot amnezia-awg amnezia-awg2 2>/dev/null || true
+    docker rm awgbot xuibot amnezia-awg amnezia-awg2 2>/dev/null || true
     
     # Удаление образов
     echo -e "${YELLOW}🗑️  Удаление образов...${NC}"
-    docker rmi netcrazexuibot-netcrazybot netcrazexuibot-xuibot 2>/dev/null || true
+    docker rmi awgxuibot-awgbot awgxuibot-xuibot 2>/dev/null || true
     
     # Удаление конфигураций AWG
     echo -e "${YELLOW}🗑️  Удаление конфигураций AWG...${NC}"
@@ -1229,20 +1510,29 @@ show_menu() {
     echo -e "\n${BLUE}========================================${NC}"
     echo -e "${BLUE}   Выберите действие:${NC}"
     echo -e "${BLUE}========================================${NC}"
-    echo -e "${GREEN}1)${NC} Установка Бота"
-    echo -e "${GREEN}2)${NC} Логи Бота"
-    echo -e "${GREEN}3)${NC} Обновление Бота"
-    echo -e "${GREEN}4)${NC} Удаление Бота"
+    echo -e "${YELLOW}XUI Bot (3x-ui Management):${NC}"
+    echo -e "${GREEN}1)${NC} Установка XUI Бота"
+    echo -e "${GREEN}2)${NC} Логи XUI Бота"
+    echo -e "${GREEN}3)${NC} Обновление XUI Бота"
+    echo -e "${GREEN}4)${NC} Удаление XUI Бота"
     echo -e "${BLUE}---${NC}"
-    echo -e "${GREEN}5)${NC} Установка 3x-ui Panel"
-    echo -e "${GREEN}6)${NC} Удаление 3x-ui Panel"
+    echo -e "${YELLOW}AWG Bot (AmneziaWG Management):${NC}"
+    echo -e "${GREEN}5)${NC} Установка AWG Бота"
+    echo -e "${GREEN}6)${NC} Логи AWG Бота"
+    echo -e "${GREEN}7)${NC} Обновление AWG Бота"
+    echo -e "${GREEN}8)${NC} Удаление AWG Бота"
     echo -e "${BLUE}---${NC}"
-    echo -e "${GREEN}7)${NC} Установка AWG v1"
-    echo -e "${GREEN}8)${NC} Установка AWG v2"
-    echo -e "${GREEN}9)${NC} Удаление AWG v1"
-    echo -e "${GREEN}10)${NC} Удаление AWG v2"
+    echo -e "${YELLOW}3x-ui Panel:${NC}"
+    echo -e "${GREEN}9)${NC} Установка 3x-ui Panel"
+    echo -e "${GREEN}10)${NC} Удаление 3x-ui Panel"
     echo -e "${BLUE}---${NC}"
-    echo -e "${GREEN}11)${NC} Удалить ВСЁ (AWG + Бот + 3x-ui)"
+    echo -e "${YELLOW}AmneziaWG:${NC}"
+    echo -e "${GREEN}11)${NC} Установка AWG v1"
+    echo -e "${GREEN}12)${NC} Установка AWG v2"
+    echo -e "${GREEN}13)${NC} Удаление AWG v1"
+    echo -e "${GREEN}14)${NC} Удаление AWG v2"
+    echo -e "${BLUE}---${NC}"
+    echo -e "${RED}15)${NC} Удалить ВСЁ (AWG + Боты + 3x-ui)"
     echo -e "${GREEN}0)${NC} Выход"
     echo -e "${BLUE}========================================${NC}"
 }
@@ -1257,36 +1547,48 @@ while true; do
     
     case $choice in
         1)
-            install_bot
+            install_xuibot
             ;;
         2)
-            show_logs
+            show_xuibot_logs
             ;;
         3)
-            update_bot
+            update_xuibot
             ;;
         4)
-            remove_bot
+            remove_xuibot
             ;;
         5)
-            install_3xui
+            install_awgbot
             ;;
         6)
-            remove_3xui
+            show_awgbot_logs
             ;;
         7)
-            install_awg_v1
+            update_awgbot
             ;;
         8)
-            install_awg_v2
+            remove_awgbot
             ;;
         9)
-            remove_awg_v1
+            install_3xui
             ;;
         10)
-            remove_awg_v2
+            remove_3xui
             ;;
         11)
+            install_awg_v1
+            ;;
+        12)
+            install_awg_v2
+            ;;
+        13)
+            remove_awg_v1
+            ;;
+        14)
+            remove_awg_v2
+            ;;
+        15)
             remove_all
             ;;
         0)

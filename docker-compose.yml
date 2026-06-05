@@ -1,12 +1,12 @@
 version: '3.8'
 
 services:
-  # NetCrazyBot - AmneziaWG Management
-  netcrazybot:
+  # AWGBot - AmneziaWG Management
+  awgbot:
     build:
       context: .
-      target: netcrazybot
-    container_name: netcrazybot
+      target: awgbot
+    container_name: awgbot
     restart: unless-stopped
     privileged: true
     env_file:
@@ -17,6 +17,7 @@ services:
       - /opt/amnezia:/opt/amnezia
     environment:
       - NODE_ENV=production
+      - TELEGRAM_BOT_TOKEN=${AWG_BOT_TOKEN}
     logging:
       driver: "json-file"
       options:

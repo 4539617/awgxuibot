@@ -1,7 +1,7 @@
 # ============================================
-# Stage 1: Node.js Base (NetCrazyBot)
+# Stage 1: Node.js Base (AWGBot)
 # ============================================
-FROM node:18-alpine AS netcrazy-base
+FROM node:18-alpine AS awg-base
 
 WORKDIR /app
 
@@ -48,9 +48,9 @@ COPY python/ ./python/
 RUN mkdir -p /app/logs /app/data
 
 # ============================================
-# Stage 3: NetCrazyBot Runtime
+# Stage 3: AWGBot Runtime
 # ============================================
-FROM netcrazy-base AS netcrazybot
+FROM awg-base AS awgbot
 
 # Run the bot
 CMD ["node", "src/index.js"]
