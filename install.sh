@@ -613,10 +613,25 @@ EOF
         echo -e "${YELLOW}🔍 Получение настроек панели...${NC}"
         sleep 3
         
-        # Получаем настройки из x-ui settings
-        XUI_SETTINGS=$(x-ui settings 2>/dev/null)
-        XUI_PORT=$(echo "$XUI_SETTINGS" | grep "port:" | awk '{print $2}')
-        XUI_PATH=$(echo "$XUI_SETTINGS" | grep "webBasePath:" | awk '{print $2}' | sed 's/\/$//')
+        # Получаем настройки из x-ui settings (с автоматическим ответом на промпт)
+        XUI_SETTINGS=$(echo "n" | timeout 5 x-ui settings 2>/dev/null || echo "")
+        
+        if [ -z "$XUI_SETTINGS" ]; then
+            echo -e "${YELLOW}⚠ Не удалось получить настройки через x-ui settings${NC}"
+            echo -e "${YELLOW}Используем значения по умолчанию${NC}"
+            XUI_PORT="2053"
+            XUI_PATH="/"
+        else
+            XUI_PORT=$(echo "$XUI_SETTINGS" | grep "port:" | awk '{print $2}')
+            XUI_PATH=$(echo "$XUI_SETTINGS" | grep "webBasePath:" | awk '{print $2}' | sed 's/\/$//')
+            
+            if [ -z "$XUI_PORT" ]; then
+                XUI_PORT="2053"
+            fi
+            if [ -z "$XUI_PATH" ]; then
+                XUI_PATH="/"
+            fi
+        fi
         
         # Получаем учетные данные из логов установки или файла конфигурации
         if [ -f "/usr/local/x-ui/config.json" ]; then
@@ -785,9 +800,9 @@ remove_3xui() {
     echo -e "${BLUE}   Удаление 3x-ui Panel${NC}"
     echo -e "${BLUE}========================================${NC}\n"
     
-    read -p "⚠️  Вы уверены что хотите удалить 3x-ui панель? (y/n): " confirm
+    read -p "⚠️  Вы уверены что хотите удалить 3x-ui панель? (нажмите Enter для подтверждения или n для отмены): " confirm
     
-    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    if [[ "$confirm" =~ ^[Nn]$ ]]; then
         echo -e "${YELLOW}Отменено${NC}"
         return
     fi
