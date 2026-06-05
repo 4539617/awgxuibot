@@ -607,32 +607,41 @@ EOF
     # Проверяем успешность установки
     if echo "$INSTALL_OUTPUT" | grep -q "installation finished"; then
         # Извлекаем учетные данные из вывода установщика
-        XUI_USERNAME=$(echo "$INSTALL_OUTPUT" | grep -oP '(?<=Username:\s{4})\S+' | head -1)
-        XUI_PASSWORD=$(echo "$INSTALL_OUTPUT" | grep -oP '(?<=Password:\s{4})\S+' | head -1)
-        XUI_PORT=$(echo "$INSTALL_OUTPUT" | grep -oP '(?<=Port:\s{8})\d+' | head -1)
-        XUI_PATH=$(echo "$INSTALL_OUTPUT" | grep -oP '(?<=WebBasePath:\s)\S+' | head -1)
+        # Установщик 3x-ui выводит данные в формате:
+        # Username:    value
+        # Password:    value
+        # Port:        value
+        # WebBasePath: value
         
-        # Если не удалось извлечь из вывода, пробуем альтернативный формат
-        if [ -z "$XUI_USERNAME" ]; then
-            XUI_USERNAME=$(echo "$INSTALL_OUTPUT" | grep "Username:" | awk '{print $2}' | head -1)
-        fi
-        if [ -z "$XUI_PASSWORD" ]; then
-            XUI_PASSWORD=$(echo "$INSTALL_OUTPUT" | grep "Password:" | awk '{print $2}' | head -1)
-        fi
-        if [ -z "$XUI_PORT" ]; then
-            XUI_PORT=$(echo "$INSTALL_OUTPUT" | grep "Port:" | awk '{print $2}' | head -1)
-        fi
-        if [ -z "$XUI_PATH" ]; then
-            XUI_PATH=$(echo "$INSTALL_OUTPUT" | grep "WebBasePath:" | awk '{print $2}' | head -1)
-        fi
+        # Извлекаем username (plaintext из вывода установщика)
+        XUI_USERNAME=$(echo "$INSTALL_OUTPUT" | grep -E "^Username:" | awk '{print $2}' | head -1)
+        
+        # Извлекаем password (plaintext из вывода установщика, НЕ хеш из БД!)
+        XUI_PASSWORD=$(echo "$INSTALL_OUTPUT" | grep -E "^Password:" | awk '{print $2}' | head -1)
+        
+        # Извлекаем порт
+        XUI_PORT=$(echo "$INSTALL_OUTPUT" | grep -E "^Port:" | awk '{print $2}' | head -1)
+        
+        # Извлекаем web path
+        XUI_PATH=$(echo "$INSTALL_OUTPUT" | grep -E "^WebBasePath:" | awk '{print $2}' | head -1)
         
         # Выводим только если данные были извлечены
         if [ -n "$XUI_USERNAME" ] && [ -n "$XUI_PASSWORD" ]; then
             echo -e "\n${GREEN}✅ Учетные данные извлечены из вывода установщика:${NC}"
             echo -e "  Username: ${YELLOW}${XUI_USERNAME}${NC}"
             echo -e "  Password: ${YELLOW}${XUI_PASSWORD}${NC}"
-            echo -e "  Port: ${YELLOW}${XUI_PORT}${NC}"
-            echo -e "  Path: ${YELLOW}${XUI_PATH}${NC}"
+            if [ -n "$XUI_PORT" ]; then
+                echo -e "  Port: ${YELLOW}${XUI_PORT}${NC}"
+            fi
+            if [ -n "$XUI_PATH" ]; then
+                echo -e "  Path: ${YELLOW}${XUI_PATH}${NC}"
+            fi
+        elif [ -n "$XUI_USERNAME" ]; then
+            echo -e "\n${YELLOW}⚠ Частично извлечены данные из вывода установщика:${NC}"
+            echo -e "  Username: ${YELLOW}${XUI_USERNAME}${NC}"
+            if [ -z "$XUI_PASSWORD" ]; then
+                echo -e "  Password: ${RED}НЕ ИЗВЛЕЧЕН - проверьте вывод установщика выше!${NC}"
+            fi
         fi
         # Исправление проблемы с базой данных x-ui.db
         echo -e "${YELLOW}🔧 Проверка базы данных...${NC}"
@@ -672,19 +681,26 @@ EOF
             fi
             
             # Получаем учетные данные из базы данных
+            # ВАЖНО: Из БД мы можем получить только username, пароль там хешированный!
             if [ -f "/etc/x-ui/x-ui.db" ]; then
-                echo -e "${YELLOW}🔐 Получение учетных данных из базы данных...${NC}"
+                echo -e "${YELLOW}🔐 Получение username из базы данных...${NC}"
                 if [ -z "$XUI_USERNAME" ]; then
                     XUI_USERNAME=$(sqlite3 /etc/x-ui/x-ui.db "SELECT username FROM users LIMIT 1;" 2>/dev/null || echo "")
                 fi
-                if [ -z "$XUI_PASSWORD" ]; then
-                    XUI_PASSWORD=$(sqlite3 /etc/x-ui/x-ui.db "SELECT password FROM users LIMIT 1;" 2>/dev/null || echo "")
+                
+                # НЕ берем пароль из БД - там только bcrypt хеш!
+                # Plaintext пароль должен быть в выводе установщика
+                
+                if [ -n "$XUI_USERNAME" ]; then
+                    echo -e "${GREEN}✅ Username получен из базы данных:${NC}"
+                    echo -e "  Username: ${YELLOW}${XUI_USERNAME}${NC}"
                 fi
                 
-                if [ -n "$XUI_USERNAME" ] && [ -n "$XUI_PASSWORD" ]; then
-                    echo -e "${GREEN}✅ Учетные данные получены из базы данных:${NC}"
-                    echo -e "  Username: ${YELLOW}${XUI_USERNAME}${NC}"
-                    echo -e "  Password: ${YELLOW}${XUI_PASSWORD}${NC}"
+                # Если пароль все еще пустой, значит не смогли извлечь из вывода установщика
+                if [ -z "$XUI_PASSWORD" ]; then
+                    echo -e "${RED}⚠ КРИТИЧНО: Не удалось извлечь plaintext пароль из вывода установщика!${NC}"
+                    echo -e "${YELLOW}Пароль был показан в выводе установщика 3x-ui выше.${NC}"
+                    echo -e "${YELLOW}Найдите строку 'Password:' в выводе установщика и сохраните пароль.${NC}"
                 fi
             fi
             
@@ -853,12 +869,18 @@ INBOUND_EOF
         echo -e "  Порт: ${YELLOW}${XUI_PORT}${NC}"
         echo -e "  Путь: ${YELLOW}${XUI_PATH:-/}${NC}"
         echo -e "${BLUE}========================================${NC}"
-        echo -e "${RED}⚠ ВАЖНО: Учетные данные для входа${NC}"
-        echo -e "${YELLOW}Проверьте вывод установщика выше для:${NC}"
-        echo -e "  - Username (Логин)"
-        echo -e "  - Password (Пароль)"
-        echo -e "  - API Token"
-        echo -e "${BLUE}Эти данные были сгенерированы автоматически установщиком 3x-ui${NC}"
+        if [ -n "$XUI_USERNAME" ] && [ -n "$XUI_PASSWORD" ]; then
+            echo -e "${GREEN}🔐 Учетные данные для входа:${NC}"
+            echo -e "  Username: ${YELLOW}${XUI_USERNAME}${NC}"
+            echo -e "  Password: ${YELLOW}${XUI_PASSWORD}${NC}"
+        else
+            echo -e "${RED}⚠ ВАЖНО: Учетные данные для входа${NC}"
+            echo -e "${YELLOW}Проверьте вывод установщика выше для:${NC}"
+            echo -e "  - Username (Логин)"
+            echo -e "  - Password (Пароль)"
+            echo -e "  - API Token"
+            echo -e "${BLUE}Эти данные были сгенерированы автоматически установщиком 3x-ui${NC}"
+        fi
         echo -e "${BLUE}========================================${NC}"
         echo -e "${GREEN}🔑 Reality ключи:${NC}"
         echo -e "  Public Key: ${YELLOW}${REALITY_PUBLIC_KEY}${NC}"
