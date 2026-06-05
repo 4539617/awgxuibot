@@ -7,6 +7,13 @@
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/4539617/awgxuibot/main/install.sh)
 ```
+или
+
+```bash
+git clone https://github.com/4539617/awgxuibot.git /opt/awgxuibot
+cd /opt/awgxuibot
+bash install.sh
+```
 
 ## 🔄 Перезапуск
 

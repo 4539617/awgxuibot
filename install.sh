@@ -7,9 +7,12 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
+# Константы
+WORK_DIR="/opt/awgxuibot"
+
 echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}   Unified VPN Bot Installer${NC}"
-echo -e "${BLUE}   NetCrazyBot + XUIBot${NC}"
+echo -e "${BLUE}   awgxuibot Installer${NC}"
+echo -e "${BLUE}   NetCrazy + XUI Management${NC}"
 echo -e "${BLUE}========================================${NC}\n"
 
 # Проверка прав root
@@ -22,10 +25,36 @@ fi
 if [ ! -f "docker-compose.yml" ] || [ ! -f "Dockerfile" ] || [ ! -f "package.json" ]; then
     echo -e "${RED}❌ Файлы проекта не найдены!${NC}"
     echo -e "${YELLOW}Пожалуйста, сначала склонируйте репозиторий:${NC}"
-    echo -e "${BLUE}  git clone https://github.com/4539617/awgxuibot.git${NC}"
-    echo -e "${BLUE}  cd awgxuibot${NC}"
+    echo -e "${BLUE}  git clone https://github.com/4539617/awgxuibot.git ${WORK_DIR}${NC}"
+    echo -e "${BLUE}  cd ${WORK_DIR}${NC}"
     echo -e "${BLUE}  bash install.sh${NC}"
     exit 1
+fi
+
+# Проверка и создание рабочего каталога
+if [ "$(pwd)" != "$WORK_DIR" ]; then
+    echo -e "${YELLOW}📁 Текущая директория: $(pwd)${NC}"
+    echo -e "${YELLOW}📁 Рабочая директория должна быть: ${WORK_DIR}${NC}"
+    
+    if [ -d "$WORK_DIR" ]; then
+        echo -e "${YELLOW}⚠ Директория ${WORK_DIR} уже существует${NC}"
+        read -p "Переместить файлы в ${WORK_DIR}? (y/n): " move_files
+        if [[ "$move_files" =~ ^[Yy]$ ]]; then
+            echo -e "${YELLOW}📦 Перемещение файлов...${NC}"
+            mkdir -p "$WORK_DIR"
+            cp -r * "$WORK_DIR/" 2>/dev/null || true
+            cp -r .* "$WORK_DIR/" 2>/dev/null || true
+            cd "$WORK_DIR"
+            echo -e "${GREEN}✅ Файлы перемещены в ${WORK_DIR}${NC}"
+        fi
+    else
+        echo -e "${YELLOW}📦 Создание рабочей директории...${NC}"
+        mkdir -p "$WORK_DIR"
+        cp -r * "$WORK_DIR/" 2>/dev/null || true
+        cp -r .* "$WORK_DIR/" 2>/dev/null || true
+        cd "$WORK_DIR"
+        echo -e "${GREEN}✅ Рабочая директория создана: ${WORK_DIR}${NC}"
+    fi
 fi
 
 # Функция установки Docker
@@ -157,10 +186,12 @@ interactive_setup() {
     
     XUI_URL=$(get_env_value "XUI_URL")
     if [ -z "$XUI_URL" ]; then
+        echo -e "${YELLOW}⚠ Данные 3x-ui панели не найдены${NC}"
+        echo -e "${BLUE}Установите 3x-ui панель (пункт 5) или введите данные вручную${NC}"
         read -p "Введите XUI_URL (адрес панели 3x-ui): " XUI_URL
         update_env_value "XUI_URL" "$XUI_URL"
     else
-        echo -e "XUI_URL: $XUI_URL ${GREEN}✓${NC}"
+        echo -e "XUI_URL: $XUI_URL ${GREEN}✓ (из установки 3x-ui)${NC}"
     fi
     
     XUI_USERNAME=$(get_env_value "XUI_USERNAME")
@@ -168,7 +199,7 @@ interactive_setup() {
         read -p "Введите XUI_USERNAME (логин панели): " XUI_USERNAME
         update_env_value "XUI_USERNAME" "$XUI_USERNAME"
     else
-        echo -e "XUI_USERNAME: $XUI_USERNAME ${GREEN}✓${NC}"
+        echo -e "XUI_USERNAME: $XUI_USERNAME ${GREEN}✓ (из установки 3x-ui)${NC}"
     fi
     
     XUI_PASSWORD=$(get_env_value "XUI_PASSWORD")
@@ -176,7 +207,7 @@ interactive_setup() {
         read -p "Введите XUI_PASSWORD (пароль панели): " XUI_PASSWORD
         update_env_value "XUI_PASSWORD" "$XUI_PASSWORD"
     else
-        echo -e "XUI_PASSWORD: ******** ${GREEN}✓${NC}"
+        echo -e "XUI_PASSWORD: ******** ${GREEN}✓ (из установки 3x-ui)${NC}"
     fi
     
     INBOUND_ID=$(get_env_value "INBOUND_ID")
@@ -263,11 +294,11 @@ interactive_setup() {
     echo -e "\n${GREEN}✅ Все параметры настроены!${NC}"
 }
 
-# Функция установки объединенного бота
+# Функция установки бота
 install_bot() {
     echo -e "\n${BLUE}========================================${NC}"
-    echo -e "${BLUE}   Установка Объединенного Бота${NC}"
-    echo -e "${BLUE}   NetCrazyBot (AWG) + XUIBot (3x-ui)${NC}"
+    echo -e "${BLUE}   Установка awgxuibot${NC}"
+    echo -e "${BLUE}   NetCrazy + XUI Management${NC}"
     echo -e "${BLUE}========================================${NC}\n"
     
     # Интерактивная настройка параметров
@@ -307,7 +338,7 @@ install_bot() {
     NETCRAZY_STATUS=$(docker ps --filter name=netcrazybot --format "{{.Status}}" 2>/dev/null || echo "not found")
     XUI_STATUS=$(docker ps --filter name=xuibot --format "{{.Status}}" 2>/dev/null || echo "not found")
     
-    echo -e "\n${GREEN}✅ Объединенный бот установлен!${NC}"
+    echo -e "\n${GREEN}✅ awgxuibot установлен!${NC}"
     echo -e "${BLUE}========================================${NC}"
     echo -e "${GREEN}📊 Статус контейнеров:${NC}"
     
@@ -353,7 +384,7 @@ show_logs() {
 # Функция обновления бота
 update_bot() {
     echo -e "\n${BLUE}========================================${NC}"
-    echo -e "${BLUE}   Обновление Объединенного Бота${NC}"
+    echo -e "${BLUE}   Обновление awgxuibot${NC}"
     echo -e "${BLUE}========================================${NC}\n"
     
     echo -e "${YELLOW}🔄 Обновление бота...${NC}"
@@ -381,7 +412,7 @@ update_bot() {
 # Функция удаления бота
 remove_bot() {
     echo -e "\n${BLUE}========================================${NC}"
-    echo -e "${BLUE}   Удаление Объединенного Бота${NC}"
+    echo -e "${BLUE}   Удаление awgxuibot${NC}"
     echo -e "${BLUE}========================================${NC}\n"
     
     read -p "⚠️  Вы уверены что хотите удалить бот? (y/n): " confirm
@@ -469,7 +500,7 @@ remove_all() {
     echo -e "${BLUE}========================================${NC}\n"
     
     echo -e "${RED}⚠️  ВНИМАНИЕ! Это удалит:${NC}"
-    echo -e "  - Объединенный бот (NetCrazyBot + XUIBot)"
+    echo -e "  - awgxuibot (NetCrazy + XUI)"
     echo -e "  - 3x-ui панель"
     echo -e "  - AWG v1 сервер"
     echo -e "  - AWG v2 сервер"
@@ -509,6 +540,28 @@ remove_all() {
     echo -e "${GREEN}✅ Все компоненты удалены!${NC}"
 }
 
+# Функция генерации случайного пароля
+generate_random_string() {
+    local length=$1
+    local chars='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+    local result=''
+    for i in $(seq 1 $length); do
+        result="${result}${chars:RANDOM%${#chars}:1}"
+    done
+    echo "$result"
+}
+
+# Функция генерации случайного пароля со спецсимволами
+generate_random_password() {
+    local length=$1
+    local chars='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*'
+    local result=''
+    for i in $(seq 1 $length); do
+        result="${result}${chars:RANDOM%${#chars}:1}"
+    done
+    echo "$result"
+}
+
 # Функция установки 3x-ui панели
 install_3xui() {
     echo -e "\n${BLUE}========================================${NC}"
@@ -525,24 +578,63 @@ install_3xui() {
         fi
     fi
     
+    # Генерация случайных логина и пароля
+    XUI_USERNAME=$(generate_random_string 10)
+    XUI_PASSWORD=$(generate_random_password 10)
+    XUI_PORT="2053"
+    XUI_PATH="/"
+    SERVER_IP=$(curl -s ifconfig.me)
+    XUI_URL="http://${SERVER_IP}:${XUI_PORT}${XUI_PATH}"
+    
+    echo -e "${YELLOW}🔐 Генерация учетных данных...${NC}"
+    echo -e "${GREEN}Логин: ${YELLOW}${XUI_USERNAME}${NC}"
+    echo -e "${GREEN}Пароль: ${YELLOW}${XUI_PASSWORD}${NC}"
+    echo -e "${GREEN}Порт: ${YELLOW}${XUI_PORT}${NC}"
+    echo -e ""
+    
     echo -e "${YELLOW}📦 Загрузка установочного скрипта 3x-ui...${NC}"
     
     # Установка в silent режиме
     if bash <(curl -Ls https://raw.githubusercontent.com/MHSanaei/3x-ui/master/install.sh) << EOF
 y
-admin
-admin
-2053
-/
+${XUI_USERNAME}
+${XUI_PASSWORD}
+${XUI_PORT}
+${XUI_PATH}
 EOF
     then
+        # Создание .env файла с учетными данными 3x-ui
+        create_env_if_not_exists
+        
+        echo -e "${YELLOW}💾 Сохранение учетных данных в .env...${NC}"
+        update_env_value "XUI_URL" "${XUI_URL}"
+        update_env_value "XUI_USERNAME" "${XUI_USERNAME}"
+        update_env_value "XUI_PASSWORD" "${XUI_PASSWORD}"
+        
+        # Также сохраняем в отдельный файл для удобства
+        cat > /root/3x-ui-credentials.txt << CREDS
+========================================
+   3x-ui Panel - Учетные данные
+========================================
+URL: ${XUI_URL}
+Логин: ${XUI_USERNAME}
+Пароль: ${XUI_PASSWORD}
+========================================
+Дата установки: $(date)
+========================================
+CREDS
+        
         echo -e "\n${GREEN}✅ 3x-ui панель успешно установлена!${NC}"
         echo -e "${BLUE}========================================${NC}"
         echo -e "${GREEN}📋 Информация о панели:${NC}"
-        echo -e "  URL: ${YELLOW}http://$(curl -s ifconfig.me):2053/${NC}"
-        echo -e "  Логин: ${YELLOW}admin${NC}"
-        echo -e "  Пароль: ${YELLOW}admin${NC}"
-        echo -e "${RED}⚠ ВАЖНО: Смените пароль после первого входа!${NC}"
+        echo -e "  URL: ${YELLOW}${XUI_URL}${NC}"
+        echo -e "  Логин: ${YELLOW}${XUI_USERNAME}${NC}"
+        echo -e "  Пароль: ${YELLOW}${XUI_PASSWORD}${NC}"
+        echo -e "${BLUE}========================================${NC}"
+        echo -e "${GREEN}💾 Учетные данные сохранены:${NC}"
+        echo -e "  ${YELLOW}.env${NC} (для бота)"
+        echo -e "  ${YELLOW}/root/3x-ui-credentials.txt${NC} (резервная копия)"
+        echo -e "${RED}⚠ ВАЖНО: Сохраните эти данные в надежном месте!${NC}"
         echo -e "${BLUE}========================================${NC}"
     else
         echo -e "\n${RED}❌ Ошибка установки 3x-ui панели${NC}"
