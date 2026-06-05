@@ -60,24 +60,46 @@ class XUIClient:
         """Авторизация в панели 3x-ui"""
         await self._get_session()
         
-        login_url = f"{self.config.xui.url}/login"
+        # Правильная обработка URL с custom path
+        # XUI_URL может быть: http://ip:port/custom-path
+        # Login endpoint: http://ip:port/custom-path/login
+        base_url = self.config.xui.url.rstrip('/')
+        login_url = f"{base_url}/login"
+        
         login_data = {
             "username": self.config.xui.username,
             "password": self.config.xui.password
         }
         
         try:
+            logger.info(f"Попытка авторизации: {login_url}")
+            logger.info(f"Username: {self.config.xui.username}")
+            
             async with self.session.post(login_url, json=login_data) as resp:
+                response_text = await resp.text()
+                
                 if resp.status == 200:
-                    self.cookies = self.session.cookie_jar
-                    logger.info("Успешная авторизация в 3x-ui")
-                    return True
+                    # Проверяем успешность авторизации по содержимому ответа
+                    try:
+                        result = json.loads(response_text)
+                        if result.get('success'):
+                            self.cookies = self.session.cookie_jar
+                            logger.info("✅ Успешная авторизация в 3x-ui")
+                            return True
+                        else:
+                            logger.error(f"❌ Авторизация отклонена: {result.get('msg', 'Unknown error')}")
+                            return False
+                    except json.JSONDecodeError:
+                        # Если ответ не JSON, но статус 200, считаем успешным
+                        self.cookies = self.session.cookie_jar
+                        logger.info("✅ Успешная авторизация в 3x-ui (non-JSON response)")
+                        return True
                 else:
-                    text = await resp.text()
-                    logger.error(f"Ошибка авторизации: {resp.status} - {text[:200]}")
+                    logger.error(f"❌ Ошибка авторизации: {resp.status}")
+                    logger.error(f"Response: {response_text[:500]}")
                     return False
         except Exception as e:
-            logger.error(f"Ошибка подключения: {e}")
+            logger.error(f"❌ Ошибка подключения: {e}")
             return False
 
     async def add_client(self, email: str, total_gb: int, expiry_days: float, comment: str = None) -> Dict:

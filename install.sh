@@ -849,8 +849,6 @@ INBOUND_EOF
         INBOUND_JSON=$(echo "$INBOUND_JSON" | sed "s/REALITY_SHORT_ID_PLACEHOLDER/${REALITY_SHORT_ID}/g")
         
         # Альтернативный метод: создание inbound напрямую через SQL
-        echo -e "${YELLOW}🔧 Попытка создания inbound через SQL...${NC}"
-        
         # Проверяем структуру таблицы inbounds
         INBOUND_TABLE_EXISTS=$(sqlite3 /etc/x-ui/x-ui.db "SELECT name FROM sqlite_master WHERE type='table' AND name='inbounds';" 2>/dev/null)
         
