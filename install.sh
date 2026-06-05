@@ -81,8 +81,64 @@ create_directories() {
 # Функция создания .env если не существует
 create_env_if_not_exists() {
     if [ ! -f ".env" ]; then
-        echo -e "${YELLOW}📝 Создание .env файла...${NC}"
-        touch .env
+        echo -e "${YELLOW}📝 Создание .env файла с дефолтными значениями...${NC}"
+        cat > .env << 'EOF'
+# Telegram Bot Configuration
+TELEGRAM_BOT_TOKEN=
+ADMIN_IDS=
+
+# Server Configuration
+SERVER_ADDRESS=
+SERVER_IP=
+SERVER_PORT=443
+
+# 3x-ui Panel Configuration
+XUI_URL=
+XUI_USERNAME=
+XUI_PASSWORD=
+XUI_DB_PATH=/etc/x-ui/x-ui.db
+API_TIMEOUT=30
+
+# Reality Configuration
+REALITY_PUBLIC_KEY=
+REALITY_SHORT_ID=
+REALITY_SNI=google.com
+REALITY_FINGERPRINT=firefox
+
+# Transport Configuration
+TRANSPORT=xhttp
+SECURITY=reality
+XHTTP_MODE=auto
+INBOUND_ID=1
+
+# TLS Configuration
+TLS_FINGERPRINT=firefox
+TLS_ALPN=http/1.1
+
+# Traffic Limits
+MAX_TRAFFIC_GB=1000
+MAX_DAYS=3650
+MIN_DAYS=1
+DEFAULT_TRAFFIC_GB=100
+DEFAULT_DAYS=30
+
+# Database Configuration
+DB_PATH=/app/data/bot_users.db
+DB_BACKUP_ENABLED=true
+DB_BACKUP_INTERVAL=24
+
+# Logging Configuration
+LOG_LEVEL=INFO
+LOG_FILE_ENABLED=true
+LOG_FILE_PATH=/app/logs/bot.log
+LOG_MAX_SIZE_MB=10
+LOG_BACKUP_COUNT=5
+
+# AWG Configuration
+AWG_VERSION=v1
+AWG_PORT=51820
+EOF
+        echo -e "${GREEN}✅ .env файл создан с дефолтными значениями${NC}"
     fi
 }
 
@@ -546,10 +602,6 @@ ${XUI_PORT}
 ${XUI_PATH}
 EOF
     then
-        # Ожидание запуска панели
-        echo -e "${YELLOW}⏳ Ожидание запуска панели...${NC}"
-        sleep 5
-        
         # Генерация Reality ключей
         echo -e "${YELLOW}🔑 Генерация Reality ключей...${NC}"
         
@@ -566,64 +618,6 @@ EOF
         
         # Генерация Short IDs
         REALITY_SHORT_ID=$(openssl rand -hex 8)
-        
-        # Генерация mldsa65 ключей
-        echo -e "${YELLOW}🔑 Генерация mldsa65 ключей...${NC}"
-        MLDSA65_SEED=$(openssl rand -base64 32)
-        MLDSA65_VERIFY=$(openssl rand -base64 32)
-        
-        # Создание inbound через API
-        echo -e "${YELLOW}🔧 Создание inbound xhttp + reality...${NC}"
-        
-        # Получение cookie для авторизации
-        COOKIE=$(curl -s -X POST "http://localhost:${XUI_PORT}/login" \
-            -H "Content-Type: application/x-www-form-urlencoded" \
-            -d "username=${XUI_USERNAME}&password=${XUI_PASSWORD}" \
-            -c - | grep "session" | awk '{print $7}')
-        
-        # Создание inbound
-        INBOUND_JSON=$(cat <<EOF
-{
-  "enable": true,
-  "port": 443,
-  "protocol": "vless",
-  "settings": {
-    "clients": [],
-    "decryption": "none",
-    "fallbacks": []
-  },
-  "streamSettings": {
-    "network": "xhttp",
-    "security": "reality",
-    "realitySettings": {
-      "show": false,
-      "dest": "google.com:443",
-      "xver": 0,
-      "serverNames": ["google.com", "www.google.com"],
-      "privateKey": "${REALITY_PRIVATE_KEY}",
-      "shortIds": ["${REALITY_SHORT_ID}"],
-      "mldsa65Seed": "${MLDSA65_SEED}",
-      "mldsa65Verify": "${MLDSA65_VERIFY}"
-    },
-    "xhttpSettings": {
-      "mode": "auto"
-    }
-  },
-  "sniffing": {
-    "enabled": true,
-    "destOverride": ["http", "tls"]
-  },
-  "remark": "xhttp-reality-auto"
-}
-EOF
-)
-        
-        curl -s -X POST "http://localhost:${XUI_PORT}/panel/api/inbounds/add" \
-            -H "Content-Type: application/json" \
-            -H "Cookie: session=${COOKIE}" \
-            -d "${INBOUND_JSON}" > /dev/null
-        
-        echo -e "${GREEN}✅ Inbound создан успешно!${NC}"
         
         # Создание .env файла с учетными данными 3x-ui
         create_env_if_not_exists
@@ -644,10 +638,25 @@ EOF
         echo -e "${BLUE}========================================${NC}"
         echo -e "${GREEN}🔑 Reality ключи:${NC}"
         echo -e "  Public Key: ${YELLOW}${REALITY_PUBLIC_KEY}${NC}"
+        echo -e "  Private Key: ${YELLOW}${REALITY_PRIVATE_KEY}${NC}"
         echo -e "  Short ID: ${YELLOW}${REALITY_SHORT_ID}${NC}"
         echo -e "${BLUE}========================================${NC}"
         echo -e "${GREEN}💾 Все данные сохранены в:${NC}"
         echo -e "  ${YELLOW}${WORK_DIR}/.env${NC}"
+        echo -e "${BLUE}========================================${NC}"
+        echo -e "${YELLOW}📝 Следующие шаги:${NC}"
+        echo -e "  1. Откройте панель: ${YELLOW}${XUI_URL}${NC}"
+        echo -e "  2. Войдите с указанными выше учетными данными"
+        echo -e "  3. Создайте inbound с настройками:"
+        echo -e "     - Protocol: ${YELLOW}VLESS${NC}"
+        echo -e "     - Port: ${YELLOW}443${NC}"
+        echo -e "     - Network: ${YELLOW}xhttp${NC}"
+        echo -e "     - Security: ${YELLOW}reality${NC}"
+        echo -e "     - Private Key: ${YELLOW}${REALITY_PRIVATE_KEY}${NC}"
+        echo -e "     - Short ID: ${YELLOW}${REALITY_SHORT_ID}${NC}"
+        echo -e "     - SNI: ${YELLOW}google.com${NC}"
+        echo -e "  4. После создания inbound запустите бот (пункт 1 в меню)"
+        echo -e "${BLUE}========================================${NC}"
         echo -e "${RED}⚠ ВАЖНО: Сохраните эти данные в надежном месте!${NC}"
         echo -e "${BLUE}========================================${NC}"
     else
