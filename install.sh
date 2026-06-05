@@ -666,24 +666,31 @@ EOF
                 fi
             fi
             
-            # Устанавливаем сгенерированный пароль через x-ui
+            # Устанавливаем сгенерированный пароль напрямую в базу данных
             if [ -n "$XUI_USERNAME" ] && [ -n "$GENERATED_PASSWORD" ]; then
                 echo -e "${YELLOW}🔐 Установка нового пароля для панели...${NC}"
                 
-                # Используем x-ui для установки пароля
-                # Команда x-ui позволяет установить пароль через stdin
-                echo -e "${GENERATED_PASSWORD}\n${GENERATED_PASSWORD}" | x-ui << 'XUIEOF' > /dev/null 2>&1
-7
-${XUI_USERNAME}
-XUIEOF
+                # Устанавливаем bcrypt для генерации хеша
+                if ! command -v htpasswd &> /dev/null; then
+                    echo -e "${YELLOW}📦 Установка apache2-utils для bcrypt...${NC}"
+                    apt-get update -qq && apt-get install -y apache2-utils -qq > /dev/null 2>&1
+                fi
                 
-                # Проверяем успешность
+                # Генерируем bcrypt хеш пароля (cost 10, как в 3x-ui)
+                PASSWORD_HASH=$(htpasswd -nbBC 10 "" "$GENERATED_PASSWORD" | cut -d: -f2)
+                
+                # Обновляем пароль в базе данных
+                sqlite3 /etc/x-ui/x-ui.db "UPDATE users SET password='${PASSWORD_HASH}' WHERE username='${XUI_USERNAME}';" 2>/dev/null
+                
                 if [ $? -eq 0 ]; then
                     XUI_PASSWORD="$GENERATED_PASSWORD"
-                    echo -e "${GREEN}✅ Пароль успешно установлен${NC}"
+                    echo -e "${GREEN}✅ Пароль успешно установлен в базу данных${NC}"
+                    
+                    # Перезапускаем панель для применения изменений
+                    systemctl restart x-ui
+                    sleep 2
                 else
-                    echo -e "${YELLOW}⚠ Не удалось автоматически установить пароль${NC}"
-                    echo -e "${YELLOW}Используйте команду: x-ui (опция 7) для установки пароля вручную${NC}"
+                    echo -e "${YELLOW}⚠ Не удалось обновить пароль в базе данных${NC}"
                     XUI_PASSWORD="$GENERATED_PASSWORD"
                 fi
             else
