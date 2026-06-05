@@ -672,6 +672,64 @@ EOF
         update_env_value "REALITY_PRIVATE_KEY" "${REALITY_PRIVATE_KEY}"
         update_env_value "REALITY_SHORT_ID" "${REALITY_SHORT_ID}"
         
+        # Автоматическое создание inbound
+        echo -e "\n${YELLOW}🔧 Создание VLESS Reality inbound...${NC}"
+        
+        # Получаем cookie для авторизации
+        COOKIE=$(curl -s -c - -X POST "${XUI_URL%/}/login" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            -d "username=${XUI_USERNAME}&password=${XUI_PASSWORD}" \
+            | grep -oP '(?<=session\s)[^\s]+' || echo "")
+        
+        if [ -z "$COOKIE" ]; then
+            echo -e "${YELLOW}⚠ Не удалось получить cookie для API, пробуем альтернативный метод...${NC}"
+            # Пробуем получить через API напрямую
+            LOGIN_RESPONSE=$(curl -s -X POST "${XUI_URL%/}/login" \
+                -H "Content-Type: application/x-www-form-urlencoded" \
+                -d "username=${XUI_USERNAME}&password=${XUI_PASSWORD}")
+        fi
+        
+        # Создаем JSON конфигурацию для inbound (на основе рабочего примера)
+        INBOUND_JSON=$(cat <<'INBOUND_EOF'
+{
+  "enable": true,
+  "port": 443,
+  "protocol": "vless",
+  "settings": "{\n  \"clients\": [],\n  \"decryption\": \"none\",\n  \"encryption\": \"none\"\n}",
+  "streamSettings": "{\n  \"network\": \"xhttp\",\n  \"security\": \"reality\",\n  \"externalProxy\": [],\n  \"realitySettings\": {\n    \"show\": false,\n    \"xver\": 0,\n    \"target\": \"google.com:443\",\n    \"serverNames\": [\n      \"google.com\",\n      \"www.google.com\"\n    ],\n    \"privateKey\": \"REALITY_PRIVATE_KEY_PLACEHOLDER\",\n    \"minClientVer\": \"\",\n    \"maxClientVer\": \"\",\n    \"maxTimediff\": 0,\n    \"shortIds\": [\n      \"REALITY_SHORT_ID_PLACEHOLDER\"\n    ],\n    \"settings\": {\n      \"publicKey\": \"REALITY_PUBLIC_KEY_PLACEHOLDER\",\n      \"fingerprint\": \"edge\",\n      \"serverName\": \"\",\n      \"spiderX\": \"/\"\n    }\n  },\n  \"xhttpSettings\": {\n    \"path\": \"/\",\n    \"host\": \"\",\n    \"headers\": {},\n    \"scMaxBufferedPosts\": 30,\n    \"scMaxEachPostBytes\": \"1000000\",\n    \"scStreamUpServerSecs\": \"20-80\",\n    \"noSSEHeader\": false,\n    \"xPaddingBytes\": \"100-1000\",\n    \"mode\": \"auto\",\n    \"xPaddingObfsMode\": false\n  }\n}",
+  "tag": "inbound-443",
+  "sniffing": "{\n  \"enabled\": false,\n  \"destOverride\": [\n    \"http\",\n    \"tls\",\n    \"quic\",\n    \"fakedns\"\n  ],\n  \"metadataOnly\": false,\n  \"routeOnly\": false\n}",
+  "remark": "VLESS-Reality-xHTTP"
+}
+INBOUND_EOF
+)
+        
+        # Заменяем плейсхолдеры на реальные значения
+        INBOUND_JSON=$(echo "$INBOUND_JSON" | sed "s/REALITY_PRIVATE_KEY_PLACEHOLDER/${REALITY_PRIVATE_KEY}/g")
+        INBOUND_JSON=$(echo "$INBOUND_JSON" | sed "s/REALITY_PUBLIC_KEY_PLACEHOLDER/${REALITY_PUBLIC_KEY}/g")
+        INBOUND_JSON=$(echo "$INBOUND_JSON" | sed "s/REALITY_SHORT_ID_PLACEHOLDER/${REALITY_SHORT_ID}/g")
+        
+        # Пытаемся создать inbound через API
+        CREATE_RESPONSE=$(curl -s -X POST "${XUI_URL%/}/panel/api/inbounds/add" \
+            -H "Content-Type: application/json" \
+            -H "Cookie: session=${COOKIE}" \
+            -d "${INBOUND_JSON}")
+        
+        if echo "$CREATE_RESPONSE" | grep -q '"success":true'; then
+            echo -e "${GREEN}✅ VLESS Reality inbound успешно создан!${NC}"
+            echo -e "${GREEN}   Порт: 443${NC}"
+            echo -e "${GREEN}   Protocol: VLESS${NC}"
+            echo -e "${GREEN}   Network: xhttp${NC}"
+            echo -e "${GREEN}   Security: reality${NC}"
+            INBOUND_CREATED=true
+        else
+            echo -e "${YELLOW}⚠ Не удалось автоматически создать inbound через API${NC}"
+            echo -e "${YELLOW}Возможные причины:${NC}"
+            echo -e "  - API еще не готов (панель только что установлена)${NC}"
+            echo -e "  - Требуется ручное создание через веб-интерфейс${NC}"
+            INBOUND_CREATED=false
+        fi
+        
         echo -e "\n${GREEN}✅ 3x-ui панель успешно установлена!${NC}"
         echo -e "${BLUE}========================================${NC}"
         echo -e "${GREEN}📋 Информация о панели:${NC}"
@@ -695,17 +753,24 @@ EOF
         echo -e "  ${YELLOW}${WORK_DIR}/.env${NC}"
         echo -e "${BLUE}========================================${NC}"
         echo -e "${YELLOW}📝 Следующие шаги:${NC}"
-        echo -e "  1. Откройте панель в браузере: ${YELLOW}${XUI_URL}${NC}"
-        echo -e "  2. Войдите с учетными данными из вывода установщика выше"
-        echo -e "  3. Создайте inbound с настройками:"
-        echo -e "     - Protocol: ${YELLOW}VLESS${NC}"
-        echo -e "     - Port: ${YELLOW}443${NC}"
-        echo -e "     - Network: ${YELLOW}xhttp${NC}"
-        echo -e "     - Security: ${YELLOW}reality${NC}"
-        echo -e "     - Private Key: ${YELLOW}${REALITY_PRIVATE_KEY}${NC}"
-        echo -e "     - Short ID: ${YELLOW}${REALITY_SHORT_ID}${NC}"
-        echo -e "     - SNI: ${YELLOW}google.com${NC}"
-        echo -e "  4. После создания inbound запустите бот (пункт 1 в меню)"
+        if [ "$INBOUND_CREATED" = true ]; then
+            echo -e "  1. ${GREEN}✓${NC} Inbound создан автоматически"
+            echo -e "  2. Откройте панель: ${YELLOW}${XUI_URL}${NC}"
+            echo -e "  3. Проверьте inbound в разделе Inbounds"
+            echo -e "  4. Запустите бот (пункт 1 в меню)"
+        else
+            echo -e "  1. Откройте панель в браузере: ${YELLOW}${XUI_URL}${NC}"
+            echo -e "  2. Войдите с учетными данными из вывода установщика выше"
+            echo -e "  3. Создайте inbound вручную с настройками:"
+            echo -e "     - Protocol: ${YELLOW}VLESS${NC}"
+            echo -e "     - Port: ${YELLOW}443${NC}"
+            echo -e "     - Network: ${YELLOW}xhttp${NC}"
+            echo -e "     - Security: ${YELLOW}reality${NC}"
+            echo -e "     - Private Key: ${YELLOW}${REALITY_PRIVATE_KEY}${NC}"
+            echo -e "     - Short ID: ${YELLOW}${REALITY_SHORT_ID}${NC}"
+            echo -e "     - SNI: ${YELLOW}google.com${NC}"
+            echo -e "  4. После создания inbound запустите бот (пункт 1 в меню)"
+        fi
         echo -e "${BLUE}========================================${NC}"
         echo -e "${RED}⚠ ВАЖНО: Сохраните эти данные в надежном месте!${NC}"
         echo -e "${BLUE}========================================${NC}"
