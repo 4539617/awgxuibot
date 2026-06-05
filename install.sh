@@ -771,8 +771,8 @@ EOF
         COOKIE_FILE=$(mktemp)
         
         # Пробуем авторизоваться (3x-ui использует form-urlencoded)
-        # URL уже содержит путь, добавляем /login к нему
-        LOGIN_URL="${XUI_URL%/}/login"
+        # URL уже содержит путь
+        LOGIN_URL="${XUI_URL%/}"
         
         echo -e "${YELLOW}Попытка авторизации: ${LOGIN_URL}${NC}"
         echo -e "${YELLOW}Username: ${XUI_USERNAME}${NC}"
