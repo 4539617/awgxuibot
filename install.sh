@@ -520,6 +520,7 @@ remove_all() {
     systemctl stop x-ui 2>/dev/null || true
     systemctl disable x-ui 2>/dev/null || true
     rm -rf /usr/local/x-ui 2>/dev/null || true
+    rm -rf /etc/x-ui 2>/dev/null || true
     rm -f /etc/systemd/system/x-ui.service 2>/dev/null || true
     systemctl daemon-reload
     
@@ -907,13 +908,20 @@ STREAMEOF
             STREAM_SETTINGS_JSON_ESCAPED=$(echo "$STREAM_SETTINGS_JSON" | sed "s/'/''/g")
             SNIFFING_JSON_ESCAPED=$(echo "$SNIFFING_JSON" | sed "s/'/''/g")
             
+            # Проверяем и удаляем существующий inbound с таким же тегом
+            echo -e "${YELLOW}🔍 Проверка существующих inbounds...${NC}"
+            EXISTING_INBOUND=$(sqlite3 /etc/x-ui/x-ui.db "SELECT id FROM inbounds WHERE tag='inbound-443' OR remark='VLESS-Reality-xHTTP';" 2>/dev/null)
+            
+            if [ -n "$EXISTING_INBOUND" ]; then
+                echo -e "${YELLOW}⚠ Найден существующий inbound (ID: ${EXISTING_INBOUND}), удаляем...${NC}"
+                sqlite3 /etc/x-ui/x-ui.db "DELETE FROM inbounds WHERE tag='inbound-443' OR remark='VLESS-Reality-xHTTP';" 2>/dev/null
+                echo -e "${GREEN}✅ Старый inbound удален${NC}"
+            fi
+            
             # Вставляем inbound в базу данных
             SQL_INSERT="INSERT INTO inbounds (user_id, up, down, total, remark, enable, expiry_time, listen, port, protocol, settings, stream_settings, tag, sniffing) VALUES (1, 0, 0, 0, 'VLESS-Reality-xHTTP', 1, 0, '', 443, 'vless', '${SETTINGS_JSON_ESCAPED}', '${STREAM_SETTINGS_JSON_ESCAPED}', 'inbound-443', '${SNIFFING_JSON_ESCAPED}');"
             
-            echo -e "${YELLOW}Выполнение SQL запроса...${NC}"
-            echo -e "${YELLOW}DEBUG: SQL длина: ${#SQL_INSERT} символов${NC}"
-            # Показываем первые 200 символов SQL для отладки
-            echo -e "${YELLOW}DEBUG: SQL начало: ${SQL_INSERT:0:200}...${NC}"
+            echo -e "${YELLOW}📝 Создание нового inbound...${NC}"
             set +e  # Временно отключаем exit on error
             SQL_RESULT=$(sqlite3 /etc/x-ui/x-ui.db "${SQL_INSERT}" 2>&1)
             SQL_EXIT_CODE=$?
@@ -1046,51 +1054,6 @@ STREAMEOF
             echo -e "${YELLOW}Проверьте: journalctl -u x-ui -n 30${NC}"
         fi
         
-        echo -e "\n${GREEN}✅ 3x-ui панель успешно установлена!${NC}"
-        echo -e "${BLUE}========================================${NC}"
-        echo -e "${GREEN}📋 Информация о панели:${NC}"
-        echo -e "  URL: ${YELLOW}${XUI_URL}${NC}"
-        echo -e "  Порт: ${YELLOW}${XUI_PORT}${NC}"
-        echo -e "  Путь: ${YELLOW}${XUI_PATH:-/}${NC}"
-        echo -e "${BLUE}========================================${NC}"
-        echo -e "${GREEN}🔐 Учетные данные для входа:${NC}"
-        echo -e "  Username: ${YELLOW}${XUI_USERNAME}${NC}"
-        echo -e "  Password: ${YELLOW}${XUI_PASSWORD}${NC}"
-        echo -e "${BLUE}========================================${NC}"
-        echo -e "${RED}⚠ ВАЖНО: Сохраните эти данные!${NC}"
-        echo -e "${YELLOW}Пароль был сгенерирован автоматически и установлен в панель${NC}"
-        echo -e "${BLUE}========================================${NC}"
-        echo -e "${GREEN}🔑 Reality ключи:${NC}"
-        echo -e "  Public Key: ${YELLOW}${REALITY_PUBLIC_KEY}${NC}"
-        echo -e "  Private Key: ${YELLOW}${REALITY_PRIVATE_KEY}${NC}"
-        echo -e "  Short ID: ${YELLOW}${REALITY_SHORT_ID}${NC}"
-        echo -e "${BLUE}========================================${NC}"
-        echo -e "${GREEN}💾 Все данные сохранены в:${NC}"
-        echo -e "  ${YELLOW}${WORK_DIR}/.env${NC}"
-        echo -e "${BLUE}========================================${NC}"
-        echo -e "${YELLOW}📝 Следующие шаги:${NC}"
-        if [ "$INBOUND_CREATED" = true ]; then
-            echo -e "  1. ${GREEN}✓${NC} Inbound создан автоматически"
-            echo -e "  2. Откройте панель: ${YELLOW}${XUI_URL}${NC}"
-            echo -e "  3. Проверьте inbound в разделе Inbounds"
-            echo -e "  4. Запустите бот (пункт 1 в меню)"
-        else
-            echo -e "  1. Откройте панель в браузере: ${YELLOW}${XUI_URL}${NC}"
-            echo -e "  2. Войдите с учетными данными из вывода установщика выше"
-            echo -e "  3. Создайте inbound вручную с настройками:"
-            echo -e "     - Protocol: ${YELLOW}VLESS${NC}"
-            echo -e "     - Port: ${YELLOW}443${NC}"
-            echo -e "     - Network: ${YELLOW}xhttp${NC}"
-            echo -e "     - Security: ${YELLOW}reality${NC}"
-            echo -e "     - Private Key: ${YELLOW}${REALITY_PRIVATE_KEY}${NC}"
-            echo -e "     - Short ID: ${YELLOW}${REALITY_SHORT_ID}${NC}"
-            echo -e "     - SNI: ${YELLOW}google.com${NC}"
-            echo -e "  4. После создания inbound запустите бот (пункт 1 в меню)"
-        fi
-        echo -e "${BLUE}========================================${NC}"
-        echo -e "${RED}⚠ ВАЖНО: Сохраните эти данные в надежном месте!${NC}"
-        echo -e "${BLUE}========================================${NC}"
-        
         echo -e "\n${BLUE}========================================${NC}"
         echo -e "${GREEN}   ВАШИ ДАННЫЕ ДЛЯ ВХОДА${NC}"
         echo -e "${BLUE}========================================${NC}"
@@ -1131,12 +1094,30 @@ remove_3xui() {
     systemctl stop x-ui 2>/dev/null || true
     systemctl disable x-ui 2>/dev/null || true
     
-    # Удаление файлов
+    # Удаление файлов и конфигурации
+    echo -e "${YELLOW}📁 Удаление файлов программы...${NC}"
     rm -rf /usr/local/x-ui 2>/dev/null || true
+    
+    echo -e "${YELLOW}🗄️  Удаление базы данных и конфигурации...${NC}"
+    rm -rf /etc/x-ui 2>/dev/null || true
+    
+    echo -e "${YELLOW}🔧 Удаление systemd сервиса...${NC}"
     rm -f /etc/systemd/system/x-ui.service 2>/dev/null || true
     systemctl daemon-reload
     
-    echo -e "${GREEN}✅ 3x-ui панель удалена!${NC}"
+    # Удаление из .env
+    if [ -f "${WORK_DIR}/.env" ]; then
+        echo -e "${YELLOW}🔑 Очистка данных из .env...${NC}"
+        sed -i '/^XUI_/d' "${WORK_DIR}/.env" 2>/dev/null || true
+        sed -i '/^REALITY_/d' "${WORK_DIR}/.env" 2>/dev/null || true
+        sed -i '/^INBOUND_ID=/d' "${WORK_DIR}/.env" 2>/dev/null || true
+    fi
+    
+    echo -e "${GREEN}✅ 3x-ui панель полностью удалена!${NC}"
+    echo -e "${GREEN}   - Программа удалена${NC}"
+    echo -e "${GREEN}   - База данных удалена${NC}"
+    echo -e "${GREEN}   - Конфигурация удалена${NC}"
+    echo -e "${GREEN}   - Данные из .env очищены${NC}"
 }
 
 # Функция установки AWG v1
