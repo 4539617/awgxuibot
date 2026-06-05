@@ -466,7 +466,21 @@ remove_all() {
     rm -f /etc/systemd/system/x-ui.service 2>/dev/null || true
     systemctl daemon-reload
     
+    # Удаление каталога проекта
+    if [ -d "$WORK_DIR" ]; then
+        echo -e "${YELLOW}🗑️  Удаление каталога проекта...${NC}"
+        cd /root
+        rm -rf "$WORK_DIR"
+        echo -e "${GREEN}✅ Каталог ${WORK_DIR} удален${NC}"
+    fi
+    
     echo -e "${GREEN}✅ Все компоненты удалены!${NC}"
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}Для повторной установки выполните:${NC}"
+    echo -e "${YELLOW}git clone https://github.com/4539617/awgxuibot.git ${WORK_DIR}${NC}"
+    echo -e "${YELLOW}cd ${WORK_DIR}${NC}"
+    echo -e "${YELLOW}bash install.sh${NC}"
+    echo -e "${BLUE}========================================${NC}"
 }
 
 # Функция генерации случайного пароля
