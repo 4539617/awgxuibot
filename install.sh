@@ -941,9 +941,20 @@ STREAMEOF
                     # Сохраняем ID в .env
                     update_env_value "INBOUND_ID" "${INBOUND_ID}"
                     
+                    # Отключаем WAL режим для совместимости с Docker
+                    echo -e "${YELLOW}🔧 Оптимизация базы данных для Docker...${NC}"
+                    systemctl stop x-ui
+                    sleep 2
+                    
+                    # Выполняем checkpoint и отключаем WAL
+                    sqlite3 /etc/x-ui/x-ui.db "PRAGMA wal_checkpoint(TRUNCATE);" 2>/dev/null || true
+                    sqlite3 /etc/x-ui/x-ui.db "PRAGMA journal_mode=DELETE;" 2>/dev/null || true
+                    
+                    echo -e "${GREEN}✅ База данных оптимизирована${NC}"
+                    
                     # Перезапускаем панель для применения изменений
                     echo -e "${YELLOW}🔄 Перезапуск панели для применения изменений...${NC}"
-                    systemctl restart x-ui
+                    systemctl start x-ui
                     sleep 5
                     
                     # Проверяем что панель запустилась
