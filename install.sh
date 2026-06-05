@@ -762,8 +762,8 @@ EOF
         fi
         
         # Даем панели время на запуск
-        echo -e "${YELLOW}⏳ Ожидание запуска панели (10 секунд)...${NC}"
-        sleep 10
+        echo -e "${YELLOW}⏳ Ожидание запуска панели (15 секунд)...${NC}"
+        sleep 15
         
         # Получаем cookie для авторизации
         echo -e "${YELLOW}🔐 Авторизация в панели...${NC}"
@@ -775,17 +775,36 @@ EOF
         LOGIN_URL="${XUI_URL%/}/login"
         
         echo -e "${YELLOW}Попытка авторизации: ${LOGIN_URL}${NC}"
+        echo -e "${YELLOW}Username: ${XUI_USERNAME}${NC}"
+        echo -e "${YELLOW}Password length: ${#XUI_PASSWORD}${NC}"
         
-        LOGIN_RESPONSE=$(curl -s -w "\n%{http_code}" -c "$COOKIE_FILE" -X POST "${LOGIN_URL}" \
-            -H "Content-Type: application/x-www-form-urlencoded" \
-            -H "Accept: application/json" \
-            -d "username=${XUI_USERNAME}&password=${XUI_PASSWORD}" 2>&1)
-        
-        HTTP_CODE=$(echo "$LOGIN_RESPONSE" | tail -n1)
-        RESPONSE_BODY=$(echo "$LOGIN_RESPONSE" | head -n-1)
-        
-        # Извлекаем session cookie из файла
-        COOKIE=$(grep -oP '(?<=session\s)[^\s]+' "$COOKIE_FILE" 2>/dev/null || echo "")
+        # Пробуем несколько раз с задержкой
+        for attempt in 1 2 3; do
+            echo -e "${YELLOW}Попытка ${attempt}/3...${NC}"
+            
+            LOGIN_RESPONSE=$(curl -s -w "\n%{http_code}" -c "$COOKIE_FILE" -L -X POST "${LOGIN_URL}" \
+                -H "Content-Type: application/x-www-form-urlencoded" \
+                -H "Accept: application/json, text/plain, */*" \
+                -H "User-Agent: Mozilla/5.0" \
+                -H "Origin: ${XUI_URL%/}" \
+                -H "Referer: ${XUI_URL%/}/" \
+                -d "username=${XUI_USERNAME}&password=${XUI_PASSWORD}" 2>&1)
+            
+            HTTP_CODE=$(echo "$LOGIN_RESPONSE" | tail -n1)
+            RESPONSE_BODY=$(echo "$LOGIN_RESPONSE" | head -n-1)
+            
+            # Извлекаем session cookie из файла
+            COOKIE=$(grep -oP '(?<=session\s)[^\s]+' "$COOKIE_FILE" 2>/dev/null || echo "")
+            
+            if [ -n "$COOKIE" ] || [ "$HTTP_CODE" = "200" ]; then
+                break
+            fi
+            
+            if [ $attempt -lt 3 ]; then
+                echo -e "${YELLOW}Ожидание 5 секунд перед следующей попыткой...${NC}"
+                sleep 5
+            fi
+        done
         
         # Отладочная информация
         if [ -n "$COOKIE" ]; then
@@ -793,9 +812,9 @@ EOF
             echo -e "${GREEN}✅ HTTP код: ${HTTP_CODE}${NC}"
             USE_API_TOKEN=false
         else
-            echo -e "${YELLOW}⚠ Cookie не получен${NC}"
+            echo -e "${YELLOW}⚠ Cookie не получен после 3 попыток${NC}"
             echo -e "${YELLOW}HTTP код: ${HTTP_CODE}${NC}"
-            echo -e "${YELLOW}Ответ: ${RESPONSE_BODY:0:200}${NC}"
+            echo -e "${YELLOW}Ответ: ${RESPONSE_BODY:0:300}${NC}"
             
             # Пробуем альтернативный метод - через API токен если есть
             if [ -n "$XUI_API_TOKEN" ]; then
@@ -828,9 +847,111 @@ INBOUND_EOF
         INBOUND_JSON=$(echo "$INBOUND_JSON" | sed "s/REALITY_PUBLIC_KEY_PLACEHOLDER/${REALITY_PUBLIC_KEY}/g")
         INBOUND_JSON=$(echo "$INBOUND_JSON" | sed "s/REALITY_SHORT_ID_PLACEHOLDER/${REALITY_SHORT_ID}/g")
         
-        # Пытаемся создать inbound через API
-        if [ -n "$COOKIE" ] || [ "$USE_API_TOKEN" = true ]; then
-            echo -e "${YELLOW}📤 Отправка запроса на создание inbound...${NC}"
+        # Альтернативный метод: создание inbound напрямую через SQL
+        echo -e "${YELLOW}🔧 Попытка создания inbound через SQL...${NC}"
+        
+        # Проверяем структуру таблицы inbounds
+        INBOUND_TABLE_EXISTS=$(sqlite3 /etc/x-ui/x-ui.db "SELECT name FROM sqlite_master WHERE type='table' AND name='inbounds';" 2>/dev/null)
+        
+        if [ -n "$INBOUND_TABLE_EXISTS" ]; then
+            echo -e "${GREEN}✅ Таблица inbounds найдена${NC}"
+            
+            # Получаем структуру таблицы для отладки
+            echo -e "${YELLOW}Структура таблицы:${NC}"
+            sqlite3 /etc/x-ui/x-ui.db "PRAGMA table_info(inbounds);" 2>/dev/null | head -20
+            
+            # Создаем JSON конфигурации для settings и streamSettings
+            SETTINGS_JSON='{"clients":[],"decryption":"none","fallbacks":[]}'
+            
+            STREAM_SETTINGS_JSON=$(cat <<STREAMEOF
+{
+  "network": "xhttp",
+  "security": "reality",
+  "externalProxy": [],
+  "realitySettings": {
+    "show": false,
+    "xver": 0,
+    "dest": "google.com:443",
+    "serverNames": ["google.com","www.google.com"],
+    "privateKey": "${REALITY_PRIVATE_KEY}",
+    "minClientVer": "",
+    "maxClientVer": "",
+    "maxTimediff": 0,
+    "shortIds": ["${REALITY_SHORT_ID}"],
+    "settings": {
+      "publicKey": "${REALITY_PUBLIC_KEY}",
+      "fingerprint": "chrome",
+      "serverName": "",
+      "spiderX": "/"
+    }
+  },
+  "xhttpSettings": {
+    "path": "/",
+    "host": "",
+    "headers": {},
+    "scMaxBufferedPosts": 30,
+    "scMaxEachPostBytes": "1000000",
+    "scStreamUpServerSecs": "20-80",
+    "noSSEHeader": false,
+    "xPaddingBytes": "100-1000",
+    "mode": "auto",
+    "xPaddingObfsMode": false
+  }
+}
+STREAMEOF
+)
+            
+            SNIFFING_JSON='{"enabled":true,"destOverride":["http","tls","quic","fakedns"],"metadataOnly":false,"routeOnly":false}'
+            
+            # Экранируем JSON для SQL
+            SETTINGS_JSON_ESCAPED=$(echo "$SETTINGS_JSON" | sed "s/'/''/g")
+            STREAM_SETTINGS_JSON_ESCAPED=$(echo "$STREAM_SETTINGS_JSON" | sed "s/'/''/g")
+            SNIFFING_JSON_ESCAPED=$(echo "$SNIFFING_JSON" | sed "s/'/''/g")
+            
+            # Вставляем inbound в базу данных
+            SQL_INSERT="INSERT INTO inbounds (user_id, up, down, total, remark, enable, expiry_time, listen, port, protocol, settings, stream_settings, tag, sniffing) VALUES (1, 0, 0, 0, 'VLESS-Reality-xHTTP', 1, 0, '', 443, 'vless', '${SETTINGS_JSON_ESCAPED}', '${STREAM_SETTINGS_JSON_ESCAPED}', 'inbound-443', '${SNIFFING_JSON_ESCAPED}');"
+            
+            echo -e "${YELLOW}Выполнение SQL запроса...${NC}"
+            SQL_RESULT=$(sqlite3 /etc/x-ui/x-ui.db "${SQL_INSERT}" 2>&1)
+            
+            if [ $? -eq 0 ]; then
+                # Получаем ID созданного inbound
+                INBOUND_ID=$(sqlite3 /etc/x-ui/x-ui.db "SELECT id FROM inbounds WHERE remark='VLESS-Reality-xHTTP' ORDER BY id DESC LIMIT 1;" 2>/dev/null)
+                
+                if [ -n "$INBOUND_ID" ]; then
+                    echo -e "${GREEN}✅ Inbound создан через SQL!${NC}"
+                    echo -e "${GREEN}   ID: ${INBOUND_ID}${NC}"
+                    echo -e "${GREEN}   Порт: 443${NC}"
+                    echo -e "${GREEN}   Protocol: VLESS${NC}"
+                    echo -e "${GREEN}   Network: xhttp${NC}"
+                    echo -e "${GREEN}   Security: reality${NC}"
+                    
+                    # Сохраняем ID в .env
+                    update_env_value "INBOUND_ID" "${INBOUND_ID}"
+                    
+                    # Перезапускаем панель для применения изменений
+                    echo -e "${YELLOW}🔄 Перезапуск панели для применения изменений...${NC}"
+                    systemctl restart x-ui
+                    sleep 3
+                    
+                    INBOUND_CREATED=true
+                else
+                    echo -e "${YELLOW}⚠ Inbound создан, но не удалось получить ID${NC}"
+                    INBOUND_CREATED=false
+                fi
+            else
+                echo -e "${YELLOW}⚠ Ошибка SQL: ${SQL_RESULT}${NC}"
+                echo -e "${YELLOW}Пробуем через API...${NC}"
+                INBOUND_CREATED=false
+            fi
+        else
+            echo -e "${YELLOW}⚠ Таблица inbounds не найдена, пробуем через API...${NC}"
+            INBOUND_CREATED=false
+        fi
+        
+        # Если SQL не сработал, пытаемся создать inbound через API
+        if [ "$INBOUND_CREATED" != true ] && ([ -n "$COOKIE" ] || [ "$USE_API_TOKEN" = true ]); then
+            echo -e "${YELLOW}📤 Отправка запроса на создание inbound через API...${NC}"
             
             if [ "$USE_API_TOKEN" = true ] && [ -n "$XUI_API_TOKEN" ]; then
                 # Используем API Token
