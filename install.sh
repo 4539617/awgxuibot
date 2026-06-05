@@ -603,6 +603,20 @@ ${XUI_PORT}
 ${XUI_PATH}
 EOF
     then
+        # Исправление проблемы с базой данных x-ui.db
+        echo -e "${YELLOW}🔧 Проверка базы данных...${NC}"
+        if [ -d "/etc/x-ui/x-ui.db" ]; then
+            echo -e "${YELLOW}⚠ Обнаружена проблема: x-ui.db создана как директория${NC}"
+            echo -e "${YELLOW}🔧 Исправление...${NC}"
+            systemctl stop x-ui
+            rm -rf /etc/x-ui/x-ui.db
+            touch /etc/x-ui/x-ui.db
+            chmod 644 /etc/x-ui/x-ui.db
+            systemctl start x-ui
+            sleep 2
+            echo -e "${GREEN}✅ База данных исправлена${NC}"
+        fi
+        
         # Генерация Reality ключей
         echo -e "${YELLOW}🔑 Генерация Reality ключей...${NC}"
         
