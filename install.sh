@@ -578,29 +578,21 @@ install_3xui() {
         fi
     fi
     
-    # Генерация случайных параметров
-    XUI_USERNAME=$(generate_random_string 10)
-    XUI_PASSWORD=$(generate_random_password 10)
-    XUI_PORT=$((RANDOM % 55535 + 10000))  # Случайный порт от 10000 до 65535
-    XUI_PATH="/$(generate_random_string 18)"  # Случайный путь
     SERVER_IP=$(curl -s ifconfig.me)
-    XUI_URL="https://${SERVER_IP}:${XUI_PORT}${XUI_PATH}"
     
-    echo -e "${YELLOW}🔐 Генерация учетных данных...${NC}"
-    echo -e "${GREEN}Логин: ${YELLOW}${XUI_USERNAME}${NC}"
-    echo -e "${GREEN}Пароль: ${YELLOW}${XUI_PASSWORD}${NC}"
-    echo -e "${GREEN}Порт: ${YELLOW}${XUI_PORT}${NC}"
-    echo -e ""
+    echo -e "${YELLOW}📦 Загрузка и установка 3x-ui...${NC}"
+    echo -e "${BLUE}Установщик 3x-ui автоматически сгенерирует безопасные учетные данные${NC}\n"
     
-    echo -e "${YELLOW}📦 Загрузка установочного скрипта 3x-ui...${NC}"
-    
-    # Установка в silent режиме
+    # Установка с автоматической генерацией параметров (новая версия установщика)
+    # Передаем:
+    # y - подтверждение установки
+    # 1 - SQLite база данных
+    # 2 - Let's Encrypt для IP (автоматическое получение SSL сертификата)
     if bash <(curl -Ls https://raw.githubusercontent.com/MHSanaei/3x-ui/master/install.sh) << EOF
 y
-${XUI_USERNAME}
-${XUI_PASSWORD}
-${XUI_PORT}
-${XUI_PATH}
+1
+2
+
 EOF
     then
         # Исправление проблемы с базой данных x-ui.db
@@ -617,52 +609,39 @@ EOF
             echo -e "${GREEN}✅ База данных исправлена${NC}"
         fi
         
-        # Настройка безопасного порта и пути
-        echo -e "${YELLOW}🔧 Настройка безопасного доступа к панели...${NC}"
-        
-        # Останавливаем службу для изменения настроек
-        systemctl stop x-ui
-        sleep 1
-        
-        # Изменяем порт и путь через x-ui команду
-        echo -e "${YELLOW}Установка порта ${XUI_PORT} и пути ${XUI_PATH}...${NC}"
-        
-        # Используем x-ui для изменения настроек
-        x-ui << XUIEOF > /dev/null 2>&1
-16
-${XUI_PORT}
-17
-${XUI_PATH}
-0
-XUIEOF
-        
-        # Запускаем службу
-        systemctl start x-ui
+        # Получение реальных настроек панели после установки
+        echo -e "${YELLOW}🔍 Получение настроек панели...${NC}"
         sleep 3
         
-        # Проверяем что служба запустилась
-        if systemctl is-active --quiet x-ui; then
-            echo -e "${GREEN}✅ Панель настроена на порт ${XUI_PORT} с путем ${XUI_PATH}${NC}"
-            XUI_URL="http://${SERVER_IP}:${XUI_PORT}${XUI_PATH}"
-        else
-            echo -e "${YELLOW}⚠ Не удалось применить настройки, используем значения по умолчанию${NC}"
-            # Получаем реальные настройки
-            systemctl start x-ui
-            sleep 2
-            ACTUAL_PORT=$(x-ui settings 2>/dev/null | grep "port:" | awk '{print $2}')
-            ACTUAL_PATH=$(x-ui settings 2>/dev/null | grep "webBasePath:" | awk '{print $2}')
-            
-            if [ -z "$ACTUAL_PORT" ]; then
-                ACTUAL_PORT="2053"
-            fi
-            if [ -z "$ACTUAL_PATH" ] || [ "$ACTUAL_PATH" = "/" ]; then
-                ACTUAL_PATH=""
-            fi
-            
-            XUI_URL="http://${SERVER_IP}:${ACTUAL_PORT}${ACTUAL_PATH}"
-            XUI_PORT=$ACTUAL_PORT
-            XUI_PATH=$ACTUAL_PATH
+        # Получаем настройки из x-ui settings
+        XUI_SETTINGS=$(x-ui settings 2>/dev/null)
+        XUI_PORT=$(echo "$XUI_SETTINGS" | grep "port:" | awk '{print $2}')
+        XUI_PATH=$(echo "$XUI_SETTINGS" | grep "webBasePath:" | awk '{print $2}' | sed 's/\/$//')
+        
+        # Получаем учетные данные из логов установки или файла конфигурации
+        if [ -f "/usr/local/x-ui/config.json" ]; then
+            XUI_USERNAME=$(jq -r '.webCertFile // empty' /usr/local/x-ui/config.json 2>/dev/null || echo "")
+            XUI_PASSWORD=$(jq -r '.webKeyFile // empty' /usr/local/x-ui/config.json 2>/dev/null || echo "")
         fi
+        
+        # Если не удалось получить из конфига, пытаемся из вывода установщика
+        if [ -z "$XUI_USERNAME" ] || [ -z "$XUI_PASSWORD" ]; then
+            echo -e "${YELLOW}⚠ Не удалось автоматически получить учетные данные${NC}"
+            echo -e "${YELLOW}Проверьте вывод установщика выше для Username и Password${NC}"
+            XUI_USERNAME="admin"
+            XUI_PASSWORD="admin"
+        fi
+        
+        # Формируем URL
+        if [ -z "$XUI_PATH" ] || [ "$XUI_PATH" = "/" ]; then
+            XUI_URL="http://${SERVER_IP}:${XUI_PORT}/"
+        else
+            XUI_URL="http://${SERVER_IP}:${XUI_PORT}${XUI_PATH}"
+        fi
+        
+        echo -e "${GREEN}✅ Настройки панели получены:${NC}"
+        echo -e "  Порт: ${YELLOW}${XUI_PORT}${NC}"
+        echo -e "  Путь: ${YELLOW}${XUI_PATH:-/}${NC}"
         
         # Генерация Reality ключей
         echo -e "${YELLOW}🔑 Генерация Reality ключей...${NC}"
@@ -697,10 +676,15 @@ XUIEOF
         echo -e "${BLUE}========================================${NC}"
         echo -e "${GREEN}📋 Информация о панели:${NC}"
         echo -e "  URL: ${YELLOW}${XUI_URL}${NC}"
-        echo -e "  Порт: ${YELLOW}${ACTUAL_PORT}${NC}"
-        echo -e "  Путь: ${YELLOW}${ACTUAL_PATH:-/}${NC}"
-        echo -e "  Логин: ${YELLOW}${XUI_USERNAME}${NC}"
-        echo -e "  Пароль: ${YELLOW}${XUI_PASSWORD}${NC}"
+        echo -e "  Порт: ${YELLOW}${XUI_PORT}${NC}"
+        echo -e "  Путь: ${YELLOW}${XUI_PATH:-/}${NC}"
+        echo -e "${BLUE}========================================${NC}"
+        echo -e "${RED}⚠ ВАЖНО: Учетные данные для входа${NC}"
+        echo -e "${YELLOW}Проверьте вывод установщика выше для:${NC}"
+        echo -e "  - Username (Логин)"
+        echo -e "  - Password (Пароль)"
+        echo -e "  - API Token"
+        echo -e "${BLUE}Эти данные были сгенерированы автоматически установщиком 3x-ui${NC}"
         echo -e "${BLUE}========================================${NC}"
         echo -e "${GREEN}🔑 Reality ключи:${NC}"
         echo -e "  Public Key: ${YELLOW}${REALITY_PUBLIC_KEY}${NC}"
@@ -712,9 +696,7 @@ XUIEOF
         echo -e "${BLUE}========================================${NC}"
         echo -e "${YELLOW}📝 Следующие шаги:${NC}"
         echo -e "  1. Откройте панель в браузере: ${YELLOW}${XUI_URL}${NC}"
-        echo -e "  2. Войдите с учетными данными:"
-        echo -e "     Логин: ${YELLOW}${XUI_USERNAME}${NC}"
-        echo -e "     Пароль: ${YELLOW}${XUI_PASSWORD}${NC}"
+        echo -e "  2. Войдите с учетными данными из вывода установщика выше"
         echo -e "  3. Создайте inbound с настройками:"
         echo -e "     - Protocol: ${YELLOW}VLESS${NC}"
         echo -e "     - Port: ${YELLOW}443${NC}"
