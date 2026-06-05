@@ -501,8 +501,13 @@ show_xuibot_logs() {
     echo -e "${BLUE}   Логи XUI Бота${NC}"
     echo -e "${BLUE}========================================${NC}\n"
     
+    if ! docker ps --filter name=xuibot --format "{{.Names}}" | grep -q xuibot; then
+        echo -e "${RED}❌ Контейнер xuibot не запущен${NC}"
+        return
+    fi
+    
     echo -e "${YELLOW}📋 Логи XUI бота (последние 50 строк):${NC}"
-    docker logs --tail=50 xuibot 2>/dev/null || echo -e "${RED}Контейнер xuibot не запущен${NC}"
+    docker logs --tail=50 xuibot 2>&1
     
     echo -e "\n${YELLOW}Для просмотра в реальном времени:${NC}"
     echo -e "${BLUE}docker logs -f xuibot${NC}"
@@ -645,8 +650,13 @@ show_awgbot_logs() {
     echo -e "${BLUE}   Логи AWG Бота${NC}"
     echo -e "${BLUE}========================================${NC}\n"
     
+    if ! docker ps --filter name=awgbot --format "{{.Names}}" | grep -q awgbot; then
+        echo -e "${RED}❌ Контейнер awgbot не запущен${NC}"
+        return
+    fi
+    
     echo -e "${YELLOW}📋 Логи AWG бота (последние 50 строк):${NC}"
-    docker logs --tail=50 awgbot 2>/dev/null || echo -e "${RED}Контейнер awgbot не запущен${NC}"
+    docker logs --tail=50 awgbot 2>&1
     
     echo -e "\n${YELLOW}Для просмотра в реальном времени:${NC}"
     echo -e "${BLUE}docker logs -f awgbot${NC}"
