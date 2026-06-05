@@ -453,10 +453,12 @@ install_xuibot() {
         update_env_value "ADMIN_IDS" "$admin_ids"
     fi
     
-    # Остановка старого контейнера
-    echo -e "\n${YELLOW}🛑 Остановка старого контейнера XUI бота...${NC}"
+    # Остановка старых контейнеров
+    echo -e "\n${YELLOW}🛑 Остановка старых контейнеров...${NC}"
     docker stop xuibot 2>/dev/null || true
     docker rm xuibot 2>/dev/null || true
+    docker stop netcrazybot 2>/dev/null || true
+    docker rm netcrazybot 2>/dev/null || true
     
     # Запуск только XUI бота
     echo -e "\n${YELLOW}🐳 Сборка и запуск XUI бота...${NC}"
@@ -595,10 +597,12 @@ install_awgbot() {
         update_env_value "ADMIN_IDS" "$admin_ids"
     fi
     
-    # Остановка старого контейнера
-    echo -e "\n${YELLOW}🛑 Остановка старого контейнера AWG бота...${NC}"
+    # Остановка старых контейнеров
+    echo -e "\n${YELLOW}🛑 Остановка старых контейнеров...${NC}"
     docker stop awgbot 2>/dev/null || true
     docker rm awgbot 2>/dev/null || true
+    docker stop netcrazybot 2>/dev/null || true
+    docker rm netcrazybot 2>/dev/null || true
     
     # Запуск только AWG бота
     echo -e "\n${YELLOW}🐳 Сборка и запуск AWG бота...${NC}"
