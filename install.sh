@@ -617,6 +617,53 @@ EOF
             echo -e "${GREEN}✅ База данных исправлена${NC}"
         fi
         
+        # Настройка безопасного порта и пути
+        echo -e "${YELLOW}🔧 Настройка безопасного доступа к панели...${NC}"
+        
+        # Останавливаем службу для изменения настроек
+        systemctl stop x-ui
+        sleep 1
+        
+        # Изменяем порт и путь через x-ui команду
+        echo -e "${YELLOW}Установка порта ${XUI_PORT} и пути ${XUI_PATH}...${NC}"
+        
+        # Используем x-ui для изменения настроек
+        x-ui << XUIEOF > /dev/null 2>&1
+16
+${XUI_PORT}
+17
+${XUI_PATH}
+0
+XUIEOF
+        
+        # Запускаем службу
+        systemctl start x-ui
+        sleep 3
+        
+        # Проверяем что служба запустилась
+        if systemctl is-active --quiet x-ui; then
+            echo -e "${GREEN}✅ Панель настроена на порт ${XUI_PORT} с путем ${XUI_PATH}${NC}"
+            XUI_URL="http://${SERVER_IP}:${XUI_PORT}${XUI_PATH}"
+        else
+            echo -e "${YELLOW}⚠ Не удалось применить настройки, используем значения по умолчанию${NC}"
+            # Получаем реальные настройки
+            systemctl start x-ui
+            sleep 2
+            ACTUAL_PORT=$(x-ui settings 2>/dev/null | grep "port:" | awk '{print $2}')
+            ACTUAL_PATH=$(x-ui settings 2>/dev/null | grep "webBasePath:" | awk '{print $2}')
+            
+            if [ -z "$ACTUAL_PORT" ]; then
+                ACTUAL_PORT="2053"
+            fi
+            if [ -z "$ACTUAL_PATH" ] || [ "$ACTUAL_PATH" = "/" ]; then
+                ACTUAL_PATH=""
+            fi
+            
+            XUI_URL="http://${SERVER_IP}:${ACTUAL_PORT}${ACTUAL_PATH}"
+            XUI_PORT=$ACTUAL_PORT
+            XUI_PATH=$ACTUAL_PATH
+        fi
+        
         # Генерация Reality ключей
         echo -e "${YELLOW}🔑 Генерация Reality ключей...${NC}"
         
@@ -650,6 +697,8 @@ EOF
         echo -e "${BLUE}========================================${NC}"
         echo -e "${GREEN}📋 Информация о панели:${NC}"
         echo -e "  URL: ${YELLOW}${XUI_URL}${NC}"
+        echo -e "  Порт: ${YELLOW}${ACTUAL_PORT}${NC}"
+        echo -e "  Путь: ${YELLOW}${ACTUAL_PATH:-/}${NC}"
         echo -e "  Логин: ${YELLOW}${XUI_USERNAME}${NC}"
         echo -e "  Пароль: ${YELLOW}${XUI_PASSWORD}${NC}"
         echo -e "${BLUE}========================================${NC}"
@@ -662,8 +711,10 @@ EOF
         echo -e "  ${YELLOW}${WORK_DIR}/.env${NC}"
         echo -e "${BLUE}========================================${NC}"
         echo -e "${YELLOW}📝 Следующие шаги:${NC}"
-        echo -e "  1. Откройте панель: ${YELLOW}${XUI_URL}${NC}"
-        echo -e "  2. Войдите с указанными выше учетными данными"
+        echo -e "  1. Откройте панель в браузере: ${YELLOW}${XUI_URL}${NC}"
+        echo -e "  2. Войдите с учетными данными:"
+        echo -e "     Логин: ${YELLOW}${XUI_USERNAME}${NC}"
+        echo -e "     Пароль: ${YELLOW}${XUI_PASSWORD}${NC}"
         echo -e "  3. Создайте inbound с настройками:"
         echo -e "     - Protocol: ${YELLOW}VLESS${NC}"
         echo -e "     - Port: ${YELLOW}443${NC}"
