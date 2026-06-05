@@ -771,8 +771,8 @@ EOF
         COOKIE_FILE=$(mktemp)
         
         # Пробуем авторизоваться (3x-ui использует form-urlencoded)
-        # URL уже содержит путь
-        LOGIN_URL="${XUI_URL%/}"
+        # URL уже содержит путь, добавляем /login к нему
+        LOGIN_URL="${XUI_URL%/}/login"
         
         echo -e "${YELLOW}Попытка авторизации: ${LOGIN_URL}${NC}"
         echo -e "${YELLOW}Username: ${XUI_USERNAME}${NC}"
@@ -856,9 +856,8 @@ INBOUND_EOF
         if [ -n "$INBOUND_TABLE_EXISTS" ]; then
             echo -e "${GREEN}✅ Таблица inbounds найдена${NC}"
             
-            # Получаем структуру таблицы для отладки
-            echo -e "${YELLOW}Структура таблицы:${NC}"
-            sqlite3 /etc/x-ui/x-ui.db "PRAGMA table_info(inbounds);" 2>/dev/null | head -20
+            # Проверяем структуру таблицы (скрыто от пользователя)
+            # sqlite3 /etc/x-ui/x-ui.db "PRAGMA table_info(inbounds);" 2>/dev/null > /dev/null
             
             # Создаем JSON конфигурации для settings и streamSettings
             SETTINGS_JSON='{"clients":[],"decryption":"none","fallbacks":[]}'
@@ -1081,6 +1080,17 @@ STREAMEOF
         fi
         echo -e "${BLUE}========================================${NC}"
         echo -e "${RED}⚠ ВАЖНО: Сохраните эти данные в надежном месте!${NC}"
+        echo -e "${BLUE}========================================${NC}"
+        
+        echo -e "\n${BLUE}========================================${NC}"
+        echo -e "${GREEN}   ВАШИ ДАННЫЕ ДЛЯ ВХОДА${NC}"
+        echo -e "${BLUE}========================================${NC}"
+        echo -e "${GREEN}URL панели:${NC} ${YELLOW}${XUI_URL}${NC}"
+        echo -e "${GREEN}Username:${NC}   ${YELLOW}${XUI_USERNAME}${NC}"
+        echo -e "${GREEN}Password:${NC}   ${YELLOW}${XUI_PASSWORD}${NC}"
+        echo -e "${BLUE}========================================${NC}"
+        echo -e "${YELLOW}💾 Также эти данные сохранены в:${NC}"
+        echo -e "   ${YELLOW}${WORK_DIR}/.env${NC}"
         echo -e "${BLUE}========================================${NC}"
         
         echo -e "\n${GREEN}✅ Установка 3x-ui панели завершена!${NC}"
