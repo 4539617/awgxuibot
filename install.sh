@@ -623,11 +623,14 @@ EOF
             XUI_PATH=$(echo "$INSTALL_OUTPUT" | grep "WebBasePath:" | awk '{print $2}' | head -1)
         fi
         
-        echo -e "\n${GREEN}✅ Учетные данные извлечены из вывода установщика:${NC}"
-        echo -e "  Username: ${YELLOW}${XUI_USERNAME}${NC}"
-        echo -e "  Password: ${YELLOW}${XUI_PASSWORD}${NC}"
-        echo -e "  Port: ${YELLOW}${XUI_PORT}${NC}"
-        echo -e "  Path: ${YELLOW}${XUI_PATH}${NC}"
+        # Выводим только если данные были извлечены
+        if [ -n "$XUI_USERNAME" ] && [ -n "$XUI_PASSWORD" ]; then
+            echo -e "\n${GREEN}✅ Учетные данные извлечены из вывода установщика:${NC}"
+            echo -e "  Username: ${YELLOW}${XUI_USERNAME}${NC}"
+            echo -e "  Password: ${YELLOW}${XUI_PASSWORD}${NC}"
+            echo -e "  Port: ${YELLOW}${XUI_PORT}${NC}"
+            echo -e "  Path: ${YELLOW}${XUI_PATH}${NC}"
+        fi
         # Исправление проблемы с базой данных x-ui.db
         echo -e "${YELLOW}🔧 Проверка базы данных...${NC}"
         if [ -d "/etc/x-ui/x-ui.db" ]; then
@@ -644,7 +647,13 @@ EOF
         
         # Если учетные данные не были извлечены из вывода установщика
         if [ -z "$XUI_USERNAME" ] || [ -z "$XUI_PASSWORD" ] || [ -z "$XUI_PORT" ] || [ -z "$XUI_PATH" ]; then
-            echo -e "${YELLOW}⚠ Не все данные извлечены из вывода, получаем дополнительно...${NC}"
+            echo -e "${YELLOW}🔍 Получение данных из системы...${NC}"
+            
+            # Устанавливаем sqlite3 если не установлен
+            if ! command -v sqlite3 &> /dev/null; then
+                echo -e "${YELLOW}📦 Установка sqlite3...${NC}"
+                apt-get update -qq && apt-get install -y sqlite3 -qq > /dev/null 2>&1
+            fi
             
             # Получаем настройки из x-ui settings
             sleep 2
@@ -660,20 +669,30 @@ EOF
             fi
             
             # Получаем учетные данные из базы данных
-            if [ -f "/etc/x-ui/x-ui.db" ] && command -v sqlite3 &> /dev/null; then
+            if [ -f "/etc/x-ui/x-ui.db" ]; then
+                echo -e "${YELLOW}🔐 Получение учетных данных из базы данных...${NC}"
                 if [ -z "$XUI_USERNAME" ]; then
                     XUI_USERNAME=$(sqlite3 /etc/x-ui/x-ui.db "SELECT username FROM users LIMIT 1;" 2>/dev/null || echo "")
                 fi
                 if [ -z "$XUI_PASSWORD" ]; then
                     XUI_PASSWORD=$(sqlite3 /etc/x-ui/x-ui.db "SELECT password FROM users LIMIT 1;" 2>/dev/null || echo "")
                 fi
+                
+                if [ -n "$XUI_USERNAME" ] && [ -n "$XUI_PASSWORD" ]; then
+                    echo -e "${GREEN}✅ Учетные данные получены из базы данных:${NC}"
+                    echo -e "  Username: ${YELLOW}${XUI_USERNAME}${NC}"
+                    echo -e "  Password: ${YELLOW}${XUI_PASSWORD}${NC}"
+                fi
             fi
             
             # Fallback на дефолтные значения
             if [ -z "$XUI_USERNAME" ]; then
+                echo -e "${YELLOW}⚠ Не удалось получить username, используем: admin${NC}"
                 XUI_USERNAME="admin"
             fi
             if [ -z "$XUI_PASSWORD" ]; then
+                echo -e "${YELLOW}⚠ Не удалось получить password, используем: admin${NC}"
+                echo -e "${RED}⚠ ВАЖНО: Измените пароль через x-ui (опция 7)!${NC}"
                 XUI_PASSWORD="admin"
             fi
             if [ -z "$XUI_PORT" ]; then
@@ -683,6 +702,10 @@ EOF
                 XUI_PATH="/"
             fi
         fi
+        
+        echo -e "${GREEN}✅ Настройки панели получены:${NC}"
+        echo -e "  Порт: ${YELLOW}${XUI_PORT}${NC}"
+        echo -e "  Путь: ${YELLOW}${XUI_PATH}${NC}"
         
         # Формируем URL
         if [ -z "$XUI_PATH" ] || [ "$XUI_PATH" = "/" ]; then
