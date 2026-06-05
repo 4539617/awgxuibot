@@ -153,7 +153,7 @@ create_static_params() {
 # Функция интерактивного ввода секретных параметров
 interactive_setup() {
     echo -e "\n${BLUE}========================================${NC}"
-    echo -e "${BLUE}   Настройка Секретных Параметров${NC}"
+    echo -e "${BLUE}   Настройка Параметров Бота${NC}"
     echo -e "${BLUE}========================================${NC}\n"
     
     create_env_if_not_exists
@@ -161,13 +161,15 @@ interactive_setup() {
     # Создаем статические параметры
     create_static_params
     
-    # ==================== Telegram Bot (Объединенный) ====================
-    echo -e "\n${GREEN}📱 Настройка Telegram Bot${NC}"
-    echo -e "${BLUE}Один токен используется для обоих ботов (NetCrazyBot + XUIBot)${NC}\n"
+    # Получаем IP сервера
+    SERVER_IP=$(curl -s ifconfig.me)
+    
+    # ==================== Telegram Bot ====================
+    echo -e "\n${GREEN}📱 Настройка Telegram Bot${NC}\n"
     
     TELEGRAM_BOT_TOKEN=$(get_env_value "TELEGRAM_BOT_TOKEN")
     if [ -z "$TELEGRAM_BOT_TOKEN" ]; then
-        read -p "Введите TELEGRAM_BOT_TOKEN (токен Telegram бота): " TELEGRAM_BOT_TOKEN
+        read -p "Введите TELEGRAM_BOT_TOKEN: " TELEGRAM_BOT_TOKEN
         update_env_value "TELEGRAM_BOT_TOKEN" "$TELEGRAM_BOT_TOKEN"
     else
         echo -e "TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:0:10}... ${GREEN}✓${NC}"
@@ -181,115 +183,42 @@ interactive_setup() {
         echo -e "ADMIN_IDS: $ADMIN_IDS ${GREEN}✓${NC}"
     fi
     
-    # ==================== 3x-ui Panel ====================
-    echo -e "\n${GREEN}🌐 Настройка 3x-ui Panel${NC}\n"
+    # ==================== Автоматическое заполнение ====================
+    echo -e "\n${GREEN}🔧 Автоматическое заполнение параметров...${NC}\n"
     
+    # IP сервера
+    update_env_value "SERVER_ADDRESS" "$SERVER_IP"
+    update_env_value "SERVER_IP" "$SERVER_IP"
+    echo -e "SERVER_ADDRESS: $SERVER_IP ${GREEN}✓${NC}"
+    echo -e "SERVER_IP: $SERVER_IP ${GREEN}✓${NC}"
+    
+    # ==================== Проверка данных 3x-ui ====================
     XUI_URL=$(get_env_value "XUI_URL")
-    if [ -z "$XUI_URL" ]; then
-        echo -e "${YELLOW}⚠ Данные 3x-ui панели не найдены${NC}"
-        echo -e "${BLUE}Установите 3x-ui панель (пункт 5) или введите данные вручную${NC}"
-        read -p "Введите XUI_URL (адрес панели 3x-ui): " XUI_URL
-        update_env_value "XUI_URL" "$XUI_URL"
-    else
-        echo -e "XUI_URL: $XUI_URL ${GREEN}✓ (из установки 3x-ui)${NC}"
-    fi
-    
     XUI_USERNAME=$(get_env_value "XUI_USERNAME")
-    if [ -z "$XUI_USERNAME" ]; then
-        read -p "Введите XUI_USERNAME (логин панели): " XUI_USERNAME
-        update_env_value "XUI_USERNAME" "$XUI_USERNAME"
-    else
-        echo -e "XUI_USERNAME: $XUI_USERNAME ${GREEN}✓ (из установки 3x-ui)${NC}"
-    fi
-    
     XUI_PASSWORD=$(get_env_value "XUI_PASSWORD")
-    if [ -z "$XUI_PASSWORD" ]; then
-        read -p "Введите XUI_PASSWORD (пароль панели): " XUI_PASSWORD
-        update_env_value "XUI_PASSWORD" "$XUI_PASSWORD"
-    else
-        echo -e "XUI_PASSWORD: ******** ${GREEN}✓ (из установки 3x-ui)${NC}"
+    REALITY_PUBLIC_KEY=$(get_env_value "REALITY_PUBLIC_KEY")
+    REALITY_SHORT_ID=$(get_env_value "REALITY_SHORT_ID")
+    
+    if [ -z "$XUI_URL" ] || [ -z "$REALITY_PUBLIC_KEY" ]; then
+        echo -e "\n${RED}❌ Данные 3x-ui панели не найдены!${NC}"
+        echo -e "${YELLOW}Сначала установите 3x-ui панель (пункт 5 в меню)${NC}"
+        return 1
     fi
     
-    INBOUND_ID=$(get_env_value "INBOUND_ID")
-    if [ -z "$INBOUND_ID" ]; then
-        read -p "Введите INBOUND_ID (ID inbound, по умолчанию 1): " INBOUND_ID
-        INBOUND_ID=${INBOUND_ID:-1}
-        update_env_value "INBOUND_ID" "$INBOUND_ID"
-    else
-        echo -e "INBOUND_ID: $INBOUND_ID ${GREEN}✓${NC}"
-    fi
+    echo -e "XUI_URL: $XUI_URL ${GREEN}✓${NC}"
+    echo -e "XUI_USERNAME: $XUI_USERNAME ${GREEN}✓${NC}"
+    echo -e "XUI_PASSWORD: ******** ${GREEN}✓${NC}"
+    echo -e "REALITY_PUBLIC_KEY: ${REALITY_PUBLIC_KEY:0:20}... ${GREEN}✓${NC}"
+    echo -e "REALITY_SHORT_ID: $REALITY_SHORT_ID ${GREEN}✓${NC}"
     
-    # ==================== VPN Server ====================
-    echo -e "\n${GREEN}🖥️  Настройка VPN Server${NC}\n"
+    # Устанавливаем фиксированные значения
+    update_env_value "TRANSPORT" "xhttp"
+    update_env_value "SECURITY" "reality"
+    update_env_value "INBOUND_ID" "1"
     
-    SERVER_ADDRESS=$(get_env_value "SERVER_ADDRESS")
-    if [ -z "$SERVER_ADDRESS" ]; then
-        read -p "Введите SERVER_ADDRESS (если вы используете Transport=TCP): " SERVER_ADDRESS
-        update_env_value "SERVER_ADDRESS" "$SERVER_ADDRESS"
-    else
-        echo -e "SERVER_ADDRESS: $SERVER_ADDRESS ${GREEN}✓${NC}"
-    fi
-    
-    SERVER_IP=$(get_env_value "SERVER_IP")
-    if [ -z "$SERVER_IP" ]; then
-        read -p "Введите SERVER_IP (IP сервера, по умолчанию = SERVER_ADDRESS): " SERVER_IP
-        SERVER_IP=${SERVER_IP:-$SERVER_ADDRESS}
-        update_env_value "SERVER_IP" "$SERVER_IP"
-    else
-        echo -e "SERVER_IP: $SERVER_IP ${GREEN}✓${NC}"
-    fi
-    
-    # ==================== Транспорт и безопасность ====================
-    echo -e "\n${GREEN}🔐 Настройка Транспорта и Безопасности${NC}\n"
-    
-    TRANSPORT=$(get_env_value "TRANSPORT")
-    if [ -z "$TRANSPORT" ]; then
-        read -p "Введите TRANSPORT (tcp/xhttp, по умолчанию xhttp): " TRANSPORT
-        TRANSPORT=${TRANSPORT:-xhttp}
-        update_env_value "TRANSPORT" "$TRANSPORT"
-    else
-        echo -e "TRANSPORT: $TRANSPORT ${GREEN}✓${NC}"
-    fi
-    
-    SECURITY=$(get_env_value "SECURITY")
-    if [ -z "$SECURITY" ]; then
-        read -p "Введите SECURITY (tls/reality, по умолчанию reality): " SECURITY
-        SECURITY=${SECURITY:-reality}
-        update_env_value "SECURITY" "$SECURITY"
-    else
-        echo -e "SECURITY: $SECURITY ${GREEN}✓${NC}"
-    fi
-    
-    # ==================== TLS или Reality ====================
-    if [ "$SECURITY" = "tls" ]; then
-        echo -e "\n${GREEN}🔑 Настройка TLS${NC}\n"
-        
-        TLS_SNI=$(get_env_value "TLS_SNI")
-        if [ -z "$TLS_SNI" ]; then
-            read -p "Введите TLS_SNI (домен или IP): " TLS_SNI
-            update_env_value "TLS_SNI" "$TLS_SNI"
-        else
-            echo -e "TLS_SNI: $TLS_SNI ${GREEN}✓${NC}"
-        fi
-    elif [ "$SECURITY" = "reality" ]; then
-        echo -e "\n${GREEN}🔑 Настройка Reality${NC}\n"
-        
-        REALITY_PUBLIC_KEY=$(get_env_value "REALITY_PUBLIC_KEY")
-        if [ -z "$REALITY_PUBLIC_KEY" ]; then
-            read -p "Введите REALITY_PUBLIC_KEY: " REALITY_PUBLIC_KEY
-            update_env_value "REALITY_PUBLIC_KEY" "$REALITY_PUBLIC_KEY"
-        else
-            echo -e "REALITY_PUBLIC_KEY: ${REALITY_PUBLIC_KEY:0:20}... ${GREEN}✓${NC}"
-        fi
-        
-        REALITY_SHORT_ID=$(get_env_value "REALITY_SHORT_ID")
-        if [ -z "$REALITY_SHORT_ID" ]; then
-            read -p "Введите REALITY_SHORT_ID: " REALITY_SHORT_ID
-            update_env_value "REALITY_SHORT_ID" "$REALITY_SHORT_ID"
-        else
-            echo -e "REALITY_SHORT_ID: $REALITY_SHORT_ID ${GREEN}✓${NC}"
-        fi
-    fi
+    echo -e "\nTRANSPORT: xhttp ${GREEN}✓${NC}"
+    echo -e "SECURITY: reality ${GREEN}✓${NC}"
+    echo -e "INBOUND_ID: 1 ${GREEN}✓${NC}"
     
     echo -e "\n${GREEN}✅ Все параметры настроены!${NC}"
 }
@@ -603,6 +532,85 @@ ${XUI_PORT}
 ${XUI_PATH}
 EOF
     then
+        # Ожидание запуска панели
+        echo -e "${YELLOW}⏳ Ожидание запуска панели...${NC}"
+        sleep 5
+        
+        # Генерация Reality ключей
+        echo -e "${YELLOW}🔑 Генерация Reality ключей...${NC}"
+        
+        # Установка xray если не установлен
+        if ! command -v xray &> /dev/null; then
+            echo -e "${YELLOW}📦 Установка xray...${NC}"
+            bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
+        fi
+        
+        # Генерация ключей Reality
+        REALITY_KEYS=$(xray x25519)
+        REALITY_PRIVATE_KEY=$(echo "$REALITY_KEYS" | grep "Private key:" | awk '{print $3}')
+        REALITY_PUBLIC_KEY=$(echo "$REALITY_KEYS" | grep "Public key:" | awk '{print $3}')
+        
+        # Генерация Short IDs
+        REALITY_SHORT_ID=$(openssl rand -hex 8)
+        
+        # Генерация mldsa65 ключей
+        echo -e "${YELLOW}🔑 Генерация mldsa65 ключей...${NC}"
+        MLDSA65_SEED=$(openssl rand -base64 32)
+        MLDSA65_VERIFY=$(openssl rand -base64 32)
+        
+        # Создание inbound через API
+        echo -e "${YELLOW}🔧 Создание inbound xhttp + reality...${NC}"
+        
+        # Получение cookie для авторизации
+        COOKIE=$(curl -s -X POST "http://localhost:${XUI_PORT}/login" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            -d "username=${XUI_USERNAME}&password=${XUI_PASSWORD}" \
+            -c - | grep "session" | awk '{print $7}')
+        
+        # Создание inbound
+        INBOUND_JSON=$(cat <<EOF
+{
+  "enable": true,
+  "port": 443,
+  "protocol": "vless",
+  "settings": {
+    "clients": [],
+    "decryption": "none",
+    "fallbacks": []
+  },
+  "streamSettings": {
+    "network": "xhttp",
+    "security": "reality",
+    "realitySettings": {
+      "show": false,
+      "dest": "google.com:443",
+      "xver": 0,
+      "serverNames": ["google.com", "www.google.com"],
+      "privateKey": "${REALITY_PRIVATE_KEY}",
+      "shortIds": ["${REALITY_SHORT_ID}"],
+      "mldsa65Seed": "${MLDSA65_SEED}",
+      "mldsa65Verify": "${MLDSA65_VERIFY}"
+    },
+    "xhttpSettings": {
+      "mode": "auto"
+    }
+  },
+  "sniffing": {
+    "enabled": true,
+    "destOverride": ["http", "tls"]
+  },
+  "remark": "xhttp-reality-auto"
+}
+EOF
+)
+        
+        curl -s -X POST "http://localhost:${XUI_PORT}/panel/api/inbounds/add" \
+            -H "Content-Type: application/json" \
+            -H "Cookie: session=${COOKIE}" \
+            -d "${INBOUND_JSON}" > /dev/null
+        
+        echo -e "${GREEN}✅ Inbound создан успешно!${NC}"
+        
         # Создание .env файла с учетными данными 3x-ui
         create_env_if_not_exists
         
@@ -610,6 +618,8 @@ EOF
         update_env_value "XUI_URL" "${XUI_URL}"
         update_env_value "XUI_USERNAME" "${XUI_USERNAME}"
         update_env_value "XUI_PASSWORD" "${XUI_PASSWORD}"
+        update_env_value "REALITY_PUBLIC_KEY" "${REALITY_PUBLIC_KEY}"
+        update_env_value "REALITY_SHORT_ID" "${REALITY_SHORT_ID}"
         
         echo -e "\n${GREEN}✅ 3x-ui панель успешно установлена!${NC}"
         echo -e "${BLUE}========================================${NC}"
@@ -618,7 +628,11 @@ EOF
         echo -e "  Логин: ${YELLOW}${XUI_USERNAME}${NC}"
         echo -e "  Пароль: ${YELLOW}${XUI_PASSWORD}${NC}"
         echo -e "${BLUE}========================================${NC}"
-        echo -e "${GREEN}💾 Учетные данные сохранены в:${NC}"
+        echo -e "${GREEN}🔑 Reality ключи:${NC}"
+        echo -e "  Public Key: ${YELLOW}${REALITY_PUBLIC_KEY}${NC}"
+        echo -e "  Short ID: ${YELLOW}${REALITY_SHORT_ID}${NC}"
+        echo -e "${BLUE}========================================${NC}"
+        echo -e "${GREEN}💾 Все данные сохранены в:${NC}"
         echo -e "  ${YELLOW}${WORK_DIR}/.env${NC}"
         echo -e "${RED}⚠ ВАЖНО: Сохраните эти данные в надежном месте!${NC}"
         echo -e "${BLUE}========================================${NC}"
