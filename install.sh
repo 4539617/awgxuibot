@@ -771,7 +771,12 @@ EOF
         COOKIE_FILE=$(mktemp)
         
         # Пробуем авторизоваться (3x-ui использует form-urlencoded)
-        LOGIN_RESPONSE=$(curl -s -w "\n%{http_code}" -c "$COOKIE_FILE" -X POST "${XUI_URL%/}/login" \
+        # URL уже содержит путь, добавляем /login к нему
+        LOGIN_URL="${XUI_URL%/}/login"
+        
+        echo -e "${YELLOW}Попытка авторизации: ${LOGIN_URL}${NC}"
+        
+        LOGIN_RESPONSE=$(curl -s -w "\n%{http_code}" -c "$COOKIE_FILE" -X POST "${LOGIN_URL}" \
             -H "Content-Type: application/x-www-form-urlencoded" \
             -H "Accept: application/json" \
             -d "username=${XUI_USERNAME}&password=${XUI_PASSWORD}" 2>&1)
