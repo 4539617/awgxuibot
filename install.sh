@@ -605,8 +605,11 @@ y
 EOF
 )
     
-    # Выводим результат установки
-    echo "$INSTALL_OUTPUT"
+    # Извлекаем версию из вывода установщика
+    XUI_VERSION=$(echo "$INSTALL_OUTPUT" | grep -oP 'x-ui v\K[0-9.]+' | head -1)
+    
+    # Выводим результат установки (скрываем блок с учетными данными установщика)
+    echo "$INSTALL_OUTPUT" | grep -v "═══" | grep -v "Panel Installation Complete" | grep -v "Username:" | grep -v "Password:" | grep -v "Port:" | grep -v "WebBasePath:" | grep -v "Access URL:" | grep -v "API Token:" | grep -v "Database:" | grep -v "IMPORTANT: Save these credentials"
     
     # Проверяем успешность установки
     if echo "$INSTALL_OUTPUT" | grep -q "installation finished"; then
@@ -813,13 +816,10 @@ EOF
             echo -e "${GREEN}✅ HTTP код: ${HTTP_CODE}${NC}"
             USE_API_TOKEN=false
         else
-            echo -e "${YELLOW}⚠ Cookie не получен после 3 попыток${NC}"
-            echo -e "${YELLOW}HTTP код: ${HTTP_CODE}${NC}"
-            echo -e "${YELLOW}Ответ: ${RESPONSE_BODY:0:300}${NC}"
+            echo -e "${YELLOW}🔧 Попытка создания inbound через SQL...${NC}"
             
             # Пробуем альтернативный метод - через API токен если есть
             if [ -n "$XUI_API_TOKEN" ]; then
-                echo -e "${YELLOW}⚠ Пробуем использовать API Token...${NC}"
                 USE_API_TOKEN=true
             else
                 USE_API_TOKEN=false
@@ -1060,12 +1060,19 @@ STREAMEOF
         echo -e "${GREEN}URL панели:${NC} ${YELLOW}${XUI_URL}${NC}"
         echo -e "${GREEN}Username:${NC}   ${YELLOW}${XUI_USERNAME}${NC}"
         echo -e "${GREEN}Password:${NC}   ${YELLOW}${XUI_PASSWORD}${NC}"
+        if [ -n "$XUI_API_TOKEN" ]; then
+            echo -e "${GREEN}API Token:${NC}  ${YELLOW}${XUI_API_TOKEN}${NC}"
+        fi
         echo -e "${BLUE}========================================${NC}"
         echo -e "${YELLOW}💾 Также эти данные сохранены в:${NC}"
         echo -e "   ${YELLOW}${WORK_DIR}/.env${NC}"
         echo -e "${BLUE}========================================${NC}"
         
-        echo -e "\n${GREEN}✅ Установка 3x-ui панели завершена!${NC}"
+        if [ -n "$XUI_VERSION" ]; then
+            echo -e "\n${GREEN}✅ Установка 3x-ui v${XUI_VERSION} панели завершена!${NC}"
+        else
+            echo -e "\n${GREEN}✅ Установка 3x-ui панели завершена!${NC}"
+        fi
         echo -e "${YELLOW}Нажмите Enter для возврата в меню...${NC}"
         read
     else
