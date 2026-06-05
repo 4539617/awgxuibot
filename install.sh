@@ -753,18 +753,38 @@ EOF
         # Автоматическое создание inbound
         echo -e "\n${YELLOW}🔧 Создание VLESS Reality inbound...${NC}"
         
-        # Получаем cookie для авторизации
-        COOKIE=$(curl -s -c - -X POST "${XUI_URL%/}/login" \
-            -H "Content-Type: application/x-www-form-urlencoded" \
-            -d "username=${XUI_USERNAME}&password=${XUI_PASSWORD}" \
-            | grep -oP '(?<=session\s)[^\s]+' || echo "")
+        # Извлекаем API токен из вывода установщика (если есть)
+        XUI_API_TOKEN=$(echo "$INSTALL_OUTPUT" | grep -oP '(?<=API Token:\s{3})\S+' | head -1)
         
-        if [ -z "$COOKIE" ]; then
-            echo -e "${YELLOW}⚠ Не удалось получить cookie для API, пробуем альтернативный метод...${NC}"
-            # Пробуем получить через API напрямую
-            LOGIN_RESPONSE=$(curl -s -X POST "${XUI_URL%/}/login" \
-                -H "Content-Type: application/x-www-form-urlencoded" \
-                -d "username=${XUI_USERNAME}&password=${XUI_PASSWORD}")
+        if [ -n "$XUI_API_TOKEN" ]; then
+            echo -e "${GREEN}✅ API Token извлечен: ${XUI_API_TOKEN:0:20}...${NC}"
+            update_env_value "XUI_API_TOKEN" "${XUI_API_TOKEN}"
+        fi
+        
+        # Даем панели время на запуск
+        echo -e "${YELLOW}⏳ Ожидание запуска панели (5 секунд)...${NC}"
+        sleep 5
+        
+        # Получаем cookie для авторизации (метод 1: через curl с сохранением cookies)
+        COOKIE_FILE=$(mktemp)
+        LOGIN_RESPONSE=$(curl -s -c "$COOKIE_FILE" -X POST "${XUI_URL%/}/login" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            -d "username=${XUI_USERNAME}&password=${XUI_PASSWORD}")
+        
+        # Извлекаем session cookie из файла
+        COOKIE=$(grep -oP '(?<=session\s)[^\s]+' "$COOKIE_FILE" 2>/dev/null || echo "")
+        rm -f "$COOKIE_FILE"
+        
+        # Если не получилось через cookie, пробуем через API токен
+        if [ -z "$COOKIE" ] && [ -n "$XUI_API_TOKEN" ]; then
+            echo -e "${YELLOW}⚠ Cookie не получен, используем API Token...${NC}"
+            USE_API_TOKEN=true
+        elif [ -z "$COOKIE" ]; then
+            echo -e "${YELLOW}⚠ Не удалось получить cookie для API${NC}"
+            echo -e "${YELLOW}Ответ сервера: ${LOGIN_RESPONSE}${NC}"
+        else
+            echo -e "${GREEN}✅ Cookie получен успешно${NC}"
+            USE_API_TOKEN=false
         fi
         
         # Создаем JSON конфигурацию для inbound (на основе рабочего примера)
@@ -788,11 +808,21 @@ INBOUND_EOF
         INBOUND_JSON=$(echo "$INBOUND_JSON" | sed "s/REALITY_SHORT_ID_PLACEHOLDER/${REALITY_SHORT_ID}/g")
         
         # Пытаемся создать inbound через API
-        CREATE_RESPONSE=$(curl -s -X POST "${XUI_URL%/}/panel/api/inbounds/add" \
-            -H "Content-Type: application/json" \
-            -H "Cookie: session=${COOKIE}" \
-            -d "${INBOUND_JSON}")
+        if [ "$USE_API_TOKEN" = true ]; then
+            # Используем API Token
+            CREATE_RESPONSE=$(curl -s -X POST "${XUI_URL%/}/panel/api/inbounds/add" \
+                -H "Content-Type: application/json" \
+                -H "Authorization: Bearer ${XUI_API_TOKEN}" \
+                -d "${INBOUND_JSON}")
+        else
+            # Используем Cookie
+            CREATE_RESPONSE=$(curl -s -X POST "${XUI_URL%/}/panel/api/inbounds/add" \
+                -H "Content-Type: application/json" \
+                -H "Cookie: session=${COOKIE}" \
+                -d "${INBOUND_JSON}")
+        fi
         
+        # Проверяем результат
         if echo "$CREATE_RESPONSE" | grep -q '"success":true'; then
             echo -e "${GREEN}✅ VLESS Reality inbound успешно создан!${NC}"
             echo -e "${GREEN}   Порт: 443${NC}"
@@ -802,8 +832,16 @@ INBOUND_EOF
             INBOUND_CREATED=true
         else
             echo -e "${YELLOW}⚠ Не удалось автоматически создать inbound через API${NC}"
+            
+            # Показываем детали ошибки для отладки
+            if [ -n "$CREATE_RESPONSE" ]; then
+                echo -e "${YELLOW}Ответ API: ${CREATE_RESPONSE}${NC}"
+            fi
+            
             echo -e "${YELLOW}Возможные причины:${NC}"
             echo -e "  - API еще не готов (панель только что установлена)${NC}"
+            echo -e "  - Неверные учетные данные${NC}"
+            echo -e "  - Порт 443 уже занят${NC}"
             echo -e "  - Требуется ручное создание через веб-интерфейс${NC}"
             INBOUND_CREATED=false
         fi
