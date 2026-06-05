@@ -1025,6 +1025,19 @@ STREAMEOF
             fi
         fi
         
+        # Финальный перезапуск панели для применения всех изменений
+        echo -e "\n${YELLOW}🔄 Финальный перезапуск панели...${NC}"
+        systemctl restart x-ui
+        sleep 5
+        
+        # Проверяем что панель запустилась
+        if systemctl is-active --quiet x-ui; then
+            echo -e "${GREEN}✅ Панель успешно запущена и работает${NC}"
+        else
+            echo -e "${RED}⚠ ОШИБКА: Панель не запустилась!${NC}"
+            echo -e "${YELLOW}Проверьте: journalctl -u x-ui -n 30${NC}"
+        fi
+        
         echo -e "\n${GREEN}✅ 3x-ui панель успешно установлена!${NC}"
         echo -e "${BLUE}========================================${NC}"
         echo -e "${GREEN}📋 Информация о панели:${NC}"
