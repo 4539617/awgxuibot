@@ -588,13 +588,46 @@ install_3xui() {
     # y - подтверждение установки
     # 1 - SQLite база данных
     # 2 - Let's Encrypt для IP (автоматическое получение SSL сертификата)
-    if bash <(curl -Ls https://raw.githubusercontent.com/MHSanaei/3x-ui/master/install.sh) << EOF
+    
+    # Захватываем вывод установщика для извлечения учетных данных
+    INSTALL_OUTPUT=$(bash <(curl -Ls https://raw.githubusercontent.com/MHSanaei/3x-ui/master/install.sh) 2>&1 << EOF
 y
 1
 2
 
 EOF
-    then
+)
+    
+    # Выводим результат установки
+    echo "$INSTALL_OUTPUT"
+    
+    # Проверяем успешность установки
+    if echo "$INSTALL_OUTPUT" | grep -q "installation finished"; then
+        # Извлекаем учетные данные из вывода установщика
+        XUI_USERNAME=$(echo "$INSTALL_OUTPUT" | grep -oP '(?<=Username:\s{4})\S+' | head -1)
+        XUI_PASSWORD=$(echo "$INSTALL_OUTPUT" | grep -oP '(?<=Password:\s{4})\S+' | head -1)
+        XUI_PORT=$(echo "$INSTALL_OUTPUT" | grep -oP '(?<=Port:\s{8})\d+' | head -1)
+        XUI_PATH=$(echo "$INSTALL_OUTPUT" | grep -oP '(?<=WebBasePath:\s)\S+' | head -1)
+        
+        # Если не удалось извлечь из вывода, пробуем альтернативный формат
+        if [ -z "$XUI_USERNAME" ]; then
+            XUI_USERNAME=$(echo "$INSTALL_OUTPUT" | grep "Username:" | awk '{print $2}' | head -1)
+        fi
+        if [ -z "$XUI_PASSWORD" ]; then
+            XUI_PASSWORD=$(echo "$INSTALL_OUTPUT" | grep "Password:" | awk '{print $2}' | head -1)
+        fi
+        if [ -z "$XUI_PORT" ]; then
+            XUI_PORT=$(echo "$INSTALL_OUTPUT" | grep "Port:" | awk '{print $2}' | head -1)
+        fi
+        if [ -z "$XUI_PATH" ]; then
+            XUI_PATH=$(echo "$INSTALL_OUTPUT" | grep "WebBasePath:" | awk '{print $2}' | head -1)
+        fi
+        
+        echo -e "\n${GREEN}✅ Учетные данные извлечены из вывода установщика:${NC}"
+        echo -e "  Username: ${YELLOW}${XUI_USERNAME}${NC}"
+        echo -e "  Password: ${YELLOW}${XUI_PASSWORD}${NC}"
+        echo -e "  Port: ${YELLOW}${XUI_PORT}${NC}"
+        echo -e "  Path: ${YELLOW}${XUI_PATH}${NC}"
         # Исправление проблемы с базой данных x-ui.db
         echo -e "${YELLOW}🔧 Проверка базы данных...${NC}"
         if [ -d "/etc/x-ui/x-ui.db" ]; then
@@ -609,42 +642,46 @@ EOF
             echo -e "${GREEN}✅ База данных исправлена${NC}"
         fi
         
-        # Получение реальных настроек панели после установки
-        echo -e "${YELLOW}🔍 Получение настроек панели...${NC}"
-        sleep 3
-        
-        # Получаем настройки из x-ui settings (с автоматическим ответом на промпт)
-        XUI_SETTINGS=$(echo "n" | timeout 5 x-ui settings 2>/dev/null || echo "")
-        
-        if [ -z "$XUI_SETTINGS" ]; then
-            echo -e "${YELLOW}⚠ Не удалось получить настройки через x-ui settings${NC}"
-            echo -e "${YELLOW}Используем значения по умолчанию${NC}"
-            XUI_PORT="2053"
-            XUI_PATH="/"
-        else
-            XUI_PORT=$(echo "$XUI_SETTINGS" | grep "port:" | awk '{print $2}')
-            XUI_PATH=$(echo "$XUI_SETTINGS" | grep "webBasePath:" | awk '{print $2}' | sed 's/\/$//')
+        # Если учетные данные не были извлечены из вывода установщика
+        if [ -z "$XUI_USERNAME" ] || [ -z "$XUI_PASSWORD" ] || [ -z "$XUI_PORT" ] || [ -z "$XUI_PATH" ]; then
+            echo -e "${YELLOW}⚠ Не все данные извлечены из вывода, получаем дополнительно...${NC}"
             
+            # Получаем настройки из x-ui settings
+            sleep 2
+            XUI_SETTINGS=$(echo "n" | timeout 5 x-ui settings 2>/dev/null || echo "")
+            
+            if [ -n "$XUI_SETTINGS" ]; then
+                if [ -z "$XUI_PORT" ]; then
+                    XUI_PORT=$(echo "$XUI_SETTINGS" | grep "port:" | awk '{print $2}')
+                fi
+                if [ -z "$XUI_PATH" ]; then
+                    XUI_PATH=$(echo "$XUI_SETTINGS" | grep "webBasePath:" | awk '{print $2}' | sed 's/\/$//')
+                fi
+            fi
+            
+            # Получаем учетные данные из базы данных
+            if [ -f "/etc/x-ui/x-ui.db" ] && command -v sqlite3 &> /dev/null; then
+                if [ -z "$XUI_USERNAME" ]; then
+                    XUI_USERNAME=$(sqlite3 /etc/x-ui/x-ui.db "SELECT username FROM users LIMIT 1;" 2>/dev/null || echo "")
+                fi
+                if [ -z "$XUI_PASSWORD" ]; then
+                    XUI_PASSWORD=$(sqlite3 /etc/x-ui/x-ui.db "SELECT password FROM users LIMIT 1;" 2>/dev/null || echo "")
+                fi
+            fi
+            
+            # Fallback на дефолтные значения
+            if [ -z "$XUI_USERNAME" ]; then
+                XUI_USERNAME="admin"
+            fi
+            if [ -z "$XUI_PASSWORD" ]; then
+                XUI_PASSWORD="admin"
+            fi
             if [ -z "$XUI_PORT" ]; then
                 XUI_PORT="2053"
             fi
             if [ -z "$XUI_PATH" ]; then
                 XUI_PATH="/"
             fi
-        fi
-        
-        # Получаем учетные данные из логов установки или файла конфигурации
-        if [ -f "/usr/local/x-ui/config.json" ]; then
-            XUI_USERNAME=$(jq -r '.webCertFile // empty' /usr/local/x-ui/config.json 2>/dev/null || echo "")
-            XUI_PASSWORD=$(jq -r '.webKeyFile // empty' /usr/local/x-ui/config.json 2>/dev/null || echo "")
-        fi
-        
-        # Если не удалось получить из конфига, пытаемся из вывода установщика
-        if [ -z "$XUI_USERNAME" ] || [ -z "$XUI_PASSWORD" ]; then
-            echo -e "${YELLOW}⚠ Не удалось автоматически получить учетные данные${NC}"
-            echo -e "${YELLOW}Проверьте вывод установщика выше для Username и Password${NC}"
-            XUI_USERNAME="admin"
-            XUI_PASSWORD="admin"
         fi
         
         # Формируем URL
