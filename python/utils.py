@@ -57,49 +57,35 @@ class XUIClient:
         return self.session
     
     async def login(self) -> bool:
-        """Авторизация в панели 3x-ui"""
-        await self._get_session()
-        
-        # Правильная обработка URL с custom path
-        # XUI_URL может быть: http://ip:port/custom-path
-        # Login endpoint: http://ip:port/custom-path/login
-        base_url = self.config.xui.url.rstrip('/')
-        login_url = f"{base_url}/login"
-        
-        login_data = {
-            "username": self.config.xui.username,
-            "password": self.config.xui.password
-        }
-        
+        """
+        Проверка доступности панели 3x-ui
+        В версии 3.2.8 API авторизация через /login не работает из-за CSRF защиты.
+        Бот работает напрямую с базой данных через SQL.
+        """
         try:
-            logger.info(f"Попытка авторизации: {login_url}")
-            logger.info(f"Username: {self.config.xui.username}")
+            # Проверяем доступность базы данных
+            db_path = sanitize_path(self.config.xui.db_path)
+            result = subprocess.run(
+                f"sqlite3 {db_path} 'SELECT COUNT(*) FROM inbounds;'",
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
             
-            async with self.session.post(login_url, json=login_data) as resp:
-                response_text = await resp.text()
+            if result.returncode == 0:
+                logger.info("✅ Подключение к базе данных X-UI успешно")
+                logger.info(f"📊 Найдено inbounds: {result.stdout.strip()}")
+                return True
+            else:
+                logger.error(f"❌ Ошибка доступа к базе данных: {result.stderr}")
+                return False
                 
-                if resp.status == 200:
-                    # Проверяем успешность авторизации по содержимому ответа
-                    try:
-                        result = json.loads(response_text)
-                        if result.get('success'):
-                            self.cookies = self.session.cookie_jar
-                            logger.info("✅ Успешная авторизация в 3x-ui")
-                            return True
-                        else:
-                            logger.error(f"❌ Авторизация отклонена: {result.get('msg', 'Unknown error')}")
-                            return False
-                    except json.JSONDecodeError:
-                        # Если ответ не JSON, но статус 200, считаем успешным
-                        self.cookies = self.session.cookie_jar
-                        logger.info("✅ Успешная авторизация в 3x-ui (non-JSON response)")
-                        return True
-                else:
-                    logger.error(f"❌ Ошибка авторизации: {resp.status}")
-                    logger.error(f"Response: {response_text[:500]}")
-                    return False
+        except subprocess.TimeoutExpired:
+            logger.error("❌ Timeout при подключении к базе данных")
+            return False
         except Exception as e:
-            logger.error(f"❌ Ошибка подключения: {e}")
+            logger.error(f"❌ Ошибка проверки базы данных: {e}")
             return False
 
     async def add_client(self, email: str, total_gb: int, expiry_days: float, comment: str = None) -> Dict:
