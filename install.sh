@@ -611,19 +611,6 @@ EOF
         update_env_value "XUI_USERNAME" "${XUI_USERNAME}"
         update_env_value "XUI_PASSWORD" "${XUI_PASSWORD}"
         
-        # Также сохраняем в отдельный файл для удобства
-        cat > /root/3x-ui-credentials.txt << CREDS
-========================================
-   3x-ui Panel - Учетные данные
-========================================
-URL: ${XUI_URL}
-Логин: ${XUI_USERNAME}
-Пароль: ${XUI_PASSWORD}
-========================================
-Дата установки: $(date)
-========================================
-CREDS
-        
         echo -e "\n${GREEN}✅ 3x-ui панель успешно установлена!${NC}"
         echo -e "${BLUE}========================================${NC}"
         echo -e "${GREEN}📋 Информация о панели:${NC}"
@@ -631,9 +618,8 @@ CREDS
         echo -e "  Логин: ${YELLOW}${XUI_USERNAME}${NC}"
         echo -e "  Пароль: ${YELLOW}${XUI_PASSWORD}${NC}"
         echo -e "${BLUE}========================================${NC}"
-        echo -e "${GREEN}💾 Учетные данные сохранены:${NC}"
-        echo -e "  ${YELLOW}.env${NC} (для бота)"
-        echo -e "  ${YELLOW}/root/3x-ui-credentials.txt${NC} (резервная копия)"
+        echo -e "${GREEN}💾 Учетные данные сохранены в:${NC}"
+        echo -e "  ${YELLOW}${WORK_DIR}/.env${NC}"
         echo -e "${RED}⚠ ВАЖНО: Сохраните эти данные в надежном месте!${NC}"
         echo -e "${BLUE}========================================${NC}"
     else
