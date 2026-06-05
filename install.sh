@@ -584,16 +584,19 @@ install_3xui() {
     echo -e "${BLUE}Установщик 3x-ui автоматически сгенерирует безопасные учетные данные${NC}\n"
     
     # Установка с автоматической генерацией параметров (новая версия установщика)
-    # Передаем:
+    # Передаем ответы на все промпты:
     # y - подтверждение установки
     # 1 - SQLite база данных
-    # 2 - Let's Encrypt для IP (автоматическое получение SSL сертификата)
+    # 2 - Let's Encrypt для IP
+    # (пусто) - IPv6 address (skip)
+    # (пусто) - Port для ACME (default 80)
     
     # Захватываем вывод установщика для извлечения учетных данных
     INSTALL_OUTPUT=$(bash <(curl -Ls https://raw.githubusercontent.com/MHSanaei/3x-ui/master/install.sh) 2>&1 << EOF
 y
 1
 2
+
 
 EOF
 )
