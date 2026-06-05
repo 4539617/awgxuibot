@@ -911,9 +911,16 @@ STREAMEOF
             SQL_INSERT="INSERT INTO inbounds (user_id, up, down, total, remark, enable, expiry_time, listen, port, protocol, settings, stream_settings, tag, sniffing) VALUES (1, 0, 0, 0, 'VLESS-Reality-xHTTP', 1, 0, '', 443, 'vless', '${SETTINGS_JSON_ESCAPED}', '${STREAM_SETTINGS_JSON_ESCAPED}', 'inbound-443', '${SNIFFING_JSON_ESCAPED}');"
             
             echo -e "${YELLOW}Выполнение SQL запроса...${NC}"
+            echo -e "${YELLOW}DEBUG: SQL длина: ${#SQL_INSERT} символов${NC}"
+            # Показываем первые 200 символов SQL для отладки
+            echo -e "${YELLOW}DEBUG: SQL начало: ${SQL_INSERT:0:200}...${NC}"
+            set +e  # Временно отключаем exit on error
             SQL_RESULT=$(sqlite3 /etc/x-ui/x-ui.db "${SQL_INSERT}" 2>&1)
+            SQL_EXIT_CODE=$?
+            set -e  # Включаем обратно
             
-            if [ $? -eq 0 ]; then
+            if [ $SQL_EXIT_CODE -eq 0 ]; then
+                echo -e "${GREEN}✅ SQL запрос выполнен успешно${NC}"
                 # Получаем ID созданного inbound
                 INBOUND_ID=$(sqlite3 /etc/x-ui/x-ui.db "SELECT id FROM inbounds WHERE remark='VLESS-Reality-xHTTP' ORDER BY id DESC LIMIT 1;" 2>/dev/null)
                 
@@ -947,7 +954,9 @@ STREAMEOF
                     INBOUND_CREATED=false
                 fi
             else
-                echo -e "${YELLOW}⚠ Ошибка SQL: ${SQL_RESULT}${NC}"
+                echo -e "${RED}❌ Ошибка выполнения SQL запроса${NC}"
+                echo -e "${RED}Exit code: ${SQL_EXIT_CODE}${NC}"
+                echo -e "${RED}Ошибка: ${SQL_RESULT}${NC}"
                 echo -e "${YELLOW}Пробуем через API...${NC}"
                 INBOUND_CREATED=false
             fi
