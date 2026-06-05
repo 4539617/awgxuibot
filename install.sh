@@ -932,9 +932,17 @@ STREAMEOF
                     # Перезапускаем панель для применения изменений
                     echo -e "${YELLOW}🔄 Перезапуск панели для применения изменений...${NC}"
                     systemctl restart x-ui
-                    sleep 3
+                    sleep 5
                     
-                    INBOUND_CREATED=true
+                    # Проверяем что панель запустилась
+                    if systemctl is-active --quiet x-ui; then
+                        echo -e "${GREEN}✅ Панель успешно перезапущена${NC}"
+                        INBOUND_CREATED=true
+                    else
+                        echo -e "${RED}⚠ Панель не запустилась после перезапуска${NC}"
+                        echo -e "${YELLOW}Проверьте логи: journalctl -u x-ui -n 20${NC}"
+                        INBOUND_CREATED=true  # Inbound все равно создан
+                    fi
                 else
                     echo -e "${YELLOW}⚠ Inbound создан, но не удалось получить ID${NC}"
                     INBOUND_CREATED=false
