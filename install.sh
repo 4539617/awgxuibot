@@ -101,6 +101,7 @@ API_TIMEOUT=30
 
 # Reality Configuration
 REALITY_PUBLIC_KEY=
+REALITY_PRIVATE_KEY=
 REALITY_SHORT_ID=
 REALITY_SNI=google.com
 REALITY_FINGERPRINT=firefox
@@ -550,10 +551,10 @@ generate_random_string() {
     echo "$result"
 }
 
-# Функция генерации случайного пароля со спецсимволами
+# Функция генерации случайного пароля без спецсимволов
 generate_random_password() {
     local length=$1
-    local chars='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*'
+    local chars='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
     local result=''
     for i in $(seq 1 $length); do
         result="${result}${chars:RANDOM%${#chars}:1}"
@@ -613,8 +614,9 @@ EOF
         
         # Генерация ключей Reality
         REALITY_KEYS=$(xray x25519)
-        REALITY_PRIVATE_KEY=$(echo "$REALITY_KEYS" | grep "Private key:" | awk '{print $3}')
-        REALITY_PUBLIC_KEY=$(echo "$REALITY_KEYS" | grep "Public key:" | awk '{print $3}')
+        # Поддержка обоих форматов вывода xray (старый и новый)
+        REALITY_PRIVATE_KEY=$(echo "$REALITY_KEYS" | grep -E "(Private key:|PrivateKey:)" | awk '{print $NF}')
+        REALITY_PUBLIC_KEY=$(echo "$REALITY_KEYS" | grep -E "(Public key:|Password \(PublicKey\):)" | awk '{print $NF}')
         
         # Генерация Short IDs
         REALITY_SHORT_ID=$(openssl rand -hex 8)
@@ -627,6 +629,7 @@ EOF
         update_env_value "XUI_USERNAME" "${XUI_USERNAME}"
         update_env_value "XUI_PASSWORD" "${XUI_PASSWORD}"
         update_env_value "REALITY_PUBLIC_KEY" "${REALITY_PUBLIC_KEY}"
+        update_env_value "REALITY_PRIVATE_KEY" "${REALITY_PRIVATE_KEY}"
         update_env_value "REALITY_SHORT_ID" "${REALITY_SHORT_ID}"
         
         echo -e "\n${GREEN}✅ 3x-ui панель успешно установлена!${NC}"
