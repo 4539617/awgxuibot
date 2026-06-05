@@ -1437,10 +1437,10 @@ install_awg_v1() {
     echo -e "${BLUE}   Установка AWG v1${NC}"
     echo -e "${BLUE}========================================${NC}\n"
     
-    # Проверка что бот установлен
-    if ! docker ps --filter name=netcrazybot --format "{{.Names}}" | grep -q netcrazybot; then
-        echo -e "${RED}❌ NetCrazyBot не установлен!${NC}"
-        echo -e "${YELLOW}Сначала установите бот (пункт 1)${NC}"
+    # Проверка что AWG бот установлен
+    if ! docker ps --filter name=awgbot --format "{{.Names}}" | grep -q awgbot; then
+        echo -e "${RED}❌ AWG Бот не установлен!${NC}"
+        echo -e "${YELLOW}Сначала установите AWG бот (пункт 5)${NC}"
         return
     fi
     
@@ -1449,8 +1449,8 @@ install_awg_v1() {
     
     echo -e "${YELLOW}🔧 Установка AWG v1 на порту $AWG_PORT...${NC}"
     
-    # Запускаем установку через бот
-    docker exec netcrazybot node -e "
+    # Запускаем установку через AWG бот
+    docker exec awgbot node -e "
     import('./src/awgInstaller.js').then(async (module) => {
         const result = await module.installServer('v1', $AWG_PORT, (msg) => console.log(msg));
         if (result.success) {
@@ -1482,9 +1482,9 @@ install_awg_v2() {
     echo -e "${BLUE}========================================${NC}\n"
     
     # Проверка что бот установлен
-    if ! docker ps --filter name=netcrazybot --format "{{.Names}}" | grep -q netcrazybot; then
-        echo -e "${RED}❌ NetCrazyBot не установлен!${NC}"
-        echo -e "${YELLOW}Сначала установите бот (пункт 1)${NC}"
+    if ! docker ps --filter name=awgbot --format "{{.Names}}" | grep -q awgbot; then
+        echo -e "${RED}❌ AWG Бот не установлен!${NC}"
+        echo -e "${YELLOW}Сначала установите AWG бот (пункт 5)${NC}"
         return
     fi
     
@@ -1493,8 +1493,8 @@ install_awg_v2() {
     
     echo -e "${YELLOW}🔧 Установка AWG v2 на порту $AWG_PORT...${NC}"
     
-    # Запускаем установку через бот
-    docker exec netcrazybot node -e "
+    # Запускаем установку через AWG бот
+    docker exec awgbot node -e "
     import('./src/awgInstaller.js').then(async (module) => {
         const result = await module.installServer('v2', $AWG_PORT, (msg) => console.log(msg));
         if (result.success) {
