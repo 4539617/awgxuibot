@@ -979,40 +979,42 @@ STREAMEOF
             API_RESPONSE_BODY=""
         fi
         
-        # Проверяем результат
-        if echo "$API_RESPONSE_BODY" | grep -q '"success":true'; then
-            echo -e "${GREEN}✅ VLESS Reality inbound успешно создан!${NC}"
-            echo -e "${GREEN}   Порт: 443${NC}"
-            echo -e "${GREEN}   Protocol: VLESS${NC}"
-            echo -e "${GREEN}   Network: xhttp${NC}"
-            echo -e "${GREEN}   Security: reality${NC}"
-            
-            # Извлекаем ID созданного inbound
-            INBOUND_ID=$(echo "$API_RESPONSE_BODY" | grep -oP '(?<="id":)\d+' | head -1)
-            if [ -n "$INBOUND_ID" ]; then
-                echo -e "${GREEN}   Inbound ID: ${INBOUND_ID}${NC}"
-                update_env_value "INBOUND_ID" "${INBOUND_ID}"
+        # Проверяем результат (только если пытались через API и SQL не сработал)
+        if [ "$INBOUND_CREATED" != true ]; then
+            if [ -n "$API_RESPONSE_BODY" ] && echo "$API_RESPONSE_BODY" | grep -q '"success":true'; then
+                echo -e "${GREEN}✅ VLESS Reality inbound успешно создан через API!${NC}"
+                echo -e "${GREEN}   Порт: 443${NC}"
+                echo -e "${GREEN}   Protocol: VLESS${NC}"
+                echo -e "${GREEN}   Network: xhttp${NC}"
+                echo -e "${GREEN}   Security: reality${NC}"
+                
+                # Извлекаем ID созданного inbound
+                INBOUND_ID=$(echo "$API_RESPONSE_BODY" | grep -oP '(?<="id":)\d+' | head -1)
+                if [ -n "$INBOUND_ID" ]; then
+                    echo -e "${GREEN}   Inbound ID: ${INBOUND_ID}${NC}"
+                    update_env_value "INBOUND_ID" "${INBOUND_ID}"
+                fi
+                
+                INBOUND_CREATED=true
+            elif [ -n "$API_RESPONSE_BODY" ]; then
+                # Показываем ошибку только если реально пытались через API
+                echo -e "${YELLOW}⚠ Не удалось автоматически создать inbound через API${NC}"
+                
+                echo -e "${YELLOW}Возможные причины:${NC}"
+                if [ -z "$COOKIE" ] && [ "$USE_API_TOKEN" != true ]; then
+                    echo -e "  - ${RED}Не удалось авторизоваться (нет cookie)${NC}"
+                fi
+                if [ "$API_HTTP_CODE" = "401" ] || [ "$API_HTTP_CODE" = "403" ]; then
+                    echo -e "  - ${RED}Ошибка авторизации (код ${API_HTTP_CODE})${NC}"
+                fi
+                if echo "$API_RESPONSE_BODY" | grep -q "port.*already"; then
+                    echo -e "  - ${RED}Порт 443 уже занят${NC}"
+                fi
+                if [ "$API_HTTP_CODE" = "000" ] || [ -z "$API_HTTP_CODE" ]; then
+                    echo -e "  - ${RED}API не отвечает (панель не готова)${NC}"
+                fi
+                echo -e "  - Требуется ручное создание через веб-интерфейс${NC}"
             fi
-            
-            INBOUND_CREATED=true
-        else
-            echo -e "${YELLOW}⚠ Не удалось автоматически создать inbound через API${NC}"
-            
-            echo -e "${YELLOW}Возможные причины:${NC}"
-            if [ -z "$COOKIE" ] && [ "$USE_API_TOKEN" != true ]; then
-                echo -e "  - ${RED}Не удалось авторизоваться (нет cookie)${NC}"
-            fi
-            if [ "$API_HTTP_CODE" = "401" ] || [ "$API_HTTP_CODE" = "403" ]; then
-                echo -e "  - ${RED}Ошибка авторизации (код ${API_HTTP_CODE})${NC}"
-            fi
-            if echo "$API_RESPONSE_BODY" | grep -q "port.*already"; then
-                echo -e "  - ${RED}Порт 443 уже занят${NC}"
-            fi
-            if [ "$API_HTTP_CODE" = "000" ] || [ -z "$API_HTTP_CODE" ]; then
-                echo -e "  - ${RED}API не отвечает (панель не готова)${NC}"
-            fi
-            echo -e "  - Требуется ручное создание через веб-интерфейс${NC}"
-            INBOUND_CREATED=false
         fi
         
         echo -e "\n${GREEN}✅ 3x-ui панель успешно установлена!${NC}"
