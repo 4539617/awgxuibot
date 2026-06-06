@@ -994,10 +994,65 @@ generate_random_password() {
     echo "$result"
 }
 
-# Функция установки 3x-ui панели
-install_3xui() {
+# Функция определения версии установленной 3x-ui панели
+detect_xui_version() {
+    if ! systemctl is-active --quiet x-ui; then
+        echo ""
+        return
+    fi
+    
+    # Пробуем получить версию через команду x-ui
+    local version=$(x-ui version 2>/dev/null | grep -oP 'v\K[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+    
+    if [ -z "$version" ]; then
+        # Альтернативный метод - проверяем структуру API
+        local xui_url=$(get_env_value "XUI_URL" 2>/dev/null)
+        if [ -n "$xui_url" ]; then
+            # Проверяем наличие /panel/ в URL (характерно для v3.x)
+            if echo "$xui_url" | grep -q "/panel"; then
+                version="3.x"
+            else
+                version="2.9.4"
+            fi
+        fi
+    fi
+    
+    echo "$version"
+}
+
+# Функция выбора версии для установки
+select_xui_version() {
     echo -e "\n${BLUE}========================================${NC}"
-    echo -e "${BLUE}   Установка 3x-ui Panel${NC}"
+    echo -e "${BLUE}   Выбор версии 3x-ui Panel${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+    echo -e "${GREEN}1)${NC} Последняя версия (Latest - рекомендуется)"
+    echo -e "${GREEN}2)${NC} Стабильная версия v2.9.4"
+    echo -e "${GREEN}0)${NC} Отмена"
+    echo -e "\n${YELLOW}Выберите версию для установки:${NC} "
+    read -p "" version_choice
+    
+    case $version_choice in
+        1)
+            install_3xui_latest
+            ;;
+        2)
+            install_3xui_v294
+            ;;
+        0)
+            echo -e "${YELLOW}Отменено${NC}"
+            return
+            ;;
+        *)
+            echo -e "${RED}Неверный выбор${NC}"
+            sleep 2
+            ;;
+    esac
+}
+
+# Функция установки последней версии 3x-ui панели
+install_3xui_latest() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Установка 3x-ui Panel (Latest)${NC}"
     echo -e "${BLUE}========================================${NC}\n"
     
     # Проверка установлена ли уже панель
@@ -1007,6 +1062,11 @@ install_3xui() {
         if [[ ! "$reinstall" =~ ^[Yy]$ ]]; then
             echo -e "${YELLOW}Отменено${NC}"
             return
+# Обёртка для установки 3x-ui с выбором версии
+install_3xui() {
+    select_xui_version
+}
+
         fi
     fi
     
@@ -1015,7 +1075,7 @@ install_3xui() {
     # Генерируем случайный пароль для панели
     GENERATED_PASSWORD=$(openssl rand -base64 16 | tr -d "=+/" | cut -c1-16)
     
-    echo -e "${YELLOW}📦 Загрузка и установка 3x-ui...${NC}"
+    echo -e "${YELLOW}📦 Загрузка и установка 3x-ui (последняя версия)...${NC}"
     echo -e "${BLUE}Будет сгенерирован случайный пароль для панели${NC}\n"
     
     # Установка с автоматической генерацией параметров (новая версия установщика)
@@ -1145,11 +1205,13 @@ EOF
         echo -e "  Порт: ${YELLOW}${XUI_PORT}${NC}"
         echo -e "  Путь: ${YELLOW}${XUI_PATH}${NC}"
         
-        # Формируем URL
+        # Формируем URL (добавляем /panel для 3x-ui v3.2.8+)
         if [ -z "$XUI_PATH" ] || [ "$XUI_PATH" = "/" ]; then
-            XUI_URL="http://${SERVER_IP}:${XUI_PORT}/"
+            XUI_URL="http://${SERVER_IP}:${XUI_PORT}/panel"
         else
-            XUI_URL="http://${SERVER_IP}:${XUI_PORT}${XUI_PATH}"
+            # Убираем trailing slash если есть, затем добавляем /panel
+            XUI_PATH_CLEAN="${XUI_PATH%/}"
+            XUI_URL="http://${SERVER_IP}:${XUI_PORT}${XUI_PATH_CLEAN}/panel"
         fi
         
         echo -e "${GREEN}✅ Настройки панели получены:${NC}"
@@ -1184,6 +1246,13 @@ EOF
         update_env_value "REALITY_PUBLIC_KEY" "${REALITY_PUBLIC_KEY}"
         update_env_value "REALITY_PRIVATE_KEY" "${REALITY_PRIVATE_KEY}"
         update_env_value "REALITY_SHORT_ID" "${REALITY_SHORT_ID}"
+        
+        # Сохраняем версию панели
+        if [ -n "$XUI_VERSION" ]; then
+            update_env_value "XUI_VERSION" "${XUI_VERSION}"
+        else
+            update_env_value "XUI_VERSION" "latest"
+        fi
         
         # Автоматическое создание inbound
         echo -e "\n${YELLOW}🔧 Создание VLESS Reality inbound...${NC}"
@@ -1521,6 +1590,338 @@ STREAMEOF
         read
     fi
 }
+# Функция установки 3x-ui панели версии 2.9.4
+install_3xui_v294() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Установка 3x-ui Panel v2.9.4${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+    
+    # Проверка установлена ли уже панель
+    if systemctl is-active --quiet x-ui; then
+        echo -e "${YELLOW}⚠ 3x-ui панель уже установлена${NC}"
+        read -p "Переустановить? (y/n): " reinstall
+        if [[ ! "$reinstall" =~ ^[Yy]$ ]]; then
+            echo -e "${YELLOW}Отменено${NC}"
+            return
+        fi
+    fi
+    
+    SERVER_IP=$(curl -s ifconfig.me)
+    
+    # Генерируем случайный пароль для панели
+    GENERATED_PASSWORD=$(openssl rand -base64 16 | tr -d "=+/" | cut -c1-16)
+    
+    echo -e "${YELLOW}📦 Загрузка и установка 3x-ui v2.9.4...${NC}"
+    echo -e "${BLUE}Будет сгенерирован случайный пароль для панели${NC}\n"
+    
+    # Установка конкретной версии v2.9.4
+    # Используем прямую ссылку на релиз v2.9.4
+    INSTALL_OUTPUT=$(bash <(curl -Ls https://raw.githubusercontent.com/MHSanaei/3x-ui/v2.9.4/install.sh) 2>&1 << EOF
+y
+1
+2
+
+
+EOF
+)
+    
+    # Извлекаем версию из вывода установщика
+    XUI_VERSION="2.9.4"
+    
+    # Выводим результат установки
+    echo "$INSTALL_OUTPUT" | grep -v "═══" | grep -v "Panel Installation Complete" | grep -v "Username:" | grep -v "Password:" | grep -v "Port:" | grep -v "WebBasePath:" | grep -v "Access URL:" | grep -v "API Token:" | grep -v "Database:" | grep -v "IMPORTANT: Save these credentials"
+    
+    # Проверяем успешность установки
+    if echo "$INSTALL_OUTPUT" | grep -q "installation finished"; then
+        echo -e "\n${GREEN}✅ 3x-ui v2.9.4 установлен успешно${NC}"
+        
+        XUI_USERNAME=""
+        XUI_PASSWORD=""
+        XUI_PORT=""
+        XUI_PATH=""
+        
+        # Исправление проблемы с базой данных x-ui.db
+        echo -e "${YELLOW}🔧 Проверка базы данных...${NC}"
+        if [ -d "/etc/x-ui/x-ui.db" ]; then
+            echo -e "${YELLOW}⚠ Обнаружена проблема: x-ui.db создана как директория${NC}"
+            echo -e "${YELLOW}🔧 Исправление...${NC}"
+            systemctl stop x-ui
+            rm -rf /etc/x-ui/x-ui.db
+            touch /etc/x-ui/x-ui.db
+            chmod 644 /etc/x-ui/x-ui.db
+            systemctl start x-ui
+            sleep 2
+            echo -e "${GREEN}✅ База данных исправлена${NC}"
+        fi
+        
+        # Получаем настройки из системы
+        if [ -z "$XUI_USERNAME" ] || [ -z "$XUI_PASSWORD" ] || [ -z "$XUI_PORT" ] || [ -z "$XUI_PATH" ]; then
+            echo -e "${YELLOW}🔍 Получение данных из системы...${NC}"
+            
+            # Устанавливаем sqlite3 если не установлен
+            if ! command -v sqlite3 &> /dev/null; then
+                echo -e "${YELLOW}📦 Установка sqlite3...${NC}"
+                apt-get update -qq && apt-get install -y sqlite3 -qq > /dev/null 2>&1
+            fi
+            
+            # Получаем настройки из x-ui settings
+            sleep 2
+            XUI_SETTINGS=$(echo "n" | timeout 5 x-ui settings 2>/dev/null || echo "")
+            
+            if [ -n "$XUI_SETTINGS" ]; then
+                if [ -z "$XUI_PORT" ]; then
+                    XUI_PORT=$(echo "$XUI_SETTINGS" | grep "port:" | awk '{print $2}')
+                fi
+                if [ -z "$XUI_PATH" ]; then
+                    XUI_PATH=$(echo "$XUI_SETTINGS" | grep "webBasePath:" | awk '{print $2}' | sed 's/\/$//')
+                fi
+            fi
+            
+            # Получаем username из базы данных
+            if [ -f "/etc/x-ui/x-ui.db" ]; then
+                echo -e "${YELLOW}🔐 Получение username из базы данных...${NC}"
+                XUI_USERNAME=$(sqlite3 /etc/x-ui/x-ui.db "SELECT username FROM users LIMIT 1;" 2>/dev/null || echo "")
+                
+                if [ -n "$XUI_USERNAME" ]; then
+                    echo -e "${GREEN}✅ Username: ${YELLOW}${XUI_USERNAME}${NC}"
+                fi
+            fi
+            
+            # Устанавливаем сгенерированный пароль напрямую в базу данных
+            if [ -n "$XUI_USERNAME" ] && [ -n "$GENERATED_PASSWORD" ]; then
+                echo -e "${YELLOW}🔐 Установка нового пароля для панели...${NC}"
+                
+                # Устанавливаем bcrypt для генерации хеша
+                if ! command -v htpasswd &> /dev/null; then
+                    echo -e "${YELLOW}📦 Установка apache2-utils для bcrypt...${NC}"
+                    apt-get update -qq && apt-get install -y apache2-utils -qq > /dev/null 2>&1
+                fi
+                
+                # Генерируем bcrypt хеш пароля (cost 10, как в 3x-ui)
+                PASSWORD_HASH=$(htpasswd -nbBC 10 "" "$GENERATED_PASSWORD" | cut -d: -f2)
+                
+                # Обновляем пароль в базе данных
+                sqlite3 /etc/x-ui/x-ui.db "UPDATE users SET password='${PASSWORD_HASH}' WHERE username='${XUI_USERNAME}';" 2>/dev/null
+                
+                if [ $? -eq 0 ]; then
+                    XUI_PASSWORD="$GENERATED_PASSWORD"
+                    echo -e "${GREEN}✅ Пароль успешно установлен в базу данных${NC}"
+                    
+                    # Перезапускаем панель для применения изменений
+                    systemctl restart x-ui
+                    sleep 2
+                else
+                    echo -e "${YELLOW}⚠ Не удалось обновить пароль в базе данных${NC}"
+                    XUI_PASSWORD="$GENERATED_PASSWORD"
+                fi
+            else
+                # Fallback
+                XUI_USERNAME="${XUI_USERNAME:-admin}"
+                XUI_PASSWORD="$GENERATED_PASSWORD"
+            fi
+            
+            if [ -z "$XUI_PORT" ]; then
+                XUI_PORT="2053"
+            fi
+            if [ -z "$XUI_PATH" ]; then
+                XUI_PATH="/"
+            fi
+        fi
+        
+        echo -e "${GREEN}✅ Настройки панели получены:${NC}"
+        echo -e "  Порт: ${YELLOW}${XUI_PORT}${NC}"
+        echo -e "  Путь: ${YELLOW}${XUI_PATH}${NC}"
+        
+        # Формируем URL для v2.9.4 (БЕЗ /panel в конце)
+        if [ -z "$XUI_PATH" ] || [ "$XUI_PATH" = "/" ]; then
+            XUI_URL="http://${SERVER_IP}:${XUI_PORT}"
+        else
+            # Убираем trailing slash если есть
+            XUI_PATH_CLEAN="${XUI_PATH%/}"
+            XUI_URL="http://${SERVER_IP}:${XUI_PORT}${XUI_PATH_CLEAN}"
+        fi
+        
+        # Генерация Reality ключей
+        echo -e "${YELLOW}🔑 Генерация Reality ключей...${NC}"
+        
+        # Установка xray если не установлен
+        if ! command -v xray &> /dev/null; then
+            echo -e "${YELLOW}📦 Установка xray...${NC}"
+            bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
+        fi
+        
+        # Генерация ключей Reality
+        REALITY_KEYS=$(xray x25519)
+        REALITY_PRIVATE_KEY=$(echo "$REALITY_KEYS" | grep -E "(Private key:|PrivateKey:)" | awk '{print $NF}')
+        REALITY_PUBLIC_KEY=$(echo "$REALITY_KEYS" | grep -E "(Public key:|Password \(PublicKey\):)" | awk '{print $NF}')
+        
+        # Генерация Short IDs
+        REALITY_SHORT_ID=$(openssl rand -hex 8)
+        
+        # Создание .env файла с учетными данными 3x-ui
+        create_env_if_not_exists
+        
+        echo -e "${YELLOW}💾 Сохранение учетных данных в .env...${NC}"
+        update_env_value "XUI_URL" "${XUI_URL}"
+        update_env_value "XUI_USERNAME" "${XUI_USERNAME}"
+        update_env_value "XUI_PASSWORD" "${XUI_PASSWORD}"
+        update_env_value "REALITY_PUBLIC_KEY" "${REALITY_PUBLIC_KEY}"
+        update_env_value "REALITY_PRIVATE_KEY" "${REALITY_PRIVATE_KEY}"
+        update_env_value "REALITY_SHORT_ID" "${REALITY_SHORT_ID}"
+        update_env_value "XUI_VERSION" "2.9.4"
+        
+        # Автоматическое создание inbound для v2.9.4
+        echo -e "\n${YELLOW}🔧 Создание VLESS Reality inbound...${NC}"
+        
+        # Даем панели время на запуск
+        echo -e "${YELLOW}⏳ Ожидание запуска панели (15 секунд)...${NC}"
+        sleep 15
+        
+        # Для v2.9.4 создаем inbound напрямую через SQL
+        echo -e "${YELLOW}📝 Создание inbound через SQL (v2.9.4)...${NC}"
+        
+        INBOUND_TABLE_EXISTS=$(sqlite3 /etc/x-ui/x-ui.db "SELECT name FROM sqlite_master WHERE type='table' AND name='inbounds';" 2>/dev/null)
+        
+        if [ -n "$INBOUND_TABLE_EXISTS" ]; then
+            echo -e "${GREEN}✅ Таблица inbounds найдена${NC}"
+            
+            # Создаем JSON конфигурации для settings и streamSettings
+            SETTINGS_JSON='{"clients":[],"decryption":"none","fallbacks":[]}'
+            
+            STREAM_SETTINGS_JSON=$(cat <<STREAMEOF
+{
+  "network": "xhttp",
+  "security": "reality",
+  "externalProxy": [],
+  "realitySettings": {
+    "show": false,
+    "xver": 0,
+    "dest": "google.com:443",
+    "serverNames": ["google.com","www.google.com"],
+    "privateKey": "${REALITY_PRIVATE_KEY}",
+    "minClientVer": "",
+    "maxClientVer": "",
+    "maxTimediff": 0,
+    "shortIds": ["${REALITY_SHORT_ID}"],
+    "settings": {
+      "publicKey": "${REALITY_PUBLIC_KEY}",
+      "fingerprint": "chrome",
+      "serverName": "",
+      "spiderX": "/"
+    }
+  },
+  "xhttpSettings": {
+    "path": "/",
+    "host": "",
+    "headers": {},
+    "scMaxBufferedPosts": 30,
+    "scMaxEachPostBytes": "1000000",
+    "scStreamUpServerSecs": "20-80",
+    "noSSEHeader": false,
+    "xPaddingBytes": "100-1000",
+    "mode": "auto",
+    "xPaddingObfsMode": false
+  }
+}
+STREAMEOF
+)
+            
+            SNIFFING_JSON='{"enabled":true,"destOverride":["http","tls","quic","fakedns"],"metadataOnly":false,"routeOnly":false}'
+            
+            # Экранируем JSON для SQL
+            SETTINGS_JSON_ESCAPED=$(echo "$SETTINGS_JSON" | sed "s/'/''/g")
+            STREAM_SETTINGS_JSON_ESCAPED=$(echo "$STREAM_SETTINGS_JSON" | sed "s/'/''/g")
+            SNIFFING_JSON_ESCAPED=$(echo "$SNIFFING_JSON" | sed "s/'/''/g")
+            
+            # Проверяем и удаляем существующий inbound
+            EXISTING_INBOUND=$(sqlite3 /etc/x-ui/x-ui.db "SELECT id FROM inbounds WHERE tag='inbound-443' OR remark='VLESS-Reality-xHTTP';" 2>/dev/null)
+            
+            if [ -n "$EXISTING_INBOUND" ]; then
+                echo -e "${YELLOW}⚠ Найден существующий inbound (ID: ${EXISTING_INBOUND}), удаляем...${NC}"
+                sqlite3 /etc/x-ui/x-ui.db "DELETE FROM inbounds WHERE tag='inbound-443' OR remark='VLESS-Reality-xHTTP';" 2>/dev/null
+                echo -e "${GREEN}✅ Старый inbound удален${NC}"
+            fi
+            
+            # Вставляем inbound в базу данных
+            SQL_INSERT="INSERT INTO inbounds (user_id, up, down, total, remark, enable, expiry_time, listen, port, protocol, settings, stream_settings, tag, sniffing) VALUES (1, 0, 0, 0, 'VLESS-Reality-xHTTP', 1, 0, '', 443, 'vless', '${SETTINGS_JSON_ESCAPED}', '${STREAM_SETTINGS_JSON_ESCAPED}', 'inbound-443', '${SNIFFING_JSON_ESCAPED}');"
+            
+            set +e
+            SQL_RESULT=$(sqlite3 /etc/x-ui/x-ui.db "${SQL_INSERT}" 2>&1)
+            SQL_EXIT_CODE=$?
+            set -e
+            
+            if [ $SQL_EXIT_CODE -eq 0 ]; then
+                echo -e "${GREEN}✅ SQL запрос выполнен успешно${NC}"
+                INBOUND_ID=$(sqlite3 /etc/x-ui/x-ui.db "SELECT id FROM inbounds WHERE remark='VLESS-Reality-xHTTP' ORDER BY id DESC LIMIT 1;" 2>/dev/null)
+                
+                if [ -n "$INBOUND_ID" ]; then
+                    echo -e "${GREEN}✅ Inbound создан!${NC}"
+                    echo -e "${GREEN}   ID: ${INBOUND_ID}${NC}"
+                    echo -e "${GREEN}   Порт: 443${NC}"
+                    echo -e "${GREEN}   Protocol: VLESS${NC}"
+                    echo -e "${GREEN}   Network: xhttp${NC}"
+                    echo -e "${GREEN}   Security: reality${NC}"
+                    
+                    # Сохраняем ID в .env
+                    update_env_value "INBOUND_ID" "${INBOUND_ID}"
+                    
+                    # Отключаем WAL режим для совместимости с Docker
+                    echo -e "${YELLOW}🔧 Оптимизация базы данных для Docker...${NC}"
+                    systemctl stop x-ui
+                    sleep 2
+                    
+                    sqlite3 /etc/x-ui/x-ui.db "PRAGMA wal_checkpoint(TRUNCATE);" 2>/dev/null || true
+                    sqlite3 /etc/x-ui/x-ui.db "PRAGMA journal_mode=DELETE;" 2>/dev/null || true
+                    
+                    echo -e "${GREEN}✅ База данных оптимизирована${NC}"
+                    
+                    systemctl start x-ui
+                    sleep 5
+                    
+                    if systemctl is-active --quiet x-ui; then
+                        echo -e "${GREEN}✅ Панель успешно перезапущена${NC}"
+                    fi
+                fi
+            else
+                echo -e "${RED}❌ Ошибка выполнения SQL запроса${NC}"
+                echo -e "${RED}Ошибка: ${SQL_RESULT}${NC}"
+            fi
+        fi
+        
+        # Финальный перезапуск панели
+        echo -e "\n${YELLOW}🔄 Финальный перезапуск панели...${NC}"
+        systemctl restart x-ui
+        sleep 5
+        
+        if systemctl is-active --quiet x-ui; then
+            echo -e "${GREEN}✅ Панель успешно запущена и работает${NC}"
+        else
+            echo -e "${RED}⚠ ОШИБКА: Панель не запустилась!${NC}"
+            echo -e "${YELLOW}Проверьте: journalctl -u x-ui -n 30${NC}"
+        fi
+        
+        echo -e "\n${BLUE}========================================${NC}"
+        echo -e "${GREEN}   ВАШИ ДАННЫЕ ДЛЯ ВХОДА${NC}"
+        echo -e "${BLUE}========================================${NC}"
+        echo -e "${GREEN}URL панели:${NC} ${YELLOW}${XUI_URL}${NC}"
+        echo -e "${GREEN}Username:${NC}   ${YELLOW}${XUI_USERNAME}${NC}"
+        echo -e "${GREEN}Password:${NC}   ${YELLOW}${XUI_PASSWORD}${NC}"
+        echo -e "${GREEN}Версия:${NC}     ${YELLOW}v2.9.4${NC}"
+        echo -e "${BLUE}========================================${NC}"
+        echo -e "${YELLOW}💾 Также эти данные сохранены в:${NC}"
+        echo -e "   ${YELLOW}${WORK_DIR}/.env${NC}"
+        echo -e "${BLUE}========================================${NC}"
+        
+        echo -e "\n${GREEN}✅ Установка 3x-ui v2.9.4 панели завершена!${NC}"
+        echo -e "${YELLOW}Нажмите Enter для возврата в меню...${NC}"
+        read
+    else
+        echo -e "\n${RED}❌ Ошибка установки 3x-ui v2.9.4 панели${NC}"
+        echo -e "${YELLOW}Нажмите Enter для возврата в меню...${NC}"
+        read
+    fi
+}
+
 
 # Функция удаления 3x-ui панели
 remove_3xui() {

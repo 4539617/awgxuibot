@@ -41,6 +41,65 @@ class XUIClient:
         self.config = config
         self.session = None
         self.cookies = None
+        self._detected_version = None
+    
+    def _get_api_endpoints(self, endpoint_type: str) -> list:
+        """
+        Возвращает список API endpoints в зависимости от версии панели
+        
+        Args:
+            endpoint_type: тип endpoint ('add_client', 'delete_client', 'login')
+        
+        Returns:
+            list: список URL endpoints для попытки подключения
+        """
+        base_url = self.config.xui.url.rstrip('/')
+        
+        # Определяем версию
+        is_v2 = self.config.xui.is_v2()
+        is_v3 = self.config.xui.is_v3()
+        
+        if endpoint_type == 'add_client':
+            if is_v2:
+                # v2.9.4 использует старые endpoints
+                return [
+                    f"{base_url}/xui/inbound/addClient",
+                    f"{base_url}/xui/API/inbounds/addClient",
+                ]
+            else:
+                # v3.x и latest используют новые endpoints
+                return [
+                    f"{base_url}/panel/api/inbounds/addClient",
+                    f"{base_url}/xui/API/inbounds/addClient",
+                    f"{base_url}/server/addClient",
+                ]
+        
+        elif endpoint_type == 'delete_client':
+            client_uuid = self.config.xui.inbound_id  # Будет передан отдельно
+            if is_v2:
+                return [
+                    f"{base_url}/xui/inbound/delClient/{{uuid}}",
+                    f"{base_url}/xui/API/inbounds/{{inbound_id}}/delClient/{{uuid}}",
+                ]
+            else:
+                return [
+                    f"{base_url}/panel/api/inbounds/delClient/{{uuid}}",
+                    f"{base_url}/xui/API/inbounds/{{inbound_id}}/delClient/{{uuid}}",
+                ]
+        
+        elif endpoint_type == 'login':
+            if is_v2:
+                return [
+                    f"{base_url}/login",
+                    f"{base_url}/xui/login",
+                ]
+            else:
+                return [
+                    f"{base_url}/panel/login",
+                    f"{base_url}/login",
+                ]
+        
+        return []
     
     async def _get_session(self):
         """Создание сессии с SSL контекстом"""
@@ -126,12 +185,8 @@ class XUIClient:
             })
         }
 
-        base_url = self.config.xui.url.rstrip('/')
-        endpoints = [
-            f"{base_url}/xui/API/inbounds/addClient",
-            f"{base_url}/panel/api/inbounds/addClient",
-            f"{base_url}/server/addClient",
-        ]
+        # Получаем endpoints в зависимости от версии
+        endpoints = self._get_api_endpoints('add_client')
         
         for endpoint in endpoints:
             try:
@@ -250,11 +305,12 @@ class XUIClient:
             if not await self.login():
                 return False
 
-        # Пробуем удалить через API
-        base_url = self.config.xui.url.rstrip('/')
+        # Получаем endpoints в зависимости от версии
+        endpoints = self._get_api_endpoints('delete_client')
+        # Подставляем UUID и inbound_id в шаблоны
         endpoints = [
-            f"{base_url}/xui/API/inbounds/{self.config.xui.inbound_id}/delClient/{client_uuid}",
-            f"{base_url}/panel/api/inbounds/delClient/{client_uuid}",
+            ep.replace('{uuid}', client_uuid).replace('{inbound_id}', str(self.config.xui.inbound_id))
+            for ep in endpoints
         ]
         
         for endpoint in endpoints:

@@ -33,6 +33,7 @@ class XUIConfig:
     inbound_id: int
     db_path: str
     api_timeout: int = 30
+    version: str = "latest"
 
     @classmethod
     def from_env(cls):
@@ -42,8 +43,17 @@ class XUIConfig:
             password=os.getenv("XUI_PASSWORD", ""),
             inbound_id=int(os.getenv("INBOUND_ID", "1")),
             db_path=os.getenv("XUI_DB_PATH", "/etc/x-ui/x-ui.db"),
-            api_timeout=int(os.getenv("API_TIMEOUT", "30"))
+            api_timeout=int(os.getenv("API_TIMEOUT", "30")),
+            version=os.getenv("XUI_VERSION", "latest")
         )
+    
+    def is_v2(self) -> bool:
+        """Проверка является ли версия 2.x"""
+        return self.version.startswith("2.")
+    
+    def is_v3(self) -> bool:
+        """Проверка является ли версия 3.x или latest"""
+        return self.version.startswith("3.") or self.version == "latest"
 
 
 @dataclass
