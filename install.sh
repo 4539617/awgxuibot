@@ -82,14 +82,18 @@ create_directories() {
 create_env_if_not_exists() {
     if [ ! -f ".env" ]; then
         echo -e "${YELLOW}📝 Создание .env файла с дефолтными значениями...${NC}"
-        cat > .env << 'EOF'
+        
+        # Получаем IP сервера
+        SERVER_IP=$(curl -s ifconfig.me)
+        
+        cat > .env << EOF
 # Telegram Bot Configuration
 TELEGRAM_BOT_TOKEN=
 ADMIN_IDS=
 
 # Server Configuration
-SERVER_ADDRESS=
-SERVER_IP=
+SERVER_ADDRESS=${SERVER_IP}
+SERVER_IP=${SERVER_IP}
 SERVER_PORT=443
 
 # 3x-ui Panel Configuration
