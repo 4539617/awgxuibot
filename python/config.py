@@ -348,8 +348,11 @@ class Config:
             raise ValueError("TELEGRAM_BOT_TOKEN не указан")
         if not self.xui.password or self.xui.password == "your_password_here":
             raise ValueError("XUI_PASSWORD не указан")
-        if not self.vpn.server_address or self.vpn.server_address == "your-domain.com":
+        if not self.vpn.server_address:
             raise ValueError("SERVER_ADDRESS не указан")
+        # Проверяем, что SERVER_ADDRESS не является placeholder значением
+        if self.vpn.server_address in ["your-domain.com", "your_domain.com", "example.com"]:
+            raise ValueError("SERVER_ADDRESS содержит placeholder значение. Укажите реальный домен или IP")
         if self.vpn.security == "reality":
             if not self.vpn.reality_public_key:
                 print("⚠️ REALITY_PUBLIC_KEY не указан, проверьте настройки")

@@ -455,14 +455,8 @@ install_xuibot() {
         return
     fi
     
-    # Проверка наличия .env
-    if [ ! -f ".env" ]; then
-        echo -e "${RED}❌ Файл .env не найден!${NC}"
-        echo -e "${YELLOW}Сначала установите 3x-ui Panel (пункт 9)${NC}"
-        echo -e "\n${CYAN}Нажмите Enter для возврата в главное меню...${NC}"
-        read
-        return
-    fi
+    # Создание .env файла если не существует
+    create_env_if_not_exists
     
     # Проверка TELEGRAM_BOT_TOKEN
     if ! grep -q "^TELEGRAM_BOT_TOKEN=.\+" .env; then
