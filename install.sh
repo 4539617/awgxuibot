@@ -1062,11 +1062,6 @@ install_3xui_latest() {
         if [[ ! "$reinstall" =~ ^[Yy]$ ]]; then
             echo -e "${YELLOW}Отменено${NC}"
             return
-# Обёртка для установки 3x-ui с выбором версии
-install_3xui() {
-    select_xui_version
-}
-
         fi
     fi
     
@@ -1335,7 +1330,7 @@ EOF
   "port": 443,
   "protocol": "vless",
   "settings": "{\n  \"clients\": [],\n  \"decryption\": \"none\",\n  \"encryption\": \"none\"\n}",
-  "streamSettings": "{\n  \"network\": \"xhttp\",\n  \"security\": \"reality\",\n  \"externalProxy\": [],\n  \"realitySettings\": {\n    \"show\": false,\n    \"xver\": 0,\n    \"target\": \"google.com:443\",\n    \"serverNames\": [\n      \"google.com\",\n      \"www.google.com\"\n    ],\n    \"privateKey\": \"REALITY_PRIVATE_KEY_PLACEHOLDER\",\n    \"minClientVer\": \"\",\n    \"maxClientVer\": \"\",\n    \"maxTimediff\": 0,\n    \"shortIds\": [\n      \"REALITY_SHORT_ID_PLACEHOLDER\"\n    ],\n    \"settings\": {\n      \"publicKey\": \"REALITY_PUBLIC_KEY_PLACEHOLDER\",\n      \"fingerprint\": \"edge\",\n      \"serverName\": \"\",\n      \"spiderX\": \"/\"\n    }\n  },\n  \"xhttpSettings\": {\n    \"path\": \"/\",\n    \"host\": \"\",\n    \"headers\": {},\n    \"scMaxBufferedPosts\": 30,\n    \"scMaxEachPostBytes\": \"1000000\",\n    \"scStreamUpServerSecs\": \"20-80\",\n    \"noSSEHeader\": false,\n    \"xPaddingBytes\": \"100-1000\",\n    \"mode\": \"auto\",\n    \"xPaddingObfsMode\": false\n  }\n}",
+  "streamSettings": "{\n  \"network\": \"xhttp\",\n  \"security\": \"reality\",\n  \"externalProxy\": [],\n  \"realitySettings\": {\n    \"show\": false,\n    \"xver\": 0,\n    \"target\": \"www.nvidia.com:443\",\n    \"serverNames\": [\n      \"www.nvidia.com\"\n    ],\n    \"privateKey\": \"REALITY_PRIVATE_KEY_PLACEHOLDER\",\n    \"minClientVer\": \"\",\n    \"maxClientVer\": \"\",\n    \"maxTimediff\": 0,\n    \"shortIds\": [\n      \"REALITY_SHORT_ID_PLACEHOLDER\"\n    ],\n    \"settings\": {\n      \"publicKey\": \"REALITY_PUBLIC_KEY_PLACEHOLDER\",\n      \"fingerprint\": \"edge\",\n      \"serverName\": \"\",\n      \"spiderX\": \"/\"\n    }\n  },\n  \"xhttpSettings\": {\n    \"path\": \"/\",\n    \"host\": \"\",\n    \"headers\": {},\n    \"scMaxBufferedPosts\": 30,\n    \"scMaxEachPostBytes\": \"1000000\",\n    \"scStreamUpServerSecs\": \"20-80\",\n    \"noSSEHeader\": false,\n    \"xPaddingBytes\": \"100-1000\",\n    \"mode\": \"auto\",\n    \"xPaddingObfsMode\": false,\n    \"scMinPostsIntervalMs\": \"30\"\n  }\n}",
   "tag": "inbound-443",
   "sniffing": "{\n  \"enabled\": false,\n  \"destOverride\": [\n    \"http\",\n    \"tls\",\n    \"quic\",\n    \"fakedns\"\n  ],\n  \"metadataOnly\": false,\n  \"routeOnly\": false\n}",
   "remark": "VLESS-Reality-xHTTP"
@@ -1369,8 +1364,8 @@ INBOUND_EOF
   "realitySettings": {
     "show": false,
     "xver": 0,
-    "dest": "google.com:443",
-    "serverNames": ["google.com","www.google.com"],
+    "target": "www.nvidia.com:443",
+    "serverNames": ["www.nvidia.com"],
     "privateKey": "${REALITY_PRIVATE_KEY}",
     "minClientVer": "",
     "maxClientVer": "",
@@ -1378,7 +1373,7 @@ INBOUND_EOF
     "shortIds": ["${REALITY_SHORT_ID}"],
     "settings": {
       "publicKey": "${REALITY_PUBLIC_KEY}",
-      "fingerprint": "chrome",
+      "fingerprint": "edge",
       "serverName": "",
       "spiderX": "/"
     }
@@ -1393,7 +1388,8 @@ INBOUND_EOF
     "noSSEHeader": false,
     "xPaddingBytes": "100-1000",
     "mode": "auto",
-    "xPaddingObfsMode": false
+    "xPaddingObfsMode": false,
+    "scMinPostsIntervalMs": "30"
   }
 }
 STREAMEOF
@@ -1796,8 +1792,8 @@ EOF
   "realitySettings": {
     "show": false,
     "xver": 0,
-    "dest": "google.com:443",
-    "serverNames": ["google.com","www.google.com"],
+    "target": "www.nvidia.com:443",
+    "serverNames": ["www.nvidia.com"],
     "privateKey": "${REALITY_PRIVATE_KEY}",
     "minClientVer": "",
     "maxClientVer": "",
@@ -1805,7 +1801,7 @@ EOF
     "shortIds": ["${REALITY_SHORT_ID}"],
     "settings": {
       "publicKey": "${REALITY_PUBLIC_KEY}",
-      "fingerprint": "chrome",
+      "fingerprint": "edge",
       "serverName": "",
       "spiderX": "/"
     }
@@ -1820,7 +1816,8 @@ EOF
     "noSSEHeader": false,
     "xPaddingBytes": "100-1000",
     "mode": "auto",
-    "xPaddingObfsMode": false
+    "xPaddingObfsMode": false,
+    "scMinPostsIntervalMs": "30"
   }
 }
 STREAMEOF
@@ -1920,6 +1917,11 @@ STREAMEOF
         echo -e "${YELLOW}Нажмите Enter для возврата в меню...${NC}"
         read
     fi
+}
+
+# Обёртка для установки 3x-ui с выбором версии
+install_3xui() {
+    select_xui_version
 }
 
 
