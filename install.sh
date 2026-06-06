@@ -433,10 +433,30 @@ install_xuibot() {
     echo -e "${BLUE}   3x-ui Panel Management${NC}"
     echo -e "${BLUE}========================================${NC}\n"
     
+    # Проверка установки 3x-ui панели
+    if ! systemctl is-active --quiet x-ui; then
+        echo -e "${RED}❌ 3x-ui панель не установлена или не запущена!${NC}"
+        echo -e "${YELLOW}Сначала установите 3x-ui Panel (пункт 9)${NC}"
+        echo -e "\n${CYAN}Нажмите Enter для возврата в главное меню...${NC}"
+        read
+        return
+    fi
+    
+    # Проверка наличия базы данных
+    if [ ! -f "/etc/x-ui/x-ui.db" ]; then
+        echo -e "${RED}❌ База данных 3x-ui не найдена!${NC}"
+        echo -e "${YELLOW}Сначала установите 3x-ui Panel (пункт 9)${NC}"
+        echo -e "\n${CYAN}Нажмите Enter для возврата в главное меню...${NC}"
+        read
+        return
+    fi
+    
     # Проверка наличия .env
     if [ ! -f ".env" ]; then
         echo -e "${RED}❌ Файл .env не найден!${NC}"
         echo -e "${YELLOW}Сначала установите 3x-ui Panel (пункт 9)${NC}"
+        echo -e "\n${CYAN}Нажмите Enter для возврата в главное меню...${NC}"
+        read
         return
     fi
     
@@ -574,8 +594,8 @@ remove_xuibot() {
 # Функция установки AWG бота
 install_awgbot() {
     echo -e "\n${BLUE}========================================${NC}"
-    echo -e "${BLUE}   Установка AWG Бота${NC}"
-    echo -e "${BLUE}   AmneziaWG Management${NC}"
+    echo -e "${BLUE}   Установка AWGBOT${NC}"
+    echo -e "${BLUE}   AWG Management${NC}"
     echo -e "${BLUE}========================================${NC}\n"
     
     # Проверка наличия .env
@@ -772,6 +792,122 @@ remove_awg_v2() {
     
     echo -e "${GREEN}✅ AWG v2 удален!${NC}"
 }
+# Функция получения username бота через API
+get_bot_username() {
+    local token=$1
+    local bot_name=$2
+    
+    if [ -z "$token" ]; then
+        echo "Unknown"
+        return
+    fi
+    
+    # Пробуем получить через API
+    local username=$(curl -s "https://api.telegram.org/bot${token}/getMe" 2>/dev/null | grep -o '"username":"[^"]*"' | cut -d'"' -f4)
+    
+    if [ -n "$username" ]; then
+        echo "$username"
+    else
+        echo "Unknown"
+    fi
+}
+
+# Функция показа статуса системы
+show_status() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   СТАТУС СИСТЕМЫ${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+    
+    # ============================================
+    # 3X-UI PANEL
+    # ============================================
+    echo -e "${YELLOW}${BOLD}3X-UI PANEL:${NC}"
+    
+    if systemctl is-active --quiet x-ui; then
+        # Получаем версию
+        local xui_version=$(x-ui version 2>/dev/null | grep -oP 'v\d+\.\d+\.\d+' | head -1)
+        [ -z "$xui_version" ] && xui_version="Unknown"
+        
+        # Получаем данные из .env
+        if [ -f ".env" ]; then
+            local xui_url=$(grep "^XUI_URL=" .env 2>/dev/null | cut -d'=' -f2)
+            local xui_user=$(grep "^XUI_USERNAME=" .env 2>/dev/null | cut -d'=' -f2)
+            local xui_pass=$(grep "^XUI_PASSWORD=" .env 2>/dev/null | cut -d'=' -f2)
+            
+            echo -e "  ${GREEN}✅ Установлена${NC}"
+            echo -e "  Версия: ${xui_version}"
+            echo -e "  URL: ${xui_url}"
+            echo -e "  Логин: ${xui_user}"
+            echo -e "  Пароль: ${xui_pass}"
+            echo -e "  Состояние: ${GREEN}Запущена${NC}"
+        else
+            echo -e "  ${GREEN}✅ Установлена${NC}"
+            echo -e "  Версия: ${xui_version}"
+            echo -e "  Состояние: ${GREEN}Запущена${NC}"
+        fi
+    else
+        echo -e "  ${RED}❌ Не установлена${NC}"
+    fi
+    
+    # ============================================
+    # AWG SERVERS
+    # ============================================
+    echo -e "\n${YELLOW}${BOLD}AMNEZIAWG SERVERS:${NC}"
+    
+    # AWG v1
+    if docker ps --filter name=amnezia-awg --format "{{.Names}}" | grep -q "amnezia-awg"; then
+        local awg1_port=$(docker port amnezia-awg 2>/dev/null | grep -oP '\d+$' | head -1)
+        [ -z "$awg1_port" ] && awg1_port="Unknown"
+        echo -e "  AWG v1: ${GREEN}✅ Запущен${NC} (Порт: ${awg1_port})"
+    else
+        echo -e "  AWG v1: ${RED}❌ Не установлен${NC}"
+    fi
+    
+    # AWG v2
+    if docker ps --filter name=amnezia-awg2 --format "{{.Names}}" | grep -q "amnezia-awg2"; then
+        local awg2_port=$(docker port amnezia-awg2 2>/dev/null | grep -oP '\d+$' | head -1)
+        [ -z "$awg2_port" ] && awg2_port="Unknown"
+        echo -e "  AWG v2: ${GREEN}✅ Запущен${NC} (Порт: ${awg2_port})"
+    else
+        echo -e "  AWG v2: ${RED}❌ Не установлен${NC}"
+    fi
+    
+    # ============================================
+    # TELEGRAM BOTS
+    # ============================================
+    echo -e "\n${YELLOW}${BOLD}TELEGRAM BOTS:${NC}"
+    
+    # XUI Bot
+    if docker ps --filter name=xuibot --format "{{.Names}}" | grep -q xuibot; then
+        local xui_token=$(grep "^TELEGRAM_BOT_TOKEN=" .env 2>/dev/null | cut -d'=' -f2)
+        local xui_bot_username=$(get_bot_username "$xui_token" "xuibot")
+        
+        echo -e "  XUI Bot: ${GREEN}✅ Запущен${NC}"
+        if [ "$xui_bot_username" != "Unknown" ]; then
+            echo -e "  Ссылка: https://t.me/${xui_bot_username}"
+        fi
+        echo -e "  Состояние: ${GREEN}Running${NC}"
+    else
+        echo -e "  XUI Bot: ${RED}❌ Не установлен${NC}"
+    fi
+    
+    # AWG Bot
+    if docker ps --filter name=awgbot --format "{{.Names}}" | grep -q awgbot; then
+        local awg_token=$(grep "^AWG_BOT_TOKEN=" .env 2>/dev/null | cut -d'=' -f2)
+        local awg_bot_username=$(get_bot_username "$awg_token" "awgbot")
+        
+        echo -e "  AWG Bot: ${GREEN}✅ Запущен${NC}"
+        if [ "$awg_bot_username" != "Unknown" ]; then
+            echo -e "  Ссылка: https://t.me/${awg_bot_username}"
+        fi
+        echo -e "  Состояние: ${GREEN}Running${NC}"
+    else
+        echo -e "  AWG Bot: ${RED}❌ Не установлен${NC}"
+    fi
+    
+    echo -e "\n${BLUE}========================================${NC}"
+}
+
 
 # Функция удаления всего
 remove_all() {
@@ -780,8 +916,8 @@ remove_all() {
     echo -e "${BLUE}========================================${NC}\n"
     
     echo -e "${RED}⚠️  ВНИМАНИЕ! Это удалит:${NC}"
-    echo -e "  - AWG Бот (AmneziaWG Management)"
-    echo -e "  - XUI Бот (3x-ui Management)"
+    echo -e "  - AWG Бот"
+    echo -e "  - XUI Бот"
     echo -e "  - 3x-ui панель"
     echo -e "  - AWG v1 сервер"
     echo -e "  - AWG v2 сервер"
@@ -1524,27 +1660,31 @@ show_menu() {
     echo -e "\n${BLUE}========================================${NC}"
     echo -e "${BLUE}   Выберите действие:${NC}"
     echo -e "${BLUE}========================================${NC}"
-    echo -e "${YELLOW}XUI Bot (3x-ui Management):${NC}"
-    echo -e "${GREEN}1)${NC} Установка XUI Бота"
-    echo -e "${GREEN}2)${NC} Логи XUI Бота"
-    echo -e "${GREEN}3)${NC} Обновление XUI Бота"
-    echo -e "${GREEN}4)${NC} Удаление XUI Бота"
-    echo -e "${BLUE}---${NC}"
-    echo -e "${YELLOW}AWG Bot (AmneziaWG Management):${NC}"
-    echo -e "${GREEN}5)${NC} Установка AWG Бота"
-    echo -e "${GREEN}6)${NC} Логи AWG Бота"
-    echo -e "${GREEN}7)${NC} Обновление AWG Бота"
-    echo -e "${GREEN}8)${NC} Удаление AWG Бота"
-    echo -e "${BLUE}---${NC}"
     echo -e "${YELLOW}3x-ui Panel:${NC}"
-    echo -e "${GREEN}9)${NC} Установка 3x-ui Panel"
-    echo -e "${GREEN}10)${NC} Удаление 3x-ui Panel"
+    echo -e "${GREEN}1)${NC} Установка 3x-ui Panel"
+    echo -e "${GREEN}2)${NC} Удаление 3x-ui Panel"
     echo -e "${BLUE}---${NC}"
     echo -e "${YELLOW}AmneziaWG:${NC}"
-    echo -e "${GREEN}11)${NC} Установка AWG v1"
-    echo -e "${GREEN}12)${NC} Установка AWG v2"
-    echo -e "${GREEN}13)${NC} Удаление AWG v1"
-    echo -e "${GREEN}14)${NC} Удаление AWG v2"
+    echo -e "${GREEN}3)${NC} Установка AWG v1"
+    echo -e "${GREEN}4)${NC} Установка AWG v2"
+    echo -e "${GREEN}5)${NC} Удаление AWG v1"
+    echo -e "${GREEN}6)${NC} Удаление AWG v2"
+    echo -e "${BLUE}---${NC}"
+    echo -e "${YELLOW}XUI Bot:${NC}"
+    echo -e "${GREEN}7)${NC} Установка XUIBOT"
+    echo -e "${GREEN}8)${NC} Логи XUIBOT"
+    echo -e "${GREEN}9)${NC} Обновление XUIBOT"
+    echo -e "${GREEN}10)${NC} Удаление XUIBOT"
+    echo -e "${BLUE}---${NC}"
+    echo -e "${YELLOW}AWG Bot:${NC}"
+    echo -e "${GREEN}11)${NC} Установка AWGBOT"
+    echo -e "${GREEN}12)${NC} Логи AWGBOT"
+    echo -e "${GREEN}13)${NC} Обновление AWGBOT"
+    echo -e "${GREEN}14)${NC} Удаление AWGBOT"
+    echo -e "${BLUE}---${NC}"
+    echo -e "${YELLOW}Системные утилиты:${NC}"
+    echo -e "${GREEN}16)${NC} Анализ диска и памяти"
+    echo -e "${GREEN}17)${NC} Показать статус системы"
     echo -e "${BLUE}---${NC}"
     echo -e "${RED}15)${NC} Удалить ВСЁ (AWG + Боты + 3x-ui)"
     echo -e "${GREEN}0)${NC} Выход"
@@ -1561,49 +1701,59 @@ while true; do
     
     case $choice in
         1)
-            install_xuibot
-            ;;
-        2)
-            show_xuibot_logs
-            ;;
-        3)
-            update_xuibot
-            ;;
-        4)
-            remove_xuibot
-            ;;
-        5)
-            install_awgbot
-            ;;
-        6)
-            show_awgbot_logs
-            ;;
-        7)
-            update_awgbot
-            ;;
-        8)
-            remove_awgbot
-            ;;
-        9)
             install_3xui
             ;;
-        10)
+        2)
             remove_3xui
             ;;
-        11)
+        3)
             install_awg_v1
             ;;
-        12)
+        4)
             install_awg_v2
             ;;
-        13)
+        5)
             remove_awg_v1
             ;;
-        14)
+        6)
             remove_awg_v2
+            ;;
+        7)
+            install_xuibot
+            ;;
+        8)
+            show_xuibot_logs
+            ;;
+        9)
+            update_xuibot
+            ;;
+        10)
+            remove_xuibot
+            ;;
+        11)
+            install_awgbot
+            ;;
+        12)
+            show_awgbot_logs
+            ;;
+        13)
+            update_awgbot
+            ;;
+        14)
+            remove_awgbot
             ;;
         15)
             remove_all
+            ;;
+        16)
+            if [ -f "disk_analyzer.sh" ]; then
+                bash disk_analyzer.sh
+            else
+                echo -e "${RED}❌ Файл disk_analyzer.sh не найден!${NC}"
+            fi
+            ;;
+        17)
+            show_status
             ;;
         0)
             echo -e "\n${GREEN}👋 До свидания!${NC}"
