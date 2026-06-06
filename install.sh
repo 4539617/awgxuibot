@@ -1241,6 +1241,9 @@ EOF
         update_env_value "REALITY_PUBLIC_KEY" "${REALITY_PUBLIC_KEY}"
         update_env_value "REALITY_PRIVATE_KEY" "${REALITY_PRIVATE_KEY}"
         update_env_value "REALITY_SHORT_ID" "${REALITY_SHORT_ID}"
+        update_env_value "SERVER_ADDRESS" "${SERVER_IP}"
+        update_env_value "SERVER_IP" "${SERVER_IP}"
+        update_env_value "SERVER_PORT" "443"
         
         # Сохраняем версию панели
         if [ -n "$XUI_VERSION" ]; then
@@ -1578,12 +1581,8 @@ STREAMEOF
         else
             echo -e "\n${GREEN}✅ Установка 3x-ui панели завершена!${NC}"
         fi
-        echo -e "${YELLOW}Нажмите Enter для возврата в меню...${NC}"
-        read
     else
         echo -e "\n${RED}❌ Ошибка установки 3x-ui панели${NC}"
-        echo -e "${YELLOW}Нажмите Enter для возврата в меню...${NC}"
-        read
     fi
 }
 # Функция установки 3x-ui панели версии 2.9.4
@@ -1764,6 +1763,9 @@ EOF
         update_env_value "REALITY_PUBLIC_KEY" "${REALITY_PUBLIC_KEY}"
         update_env_value "REALITY_PRIVATE_KEY" "${REALITY_PRIVATE_KEY}"
         update_env_value "REALITY_SHORT_ID" "${REALITY_SHORT_ID}"
+        update_env_value "SERVER_ADDRESS" "${SERVER_IP}"
+        update_env_value "SERVER_IP" "${SERVER_IP}"
+        update_env_value "SERVER_PORT" "443"
         update_env_value "XUI_VERSION" "2.9.4"
         
         # Автоматическое создание inbound для v2.9.4
@@ -1910,12 +1912,8 @@ STREAMEOF
         echo -e "${BLUE}========================================${NC}"
         
         echo -e "\n${GREEN}✅ Установка 3x-ui v2.9.4 панели завершена!${NC}"
-        echo -e "${YELLOW}Нажмите Enter для возврата в меню...${NC}"
-        read
     else
         echo -e "\n${RED}❌ Ошибка установки 3x-ui v2.9.4 панели${NC}"
-        echo -e "${YELLOW}Нажмите Enter для возврата в меню...${NC}"
-        read
     fi
 }
 
