@@ -40,3 +40,13 @@ docker stop netcrazybot xuibot
 
 ```bash
 docker start netcrazybot xuibot
+```
+
+## ▶️ Перезапуск контейнера
+
+```bash
+docker compose down xuibot
+docker compose build --no-cache xuibot
+docker compose up -d xuibot
+docker logs -f xuibot
+```

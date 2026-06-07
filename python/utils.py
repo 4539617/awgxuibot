@@ -791,6 +791,8 @@ class XUIClient:
 def generate_vless_link(client_uuid: str, email: str, vpn_config, inbound_id: int, xui_client=None) -> str:
     """Универсальная генерация VLESS ссылки в зависимости от настроек"""
     import urllib.parse
+    import random
+    import string
     
     # Пытаемся получить настройки из БД
     db_settings = {}
@@ -808,7 +810,11 @@ def generate_vless_link(client_uuid: str, email: str, vpn_config, inbound_id: in
     fingerprint = db_settings.get('fingerprint', vpn_config.get_fingerprint())
     public_key = db_settings.get('public_key', getattr(vpn_config, 'reality_public_key', ''))
     short_id = db_settings.get('short_id', getattr(vpn_config, 'reality_short_id', ''))
-    spider_x = db_settings.get('spider_x', '/')
+    spider_x_base = db_settings.get('spider_x', '/')
+    
+    # Генерируем случайный spiderX путь как в панели
+    random_path = ''.join(random.choices(string.ascii_lowercase + string.digits, k=15))
+    spider_x = f"{spider_x_base}{random_path}" if spider_x_base == '/' else spider_x_base
     xhttp_path = db_settings.get('xhttp_path', '/')
     xhttp_mode = db_settings.get('xhttp_mode', getattr(vpn_config, 'xhttp_mode', 'auto'))
     xhttp_host = db_settings.get('xhttp_host', '')
