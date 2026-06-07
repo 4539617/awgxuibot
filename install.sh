@@ -1614,37 +1614,30 @@ install_3xui_v294() {
     
     SERVER_IP=$(curl -s ifconfig.me)
     
-    # Генерируем случайный пароль для панели
-    GENERATED_PASSWORD=$(openssl rand -base64 16 | tr -d "=+/" | cut -c1-16)
-    
     echo -e "${YELLOW}📦 Загрузка и установка 3x-ui v2.9.4...${NC}"
-    echo -e "${BLUE}Будет сгенерирован случайный пароль для панели${NC}\n"
+    echo -e "${BLUE}Инсталятор автоматически сгенерирует учетные данные${NC}\n"
     
-    # Установка конкретной версии v2.9.4
-    # Используем прямую ссылку на релиз v2.9.4
-    INSTALL_OUTPUT=$(bash <(curl -Ls https://raw.githubusercontent.com/MHSanaei/3x-ui/v2.9.4/install.sh) 2>&1 << EOF
-y
-1
-2
-
-
-EOF
-)
+    # Установка конкретной версии v2.9.4 с правильной ссылкой
+    # Скипаем все вопросы инсталятора, ждем пока он выдаст регистрационные данные
+    VERSION=v2.9.4
+    echo -e "${YELLOW}Запуск установщика 3x-ui v2.9.4...${NC}"
+    INSTALL_OUTPUT=$(bash <(curl -Ls "https://raw.githubusercontent.com/mhsanaei/3x-ui/$VERSION/install.sh") $VERSION 2>&1)
     
     # Извлекаем версию из вывода установщика
     XUI_VERSION="2.9.4"
     
-    # Выводим результат установки
+    # Выводим результат установки (показываем процесс, но скрываем учетные данные)
     echo "$INSTALL_OUTPUT" | grep -v "═══" | grep -v "Panel Installation Complete" | grep -v "Username:" | grep -v "Password:" | grep -v "Port:" | grep -v "WebBasePath:" | grep -v "Access URL:" | grep -v "API Token:" | grep -v "Database:" | grep -v "IMPORTANT: Save these credentials"
     
     # Проверяем успешность установки
     if echo "$INSTALL_OUTPUT" | grep -q "installation finished"; then
         echo -e "\n${GREEN}✅ 3x-ui v2.9.4 установлен успешно${NC}"
         
-        XUI_USERNAME=""
-        XUI_PASSWORD=""
-        XUI_PORT=""
-        XUI_PATH=""
+        # Извлекаем учетные данные из вывода инсталятора
+        XUI_USERNAME=$(echo "$INSTALL_OUTPUT" | grep -oP 'Username:\s*\K\S+' | head -1)
+        XUI_PASSWORD=$(echo "$INSTALL_OUTPUT" | grep -oP 'Password:\s*\K\S+' | head -1)
+        XUI_PORT=$(echo "$INSTALL_OUTPUT" | grep -oP 'Port:\s*\K\d+' | head -1)
+        XUI_PATH=$(echo "$INSTALL_OUTPUT" | grep -oP 'WebBasePath:\s*\K\S+' | head -1)
         
         # Исправление проблемы с базой данных x-ui.db
         echo -e "${YELLOW}🔧 Проверка базы данных...${NC}"
@@ -1660,8 +1653,9 @@ EOF
             echo -e "${GREEN}✅ База данных исправлена${NC}"
         fi
         
-        # Получаем настройки из системы
-        if [ -z "$XUI_USERNAME" ] || [ -z "$XUI_PASSWORD" ] || [ -z "$XUI_PORT" ] || [ -z "$XUI_PATH" ]; then
+        # Проверяем что данные получены от инсталятора
+        if [ -z "$XUI_USERNAME" ] || [ -z "$XUI_PASSWORD" ]; then
+            echo -e "${YELLOW}⚠ Не удалось извлечь учетные данные из вывода инсталятора${NC}"
             echo -e "${YELLOW}🔍 Получение данных из системы...${NC}"
             
             # Устанавливаем sqlite3 если не установлен
@@ -1670,7 +1664,24 @@ EOF
                 apt-get update -qq && apt-get install -y sqlite3 -qq > /dev/null 2>&1
             fi
             
-            # Получаем настройки из x-ui settings
+            # Получаем username из базы данных
+            if [ -f "/etc/x-ui/x-ui.db" ]; then
+                XUI_USERNAME=$(sqlite3 /etc/x-ui/x-ui.db "SELECT username FROM users LIMIT 1;" 2>/dev/null || echo "")
+                if [ -n "$XUI_USERNAME" ]; then
+                    echo -e "${GREEN}✅ Username: ${YELLOW}${XUI_USERNAME}${NC}"
+                fi
+            fi
+            
+            # Если пароль не получен, используем дефолтный
+            if [ -z "$XUI_PASSWORD" ]; then
+                echo -e "${YELLOW}⚠ Пароль не найден. Используйте команду 'x-ui' для сброса пароля${NC}"
+                XUI_PASSWORD="admin"
+            fi
+        fi
+        
+        # Получаем порт и путь если не извлечены
+        if [ -z "$XUI_PORT" ] || [ -z "$XUI_PATH" ]; then
+            echo -e "${YELLOW}🔍 Получение настроек панели...${NC}"
             sleep 2
             XUI_SETTINGS=$(echo "n" | timeout 5 x-ui settings 2>/dev/null || echo "")
             
@@ -1683,49 +1694,7 @@ EOF
                 fi
             fi
             
-            # Получаем username из базы данных
-            if [ -f "/etc/x-ui/x-ui.db" ]; then
-                echo -e "${YELLOW}🔐 Получение username из базы данных...${NC}"
-                XUI_USERNAME=$(sqlite3 /etc/x-ui/x-ui.db "SELECT username FROM users LIMIT 1;" 2>/dev/null || echo "")
-                
-                if [ -n "$XUI_USERNAME" ]; then
-                    echo -e "${GREEN}✅ Username: ${YELLOW}${XUI_USERNAME}${NC}"
-                fi
-            fi
-            
-            # Устанавливаем сгенерированный пароль напрямую в базу данных
-            if [ -n "$XUI_USERNAME" ] && [ -n "$GENERATED_PASSWORD" ]; then
-                echo -e "${YELLOW}🔐 Установка нового пароля для панели...${NC}"
-                
-                # Устанавливаем bcrypt для генерации хеша
-                if ! command -v htpasswd &> /dev/null; then
-                    echo -e "${YELLOW}📦 Установка apache2-utils для bcrypt...${NC}"
-                    apt-get update -qq && apt-get install -y apache2-utils -qq > /dev/null 2>&1
-                fi
-                
-                # Генерируем bcrypt хеш пароля (cost 10, как в 3x-ui)
-                PASSWORD_HASH=$(htpasswd -nbBC 10 "" "$GENERATED_PASSWORD" | cut -d: -f2)
-                
-                # Обновляем пароль в базе данных
-                sqlite3 /etc/x-ui/x-ui.db "UPDATE users SET password='${PASSWORD_HASH}' WHERE username='${XUI_USERNAME}';" 2>/dev/null
-                
-                if [ $? -eq 0 ]; then
-                    XUI_PASSWORD="$GENERATED_PASSWORD"
-                    echo -e "${GREEN}✅ Пароль успешно установлен в базу данных${NC}"
-                    
-                    # Перезапускаем панель для применения изменений
-                    systemctl restart x-ui
-                    sleep 2
-                else
-                    echo -e "${YELLOW}⚠ Не удалось обновить пароль в базе данных${NC}"
-                    XUI_PASSWORD="$GENERATED_PASSWORD"
-                fi
-            else
-                # Fallback
-                XUI_USERNAME="${XUI_USERNAME:-admin}"
-                XUI_PASSWORD="$GENERATED_PASSWORD"
-            fi
-            
+            # Дефолтные значения если не получены
             if [ -z "$XUI_PORT" ]; then
                 XUI_PORT="2053"
             fi
@@ -1734,7 +1703,9 @@ EOF
             fi
         fi
         
-        echo -e "${GREEN}✅ Настройки панели получены:${NC}"
+        echo -e "\n${GREEN}✅ Настройки панели:${NC}"
+        echo -e "  Username: ${YELLOW}${XUI_USERNAME}${NC}"
+        echo -e "  Password: ${YELLOW}${XUI_PASSWORD}${NC}"
         echo -e "  Порт: ${YELLOW}${XUI_PORT}${NC}"
         echo -e "  Путь: ${YELLOW}${XUI_PATH}${NC}"
         
