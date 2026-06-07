@@ -1619,14 +1619,20 @@ install_3xui_v294() {
     
     # Установка конкретной версии v2.9.4 с правильной ссылкой
     # Скипаем все вопросы инсталятора, ждем пока он выдаст регистрационные данные
-    echo -e "${YELLOW}Запуск установщика 3x-ui v2.9.4...${NC}"
-    INSTALL_OUTPUT=$(VERSION=v2.9.4 && bash <(curl -Ls "https://raw.githubusercontent.com/mhsanaei/3x-ui/$VERSION/install.sh") $VERSION 2>&1)
+    echo -e "${YELLOW}Запуск установщика 3x-ui v2.9.4...${NC}\n"
+    
+    # Запускаем установку с перенаправлением вывода в файл и на экран одновременно
+    INSTALL_LOG="/tmp/xui_install_$$.log"
+    VERSION=v2.9.4 bash <(curl -Ls "https://raw.githubusercontent.com/mhsanaei/3x-ui/$VERSION/install.sh") $VERSION 2>&1 | tee "$INSTALL_LOG"
+    
+    # Читаем вывод из лог-файла
+    INSTALL_OUTPUT=$(cat "$INSTALL_LOG" 2>/dev/null || echo "")
+    
+    # Удаляем временный лог-файл
+    rm -f "$INSTALL_LOG"
     
     # Извлекаем версию из вывода установщика
     XUI_VERSION="2.9.4"
-    
-    # Выводим результат установки (показываем процесс, но скрываем учетные данные)
-    echo "$INSTALL_OUTPUT" | grep -v "═══" | grep -v "Panel Installation Complete" | grep -v "Username:" | grep -v "Password:" | grep -v "Port:" | grep -v "WebBasePath:" | grep -v "Access URL:" | grep -v "API Token:" | grep -v "Database:" | grep -v "IMPORTANT: Save these credentials"
     
     # Проверяем успешность установки
     if echo "$INSTALL_OUTPUT" | grep -q "installation finished"; then
