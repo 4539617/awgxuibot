@@ -1619,9 +1619,8 @@ install_3xui_v294() {
     
     # Установка конкретной версии v2.9.4 с правильной ссылкой
     # Скипаем все вопросы инсталятора, ждем пока он выдаст регистрационные данные
-    VERSION=v2.9.4
     echo -e "${YELLOW}Запуск установщика 3x-ui v2.9.4...${NC}"
-    INSTALL_OUTPUT=$(bash <(curl -Ls "https://raw.githubusercontent.com/mhsanaei/3x-ui/$VERSION/install.sh") $VERSION 2>&1)
+    INSTALL_OUTPUT=$(VERSION=v2.9.4 && bash <(curl -Ls "https://raw.githubusercontent.com/mhsanaei/3x-ui/$VERSION/install.sh") $VERSION 2>&1)
     
     # Извлекаем версию из вывода установщика
     XUI_VERSION="2.9.4"
@@ -1899,9 +1898,9 @@ STREAMEOF
     fi
 }
 
-# Обёртка для установки 3x-ui с выбором версии
+# Обёртка для установки 3x-ui - сразу устанавливаем v2.9.4
 install_3xui() {
-    select_xui_version
+    install_3xui_v294
 }
 
 
