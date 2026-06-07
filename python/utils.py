@@ -339,6 +339,8 @@ class XUIClient:
                     logger.error(f"Ошибка добавления в таблицу clients: {result.stderr}")
                     return {"success": False, "error": "Не удалось добавить клиента в таблицу clients"}
                 
+                logger.info(f"Клиент добавлен в таблицу clients с полями: sub_id={sub_id}, password={password}, auth={auth}, security=auto")
+                
                 # 2. Получаем client_id
                 sql_get_id = f"""sqlite3 {db_path} "SELECT id FROM clients WHERE email='{email}';" """
                 result = subprocess.run(sql_get_id, shell=True, capture_output=True, text=True)
@@ -357,12 +359,19 @@ class XUIClient:
                     logger.error(f"Ошибка добавления связи в client_inbounds: {result.stderr}")
                     # Не критично, продолжаем
                 
-                logger.info(f"Клиент {email} успешно добавлен в новую структуру БД (client_id={client_id})")
+                logger.info(f"Клиент {email} успешно добавлен в новую структуру БД (client_id={client_id}, sub_id={sub_id})")
                 return {"success": True, "uuid": client_uuid}
                 
             else:
                 # Старая структура БД (до 3.2.8)
                 logger.info("Используем старую структуру БД (до 3.2.8)")
+                
+                # Генерируем дополнительные поля как в панели
+                import random
+                import string
+                sub_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=16))
+                password = ''.join(random.choices(string.ascii_lowercase + string.digits, k=16))
+                auth = ''.join(random.choices(string.ascii_lowercase + string.digits, k=16))
                 
                 # Получаем текущие настройки inbound
                 sql_get = f"""sqlite3 {db_path} "SELECT settings FROM inbounds WHERE id={self.config.xui.inbound_id};" """
@@ -376,7 +385,7 @@ class XUIClient:
                 settings = json.loads(result.stdout.strip())
                 clients = settings.get('clients', [])
                 
-                # Создаем нового клиента
+                # Создаем нового клиента с ВСЕМИ необходимыми полями как в панели
                 new_client = {
                     "id": client_uuid,
                     "email": email,
@@ -385,8 +394,11 @@ class XUIClient:
                     "expiryTime": expiry_time,
                     "enable": True,
                     "flow": flow,
-                    "tgId": "",
-                    "subId": "",
+                    "tgId": 0,  # Изменено с "" на 0 как в панели
+                    "subId": sub_id,  # Добавлен сгенерированный subId
+                    "password": password,  # Добавлен сгенерированный password
+                    "auth": auth,  # Добавлен сгенерированный auth
+                    "security": "auto",  # Добавлено поле security как в панели
                     "comment": client_comment,
                     "reset": 0,
                     "created_at": created_at,
@@ -408,7 +420,7 @@ class XUIClient:
                     result = subprocess.run(sql_update, shell=True, capture_output=True, text=True)
                     
                     if result.returncode == 0:
-                        logger.info(f"Клиент {email} успешно добавлен в старую структуру БД")
+                        logger.info(f"Клиент {email} успешно добавлен в старую структуру БД с полями: sub_id={sub_id}, password={password}, auth={auth}, security=auto")
                         
                         # Также добавляем запись в client_traffics для отслеживания трафика
                         sql_traffic = f"""sqlite3 {db_path} "INSERT OR IGNORE INTO client_traffics (inbound_id, enable, email, up, down, all_time, expiry_time, total, reset) VALUES ({self.config.xui.inbound_id}, 1, '{email}', 0, 0, 0, {expiry_time}, {total_bytes}, 0);" """
