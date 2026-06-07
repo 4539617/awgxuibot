@@ -122,11 +122,15 @@ class XUIClient:
     
     async def login(self) -> bool:
         """
-        Проверка доступности панели 3x-ui
+        Проверка доступности панели 3x-ui и создание сессии
         В версии 3.2.8 API авторизация через /login не работает из-за CSRF защиты.
         Бот работает напрямую с базой данных через SQL.
         """
         try:
+            # Создаем сессию если её нет
+            if not self.session:
+                await self._get_session()
+            
             # Проверяем доступность базы данных
             db_path = sanitize_path(self.config.xui.db_path)
             result = subprocess.run(
