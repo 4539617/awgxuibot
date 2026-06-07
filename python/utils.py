@@ -324,13 +324,15 @@ class XUIClient:
                 # Новая структура БД (3.2.8+)
                 logger.info("Используем новую структуру БД (3.2.8+)")
                 
-                # Генерируем sub_id
+                # Генерируем sub_id, password и auth
                 import random
                 import string
                 sub_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=16))
+                password = ''.join(random.choices(string.ascii_lowercase + string.digits, k=16))
+                auth = ''.join(random.choices(string.ascii_lowercase + string.digits, k=16))
                 
                 # 1. Добавляем в таблицу clients
-                sql_insert_client = f"""sqlite3 {db_path} "INSERT INTO clients (email, sub_id, uuid, password, auth, flow, security, reverse, limit_ip, total_gb, expiry_time, enable, tg_id, group_name, comment, reset, created_at, updated_at) VALUES ('{email}', '{sub_id}', '{client_uuid}', '', '', '{flow}', 'auto', '', 0, {total_bytes}, {expiry_time}, 1, 0, '', '{client_comment}', 0, {created_at}, {created_at});" """
+                sql_insert_client = f"""sqlite3 {db_path} "INSERT INTO clients (email, sub_id, uuid, password, auth, flow, security, reverse, limit_ip, total_gb, expiry_time, enable, tg_id, group_name, comment, reset, created_at, updated_at) VALUES ('{email}', '{sub_id}', '{client_uuid}', '{password}', '{auth}', '{flow}', 'auto', '', 0, {total_bytes}, {expiry_time}, 1, 0, '', '{client_comment}', 0, {created_at}, {created_at});" """
                 result = subprocess.run(sql_insert_client, shell=True, capture_output=True, text=True)
                 
                 if result.returncode != 0:
