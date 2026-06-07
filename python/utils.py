@@ -419,6 +419,28 @@ class XUIClient:
                         )
                         conn.commit()
                         logger.info(f"Клиент также добавлен в settings.clients (всего: {len(clients_list)})")
+                        
+                        # Добавляем клиента в client_traffics для отображения в панели
+                        try:
+                            cursor.execute("""
+                                INSERT INTO client_traffics
+                                (inbound_id, enable, email, up, down, expiry_time, total, reset, last_online)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """, (
+                                self.config.xui.inbound_id,
+                                1,  # enable
+                                email,
+                                0,  # up
+                                0,  # down
+                                expiry_time,
+                                total_bytes,
+                                0,  # reset
+                                0   # last_online
+                            ))
+                            conn.commit()
+                            logger.info(f"Клиент добавлен в client_traffics для отображения в панели")
+                        except Exception as e:
+                            logger.error(f"Ошибка добавления в client_traffics: {e}")
                     
                     conn.close()
                 except Exception as e:
@@ -503,9 +525,30 @@ class XUIClient:
                     logger.info(f"Клиент {email} успешно добавлен в старую структуру БД с полями: sub_id={sub_id}, password={password}, auth={auth}, security=auto")
                     logger.info(f"Обновлено клиентов в settings: {len(clients)}")
                     
-                    # Также добавляем запись в client_traffics для отслеживания трафика
-                    sql_traffic = f"""sqlite3 {db_path} "INSERT OR IGNORE INTO client_traffics (inbound_id, enable, email, up, down, all_time, expiry_time, total, reset) VALUES ({self.config.xui.inbound_id}, 1, '{email}', 0, 0, 0, {expiry_time}, {total_bytes}, 0);" """
-                    subprocess.run(sql_traffic, shell=True, capture_output=True, text=True)
+                    # Добавляем запись в client_traffics для отображения в панели
+                    try:
+                        conn = sqlite3.connect(db_path)
+                        cursor = conn.cursor()
+                        cursor.execute("""
+                            INSERT OR IGNORE INTO client_traffics
+                            (inbound_id, enable, email, up, down, expiry_time, total, reset, last_online)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            self.config.xui.inbound_id,
+                            1,  # enable
+                            email,
+                            0,  # up
+                            0,  # down
+                            expiry_time,
+                            total_bytes,
+                            0,  # reset
+                            0   # last_online
+                        ))
+                        conn.commit()
+                        conn.close()
+                        logger.info(f"Клиент добавлен в client_traffics для отображения в панели")
+                    except Exception as e:
+                        logger.error(f"Ошибка добавления в client_traffics: {e}")
                     
                     # Перезапускаем X-UI и X-Ray чтобы применить изменения
                     try:
