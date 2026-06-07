@@ -1023,26 +1023,39 @@ select_xui_version() {
     echo -e "\n${BLUE}========================================${NC}"
     echo -e "${BLUE}   Выбор версии 3x-ui Panel${NC}"
     echo -e "${BLUE}========================================${NC}\n"
-    echo -e "${GREEN}1)${NC} Последняя версия (Latest - рекомендуется)"
-    echo -e "${GREEN}2)${NC} Стабильная версия v2.9.4"
+    echo -e "${RED}⚠️  ВАЖНО: Бот совместим только с версией 2.9.4!${NC}"
+    echo -e "${YELLOW}Версии 3.0.0+ не поддерживают прямую работу с базой данных${NC}\n"
+    echo -e "${GREEN}1)${NC} Стабильная версия v2.9.4 (рекомендуется для бота)"
+    echo -e "${YELLOW}2)${NC} Последняя версия (Latest - НЕ совместима с ботом)"
     echo -e "${GREEN}0)${NC} Отмена"
-    echo -e "\n${YELLOW}Выберите версию для установки:${NC} "
+    echo -e "\n${YELLOW}Выберите версию для установки [1]:${NC} "
     read -p "" version_choice
+    version_choice=${version_choice:-1}
     
     case $version_choice in
         1)
-            install_3xui_latest
+            install_3xui_v294
             ;;
         2)
-            install_3xui_v294
+            echo -e "\n${RED}⚠️  ВНИМАНИЕ!${NC}"
+            echo -e "${YELLOW}Последняя версия 3x-ui НЕ совместима с ботом!${NC}"
+            echo -e "${YELLOW}Клиенты, созданные через бота, не будут работать.${NC}"
+            read -p "Вы уверены что хотите продолжить? (y/n): " confirm_latest
+            if [[ "$confirm_latest" =~ ^[Yy]$ ]]; then
+                install_3xui_latest
+            else
+                echo -e "${GREEN}Отменено. Устанавливаем v2.9.4...${NC}"
+                install_3xui_v294
+            fi
             ;;
         0)
             echo -e "${YELLOW}Отменено${NC}"
             return
             ;;
         *)
-            echo -e "${RED}Неверный выбор${NC}"
+            echo -e "${YELLOW}Неверный выбор. Устанавливаем v2.9.4 по умолчанию...${NC}"
             sleep 2
+            install_3xui_v294
             ;;
     esac
 }

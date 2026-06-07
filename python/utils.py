@@ -9,7 +9,6 @@ import ssl
 import re
 import tempfile
 import os
-import sqlite3
 from typing import Dict
 from logging.handlers import RotatingFileHandler
 
@@ -42,124 +41,6 @@ class XUIClient:
         self.config = config
         self.session = None
         self.cookies = None
-        self._detected_version = None
-        self._reality_settings_cache = None
-    
-    def get_reality_settings_from_db(self, inbound_id: int) -> dict:
-        """Читает настройки Reality из базы данных для указанного inbound"""
-        if self._reality_settings_cache:
-            return self._reality_settings_cache
-        
-        try:
-            db_path = sanitize_path(self.config.xui.db_path)
-            
-            # Читаем stream_settings из inbound
-            query = f"""sqlite3 {db_path} "SELECT stream_settings FROM inbounds WHERE id={inbound_id};" """
-            result = subprocess.run(query, shell=True, capture_output=True, text=True)
-            
-            if result.returncode != 0 or not result.stdout.strip():
-                logger.warning(f"Не удалось прочитать stream_settings для inbound {inbound_id}")
-                return {}
-            
-            stream_settings = json.loads(result.stdout.strip())
-            
-            # Извлекаем Reality настройки
-            reality_settings = stream_settings.get('realitySettings', {})
-            settings = reality_settings.get('settings', {})
-            
-            # Извлекаем xHTTP настройки
-            xhttp_settings = stream_settings.get('xhttpSettings', {})
-            
-            # Формируем результат
-            result_settings = {
-                'security': stream_settings.get('security', 'reality'),
-                'network': stream_settings.get('network', 'xhttp'),
-                'sni': reality_settings.get('serverNames', [''])[0] if reality_settings.get('serverNames') else '',
-                'fingerprint': settings.get('fingerprint', 'edge'),
-                'public_key': settings.get('publicKey', ''),
-                'short_id': reality_settings.get('shortIds', [''])[0] if reality_settings.get('shortIds') else '',
-                'spider_x': settings.get('spiderX', '/'),
-                'xhttp_path': xhttp_settings.get('path', '/'),
-                'xhttp_mode': xhttp_settings.get('mode', 'auto'),
-                'xhttp_host': xhttp_settings.get('host', ''),
-                'x_padding_bytes': xhttp_settings.get('xPaddingBytes', '100-1000'),
-                'sc_max_each_post_bytes': xhttp_settings.get('scMaxEachPostBytes', '1000000'),
-                'sc_min_posts_interval_ms': xhttp_settings.get('scMinPostsIntervalMs', '30')
-            }
-            
-            # Кешируем результат
-            self._reality_settings_cache = result_settings
-            logger.info(f"Reality настройки из БД: {result_settings}")
-            
-            return result_settings
-            
-        except Exception as e:
-            logger.error(f"Ошибка чтения Reality настроек из БД: {e}")
-            return {}
-        self._reality_settings_cache = None
-    
-    def _get_api_endpoints(self, endpoint_type: str) -> list:
-        """
-        Возвращает список API endpoints в зависимости от версии панели
-        
-        Args:
-            endpoint_type: тип endpoint ('add_client', 'delete_client', 'login')
-        
-        Returns:
-            list: список URL endpoints для попытки подключения
-        """
-        base_url = self.config.xui.url.rstrip('/')
-        
-        # Определяем версию
-        is_v2 = self.config.xui.is_v2()
-        is_v3_new = self.config.xui.is_v3_new_api()
-        
-        if endpoint_type == 'add_client':
-            if is_v2:
-                # v2.9.4 использует старые endpoints
-                return [
-                    f"{base_url}/xui/inbound/addClient",
-                    f"{base_url}/xui/API/inbounds/addClient",
-                ]
-            elif is_v3_new:
-                # v3.2.8+ использует новый API
-                return [
-                    f"{base_url}/panel/api/clients/add",  # Новый API для 3.2.8+
-                    f"{base_url}/panel/api/inbounds/addClient",  # Fallback на старый
-                ]
-            else:
-                # v3.0-3.2.7 используют старый API
-                return [
-                    f"{base_url}/panel/api/inbounds/addClient",
-                    f"{base_url}/xui/API/inbounds/addClient",
-                ]
-        
-        elif endpoint_type == 'delete_client':
-            client_uuid = self.config.xui.inbound_id  # Будет передан отдельно
-            if is_v2:
-                return [
-                    f"{base_url}/xui/inbound/delClient/{{uuid}}",
-                    f"{base_url}/xui/API/inbounds/{{inbound_id}}/delClient/{{uuid}}",
-                ]
-            else:
-                return [
-                    f"{base_url}/panel/api/inbounds/delClient/{{uuid}}",
-                    f"{base_url}/xui/API/inbounds/{{inbound_id}}/delClient/{{uuid}}",
-                ]
-        
-        elif endpoint_type == 'login':
-            if is_v2:
-                return [
-                    f"{base_url}/login",
-                    f"{base_url}/xui/login",
-                ]
-            else:
-                return [
-                    f"{base_url}/panel/login",
-                    f"{base_url}/login",
-                ]
-        
-        return []
     
     async def _get_session(self):
         """Создание сессии с SSL контекстом"""
@@ -176,39 +57,27 @@ class XUIClient:
         return self.session
     
     async def login(self) -> bool:
-        """
-        Проверка доступности панели 3x-ui и создание сессии
-        В версии 3.2.8 API авторизация через /login не работает из-за CSRF защиты.
-        Бот работает напрямую с базой данных через SQL.
-        """
+        """Авторизация в панели 3x-ui"""
+        await self._get_session()
+        
+        login_url = f"{self.config.xui.url}/login"
+        login_data = {
+            "username": self.config.xui.username,
+            "password": self.config.xui.password
+        }
+        
         try:
-            # Создаем сессию если её нет
-            if not self.session:
-                await self._get_session()
-            
-            # Проверяем доступность базы данных
-            db_path = sanitize_path(self.config.xui.db_path)
-            result = subprocess.run(
-                f"sqlite3 {db_path} 'SELECT COUNT(*) FROM inbounds;'",
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-            
-            if result.returncode == 0:
-                logger.info("✅ Подключение к базе данных X-UI успешно")
-                logger.info(f"📊 Найдено inbounds: {result.stdout.strip()}")
-                return True
-            else:
-                logger.error(f"❌ Ошибка доступа к базе данных: {result.stderr}")
-                return False
-                
-        except subprocess.TimeoutExpired:
-            logger.error("❌ Timeout при подключении к базе данных")
-            return False
+            async with self.session.post(login_url, json=login_data) as resp:
+                if resp.status == 200:
+                    self.cookies = self.session.cookie_jar
+                    logger.info("Успешная авторизация в 3x-ui")
+                    return True
+                else:
+                    text = await resp.text()
+                    logger.error(f"Ошибка авторизации: {resp.status} - {text[:200]}")
+                    return False
         except Exception as e:
-            logger.error(f"❌ Ошибка проверки базы данных: {e}")
+            logger.error(f"Ошибка подключения: {e}")
             return False
 
     async def add_client(self, email: str, total_gb: int, expiry_days: float, comment: str = None) -> Dict:
@@ -231,51 +100,34 @@ class XUIClient:
         else:
             flow = ""
 
-        # Получаем endpoints в зависимости от версии
-        endpoints = self._get_api_endpoints('add_client')
+        client_data = {
+            "id": self.config.xui.inbound_id,
+            "settings": json.dumps({
+                "clients": [{
+                    "id": client_uuid,
+                    "email": email,
+                    "limitIp": 0,
+                    "totalGB": total_bytes,
+                    "expiryTime": expiry_time,
+                    "enable": True,
+                    "flow": flow,
+                    "tgId": "",
+                    "subId": "",
+                    "comment": client_comment
+                }]
+            })
+        }
+
+        base_url = self.config.xui.url.rstrip('/')
+        endpoints = [
+            f"{base_url}/xui/API/inbounds/addClient",
+            f"{base_url}/panel/api/inbounds/addClient",
+            f"{base_url}/server/addClient",
+        ]
         
         for endpoint in endpoints:
             try:
                 logger.info(f"Пробуем endpoint: {endpoint}")
-                
-                # Формат данных зависит от endpoint
-                if "/panel/api/clients/add" in endpoint:
-                    # Новый формат для 3.2.8+
-                    client_data = {
-                        "client": {
-                            "id": client_uuid,
-                            "email": email,
-                            "limitIp": 0,
-                            "totalGB": total_bytes,
-                            "expiryTime": expiry_time,
-                            "enable": True,
-                            "flow": flow,
-                            "tgId": "",
-                            "subId": "",
-                            "comment": client_comment
-                        },
-                        "inboundIds": [self.config.xui.inbound_id]
-                    }
-                else:
-                    # Старый формат для 3.x и 2.x
-                    client_data = {
-                        "id": self.config.xui.inbound_id,
-                        "settings": json.dumps({
-                            "clients": [{
-                                "id": client_uuid,
-                                "email": email,
-                                "limitIp": 0,
-                                "totalGB": total_bytes,
-                                "expiryTime": expiry_time,
-                                "enable": True,
-                                "flow": flow,
-                                "tgId": "",
-                                "subId": "",
-                                "comment": client_comment
-                            }]
-                        })
-                    }
-                
                 async with self.session.post(endpoint, json=client_data) as resp:
                     response_text = await resp.text()
                     logger.info(f"Ответ: {resp.status} - {response_text[:200]}")
@@ -301,13 +153,13 @@ class XUIClient:
         return await self.add_client_via_sql(email, total_gb, expiry_days, client_uuid, client_comment)
     
     async def add_client_via_sql(self, email: str, total_gb: int, expiry_days: float, client_uuid: str, client_comment: str) -> Dict:
-        """Добавление клиента напрямую в БД (поддержка старой и новой структуры)"""
+        """Добавление клиента напрямую в БД через обновление JSON в поле settings"""
         try:
             expiry_time = int((time.time() + expiry_days * 86400) * 1000)
             total_bytes = total_gb * 1024 * 1024 * 1024 if total_gb > 0 else 0
-            created_at = int(time.time() * 1000)
             
             # Определяем flow в зависимости от транспорта и безопасности
+            # Flow используется ТОЛЬКО для TCP с Reality или TLS
             if self.config.vpn.transport == "tcp" and self.config.vpn.security in ["reality", "tls"]:
                 flow = "xtls-rprx-vision"
             else:
@@ -316,255 +168,66 @@ class XUIClient:
             # Валидация пути к БД
             db_path = sanitize_path(self.config.xui.db_path)
             
-            # Проверяем, какую структуру использует панель
-            # Сначала проверяем, есть ли клиенты в settings.clients (старая структура)
-            sql_check_settings = f"""sqlite3 {db_path} "SELECT settings FROM inbounds WHERE id={self.config.xui.inbound_id};" """
-            result = subprocess.run(sql_check_settings, shell=True, capture_output=True, text=True)
+            # Получаем текущие настройки inbound
+            sql_get = f"""sqlite3 {db_path} "SELECT settings FROM inbounds WHERE id={self.config.xui.inbound_id};" """
+            result = subprocess.run(sql_get, shell=True, capture_output=True, text=True)
             
-            use_old_structure = False
-            if result.returncode == 0 and result.stdout.strip():
-                try:
-                    settings = json.loads(result.stdout.strip())
-                    # Если в settings есть ключ clients, значит используется старая структура
-                    if 'clients' in settings:
-                        use_old_structure = True
-                        logger.info("Панель использует старую структуру БД (clients в settings)")
-                except:
-                    pass
+            if result.returncode != 0 or not result.stdout:
+                logger.error(f"Не удалось получить настройки inbound id={self.config.xui.inbound_id}")
+                return {"success": False, "error": "Inbound не найден в базе данных"}
             
-            # Проверяем версию БД - есть ли таблица clients
-            check_table = f"""sqlite3 {db_path} "SELECT name FROM sqlite_master WHERE type='table' AND name='clients';" """
-            result = subprocess.run(check_table, shell=True, capture_output=True, text=True)
-            has_clients_table = bool(result.stdout.strip())
+            # Парсим JSON
+            settings = json.loads(result.stdout.strip())
+            clients = settings.get('clients', [])
             
-            if has_clients_table and not use_old_structure:
-                # Новая структура БД (3.2.8+)
-                logger.info("Используем новую структуру БД (3.2.8+)")
+            # Создаем нового клиента
+            new_client = {
+                "id": client_uuid,
+                "email": email,
+                "limitIp": 0,
+                "totalGB": total_bytes,
+                "expiryTime": expiry_time,
+                "enable": True,
+                "flow": flow,
+                "tgId": "",
+                "subId": "",
+                "comment": client_comment,
+                "reset": 0,
+                "created_at": int(time.time() * 1000),
+                "updated_at": int(time.time() * 1000)
+            }
+            
+            # Добавляем клиента в список
+            clients.append(new_client)
+            settings['clients'] = clients
+            
+            # Сохраняем обновленные настройки через временный файл
+            with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as f:
+                json.dump(settings, f, ensure_ascii=False)
+                temp_file = f.name
+            
+            try:
+                # Обновляем настройки в БД
+                sql_update = f"""sqlite3 {db_path} "UPDATE inbounds SET settings=readfile('{temp_file}') WHERE id={self.config.xui.inbound_id};" """
+                result = subprocess.run(sql_update, shell=True, capture_output=True, text=True)
                 
-                # Генерируем sub_id, password и auth
-                import random
-                import string
-                sub_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=16))
-                password = ''.join(random.choices(string.ascii_lowercase + string.digits, k=16))
-                auth = ''.join(random.choices(string.ascii_lowercase + string.digits, k=16))
-                
-                # 1. Добавляем в таблицу clients
-                sql_insert_client = f"""sqlite3 {db_path} "INSERT INTO clients (email, sub_id, uuid, password, auth, flow, security, reverse, limit_ip, total_gb, expiry_time, enable, tg_id, group_name, comment, reset, created_at, updated_at) VALUES ('{email}', '{sub_id}', '{client_uuid}', '{password}', '{auth}', '{flow}', 'auto', '', 0, {total_bytes}, {expiry_time}, 1, 0, '', '{client_comment}', 0, {created_at}, {created_at});" """
-                result = subprocess.run(sql_insert_client, shell=True, capture_output=True, text=True)
-                
-                if result.returncode != 0:
-                    logger.error(f"Ошибка добавления в таблицу clients: {result.stderr}")
-                    return {"success": False, "error": "Не удалось добавить клиента в таблицу clients"}
-                
-                logger.info(f"Клиент добавлен в таблицу clients с полями: sub_id={sub_id}, password={password}, auth={auth}, security=auto")
-                
-                # 2. Получаем client_id
-                sql_get_id = f"""sqlite3 {db_path} "SELECT id FROM clients WHERE email='{email}';" """
-                result = subprocess.run(sql_get_id, shell=True, capture_output=True, text=True)
-                
-                if result.returncode != 0 or not result.stdout.strip():
-                    logger.error("Не удалось получить client_id")
-                    return {"success": False, "error": "Не удалось получить client_id"}
-                
-                client_id = int(result.stdout.strip())
-                
-                # 3. Добавляем связь в client_inbounds
-                sql_insert_relation = f"""sqlite3 {db_path} "INSERT INTO client_inbounds (client_id, inbound_id, flow_override, created_at) VALUES ({client_id}, {self.config.xui.inbound_id}, '', {created_at});" """
-                result = subprocess.run(sql_insert_relation, shell=True, capture_output=True, text=True)
-                
-                if result.returncode != 0:
-                    logger.error(f"Ошибка добавления связи в client_inbounds: {result.stderr}")
-                    # Не критично, продолжаем
-                
-                # 4. ВАЖНО! Также добавляем в settings.clients для генерации ссылок в панели
-                # Панель 3.2.8+ использует гибридную структуру
-                try:
-                    conn = sqlite3.connect(db_path)
-                    cursor = conn.cursor()
-                    cursor.execute("SELECT settings FROM inbounds WHERE id = ?", (self.config.xui.inbound_id,))
-                    result = cursor.fetchone()
+                if result.returncode == 0:
+                    logger.info(f"Клиент {email} успешно добавлен в inbound id={self.config.xui.inbound_id} через SQL")
                     
-                    if result and result[0]:
-                        settings = json.loads(result[0])
-                        clients_list = settings.get('clients', [])
-                        
-                        # Создаем клиента для settings.clients
-                        settings_client = {
-                            "id": client_uuid,
-                            "email": email,
-                            "limitIp": 0,
-                            "totalGB": total_bytes,
-                            "expiryTime": expiry_time,
-                            "enable": True,
-                            "flow": flow,
-                            "tgId": 0,
-                            "subId": sub_id,
-                            "password": password,
-                            "auth": auth,
-                            "security": "auto",
-                            "comment": client_comment,
-                            "reset": 0,
-                            "created_at": created_at,
-                            "updated_at": created_at
-                        }
-                        
-                        clients_list.append(settings_client)
-                        settings['clients'] = clients_list
-                        
-                        # Обновляем settings
-                        settings_json = json.dumps(settings, ensure_ascii=False)
-                        cursor.execute(
-                            "UPDATE inbounds SET settings = ? WHERE id = ?",
-                            (settings_json, self.config.xui.inbound_id)
-                        )
-                        conn.commit()
-                        logger.info(f"Клиент также добавлен в settings.clients (всего: {len(clients_list)})")
-                        
-                        # Добавляем клиента в client_traffics для отображения в панели
-                        try:
-                            cursor.execute("""
-                                INSERT INTO client_traffics
-                                (inbound_id, enable, email, up, down, expiry_time, total, reset, last_online)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            """, (
-                                self.config.xui.inbound_id,
-                                1,  # enable
-                                email,
-                                0,  # up
-                                0,  # down
-                                expiry_time,
-                                total_bytes,
-                                0,  # reset
-                                0   # last_online
-                            ))
-                            conn.commit()
-                            logger.info(f"Клиент добавлен в client_traffics для отображения в панели")
-                        except Exception as e:
-                            logger.error(f"Ошибка добавления в client_traffics: {e}")
-                    
-                    conn.close()
-                except Exception as e:
-                    logger.error(f"Ошибка добавления в settings.clients: {e}")
-                    # Не критично, продолжаем
-                
-                # Перезапускаем X-UI чтобы панель перечитала settings
-                try:
-                    logger.info("Перезапускаем X-UI для применения изменений...")
-                    result = subprocess.run("systemctl restart x-ui", shell=True, capture_output=True, text=True, timeout=10)
-                    if result.returncode == 0:
-                        logger.info("X-UI успешно перезапущен")
-                    else:
-                        logger.warning(f"Не удалось перезапустить X-UI: {result.stderr}")
-                except Exception as e:
-                    logger.warning(f"Ошибка при перезапуске X-UI: {e}")
-                
-                logger.info(f"Клиент {email} успешно добавлен в новую структуру БД (client_id={client_id}, sub_id={sub_id})")
-                return {"success": True, "uuid": client_uuid}
-                
-            else:
-                # Старая структура БД (до 3.2.8)
-                logger.info("Используем старую структуру БД (до 3.2.8)")
-                
-                # Генерируем дополнительные поля как в панели
-                import random
-                import string
-                sub_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=16))
-                password = ''.join(random.choices(string.ascii_lowercase + string.digits, k=16))
-                auth = ''.join(random.choices(string.ascii_lowercase + string.digits, k=16))
-                
-                # Получаем текущие настройки inbound
-                sql_get = f"""sqlite3 {db_path} "SELECT settings FROM inbounds WHERE id={self.config.xui.inbound_id};" """
-                result = subprocess.run(sql_get, shell=True, capture_output=True, text=True)
-                
-                if result.returncode != 0 or not result.stdout:
-                    logger.error(f"Не удалось получить настройки inbound id={self.config.xui.inbound_id}")
-                    return {"success": False, "error": "Inbound не найден в базе данных"}
-                
-                # Парсим JSON
-                settings = json.loads(result.stdout.strip())
-                clients = settings.get('clients', [])
-                
-                # Создаем нового клиента с ВСЕМИ необходимыми полями как в панели
-                new_client = {
-                    "id": client_uuid,
-                    "email": email,
-                    "limitIp": 0,
-                    "totalGB": total_bytes,
-                    "expiryTime": expiry_time,
-                    "enable": True,
-                    "flow": flow,
-                    "tgId": 0,  # Изменено с "" на 0 как в панели
-                    "subId": sub_id,  # Добавлен сгенерированный subId
-                    "password": password,  # Добавлен сгенерированный password
-                    "auth": auth,  # Добавлен сгенерированный auth
-                    "security": "auto",  # Добавлено поле security как в панели
-                    "comment": client_comment,
-                    "reset": 0,
-                    "created_at": created_at,
-                    "updated_at": created_at
-                }
-                
-                # Добавляем клиента в список
-                clients.append(new_client)
-                settings['clients'] = clients
-                
-                # Сериализуем JSON
-                settings_json = json.dumps(settings, ensure_ascii=False)
-                
-                try:
-                    # Используем sqlite3 Python модуль для корректной записи
-                    conn = sqlite3.connect(db_path)
-                    cursor = conn.cursor()
-                    cursor.execute(
-                        "UPDATE inbounds SET settings = ? WHERE id = ?",
-                        (settings_json, self.config.xui.inbound_id)
-                    )
-                    conn.commit()
-                    conn.close()
-                    
-                    logger.info(f"Клиент {email} успешно добавлен в старую структуру БД с полями: sub_id={sub_id}, password={password}, auth={auth}, security=auto")
-                    logger.info(f"Обновлено клиентов в settings: {len(clients)}")
-                    
-                    # Добавляем запись в client_traffics для отображения в панели
-                    try:
-                        conn = sqlite3.connect(db_path)
-                        cursor = conn.cursor()
-                        cursor.execute("""
-                            INSERT OR IGNORE INTO client_traffics
-                            (inbound_id, enable, email, up, down, expiry_time, total, reset, last_online)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """, (
-                            self.config.xui.inbound_id,
-                            1,  # enable
-                            email,
-                            0,  # up
-                            0,  # down
-                            expiry_time,
-                            total_bytes,
-                            0,  # reset
-                            0   # last_online
-                        ))
-                        conn.commit()
-                        conn.close()
-                        logger.info(f"Клиент добавлен в client_traffics для отображения в панели")
-                    except Exception as e:
-                        logger.error(f"Ошибка добавления в client_traffics: {e}")
-                    
-                    # Перезапускаем X-UI и X-Ray чтобы применить изменения
-                    try:
-                        logger.info("Перезапускаем X-UI и X-Ray для применения изменений...")
-                        result = subprocess.run("x-ui restart", shell=True, capture_output=True, text=True, timeout=15)
-                        if result.returncode == 0:
-                            logger.info("X-UI и X-Ray успешно перезапущены")
-                        else:
-                            logger.warning(f"Не удалось перезапустить X-UI: {result.stderr}")
-                    except Exception as e:
-                        logger.warning(f"Ошибка при перезапуске X-UI: {e}")
+                    # Также добавляем запись в client_traffics для отслеживания трафика
+                    sql_traffic = f"""sqlite3 {db_path} "INSERT OR IGNORE INTO client_traffics (inbound_id, enable, email, up, down, all_time, expiry_time, total, reset) VALUES ({self.config.xui.inbound_id}, 1, '{email}', 0, 0, 0, {expiry_time}, {total_bytes}, 0);" """
+                    subprocess.run(sql_traffic, shell=True, capture_output=True, text=True)
                     
                     return {"success": True, "uuid": client_uuid}
+                else:
+                    logger.error(f"Ошибка обновления настроек inbound: {result.stderr}")
+                    return {"success": False, "error": "Не удалось обновить настройки inbound"}
+            finally:
+                # Удаляем временный файл
+                try:
+                    os.unlink(temp_file)
                 except Exception as e:
-                    logger.error(f"Ошибка при обновлении БД: {e}")
-                    return {"success": False, "error": str(e)}
+                    logger.warning(f"Не удалось удалить временный файл: {e}")
                     
         except json.JSONDecodeError as e:
             logger.error(f"Ошибка парсинга JSON настроек inbound: {e}")
@@ -579,12 +242,11 @@ class XUIClient:
             if not await self.login():
                 return False
 
-        # Получаем endpoints в зависимости от версии
-        endpoints = self._get_api_endpoints('delete_client')
-        # Подставляем UUID и inbound_id в шаблоны
+        # Пробуем удалить через API
+        base_url = self.config.xui.url.rstrip('/')
         endpoints = [
-            ep.replace('{uuid}', client_uuid).replace('{inbound_id}', str(self.config.xui.inbound_id))
-            for ep in endpoints
+            f"{base_url}/xui/API/inbounds/{self.config.xui.inbound_id}/delClient/{client_uuid}",
+            f"{base_url}/panel/api/inbounds/delClient/{client_uuid}",
         ]
         
         for endpoint in endpoints:
@@ -931,101 +593,65 @@ class XUIClient:
 
 
 
-def generate_vless_link(client_uuid: str, email: str, vpn_config, inbound_id: int, xui_client=None) -> str:
+def generate_vless_link(client_uuid: str, email: str, vpn_config, inbound_id: int) -> str:
     """Универсальная генерация VLESS ссылки в зависимости от настроек"""
     import urllib.parse
-    import random
-    import string
-    
-    # Пытаемся получить настройки из БД
-    db_settings = {}
-    if xui_client:
-        try:
-            db_settings = xui_client.get_reality_settings_from_db(inbound_id)
-            logger.info(f"Используем настройки из БД: {db_settings}")
-        except Exception as e:
-            logger.warning(f"Не удалось получить настройки из БД: {e}")
-    
-    # Используем настройки из БД или fallback на config
-    security = db_settings.get('security', vpn_config.security)
-    transport = db_settings.get('network', vpn_config.transport)
-    sni = db_settings.get('sni', vpn_config.get_sni())
-    fingerprint = db_settings.get('fingerprint', vpn_config.get_fingerprint())
-    public_key = db_settings.get('public_key', getattr(vpn_config, 'reality_public_key', ''))
-    short_id = db_settings.get('short_id', getattr(vpn_config, 'reality_short_id', ''))
-    spider_x_base = db_settings.get('spider_x', '/')
-    
-    # Генерируем случайный spiderX путь как в панели
-    random_path = ''.join(random.choices(string.ascii_lowercase + string.digits, k=15))
-    spider_x = f"{spider_x_base}{random_path}" if spider_x_base == '/' else spider_x_base
-    xhttp_path = db_settings.get('xhttp_path', '/')
-    xhttp_mode = db_settings.get('xhttp_mode', getattr(vpn_config, 'xhttp_mode', 'auto'))
-    xhttp_host = db_settings.get('xhttp_host', '')
-    x_padding_bytes = db_settings.get('x_padding_bytes', '100-1000')
-    sc_max_each_post_bytes = db_settings.get('sc_max_each_post_bytes', '1000000')
-    sc_min_posts_interval_ms = db_settings.get('sc_min_posts_interval_ms', '30')
     
     base = f"vless://{client_uuid}@{vpn_config.server_address}:{vpn_config.server_port}"
     
     # Начинаем с type (транспорт должен быть первым)
-    params = f"type={transport}"
+    params = f"type={vpn_config.transport}"
     
     # Encryption всегда none для VLESS
     params += "&encryption=none"
     
     # Security
-    params += f"&security={security}"
+    params += f"&security={vpn_config.security}"
     
     # Fingerprint
-    params += f"&fp={fingerprint}"
+    params += f"&fp={vpn_config.get_fingerprint()}"
     
     # ALPN - для TLS обязательно указываем (URL-encoded)
     tls_alpn = getattr(vpn_config, 'tls_alpn', 'http/1.1')
-    if security == "tls" and tls_alpn:
+    if vpn_config.security == "tls" and tls_alpn:
         # URL-encode ALPN (http/1.1 -> http%2F1.1)
         alpn_encoded = urllib.parse.quote(tls_alpn, safe='')
         params += f"&alpn={alpn_encoded}"
     
     # Flow - только для TCP с Reality или TLS
     # Для xHTTP flow НЕ добавляется независимо от security
-    if transport == "tcp" and security in ["reality", "tls"]:
+    if vpn_config.transport == "tcp" and vpn_config.security in ["reality", "tls"]:
         params += "&flow=xtls-rprx-vision"
     
     # SNI - добавляем после основных параметров
+    sni = vpn_config.get_sni()
     if sni:
         params += f"&sni={sni}"
     
     # Reality параметры
-    if security == "reality":
-        if public_key:
-            params += f"&pbk={public_key}"
-        if short_id:
-            params += f"&sid={short_id}"
-        # spiderX (SpiderX path) - URL-encode
-        spider_x_encoded = urllib.parse.quote(spider_x, safe='')
-        params += f"&spx={spider_x_encoded}"
+    if vpn_config.security == "reality":
+        reality_public_key = getattr(vpn_config, 'reality_public_key', '')
+        reality_short_id = getattr(vpn_config, 'reality_short_id', '')
+        if reality_public_key:
+            params += f"&pbk={reality_public_key}"
+        if reality_short_id:
+            params += f"&sid={reality_short_id}"
+        # spiderX (SpiderX path)
+        params += "&spx=%2F"
     
     # xHTTP параметры
-    if transport == "xhttp":
+    if vpn_config.transport == "xhttp":
+        xhttp_mode = getattr(vpn_config, 'xhttp_mode', 'auto')
         params += f"&mode={xhttp_mode}"
         # Для xHTTP добавляем дополнительные параметры
-        xhttp_path_encoded = urllib.parse.quote(xhttp_path, safe='')
-        params += f"&path={xhttp_path_encoded}"
-        if xhttp_host:
-            params += f"&host={xhttp_host}"
-        else:
-            params += "&host="
+        params += "&path=%2F&host="
         # xPaddingBytes для xHTTP
-        params += f"&x_padding_bytes={x_padding_bytes}"
-        # extra параметры для совместимости - добавляем все параметры как в панели
-        extra = {
-            "scMaxEachPostBytes": sc_max_each_post_bytes,
-            "scMinPostsIntervalMs": sc_min_posts_interval_ms,
-            "xPaddingBytes": x_padding_bytes
-        }
+        params += "&x_padding_bytes=100-1000"
+        # extra параметры для совместимости
+        extra = {"xPaddingBytes": "100-1000"}
         params += f"&extra={urllib.parse.quote(json.dumps(extra))}"
     
-    return f"{ base}?{params}#{urllib.parse.quote(email)}"
+    return f"{base}?{params}#{urllib.parse.quote(email)}"
 
 
 def setup_logging(logging_config):
