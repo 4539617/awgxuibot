@@ -1624,7 +1624,8 @@ install_3xui_v294() {
     # Запускаем установку с перенаправлением вывода в файл и на экран одновременно
     INSTALL_LOG="/tmp/xui_install_$$.log"
     # Правильный URL с заглавной M в MHSanaei
-    bash <(curl -Ls "https://raw.githubusercontent.com/MHSanaei/3x-ui/v2.9.4/install.sh") v2.9.4 2>&1 | tee "$INSTALL_LOG"
+    # Передаем пустые ответы (Enter) на все вопросы через stdin
+    printf '\n\n\n\n\n' | bash <(curl -Ls "https://raw.githubusercontent.com/MHSanaei/3x-ui/v2.9.4/install.sh") v2.9.4 2>&1 | tee "$INSTALL_LOG"
     
     # Читаем вывод из лог-файла
     INSTALL_OUTPUT=$(cat "$INSTALL_LOG" 2>/dev/null || echo "")
@@ -1756,136 +1757,9 @@ install_3xui_v294() {
         update_env_value "SERVER_PORT" "443"
         update_env_value "XUI_VERSION" "2.9.4"
         
-        # Автоматическое создание inbound для v2.9.4
-        echo -e "\n${YELLOW}🔧 Создание VLESS Reality inbound...${NC}"
-        
-        # Даем панели время на запуск
-        echo -e "${YELLOW}⏳ Ожидание запуска панели (15 секунд)...${NC}"
-        sleep 15
-        
-        # Для v2.9.4 создаем inbound напрямую через SQL
-        echo -e "${YELLOW}📝 Создание inbound через SQL (v2.9.4)...${NC}"
-        
-        INBOUND_TABLE_EXISTS=$(sqlite3 /etc/x-ui/x-ui.db "SELECT name FROM sqlite_master WHERE type='table' AND name='inbounds';" 2>/dev/null)
-        
-        if [ -n "$INBOUND_TABLE_EXISTS" ]; then
-            echo -e "${GREEN}✅ Таблица inbounds найдена${NC}"
-            
-            # Создаем JSON конфигурации для settings и streamSettings
-            SETTINGS_JSON='{"clients":[],"decryption":"none","fallbacks":[]}'
-            
-            STREAM_SETTINGS_JSON=$(cat <<STREAMEOF
-{
-  "network": "xhttp",
-  "security": "reality",
-  "externalProxy": [],
-  "realitySettings": {
-    "show": false,
-    "xver": 0,
-    "target": "www.nvidia.com:443",
-    "serverNames": ["www.nvidia.com"],
-    "privateKey": "${REALITY_PRIVATE_KEY}",
-    "minClientVer": "",
-    "maxClientVer": "",
-    "maxTimediff": 0,
-    "shortIds": ["${REALITY_SHORT_ID}"],
-    "settings": {
-      "publicKey": "${REALITY_PUBLIC_KEY}",
-      "fingerprint": "edge",
-      "serverName": "",
-      "spiderX": "/"
-    }
-  },
-  "xhttpSettings": {
-    "path": "/",
-    "host": "",
-    "headers": {},
-    "scMaxBufferedPosts": 30,
-    "scMaxEachPostBytes": "1000000",
-    "scStreamUpServerSecs": "20-80",
-    "noSSEHeader": false,
-    "xPaddingBytes": "100-1000",
-    "mode": "auto",
-    "xPaddingObfsMode": false,
-    "scMinPostsIntervalMs": "30"
-  }
-}
-STREAMEOF
-)
-            
-            SNIFFING_JSON='{"enabled":true,"destOverride":["http","tls","quic","fakedns"],"metadataOnly":false,"routeOnly":false}'
-            
-            # Экранируем JSON для SQL
-            SETTINGS_JSON_ESCAPED=$(echo "$SETTINGS_JSON" | sed "s/'/''/g")
-            STREAM_SETTINGS_JSON_ESCAPED=$(echo "$STREAM_SETTINGS_JSON" | sed "s/'/''/g")
-            SNIFFING_JSON_ESCAPED=$(echo "$SNIFFING_JSON" | sed "s/'/''/g")
-            
-            # Проверяем и удаляем существующий inbound
-            EXISTING_INBOUND=$(sqlite3 /etc/x-ui/x-ui.db "SELECT id FROM inbounds WHERE tag='inbound-443' OR remark='VLESS-Reality-xHTTP';" 2>/dev/null)
-            
-            if [ -n "$EXISTING_INBOUND" ]; then
-                echo -e "${YELLOW}⚠ Найден существующий inbound (ID: ${EXISTING_INBOUND}), удаляем...${NC}"
-                sqlite3 /etc/x-ui/x-ui.db "DELETE FROM inbounds WHERE tag='inbound-443' OR remark='VLESS-Reality-xHTTP';" 2>/dev/null
-                echo -e "${GREEN}✅ Старый inbound удален${NC}"
-            fi
-            
-            # Вставляем inbound в базу данных
-            SQL_INSERT="INSERT INTO inbounds (user_id, up, down, total, remark, enable, expiry_time, listen, port, protocol, settings, stream_settings, tag, sniffing) VALUES (1, 0, 0, 0, 'VLESS-Reality-xHTTP', 1, 0, '', 443, 'vless', '${SETTINGS_JSON_ESCAPED}', '${STREAM_SETTINGS_JSON_ESCAPED}', 'inbound-443', '${SNIFFING_JSON_ESCAPED}');"
-            
-            set +e
-            SQL_RESULT=$(sqlite3 /etc/x-ui/x-ui.db "${SQL_INSERT}" 2>&1)
-            SQL_EXIT_CODE=$?
-            set -e
-            
-            if [ $SQL_EXIT_CODE -eq 0 ]; then
-                echo -e "${GREEN}✅ SQL запрос выполнен успешно${NC}"
-                INBOUND_ID=$(sqlite3 /etc/x-ui/x-ui.db "SELECT id FROM inbounds WHERE remark='VLESS-Reality-xHTTP' ORDER BY id DESC LIMIT 1;" 2>/dev/null)
-                
-                if [ -n "$INBOUND_ID" ]; then
-                    echo -e "${GREEN}✅ Inbound создан!${NC}"
-                    echo -e "${GREEN}   ID: ${INBOUND_ID}${NC}"
-                    echo -e "${GREEN}   Порт: 443${NC}"
-                    echo -e "${GREEN}   Protocol: VLESS${NC}"
-                    echo -e "${GREEN}   Network: xhttp${NC}"
-                    echo -e "${GREEN}   Security: reality${NC}"
-                    
-                    # Сохраняем ID в .env
-                    update_env_value "INBOUND_ID" "${INBOUND_ID}"
-                    
-                    # Отключаем WAL режим для совместимости с Docker
-                    echo -e "${YELLOW}🔧 Оптимизация базы данных для Docker...${NC}"
-                    systemctl stop x-ui
-                    sleep 2
-                    
-                    sqlite3 /etc/x-ui/x-ui.db "PRAGMA wal_checkpoint(TRUNCATE);" 2>/dev/null || true
-                    sqlite3 /etc/x-ui/x-ui.db "PRAGMA journal_mode=DELETE;" 2>/dev/null || true
-                    
-                    echo -e "${GREEN}✅ База данных оптимизирована${NC}"
-                    
-                    systemctl start x-ui
-                    sleep 5
-                    
-                    if systemctl is-active --quiet x-ui; then
-                        echo -e "${GREEN}✅ Панель успешно перезапущена${NC}"
-                    fi
-                fi
-            else
-                echo -e "${RED}❌ Ошибка выполнения SQL запроса${NC}"
-                echo -e "${RED}Ошибка: ${SQL_RESULT}${NC}"
-            fi
-        fi
-        
-        # Финальный перезапуск панели
-        echo -e "\n${YELLOW}🔄 Финальный перезапуск панели...${NC}"
-        systemctl restart x-ui
-        sleep 5
-        
-        if systemctl is-active --quiet x-ui; then
-            echo -e "${GREEN}✅ Панель успешно запущена и работает${NC}"
-        else
-            echo -e "${RED}⚠ ОШИБКА: Панель не запустилась!${NC}"
-            echo -e "${YELLOW}Проверьте: journalctl -u x-ui -n 30${NC}"
-        fi
+        # Inbound нужно создать вручную в панели
+        echo -e "\n${YELLOW}⚠️  ВАЖНО: Создайте inbound вручную в панели 3x-ui${NC}"
+        echo -e "${YELLOW}После создания inbound запустите установку бота (пункт 7)${NC}"
         
         echo -e "\n${BLUE}========================================${NC}"
         echo -e "${GREEN}   ВАШИ ДАННЫЕ ДЛЯ ВХОДА${NC}"
