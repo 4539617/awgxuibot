@@ -57,7 +57,7 @@ class XUIClient:
         
         # Определяем версию
         is_v2 = self.config.xui.is_v2()
-        is_v3 = self.config.xui.is_v3()
+        is_v3_new = self.config.xui.is_v3_new_api()
         
         if endpoint_type == 'add_client':
             if is_v2:
@@ -66,12 +66,17 @@ class XUIClient:
                     f"{base_url}/xui/inbound/addClient",
                     f"{base_url}/xui/API/inbounds/addClient",
                 ]
+            elif is_v3_new:
+                # v3.2.8+ использует новый API
+                return [
+                    f"{base_url}/panel/api/clients/add",  # Новый API для 3.2.8+
+                    f"{base_url}/panel/api/inbounds/addClient",  # Fallback на старый
+                ]
             else:
-                # v3.x и latest используют новые endpoints
+                # v3.0-3.2.7 используют старый API
                 return [
                     f"{base_url}/panel/api/inbounds/addClient",
                     f"{base_url}/xui/API/inbounds/addClient",
-                    f"{base_url}/server/addClient",
                 ]
         
         elif endpoint_type == 'delete_client':
@@ -167,30 +172,51 @@ class XUIClient:
         else:
             flow = ""
 
-        client_data = {
-            "id": self.config.xui.inbound_id,
-            "settings": json.dumps({
-                "clients": [{
-                    "id": client_uuid,
-                    "email": email,
-                    "limitIp": 0,
-                    "totalGB": total_bytes,
-                    "expiryTime": expiry_time,
-                    "enable": True,
-                    "flow": flow,
-                    "tgId": "",
-                    "subId": "",
-                    "comment": client_comment
-                }]
-            })
-        }
-
         # Получаем endpoints в зависимости от версии
         endpoints = self._get_api_endpoints('add_client')
         
         for endpoint in endpoints:
             try:
                 logger.info(f"Пробуем endpoint: {endpoint}")
+                
+                # Формат данных зависит от endpoint
+                if "/panel/api/clients/add" in endpoint:
+                    # Новый формат для 3.2.8+
+                    client_data = {
+                        "client": {
+                            "id": client_uuid,
+                            "email": email,
+                            "limitIp": 0,
+                            "totalGB": total_bytes,
+                            "expiryTime": expiry_time,
+                            "enable": True,
+                            "flow": flow,
+                            "tgId": "",
+                            "subId": "",
+                            "comment": client_comment
+                        },
+                        "inboundIds": [self.config.xui.inbound_id]
+                    }
+                else:
+                    # Старый формат для 3.x и 2.x
+                    client_data = {
+                        "id": self.config.xui.inbound_id,
+                        "settings": json.dumps({
+                            "clients": [{
+                                "id": client_uuid,
+                                "email": email,
+                                "limitIp": 0,
+                                "totalGB": total_bytes,
+                                "expiryTime": expiry_time,
+                                "enable": True,
+                                "flow": flow,
+                                "tgId": "",
+                                "subId": "",
+                                "comment": client_comment
+                            }]
+                        })
+                    }
+                
                 async with self.session.post(endpoint, json=client_data) as resp:
                     response_text = await resp.text()
                     logger.info(f"Ответ: {resp.status} - {response_text[:200]}")

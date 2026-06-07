@@ -54,6 +54,27 @@ class XUIConfig:
     def is_v3(self) -> bool:
         """Проверка является ли версия 3.x или latest"""
         return self.version.startswith("3.") or self.version == "latest"
+    
+    def is_v3_new_api(self) -> bool:
+        """Проверка использует ли версия новый API (3.2.8+)"""
+        if self.version == "latest":
+            return True
+        if self.version.startswith("3."):
+            try:
+                # Парсим версию типа "3.2.8"
+                parts = self.version.split(".")
+                if len(parts) >= 3:
+                    major, minor, patch = int(parts[0]), int(parts[1]), int(parts[2])
+                    # Новый API появился в 3.2.8
+                    if major > 3:
+                        return True
+                    if major == 3 and minor > 2:
+                        return True
+                    if major == 3 and minor == 2 and patch >= 8:
+                        return True
+            except (ValueError, IndexError):
+                pass
+        return False
 
 
 @dataclass
@@ -348,11 +369,6 @@ class Config:
             raise ValueError("TELEGRAM_BOT_TOKEN не указан")
         if not self.xui.password or self.xui.password == "your_password_here":
             raise ValueError("XUI_PASSWORD не указан")
-        if not self.vpn.server_address:
-            raise ValueError("SERVER_ADDRESS не указан")
-        # Проверяем, что SERVER_ADDRESS не является placeholder значением
-        if self.vpn.server_address in ["your-domain.com", "your_domain.com", "example.com"]:
-            raise ValueError("SERVER_ADDRESS содержит placeholder значение. Укажите реальный домен или IP")
         if self.vpn.security == "reality":
             if not self.vpn.reality_public_key:
                 print("⚠️ REALITY_PUBLIC_KEY не указан, проверьте настройки")
