@@ -1623,7 +1623,8 @@ install_3xui_v294() {
     
     # Запускаем установку с перенаправлением вывода в файл и на экран одновременно
     INSTALL_LOG="/tmp/xui_install_$$.log"
-    VERSION=v2.9.4 bash <(curl -Ls "https://raw.githubusercontent.com/mhsanaei/3x-ui/$VERSION/install.sh") $VERSION 2>&1 | tee "$INSTALL_LOG"
+    # Правильный URL с заглавной M в MHSanaei
+    bash <(curl -Ls "https://raw.githubusercontent.com/MHSanaei/3x-ui/v2.9.4/install.sh") v2.9.4 2>&1 | tee "$INSTALL_LOG"
     
     # Читаем вывод из лог-файла
     INSTALL_OUTPUT=$(cat "$INSTALL_LOG" 2>/dev/null || echo "")
