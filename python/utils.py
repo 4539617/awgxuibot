@@ -9,6 +9,7 @@ import ssl
 import re
 import tempfile
 import os
+import sqlite3
 from typing import Dict
 from logging.handlers import RotatingFileHandler
 
@@ -425,28 +426,28 @@ class XUIClient:
                 clients.append(new_client)
                 settings['clients'] = clients
                 
-                # Сериализуем JSON и экранируем для SQL
+                # Сериализуем JSON
                 settings_json = json.dumps(settings, ensure_ascii=False)
-                # Экранируем одинарные кавычки для SQL
-                settings_json_escaped = settings_json.replace("'", "''")
                 
                 try:
-                    # Обновляем настройки в БД напрямую
-                    sql_update = f"""sqlite3 {db_path} "UPDATE inbounds SET settings='{settings_json_escaped}' WHERE id={self.config.xui.inbound_id};" """
-                    result = subprocess.run(sql_update, shell=True, capture_output=True, text=True)
+                    # Используем sqlite3 Python модуль для корректной записи
+                    conn = sqlite3.connect(db_path)
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        "UPDATE inbounds SET settings = ? WHERE id = ?",
+                        (settings_json, self.config.xui.inbound_id)
+                    )
+                    conn.commit()
+                    conn.close()
                     
-                    if result.returncode == 0:
-                        logger.info(f"Клиент {email} успешно добавлен в старую структуру БД с полями: sub_id={sub_id}, password={password}, auth={auth}, security=auto")
-                        logger.info(f"Обновлено клиентов в settings: {len(clients)}")
-                        
-                        # Также добавляем запись в client_traffics для отслеживания трафика
-                        sql_traffic = f"""sqlite3 {db_path} "INSERT OR IGNORE INTO client_traffics (inbound_id, enable, email, up, down, all_time, expiry_time, total, reset) VALUES ({self.config.xui.inbound_id}, 1, '{email}', 0, 0, 0, {expiry_time}, {total_bytes}, 0);" """
-                        subprocess.run(sql_traffic, shell=True, capture_output=True, text=True)
-                        
-                        return {"success": True, "uuid": client_uuid}
-                    else:
-                        logger.error(f"Ошибка обновления настроек inbound: {result.stderr}")
-                        return {"success": False, "error": "Не удалось обновить настройки inbound"}
+                    logger.info(f"Клиент {email} успешно добавлен в старую структуру БД с полями: sub_id={sub_id}, password={password}, auth={auth}, security=auto")
+                    logger.info(f"Обновлено клиентов в settings: {len(clients)}")
+                    
+                    # Также добавляем запись в client_traffics для отслеживания трафика
+                    sql_traffic = f"""sqlite3 {db_path} "INSERT OR IGNORE INTO client_traffics (inbound_id, enable, email, up, down, all_time, expiry_time, total, reset) VALUES ({self.config.xui.inbound_id}, 1, '{email}', 0, 0, 0, {expiry_time}, {total_bytes}, 0);" """
+                    subprocess.run(sql_traffic, shell=True, capture_output=True, text=True)
+                    
+                    return {"success": True, "uuid": client_uuid}
                 except Exception as e:
                     logger.error(f"Ошибка при обновлении БД: {e}")
                     return {"success": False, "error": str(e)}
