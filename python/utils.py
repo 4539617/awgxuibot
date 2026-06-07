@@ -425,6 +425,17 @@ class XUIClient:
                     logger.error(f"Ошибка добавления в settings.clients: {e}")
                     # Не критично, продолжаем
                 
+                # Перезапускаем X-UI чтобы панель перечитала settings
+                try:
+                    logger.info("Перезапускаем X-UI для применения изменений...")
+                    result = subprocess.run("systemctl restart x-ui", shell=True, capture_output=True, text=True, timeout=10)
+                    if result.returncode == 0:
+                        logger.info("X-UI успешно перезапущен")
+                    else:
+                        logger.warning(f"Не удалось перезапустить X-UI: {result.stderr}")
+                except Exception as e:
+                    logger.warning(f"Ошибка при перезапуске X-UI: {e}")
+                
                 logger.info(f"Клиент {email} успешно добавлен в новую структуру БД (client_id={client_id}, sub_id={sub_id})")
                 return {"success": True, "uuid": client_uuid}
                 
@@ -495,6 +506,17 @@ class XUIClient:
                     # Также добавляем запись в client_traffics для отслеживания трафика
                     sql_traffic = f"""sqlite3 {db_path} "INSERT OR IGNORE INTO client_traffics (inbound_id, enable, email, up, down, all_time, expiry_time, total, reset) VALUES ({self.config.xui.inbound_id}, 1, '{email}', 0, 0, 0, {expiry_time}, {total_bytes}, 0);" """
                     subprocess.run(sql_traffic, shell=True, capture_output=True, text=True)
+                    
+                    # Перезапускаем X-UI чтобы панель перечитала settings
+                    try:
+                        logger.info("Перезапускаем X-UI для применения изменений...")
+                        result = subprocess.run("systemctl restart x-ui", shell=True, capture_output=True, text=True, timeout=10)
+                        if result.returncode == 0:
+                            logger.info("X-UI успешно перезапущен")
+                        else:
+                            logger.warning(f"Не удалось перезапустить X-UI: {result.stderr}")
+                    except Exception as e:
+                        logger.warning(f"Ошибка при перезапуске X-UI: {e}")
                     
                     return {"success": True, "uuid": client_uuid}
                 except Exception as e:
