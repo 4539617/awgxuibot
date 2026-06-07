@@ -315,12 +315,28 @@ class XUIClient:
             # Валидация пути к БД
             db_path = sanitize_path(self.config.xui.db_path)
             
+            # Проверяем, какую структуру использует панель
+            # Сначала проверяем, есть ли клиенты в settings.clients (старая структура)
+            sql_check_settings = f"""sqlite3 {db_path} "SELECT settings FROM inbounds WHERE id={self.config.xui.inbound_id};" """
+            result = subprocess.run(sql_check_settings, shell=True, capture_output=True, text=True)
+            
+            use_old_structure = False
+            if result.returncode == 0 and result.stdout.strip():
+                try:
+                    settings = json.loads(result.stdout.strip())
+                    # Если в settings есть ключ clients, значит используется старая структура
+                    if 'clients' in settings:
+                        use_old_structure = True
+                        logger.info("Панель использует старую структуру БД (clients в settings)")
+                except:
+                    pass
+            
             # Проверяем версию БД - есть ли таблица clients
             check_table = f"""sqlite3 {db_path} "SELECT name FROM sqlite_master WHERE type='table' AND name='clients';" """
             result = subprocess.run(check_table, shell=True, capture_output=True, text=True)
             has_clients_table = bool(result.stdout.strip())
             
-            if has_clients_table:
+            if has_clients_table and not use_old_structure:
                 # Новая структура БД (3.2.8+)
                 logger.info("Используем новую структуру БД (3.2.8+)")
                 
