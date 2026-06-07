@@ -81,7 +81,9 @@ class XUIClient:
                 'xhttp_path': xhttp_settings.get('path', '/'),
                 'xhttp_mode': xhttp_settings.get('mode', 'auto'),
                 'xhttp_host': xhttp_settings.get('host', ''),
-                'x_padding_bytes': xhttp_settings.get('xPaddingBytes', '100-1000')
+                'x_padding_bytes': xhttp_settings.get('xPaddingBytes', '100-1000'),
+                'sc_max_each_post_bytes': xhttp_settings.get('scMaxEachPostBytes', '1000000'),
+                'sc_min_posts_interval_ms': xhttp_settings.get('scMinPostsIntervalMs', '30')
             }
             
             # Кешируем результат
@@ -811,6 +813,8 @@ def generate_vless_link(client_uuid: str, email: str, vpn_config, inbound_id: in
     xhttp_mode = db_settings.get('xhttp_mode', getattr(vpn_config, 'xhttp_mode', 'auto'))
     xhttp_host = db_settings.get('xhttp_host', '')
     x_padding_bytes = db_settings.get('x_padding_bytes', '100-1000')
+    sc_max_each_post_bytes = db_settings.get('sc_max_each_post_bytes', '1000000')
+    sc_min_posts_interval_ms = db_settings.get('sc_min_posts_interval_ms', '30')
     
     base = f"vless://{client_uuid}@{vpn_config.server_address}:{vpn_config.server_port}"
     
@@ -864,11 +868,15 @@ def generate_vless_link(client_uuid: str, email: str, vpn_config, inbound_id: in
             params += "&host="
         # xPaddingBytes для xHTTP
         params += f"&x_padding_bytes={x_padding_bytes}"
-        # extra параметры для совместимости
-        extra = {"xPaddingBytes": x_padding_bytes}
+        # extra параметры для совместимости - добавляем все параметры как в панели
+        extra = {
+            "scMaxEachPostBytes": sc_max_each_post_bytes,
+            "scMinPostsIntervalMs": sc_min_posts_interval_ms,
+            "xPaddingBytes": x_padding_bytes
+        }
         params += f"&extra={urllib.parse.quote(json.dumps(extra))}"
     
-    return f"{base}?{params}#{urllib.parse.quote(email)}"
+    return f"{ base}?{params}#{urllib.parse.quote(email)}"
 
 
 def setup_logging(logging_config):
