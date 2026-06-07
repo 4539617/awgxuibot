@@ -376,6 +376,55 @@ class XUIClient:
                     logger.error(f"Ошибка добавления связи в client_inbounds: {result.stderr}")
                     # Не критично, продолжаем
                 
+                # 4. ВАЖНО! Также добавляем в settings.clients для генерации ссылок в панели
+                # Панель 3.2.8+ использует гибридную структуру
+                try:
+                    conn = sqlite3.connect(db_path)
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT settings FROM inbounds WHERE id = ?", (self.config.xui.inbound_id,))
+                    result = cursor.fetchone()
+                    
+                    if result and result[0]:
+                        settings = json.loads(result[0])
+                        clients_list = settings.get('clients', [])
+                        
+                        # Создаем клиента для settings.clients
+                        settings_client = {
+                            "id": client_uuid,
+                            "email": email,
+                            "limitIp": 0,
+                            "totalGB": total_bytes,
+                            "expiryTime": expiry_time,
+                            "enable": True,
+                            "flow": flow,
+                            "tgId": 0,
+                            "subId": sub_id,
+                            "password": password,
+                            "auth": auth,
+                            "security": "auto",
+                            "comment": client_comment,
+                            "reset": 0,
+                            "created_at": created_at,
+                            "updated_at": created_at
+                        }
+                        
+                        clients_list.append(settings_client)
+                        settings['clients'] = clients_list
+                        
+                        # Обновляем settings
+                        settings_json = json.dumps(settings, ensure_ascii=False)
+                        cursor.execute(
+                            "UPDATE inbounds SET settings = ? WHERE id = ?",
+                            (settings_json, self.config.xui.inbound_id)
+                        )
+                        conn.commit()
+                        logger.info(f"Клиент также добавлен в settings.clients (всего: {len(clients_list)})")
+                    
+                    conn.close()
+                except Exception as e:
+                    logger.error(f"Ошибка добавления в settings.clients: {e}")
+                    # Не критично, продолжаем
+                
                 logger.info(f"Клиент {email} успешно добавлен в новую структуру БД (client_id={client_id}, sub_id={sub_id})")
                 return {"success": True, "uuid": client_uuid}
                 
