@@ -43,6 +43,57 @@ class XUIClient:
         self.cookies = None
         self._detected_version = None
     
+    def get_reality_settings_from_db(self, inbound_id: int) -> dict:
+        """Читает настройки Reality из базы данных для указанного inbound"""
+        if self._reality_settings_cache:
+            return self._reality_settings_cache
+        
+        try:
+            db_path = sanitize_path(self.config.xui.db_path)
+            
+            # Читаем stream_settings из inbound
+            query = f"""sqlite3 {db_path} "SELECT stream_settings FROM inbounds WHERE id={inbound_id};" """
+            result = subprocess.run(query, shell=True, capture_output=True, text=True)
+            
+            if result.returncode != 0 or not result.stdout.strip():
+                logger.warning(f"Не удалось прочитать stream_settings для inbound {inbound_id}")
+                return {}
+            
+            stream_settings = json.loads(result.stdout.strip())
+            
+            # Извлекаем Reality настройки
+            reality_settings = stream_settings.get('realitySettings', {})
+            settings = reality_settings.get('settings', {})
+            
+            # Извлекаем xHTTP настройки
+            xhttp_settings = stream_settings.get('xhttpSettings', {})
+            
+            # Формируем результат
+            result_settings = {
+                'security': stream_settings.get('security', 'reality'),
+                'network': stream_settings.get('network', 'xhttp'),
+                'sni': reality_settings.get('serverNames', [''])[0] if reality_settings.get('serverNames') else '',
+                'fingerprint': settings.get('fingerprint', 'edge'),
+                'public_key': settings.get('publicKey', ''),
+                'short_id': reality_settings.get('shortIds', [''])[0] if reality_settings.get('shortIds') else '',
+                'spider_x': settings.get('spiderX', '/'),
+                'xhttp_path': xhttp_settings.get('path', '/'),
+                'xhttp_mode': xhttp_settings.get('mode', 'auto'),
+                'xhttp_host': xhttp_settings.get('host', ''),
+                'x_padding_bytes': xhttp_settings.get('xPaddingBytes', '100-1000')
+            }
+            
+            # Кешируем результат
+            self._reality_settings_cache = result_settings
+            logger.info(f"Reality настройки из БД: {result_settings}")
+            
+            return result_settings
+            
+        except Exception as e:
+            logger.error(f"Ошибка чтения Reality настроек из БД: {e}")
+            return {}
+        self._reality_settings_cache = None
+    
     def _get_api_endpoints(self, endpoint_type: str) -> list:
         """
         Возвращает список API endpoints в зависимости от версии панели
@@ -734,62 +785,86 @@ class XUIClient:
 
 
 
-def generate_vless_link(client_uuid: str, email: str, vpn_config, inbound_id: int) -> str:
+def generate_vless_link(client_uuid: str, email: str, vpn_config, inbound_id: int, xui_client=None) -> str:
     """Универсальная генерация VLESS ссылки в зависимости от настроек"""
     import urllib.parse
+    
+    # Пытаемся получить настройки из БД
+    db_settings = {}
+    if xui_client:
+        try:
+            db_settings = xui_client.get_reality_settings_from_db(inbound_id)
+            logger.info(f"Используем настройки из БД: {db_settings}")
+        except Exception as e:
+            logger.warning(f"Не удалось получить настройки из БД: {e}")
+    
+    # Используем настройки из БД или fallback на config
+    security = db_settings.get('security', vpn_config.security)
+    transport = db_settings.get('network', vpn_config.transport)
+    sni = db_settings.get('sni', vpn_config.get_sni())
+    fingerprint = db_settings.get('fingerprint', vpn_config.get_fingerprint())
+    public_key = db_settings.get('public_key', getattr(vpn_config, 'reality_public_key', ''))
+    short_id = db_settings.get('short_id', getattr(vpn_config, 'reality_short_id', ''))
+    spider_x = db_settings.get('spider_x', '/')
+    xhttp_path = db_settings.get('xhttp_path', '/')
+    xhttp_mode = db_settings.get('xhttp_mode', getattr(vpn_config, 'xhttp_mode', 'auto'))
+    xhttp_host = db_settings.get('xhttp_host', '')
+    x_padding_bytes = db_settings.get('x_padding_bytes', '100-1000')
     
     base = f"vless://{client_uuid}@{vpn_config.server_address}:{vpn_config.server_port}"
     
     # Начинаем с type (транспорт должен быть первым)
-    params = f"type={vpn_config.transport}"
+    params = f"type={transport}"
     
     # Encryption всегда none для VLESS
     params += "&encryption=none"
     
     # Security
-    params += f"&security={vpn_config.security}"
+    params += f"&security={security}"
     
     # Fingerprint
-    params += f"&fp={vpn_config.get_fingerprint()}"
+    params += f"&fp={fingerprint}"
     
     # ALPN - для TLS обязательно указываем (URL-encoded)
     tls_alpn = getattr(vpn_config, 'tls_alpn', 'http/1.1')
-    if vpn_config.security == "tls" and tls_alpn:
+    if security == "tls" and tls_alpn:
         # URL-encode ALPN (http/1.1 -> http%2F1.1)
         alpn_encoded = urllib.parse.quote(tls_alpn, safe='')
         params += f"&alpn={alpn_encoded}"
     
     # Flow - только для TCP с Reality или TLS
     # Для xHTTP flow НЕ добавляется независимо от security
-    if vpn_config.transport == "tcp" and vpn_config.security in ["reality", "tls"]:
+    if transport == "tcp" and security in ["reality", "tls"]:
         params += "&flow=xtls-rprx-vision"
     
     # SNI - добавляем после основных параметров
-    sni = vpn_config.get_sni()
     if sni:
         params += f"&sni={sni}"
     
     # Reality параметры
-    if vpn_config.security == "reality":
-        reality_public_key = getattr(vpn_config, 'reality_public_key', '')
-        reality_short_id = getattr(vpn_config, 'reality_short_id', '')
-        if reality_public_key:
-            params += f"&pbk={reality_public_key}"
-        if reality_short_id:
-            params += f"&sid={reality_short_id}"
-        # spiderX (SpiderX path)
-        params += "&spx=%2F"
+    if security == "reality":
+        if public_key:
+            params += f"&pbk={public_key}"
+        if short_id:
+            params += f"&sid={short_id}"
+        # spiderX (SpiderX path) - URL-encode
+        spider_x_encoded = urllib.parse.quote(spider_x, safe='')
+        params += f"&spx={spider_x_encoded}"
     
     # xHTTP параметры
-    if vpn_config.transport == "xhttp":
-        xhttp_mode = getattr(vpn_config, 'xhttp_mode', 'auto')
+    if transport == "xhttp":
         params += f"&mode={xhttp_mode}"
         # Для xHTTP добавляем дополнительные параметры
-        params += "&path=%2F&host="
+        xhttp_path_encoded = urllib.parse.quote(xhttp_path, safe='')
+        params += f"&path={xhttp_path_encoded}"
+        if xhttp_host:
+            params += f"&host={xhttp_host}"
+        else:
+            params += "&host="
         # xPaddingBytes для xHTTP
-        params += "&x_padding_bytes=100-1000"
+        params += f"&x_padding_bytes={x_padding_bytes}"
         # extra параметры для совместимости
-        extra = {"xPaddingBytes": "100-1000"}
+        extra = {"xPaddingBytes": x_padding_bytes}
         params += f"&extra={urllib.parse.quote(json.dumps(extra))}"
     
     return f"{base}?{params}#{urllib.parse.quote(email)}"
