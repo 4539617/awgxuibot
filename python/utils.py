@@ -42,6 +42,7 @@ class XUIClient:
         self.session = None
         self.cookies = None
         self._detected_version = None
+        self._reality_settings_cache = None
     
     def get_reality_settings_from_db(self, inbound_id: int) -> dict:
         """Читает настройки Reality из базы данных для указанного inbound"""
