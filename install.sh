@@ -1638,8 +1638,6 @@ install_3xui_v294() {
     
     # Проверяем успешность установки
     if echo "$INSTALL_OUTPUT" | grep -q "installation finished"; then
-        echo -e "\n${GREEN}✅ 3x-ui v2.9.4 установлен успешно${NC}"
-        
         # Извлекаем учетные данные из вывода инсталятора
         XUI_USERNAME=$(echo "$INSTALL_OUTPUT" | grep -oP 'Username:\s*\K\S+' | head -1)
         XUI_PASSWORD=$(echo "$INSTALL_OUTPUT" | grep -oP 'Password:\s*\K\S+' | head -1)
@@ -1647,48 +1645,35 @@ install_3xui_v294() {
         XUI_PATH=$(echo "$INSTALL_OUTPUT" | grep -oP 'WebBasePath:\s*\K\S+' | head -1)
         
         # Исправление проблемы с базой данных x-ui.db
-        echo -e "${YELLOW}🔧 Проверка базы данных...${NC}"
         if [ -d "/etc/x-ui/x-ui.db" ]; then
-            echo -e "${YELLOW}⚠ Обнаружена проблема: x-ui.db создана как директория${NC}"
-            echo -e "${YELLOW}🔧 Исправление...${NC}"
             systemctl stop x-ui
             rm -rf /etc/x-ui/x-ui.db
             touch /etc/x-ui/x-ui.db
             chmod 644 /etc/x-ui/x-ui.db
             systemctl start x-ui
             sleep 2
-            echo -e "${GREEN}✅ База данных исправлена${NC}"
         fi
         
         # Проверяем что данные получены от инсталятора
         if [ -z "$XUI_USERNAME" ] || [ -z "$XUI_PASSWORD" ]; then
-            echo -e "${YELLOW}⚠ Не удалось извлечь учетные данные из вывода инсталятора${NC}"
-            echo -e "${YELLOW}🔍 Получение данных из системы...${NC}"
-            
             # Устанавливаем sqlite3 если не установлен
             if ! command -v sqlite3 &> /dev/null; then
-                echo -e "${YELLOW}📦 Установка sqlite3...${NC}"
                 apt-get update -qq && apt-get install -y sqlite3 -qq > /dev/null 2>&1
             fi
             
             # Получаем username из базы данных
             if [ -f "/etc/x-ui/x-ui.db" ]; then
                 XUI_USERNAME=$(sqlite3 /etc/x-ui/x-ui.db "SELECT username FROM users LIMIT 1;" 2>/dev/null || echo "")
-                if [ -n "$XUI_USERNAME" ]; then
-                    echo -e "${GREEN}✅ Username: ${YELLOW}${XUI_USERNAME}${NC}"
-                fi
             fi
             
             # Если пароль не получен, используем дефолтный
             if [ -z "$XUI_PASSWORD" ]; then
-                echo -e "${YELLOW}⚠ Пароль не найден. Используйте команду 'x-ui' для сброса пароля${NC}"
                 XUI_PASSWORD="admin"
             fi
         fi
         
         # Получаем порт и путь если не извлечены
         if [ -z "$XUI_PORT" ] || [ -z "$XUI_PATH" ]; then
-            echo -e "${YELLOW}🔍 Получение настроек панели...${NC}"
             sleep 2
             XUI_SETTINGS=$(echo "n" | timeout 5 x-ui settings 2>/dev/null || echo "")
             
@@ -1710,12 +1695,6 @@ install_3xui_v294() {
             fi
         fi
         
-        echo -e "\n${GREEN}✅ Настройки панели:${NC}"
-        echo -e "  Username: ${YELLOW}${XUI_USERNAME}${NC}"
-        echo -e "  Password: ${YELLOW}${XUI_PASSWORD}${NC}"
-        echo -e "  Порт: ${YELLOW}${XUI_PORT}${NC}"
-        echo -e "  Путь: ${YELLOW}${XUI_PATH}${NC}"
-        
         # Формируем URL для v2.9.4 (БЕЗ /panel в конце)
         if [ -z "$XUI_PATH" ] || [ "$XUI_PATH" = "/" ]; then
             XUI_URL="http://${SERVER_IP}:${XUI_PORT}"
@@ -1726,12 +1705,9 @@ install_3xui_v294() {
         fi
         
         # Генерация Reality ключей
-        echo -e "${YELLOW}🔑 Генерация Reality ключей...${NC}"
-        
         # Установка xray если не установлен
         if ! command -v xray &> /dev/null; then
-            echo -e "${YELLOW}📦 Установка xray...${NC}"
-            bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
+            bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install > /dev/null 2>&1
         fi
         
         # Генерация ключей Reality
@@ -1745,7 +1721,7 @@ install_3xui_v294() {
         # Создание .env файла с учетными данными 3x-ui
         create_env_if_not_exists
         
-        echo -e "${YELLOW}💾 Сохранение учетных данных в .env...${NC}"
+        # Сохранение учетных данных в .env
         update_env_value "XUI_URL" "${XUI_URL}"
         update_env_value "XUI_USERNAME" "${XUI_USERNAME}"
         update_env_value "XUI_PASSWORD" "${XUI_PASSWORD}"
@@ -1757,21 +1733,8 @@ install_3xui_v294() {
         update_env_value "SERVER_PORT" "443"
         update_env_value "XUI_VERSION" "2.9.4"
         
-        # Inbound нужно создать вручную в панели
-        echo -e "\n${YELLOW}⚠️  ВАЖНО: Создайте inbound вручную в панели 3x-ui${NC}"
-        echo -e "${YELLOW}После создания inbound запустите установку бота (пункт 7)${NC}"
-        
-        echo -e "\n${BLUE}========================================${NC}"
-        echo -e "${GREEN}   ВАШИ ДАННЫЕ ДЛЯ ВХОДА${NC}"
-        echo -e "${BLUE}========================================${NC}"
-        echo -e "${GREEN}URL панели:${NC} ${YELLOW}${XUI_URL}${NC}"
-        echo -e "${GREEN}Username:${NC}   ${YELLOW}${XUI_USERNAME}${NC}"
-        echo -e "${GREEN}Password:${NC}   ${YELLOW}${XUI_PASSWORD}${NC}"
-        echo -e "${GREEN}Версия:${NC}     ${YELLOW}v2.9.4${NC}"
-        echo -e "${BLUE}========================================${NC}"
-        echo -e "${YELLOW}💾 Также эти данные сохранены в:${NC}"
-        echo -e "   ${YELLOW}${WORK_DIR}/.env${NC}"
-        echo -e "${BLUE}========================================${NC}"
+        # Финальное сообщение
+        echo -e "\n${GREEN}✅ Установка завершена${NC}\n"
         
         echo -e "\n${GREEN}✅ Установка 3x-ui v2.9.4 панели завершена!${NC}"
     else
@@ -1924,7 +1887,7 @@ show_menu() {
     echo -e "${BLUE}   Выберите действие:${NC}"
     echo -e "${BLUE}========================================${NC}"
     echo -e "${YELLOW}3x-ui Panel:${NC}"
-    echo -e "${GREEN}1)${NC} Установка 3x-ui Panel"
+    echo -e "${GREEN}1)${NC} Установка 3x-ui Panel v2.9.4"
     echo -e "${GREEN}2)${NC} Удаление 3x-ui Panel"
     echo -e "${BLUE}---${NC}"
     echo -e "${YELLOW}AmneziaWG:${NC}"
