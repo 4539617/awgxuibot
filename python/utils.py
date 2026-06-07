@@ -507,12 +507,12 @@ class XUIClient:
                     sql_traffic = f"""sqlite3 {db_path} "INSERT OR IGNORE INTO client_traffics (inbound_id, enable, email, up, down, all_time, expiry_time, total, reset) VALUES ({self.config.xui.inbound_id}, 1, '{email}', 0, 0, 0, {expiry_time}, {total_bytes}, 0);" """
                     subprocess.run(sql_traffic, shell=True, capture_output=True, text=True)
                     
-                    # Перезапускаем X-UI чтобы панель перечитала settings
+                    # Перезапускаем X-UI и X-Ray чтобы применить изменения
                     try:
-                        logger.info("Перезапускаем X-UI для применения изменений...")
-                        result = subprocess.run("systemctl restart x-ui", shell=True, capture_output=True, text=True, timeout=10)
+                        logger.info("Перезапускаем X-UI и X-Ray для применения изменений...")
+                        result = subprocess.run("x-ui restart", shell=True, capture_output=True, text=True, timeout=15)
                         if result.returncode == 0:
-                            logger.info("X-UI успешно перезапущен")
+                            logger.info("X-UI и X-Ray успешно перезапущены")
                         else:
                             logger.warning(f"Не удалось перезапустить X-UI: {result.stderr}")
                     except Exception as e:
