@@ -250,7 +250,7 @@ async def process_new_comment(message: Message, state: FSMContext):
 
     if result['success']:
         # Больше не записываем в user_clients - ключи берутся из X-UI
-        vless_link = generate_vless_link(result['uuid'], email, config.vpn, config.xui.inbound_id, xui_client)
+        vless_link = generate_vless_link(result['uuid'], email, config.vpn, config.xui.inbound_id)
 
         qr = qrcode.QRCode(box_size=8, border=2)
         qr.add_data(vless_link)
@@ -372,7 +372,7 @@ async def process_tempkey_comment(message: Message, state: FSMContext):
     result = await xui_client.add_client(email, 0, days, f"{comment} (Временный {duration_text})")
 
     if result['success']:
-        vless_link = generate_vless_link(result['uuid'], email, config.vpn, config.xui.inbound_id, xui_client)
+        vless_link = generate_vless_link(result['uuid'], email, config.vpn, config.xui.inbound_id)
 
         qr = qrcode.QRCode(box_size=8, border=2)
         qr.add_data(vless_link)
@@ -477,7 +477,7 @@ async def show_my_client_details(callback_query: types.CallbackQuery):
     status = client['status']
 
     # Генерируем VLESS ссылку
-    vless_link = generate_vless_link(client_uuid, email, config.vpn, config.xui.inbound_id, xui_client)
+    vless_link = generate_vless_link(client_uuid, email, config.vpn, config.xui.inbound_id)
 
     # Генерируем QR-код
     qr = qrcode.QRCode(box_size=8, border=2)
@@ -904,7 +904,7 @@ async def show_client_key(callback_query: types.CallbackQuery):
             return
         
         # Генерируем VLESS ссылку
-        vless_link = generate_vless_link(client['uuid'], client['email'], config.vpn, config.xui.inbound_id, xui_client)
+        vless_link = generate_vless_link(client['uuid'], client['email'], config.vpn, config.xui.inbound_id)
         
         # Генерируем QR-код
         qr = qrcode.QRCode(box_size=8, border=2)
@@ -1316,7 +1316,7 @@ async def process_temp_key_request(callback_query: types.CallbackQuery):
     result = await xui_client.add_client(email, 0, days, comment)
 
     if result['success']:
-        vless_link = generate_vless_link(result['uuid'], email, config.vpn, config.xui.inbound_id, xui_client)
+        vless_link = generate_vless_link(result['uuid'], email, config.vpn, config.xui.inbound_id)
 
         # Генерируем QR-код
         qr = qrcode.QRCode(box_size=8, border=2)
@@ -1390,7 +1390,7 @@ async def handle_unknown(message: Message):
 
     if is_allowed(user_id):
         await message.answer(
-            "❓ Неизвестная команда.\n\nОтправьте /help для списка команд.",
+            "❓ Неизвестная команда.\n\nОтправьте /start для списка команд.",
             parse_mode="HTML"
         )
     else:
