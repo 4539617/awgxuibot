@@ -2294,8 +2294,11 @@ start_awg_container() {
         docker rm "$container_name" 2>/dev/null || true
     fi
     
-    # Запускаем контейнер
-    docker run -d \
+    # Запускаем контейнер с выводом ошибок
+    echo -e "${YELLOW}📋 Команда запуска:${NC}"
+    echo "docker run -d --name $container_name --restart=always --privileged --cap-add=NET_ADMIN --cap-add=SYS_MODULE -p ${port}:${port}/udp -v ${config_path}:/etc/amnezia/amneziawg $image"
+    
+    local container_id=$(docker run -d \
         --name "$container_name" \
         --restart=always \
         --privileged \
@@ -2308,12 +2311,16 @@ start_awg_container() {
         -v "${config_path}:/etc/amnezia/amneziawg" \
         -v /lib/modules:/lib/modules:ro \
         --device /dev/net/tun:/dev/net/tun \
-        "$image" >/dev/null 2>&1
+        "$image" 2>&1)
     
     if [ $? -ne 0 ]; then
         echo -e "${RED}❌ Ошибка запуска контейнера${NC}"
+        echo -e "${YELLOW}Детали ошибки:${NC}"
+        echo "$container_id"
         return 1
     fi
+    
+    echo -e "${GREEN}✅ Контейнер создан: ${container_id:0:12}${NC}"
     
     # Ждём инициализации
     echo -e "${YELLOW}⏳ Ожидание инициализации контейнера...${NC}"
