@@ -1215,8 +1215,12 @@ EOF
         if [ -z "$XUI_PATH" ] || [ "$XUI_PATH" = "/" ]; then
             XUI_URL="http://${SERVER_IP}:${XUI_PORT}/panel"
         else
-            # Убираем trailing slash если есть, затем добавляем /panel
+            # Убираем trailing slash если есть и добавляем leading slash если нужно
             XUI_PATH_CLEAN="${XUI_PATH%/}"
+            # Проверяем есть ли leading slash
+            if [[ "$XUI_PATH_CLEAN" != /* ]]; then
+                XUI_PATH_CLEAN="/${XUI_PATH_CLEAN}"
+            fi
             XUI_URL="http://${SERVER_IP}:${XUI_PORT}${XUI_PATH_CLEAN}/panel"
         fi
         
@@ -1983,8 +1987,12 @@ install_3xui_v294() {
         if [ -z "$XUI_PATH" ] || [ "$XUI_PATH" = "/" ]; then
             XUI_URL="http://${SERVER_IP}:${XUI_PORT}"
         else
-            # Убираем trailing slash если есть
+            # Убираем trailing slash если есть и добавляем leading slash если нужно
             XUI_PATH_CLEAN="${XUI_PATH%/}"
+            # Проверяем есть ли leading slash
+            if [[ "$XUI_PATH_CLEAN" != /* ]]; then
+                XUI_PATH_CLEAN="/${XUI_PATH_CLEAN}"
+            fi
             XUI_URL="http://${SERVER_IP}:${XUI_PORT}${XUI_PATH_CLEAN}"
         fi
         
