@@ -18,8 +18,10 @@ class BotConfig:
     def from_env(cls):
         admin_ids_str = os.getenv("ADMIN_IDS", "")
         admin_ids = [int(x.strip()) for x in admin_ids_str.split(",") if x.strip()]
+        # Поддержка обоих токенов: XUI_BOT_TOKEN (новый) и TELEGRAM_BOT_TOKEN (legacy)
+        token = os.getenv("XUI_BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN", "")
         return cls(
-            token=os.getenv("TELEGRAM_BOT_TOKEN", ""),
+            token=token,
             admin_ids=admin_ids,
             admin_username=os.getenv("ADMIN_USERNAME")
         )
@@ -368,7 +370,7 @@ class Config:
 
     def _validate(self):
         if not self.bot.token or self.bot.token == "YOUR_BOT_TOKEN_HERE":
-            raise ValueError("TELEGRAM_BOT_TOKEN не указан")
+            raise ValueError("XUI_BOT_TOKEN или TELEGRAM_BOT_TOKEN не указан")
         if not self.xui.password or self.xui.password == "your_password_here":
             raise ValueError("XUI_PASSWORD не указан")
         if self.vpn.security == "reality":
