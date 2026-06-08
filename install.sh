@@ -10,6 +10,14 @@ NC='\033[0m'
 # Константы
 WORK_DIR="/opt/awgxuibot"
 
+# ============================================
+# НАСТРОЙКИ REALITY ПО УМОЛЧАНИЮ
+# Измените эти значения перед установкой
+# ============================================
+DEFAULT_REALITY_SNI="www.nvidia.com"
+DEFAULT_REALITY_FINGERPRINT="edge"  # Варианты: edge, chrome, firefox, safari
+# ============================================
+
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}   awgbot + xuibot Installer${NC}"
 echo -e "${BLUE}   AWG + XUI Management${NC}"
@@ -290,6 +298,12 @@ install_bot() {
     echo -e "${BLUE}   Установка XUIBot${NC}"
     echo -e "${BLUE}   XUI Management Bot${NC}"
     echo -e "${BLUE}========================================${NC}\n"
+    
+    # Переходим в рабочую директорию
+    cd /opt/awgxuibot || {
+        echo -e "${RED}❌ Ошибка: не удалось перейти в /opt/awgxuibot${NC}"
+        exit 1
+    }
     
     # Интерактивная настройка параметров
     interactive_setup
@@ -1637,8 +1651,8 @@ create_xhttp_reality_inbound() {
   "realitySettings": {
     "show": false,
     "xver": 0,
-    "target": "www.nvidia.com:443",
-    "serverNames": ["www.nvidia.com"],
+    "target": "${DEFAULT_REALITY_SNI}:443",
+    "serverNames": ["${DEFAULT_REALITY_SNI}"],
     "privateKey": "${REALITY_PRIVATE_KEY}",
     "minClientVer": "",
     "maxClientVer": "",
@@ -1646,7 +1660,7 @@ create_xhttp_reality_inbound() {
     "shortIds": ["${REALITY_SHORT_ID}"],
     "settings": {
       "publicKey": "${REALITY_PUBLIC_KEY}",
-      "fingerprint": "edge",
+      "fingerprint": "${DEFAULT_REALITY_FINGERPRINT}",
       "serverName": "",
       "spiderX": "/"
     }
@@ -1770,8 +1784,8 @@ create_tcp_reality_inbound() {
   "realitySettings": {
     "show": false,
     "xver": 0,
-    "target": "www.nvidia.com:443",
-    "serverNames": ["www.nvidia.com"],
+    "target": "${DEFAULT_REALITY_SNI}:443",
+    "serverNames": ["${DEFAULT_REALITY_SNI}"],
     "privateKey": "${REALITY_PRIVATE_KEY}",
     "minClientVer": "",
     "maxClientVer": "",
@@ -1779,7 +1793,7 @@ create_tcp_reality_inbound() {
     "shortIds": ["${REALITY_SHORT_ID}"],
     "settings": {
       "publicKey": "${REALITY_PUBLIC_KEY}",
-      "fingerprint": "chrome",
+      "fingerprint": "${DEFAULT_REALITY_FINGERPRINT}",
       "serverName": "",
       "spiderX": "/"
     }
