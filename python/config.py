@@ -81,6 +81,7 @@ class XUIConfig:
 class VPNConfig:
     server_address: str
     server_port: int
+    xui_db_path: str = "/etc/x-ui/x-ui.db"
     transport: str = "tcp"
     security: str = "tls"
     tls_sni: str = ""
@@ -97,6 +98,7 @@ class VPNConfig:
         return cls(
             server_address=os.getenv("SERVER_ADDRESS", ""),
             server_port=int(os.getenv("SERVER_PORT", "443")),
+            xui_db_path=os.getenv("XUI_DB_PATH", "/etc/x-ui/x-ui.db"),
             transport=os.getenv("TRANSPORT", "tcp"),
             security=os.getenv("SECURITY", "tls"),
             tls_sni=os.getenv("TLS_SNI", ""),

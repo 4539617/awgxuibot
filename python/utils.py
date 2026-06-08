@@ -35,6 +35,45 @@ def sanitize_path(path: str, allowed_prefix: str = '/etc/x-ui/') -> str:
         raise ValueError(f"Invalid path: {path}")
     return abs_path
 
+def get_inbound_reality_settings(db_path: str, inbound_id: int) -> Dict:
+    """
+    Извлекает реальные параметры Reality из настроек inbound в БД
+    Возвращает словарь с параметрами: sni, fingerprint, public_key, short_id
+    """
+    try:
+        # Получаем streamSettings из inbound
+        sql_get = f"""sqlite3 {db_path} "SELECT stream_settings FROM inbounds WHERE id={inbound_id};" """
+        result = subprocess.run(sql_get, shell=True, capture_output=True, text=True)
+        
+        if result.returncode != 0 or not result.stdout:
+            logger.warning(f"Не удалось получить stream_settings для inbound id={inbound_id}")
+            return {}
+        
+        stream_settings = json.loads(result.stdout.strip())
+        
+        # Извлекаем параметры Reality
+        reality_settings = {}
+        
+        # Проверяем security type
+        security = stream_settings.get('security', '')
+        if security == 'reality':
+            reality_config = stream_settings.get('realitySettings', {})
+            
+            # Извлекаем параметры
+            reality_settings['sni'] = reality_config.get('serverNames', [''])[0] if reality_config.get('serverNames') else ''
+            reality_settings['fingerprint'] = reality_config.get('fingerprint', 'chrome')
+            reality_settings['public_key'] = reality_config.get('publicKey', '')
+            reality_settings['short_id'] = reality_config.get('shortIds', [''])[0] if reality_config.get('shortIds') else ''
+            
+            logger.info(f"Извлечены параметры Reality из inbound {inbound_id}: SNI={reality_settings['sni']}, FP={reality_settings['fingerprint']}")
+        
+        return reality_settings
+        
+    except Exception as e:
+        logger.error(f"Ошибка при извлечении параметров Reality: {e}")
+        return {}
+
+
 
 class XUIClient:
     def __init__(self, config):
@@ -597,6 +636,12 @@ def generate_vless_link(client_uuid: str, email: str, vpn_config, inbound_id: in
     """Универсальная генерация VLESS ссылки в зависимости от настроек"""
     import urllib.parse
     
+    # Получаем реальные параметры Reality из inbound (если используется Reality)
+    reality_params = {}
+    if vpn_config.security == "reality":
+        reality_params = get_inbound_reality_settings(vpn_config.xui_db_path, inbound_id)
+        logger.info(f"Используем параметры Reality из inbound: {reality_params}")
+    
     base = f"vless://{client_uuid}@{vpn_config.server_address}:{vpn_config.server_port}"
     
     # Начинаем с type (транспорт должен быть первым)
@@ -608,8 +653,11 @@ def generate_vless_link(client_uuid: str, email: str, vpn_config, inbound_id: in
     # Security
     params += f"&security={vpn_config.security}"
     
-    # Fingerprint
-    params += f"&fp={vpn_config.get_fingerprint()}"
+    # Fingerprint - используем из inbound если есть, иначе из конфига
+    if reality_params.get('fingerprint'):
+        params += f"&fp={reality_params['fingerprint']}"
+    else:
+        params += f"&fp={vpn_config.get_fingerprint()}"
     
     # ALPN - для TLS обязательно указываем (URL-encoded)
     tls_alpn = getattr(vpn_config, 'tls_alpn', 'http/1.1')
@@ -623,19 +671,32 @@ def generate_vless_link(client_uuid: str, email: str, vpn_config, inbound_id: in
     if vpn_config.transport == "tcp" and vpn_config.security in ["reality", "tls"]:
         params += "&flow=xtls-rprx-vision"
     
-    # SNI - добавляем после основных параметров
-    sni = vpn_config.get_sni()
-    if sni:
-        params += f"&sni={sni}"
+    # SNI - используем из inbound если есть, иначе из конфига
+    if reality_params.get('sni'):
+        params += f"&sni={reality_params['sni']}"
+    else:
+        sni = vpn_config.get_sni()
+        if sni:
+            params += f"&sni={sni}"
     
-    # Reality параметры
+    # Reality параметры - используем из inbound если есть
     if vpn_config.security == "reality":
-        reality_public_key = getattr(vpn_config, 'reality_public_key', '')
-        reality_short_id = getattr(vpn_config, 'reality_short_id', '')
-        if reality_public_key:
-            params += f"&pbk={reality_public_key}"
-        if reality_short_id:
-            params += f"&sid={reality_short_id}"
+        # Public key
+        if reality_params.get('public_key'):
+            params += f"&pbk={reality_params['public_key']}"
+        else:
+            reality_public_key = getattr(vpn_config, 'reality_public_key', '')
+            if reality_public_key:
+                params += f"&pbk={reality_public_key}"
+        
+        # Short ID
+        if reality_params.get('short_id'):
+            params += f"&sid={reality_params['short_id']}"
+        else:
+            reality_short_id = getattr(vpn_config, 'reality_short_id', '')
+            if reality_short_id:
+                params += f"&sid={reality_short_id}"
+        
         # spiderX (SpiderX path)
         params += "&spx=%2F"
     
