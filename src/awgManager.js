@@ -64,26 +64,36 @@ export class AWGManager {
    * Определить конфигурацию контейнера
    */
   async detectContainerConfig(containerName) {
-    // Ищем конфиг файл
-    const possibleConfigs = ['awg0.conf', 'wg0.conf'];
+    // Ищем конфиг файл в разных возможных путях
+    const possiblePaths = [
+      { dir: '/opt/amnezia/amneziawg', files: ['awg0.conf', 'wg0.conf'] },  // Новый путь
+      { dir: '/opt/amnezia/awg', files: ['awg0.conf', 'wg0.conf'] },        // Старый путь (для совместимости)
+      { dir: '/etc/amnezia/amneziawg', files: ['awg0.conf', 'wg0.conf'] }   // Альтернативный путь
+    ];
+    
     let configPath = null;
     let configContent = null;
 
-    for (const confFile of possibleConfigs) {
-      try {
-        const { stdout } = await execAsync(
-          `docker exec ${containerName} cat /opt/amnezia/awg/${confFile}`
-        );
-        configPath = `/opt/amnezia/awg/${confFile}`;
-        configContent = stdout;
-        break;
-      } catch (error) {
-        continue;
+    for (const pathInfo of possiblePaths) {
+      for (const confFile of pathInfo.files) {
+        try {
+          const fullPath = `${pathInfo.dir}/${confFile}`;
+          const { stdout } = await execAsync(
+            `docker exec ${containerName} cat ${fullPath}`
+          );
+          configPath = fullPath;
+          configContent = stdout;
+          logger.info(`Found config at ${fullPath} for ${containerName}`);
+          break;
+        } catch (error) {
+          continue;
+        }
       }
+      if (configContent) break;
     }
 
     if (!configContent) {
-      throw new Error('Config file not found');
+      throw new Error('Config file not found in any known location');
     }
 
     // Парсим конфиг

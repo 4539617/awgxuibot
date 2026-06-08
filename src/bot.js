@@ -123,7 +123,27 @@ google.com
           return;
         }
         
-        if (data === 'admin_config') {
+        if (data === 'admin_menu') {
+          // Show main admin menu
+          const keyboard = {
+            inline_keyboard: [
+              [
+                { text: '🔧 Конфигурации', callback_data: 'admin_config' },
+                { text: '⚙️ Установка', callback_data: 'admin_install' }
+              ],
+              [
+                { text: '📊 Статистика', callback_data: 'admin_stats' },
+                { text: '📋 Клиенты', callback_data: 'admin_clients' }
+              ]
+            ]
+          };
+          
+          this.bot.sendMessage(
+            chatId,
+            '🔐 *Панель администратора*\n\nВыберите действие:',
+            { parse_mode: 'Markdown', reply_markup: keyboard }
+          );
+        } else if (data === 'admin_config') {
           await this.showConfigMenu(chatId);
         } else if (data === 'admin_install') {
           await this.showInstallMenu(chatId, userId);
