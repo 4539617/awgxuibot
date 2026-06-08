@@ -609,6 +609,42 @@ install_awgbot() {
     echo -e "${BLUE}   AWG Management${NC}"
     echo -e "${BLUE}========================================${NC}\n"
     
+    # Проверка наличия AWG сервера
+    echo -e "${YELLOW}🔍 Проверка наличия AWG сервера...${NC}"
+    local awg_v1_exists=false
+    local awg_v2_exists=false
+    
+    if docker ps -a --format '{{.Names}}' | grep -q "^amnezia-awg$"; then
+        awg_v1_exists=true
+        echo -e "${GREEN}✅ AWG v1 обнаружен${NC}"
+    fi
+    
+    if docker ps -a --format '{{.Names}}' | grep -q "^amnezia-awg2$"; then
+        awg_v2_exists=true
+        echo -e "${GREEN}✅ AWG v2 обнаружен${NC}"
+    fi
+    
+    if [ "$awg_v1_exists" = false ] && [ "$awg_v2_exists" = false ]; then
+        echo -e "\n${RED}❌ AWG сервер не установлен!${NC}"
+        echo -e "${YELLOW}⚠️  AWGBOT требует установленный AWG сервер для работы.${NC}"
+        echo -e "${YELLOW}Сначала установите AWG сервер (пункт 3 в меню).${NC}\n"
+        read -p "Хотите установить AWG сервер сейчас? (y/n): " install_now
+        
+        if [ "$install_now" = "y" ]; then
+            install_awg
+            # Проверяем снова после установки
+            if ! docker ps -a --format '{{.Names}}' | grep -qE "^amnezia-awg2?$"; then
+                echo -e "\n${RED}❌ AWG сервер не был установлен. Отмена установки AWGBOT.${NC}"
+                return 1
+            fi
+        else
+            echo -e "${YELLOW}Установка AWGBOT отменена.${NC}"
+            return 1
+        fi
+    fi
+    
+    echo -e "\n${GREEN}✅ AWG сервер найден, продолжаем установку AWGBOT...${NC}\n"
+    
     # Проверка наличия .env
     if [ ! -f ".env" ]; then
         create_env_if_not_exists
@@ -757,60 +793,108 @@ remove_awgbot() {
 }
 
 
-# Функция удаления AWG v1
-remove_awg_v1() {
+# Объединенная функция удаления AWG
+remove_awg() {
     echo -e "\n${BLUE}========================================${NC}"
-    echo -e "${BLUE}   Удаление AWG v1${NC}"
+    echo -e "${BLUE}   Удаление AWG Сервера${NC}"
     echo -e "${BLUE}========================================${NC}\n"
     
-    read -p "⚠️  Вы уверены что хотите удалить AWG v1 сервер? (нажмите Enter для подтверждения или 0 для отмены): " confirm
+    # Проверка установленных серверов
+    local awg_v1_exists=false
+    local awg_v2_exists=false
     
-    if [[ "$confirm" == "0" ]]; then
-        echo -e "${YELLOW}Отменено${NC}"
+    if docker ps -a --format '{{.Names}}' | grep -q "^amnezia-awg$"; then
+        awg_v1_exists=true
+    fi
+    
+    if docker ps -a --format '{{.Names}}' | grep -q "^amnezia-awg2$"; then
+        awg_v2_exists=true
+    fi
+    
+    if [ "$awg_v1_exists" = false ] && [ "$awg_v2_exists" = false ]; then
+        echo -e "${YELLOW}⚠️  AWG серверы не установлены${NC}"
         return
     fi
     
-    echo -e "${YELLOW}🗑️  Удаление AWG v1...${NC}"
-    
-    # Остановка и удаление контейнера
-    docker stop amnezia-awg 2>/dev/null || true
-    docker rm amnezia-awg 2>/dev/null || true
-    
-    # Удаление конфигурации
-    if [ -d "/opt/amnezia/amnezia-awg" ]; then
-        rm -rf /opt/amnezia/amnezia-awg
-        echo -e "${GREEN}✅ Конфигурация AWG v1 удалена${NC}"
+    # Показываем что установлено
+    echo -e "${YELLOW}Установленные AWG серверы:${NC}"
+    if [ "$awg_v1_exists" = true ]; then
+        echo -e "${GREEN}  ✓ AWG v1${NC}"
+    fi
+    if [ "$awg_v2_exists" = true ]; then
+        echo -e "${GREEN}  ✓ AWG v2${NC}"
     fi
     
-    echo -e "${GREEN}✅ AWG v1 удален!${NC}"
+    echo -e "\n${YELLOW}Выберите что удалить:${NC}"
+    echo -e "${GREEN}1)${NC} Удалить AWG v1"
+    echo -e "${GREEN}2)${NC} Удалить AWG v2"
+    echo -e "${GREEN}3)${NC} Удалить оба сервера"
+    echo -e "${GREEN}0)${NC} Отмена"
+    read -p "Введите номер (0-3): " remove_choice
+    
+    case $remove_choice in
+        1)
+            if [ "$awg_v1_exists" = false ]; then
+                echo -e "${YELLOW}AWG v1 не установлен${NC}"
+                return
+            fi
+            remove_awg_version "v1"
+            ;;
+        2)
+            if [ "$awg_v2_exists" = false ]; then
+                echo -e "${YELLOW}AWG v2 не установлен${NC}"
+                return
+            fi
+            remove_awg_version "v2"
+            ;;
+        3)
+            read -p "⚠️  Вы уверены что хотите удалить ВСЕ AWG серверы? (нажмите Enter для подтверждения или 0 для отмены): " confirm
+            if [[ "$confirm" == "0" ]]; then
+                echo -e "${YELLOW}Отменено${NC}"
+                return
+            fi
+            if [ "$awg_v1_exists" = true ]; then
+                remove_awg_version "v1"
+            fi
+            if [ "$awg_v2_exists" = true ]; then
+                remove_awg_version "v2"
+            fi
+            ;;
+        0)
+            echo -e "${YELLOW}Отменено${NC}"
+            return
+            ;;
+        *)
+            echo -e "${RED}❌ Неверный выбор${NC}"
+            return
+            ;;
+    esac
 }
 
-# Функция удаления AWG v2
-remove_awg_v2() {
-    echo -e "\n${BLUE}========================================${NC}"
-    echo -e "${BLUE}   Удаление AWG v2${NC}"
-    echo -e "${BLUE}========================================${NC}\n"
+# Функция удаления конкретной версии AWG
+remove_awg_version() {
+    local version=$1
+    local container_name="amnezia-awg"
+    local config_path="/opt/amnezia/amnezia-awg"
     
-    read -p "⚠️  Вы уверены что хотите удалить AWG v2 сервер? (нажмите Enter для подтверждения или 0 для отмены): " confirm
-    
-    if [[ "$confirm" == "0" ]]; then
-        echo -e "${YELLOW}Отменено${NC}"
-        return
+    if [ "$version" = "v2" ]; then
+        container_name="amnezia-awg2"
+        config_path="/opt/amnezia/amnezia-awg2"
     fi
     
-    echo -e "${YELLOW}🗑️  Удаление AWG v2...${NC}"
+    echo -e "\n${YELLOW}🗑️  Удаление AWG $version...${NC}"
     
     # Остановка и удаление контейнера
-    docker stop amnezia-awg2 2>/dev/null || true
-    docker rm amnezia-awg2 2>/dev/null || true
+    docker stop $container_name 2>/dev/null || true
+    docker rm $container_name 2>/dev/null || true
     
     # Удаление конфигурации
-    if [ -d "/opt/amnezia/amnezia-awg2" ]; then
-        rm -rf /opt/amnezia/amnezia-awg2
-        echo -e "${GREEN}✅ Конфигурация AWG v2 удалена${NC}"
+    if [ -d "$config_path" ]; then
+        rm -rf "$config_path"
+        echo -e "${GREEN}✅ Конфигурация AWG $version удалена${NC}"
     fi
     
-    echo -e "${GREEN}✅ AWG v2 удален!${NC}"
+    echo -e "${GREEN}✅ AWG $version удален!${NC}"
 }
 
 # Функция перезапуска XUIBOT
@@ -2580,129 +2664,78 @@ install_awg_standalone() {
     return 0
 }
 
-# Функция установки AWG v1
-install_awg_v1() {
+# Объединенная функция установки AWG (v1 и v2)
+install_awg() {
     echo -e "\n${BLUE}========================================${NC}"
-    echo -e "${BLUE}   Установка AWG v1${NC}"
+    echo -e "${BLUE}   Установка AWG Сервера${NC}"
     echo -e "${BLUE}========================================${NC}\n"
     
-    # Проверяем, установлен ли AWG v1
-    if docker ps -a --format '{{.Names}}' | grep -q "^amnezia-awg$"; then
-        echo -e "${YELLOW}⚠️  AWG v1 уже установлен!${NC}"
-        read -p "Переустановить? (y/n): " reinstall
-        if [ "$reinstall" != "y" ]; then
-            return
-        fi
-        echo -e "${YELLOW}🗑️  Удаление старого контейнера...${NC}"
-        docker stop amnezia-awg 2>/dev/null || true
-        docker rm amnezia-awg 2>/dev/null || true
-    fi
+    # Выбор версии
+    echo -e "${YELLOW}Выберите версию AWG:${NC}"
+    echo -e "${GREEN}1)${NC} AWG v1 (порт по умолчанию 51820)"
+    echo -e "${GREEN}2)${NC} AWG v2 (порт по умолчанию 51821)"
+    echo -e "${GREEN}3)${NC} Установить обе версии"
+    read -p "Введите номер (1-3): " version_choice
     
-    read -p "Введите порт для AWG v1 (по умолчанию 51820): " AWG_PORT
-    AWG_PORT=${AWG_PORT:-51820}
-    
-    echo -e "${YELLOW}🔧 Установка AWG v1 на порту $AWG_PORT...${NC}\n"
-    
-    # Проверяем, запущен ли awgbot
-    if docker ps --filter name=awgbot --format "{{.Names}}" | grep -q awgbot; then
-        echo -e "${BLUE}ℹ️  Обнаружен awgbot, использую его для установки...${NC}\n"
-        
-        # Запускаем установку через AWG бот
-        docker exec awgbot node -e "
-        import('./src/awgInstaller.js').then(async (module) => {
-            const result = await module.installServer('v1', $AWG_PORT, (msg) => console.log(msg));
-            if (result.success) {
-                console.log('✅ AWG v1 установлен успешно!');
-                console.log('Порт:', result.port);
-                console.log('Путь к конфигурации:', result.configPath);
-                process.exit(0);
-            } else {
-                console.error('❌ Ошибка установки:', result.error);
-                process.exit(1);
-            }
-        }).catch(err => {
-            console.error('❌ Ошибка:', err.message);
-            process.exit(1);
-        });
-        "
-        
-        if [ $? -eq 0 ]; then
-            echo -e "\n${GREEN}✅ AWG v1 успешно установлен через awgbot!${NC}"
-        else
-            echo -e "\n${RED}❌ Ошибка установки AWG v1 через awgbot${NC}"
-        fi
-    else
-        echo -e "${BLUE}ℹ️  awgbot не обнаружен, использую standalone установку...${NC}\n"
-        
-        # Standalone установка
-        if install_awg_standalone "v1" "$AWG_PORT"; then
-            echo -e "\n${GREEN}💡 Совет: Вы можете установить awgbot (пункт 11) для удобного управления через Telegram${NC}"
-        else
-            echo -e "\n${RED}❌ Ошибка standalone установки AWG v1${NC}"
-        fi
-    fi
+    case $version_choice in
+        1)
+            install_awg_version "v1" "51820"
+            ;;
+        2)
+            install_awg_version "v2" "51821"
+            ;;
+        3)
+            echo -e "\n${YELLOW}Установка AWG v1...${NC}"
+            install_awg_version "v1" "51820"
+            echo -e "\n${YELLOW}Установка AWG v2...${NC}"
+            install_awg_version "v2" "51821"
+            ;;
+        *)
+            echo -e "${RED}❌ Неверный выбор${NC}"
+            return 1
+            ;;
+    esac
 }
 
-# Функция установки AWG v2
-install_awg_v2() {
-    echo -e "\n${BLUE}========================================${NC}"
-    echo -e "${BLUE}   Установка AWG v2${NC}"
-    echo -e "${BLUE}========================================${NC}\n"
+# Функция установки конкретной версии AWG
+install_awg_version() {
+    local version=$1
+    local default_port=$2
+    local container_name="amnezia-awg"
     
-    # Проверяем, установлен ли AWG v2
-    if docker ps -a --format '{{.Names}}' | grep -q "^amnezia-awg2$"; then
-        echo -e "${YELLOW}⚠️  AWG v2 уже установлен!${NC}"
-        read -p "Переустановить? (y/n): " reinstall
-        if [ "$reinstall" != "y" ]; then
-            return
-        fi
-        echo -e "${YELLOW}🗑️  Удаление старого контейнера...${NC}"
-        docker stop amnezia-awg2 2>/dev/null || true
-        docker rm amnezia-awg2 2>/dev/null || true
+    if [ "$version" = "v2" ]; then
+        container_name="amnezia-awg2"
     fi
     
-    read -p "Введите порт для AWG v2 (по умолчанию 51821): " AWG_PORT
-    AWG_PORT=${AWG_PORT:-51821}
+    echo -e "\n${BLUE}--- Установка AWG $version ---${NC}"
     
-    echo -e "${YELLOW}🔧 Установка AWG v2 на порту $AWG_PORT...${NC}\n"
-    
-    # Проверяем, запущен ли awgbot
-    if docker ps --filter name=awgbot --format "{{.Names}}" | grep -q awgbot; then
-        echo -e "${BLUE}ℹ️  Обнаружен awgbot, использую его для установки...${NC}\n"
-        
-        # Запускаем установку через AWG бот
-        docker exec awgbot node -e "
-        import('./src/awgInstaller.js').then(async (module) => {
-            const result = await module.installServer('v2', $AWG_PORT, (msg) => console.log(msg));
-            if (result.success) {
-                console.log('✅ AWG v2 установлен успешно!');
-                console.log('Порт:', result.port);
-                console.log('Путь к конфигурации:', result.configPath);
-                process.exit(0);
-            } else {
-                console.error('❌ Ошибка установки:', result.error);
-                process.exit(1);
-            }
-        }).catch(err => {
-            console.error('❌ Ошибка:', err.message);
-            process.exit(1);
-        });
-        "
-        
-        if [ $? -eq 0 ]; then
-            echo -e "\n${GREEN}✅ AWG v2 успешно установлен через awgbot!${NC}"
-        else
-            echo -e "\n${RED}❌ Ошибка установки AWG v2 через awgbot${NC}"
+    # Проверяем, установлен ли AWG
+    if docker ps -a --format '{{.Names}}' | grep -q "^${container_name}$"; then
+        echo -e "${YELLOW}⚠️  AWG $version уже установлен!${NC}"
+        read -p "Переустановить? (y/n): " reinstall
+        if [ "$reinstall" != "y" ]; then
+            return 0
         fi
+        echo -e "${YELLOW}🗑️  Удаление старого контейнера...${NC}"
+        docker stop $container_name 2>/dev/null || true
+        docker rm $container_name 2>/dev/null || true
+    fi
+    
+    read -p "Введите порт для AWG $version (по умолчанию $default_port): " AWG_PORT
+    AWG_PORT=${AWG_PORT:-$default_port}
+    
+    echo -e "${YELLOW}🔧 Установка AWG $version на порту $AWG_PORT...${NC}\n"
+    
+    # Standalone установка (без awgbot)
+    echo -e "${BLUE}ℹ️  Использую standalone установку...${NC}\n"
+    
+    if install_awg_standalone "$version" "$AWG_PORT"; then
+        echo -e "\n${GREEN}✅ AWG $version успешно установлен!${NC}"
+        echo -e "${GREEN}💡 Совет: Вы можете установить awgbot (пункт 12) для удобного управления через Telegram${NC}"
+        return 0
     else
-        echo -e "${BLUE}ℹ️  awgbot не обнаружен, использую standalone установку...${NC}\n"
-        
-        # Standalone установка
-        if install_awg_standalone "v2" "$AWG_PORT"; then
-            echo -e "\n${GREEN}💡 Совет: Вы можете установить awgbot (пункт 11) для удобного управления через Telegram${NC}"
-        else
-            echo -e "\n${RED}❌ Ошибка standalone установки AWG v2${NC}"
-        fi
+        echo -e "\n${RED}❌ Ошибка standalone установки AWG $version${NC}"
+        return 1
     fi
 }
 # Генерация AWG конфигурации
@@ -2771,37 +2804,35 @@ show_menu() {
     echo -e "\n${BLUE}========================================${NC}"
     echo -e "${BLUE}   Выберите действие:${NC}"
     echo -e "${BLUE}========================================${NC}"
-    echo -e "${YELLOW}3x-ui Panel:${NC}"
+    echo -e "${YELLOW}3X-UI:${NC}"
     echo -e "${GREEN}1)${NC} Установка 3x-ui Panel v2.9.4"
     echo -e "${GREEN}2)${NC} Удаление 3x-ui Panel"
     echo -e "${BLUE}---${NC}"
     echo -e "${YELLOW}AWG:${NC}"
-    echo -e "${GREEN}3)${NC} Установка AWG v1"
-    echo -e "${GREEN}4)${NC} Установка AWG v2"
-    echo -e "${GREEN}5)${NC} Удаление AWG v1"
-    echo -e "${GREEN}6)${NC} Удаление AWG v2"
-    echo -e "${GREEN}7)${NC} Сформировать конфигурацию AWG v1"
-    echo -e "${GREEN}8)${NC} Сформировать конфигурацию AWG v2"
+    echo -e "${GREEN}3)${NC} Установка AWG (v1/v2)"
+    echo -e "${GREEN}4)${NC} Удаление AWG (v1/v2)"
+    echo -e "${GREEN}5)${NC} Сформировать конфигурацию AWG v1"
+    echo -e "${GREEN}6)${NC} Сформировать конфигурацию AWG v2"
     echo -e "${BLUE}---${NC}"
-    echo -e "${YELLOW}XUI Bot:${NC}"
-    echo -e "${GREEN}9)${NC} Установка XUIBOT"
-    echo -e "${GREEN}10)${NC} Логи XUIBOT"
-    echo -e "${GREEN}11)${NC} Перезапуск XUIBOT"
-    echo -e "${GREEN}12)${NC} Пересборка XUIBOT"
-    echo -e "${GREEN}13)${NC} Обновление XUIBOT"
-    echo -e "${GREEN}14)${NC} Удаление XUIBOT"
+    echo -e "${YELLOW}XUIBOT:${NC}"
+    echo -e "${GREEN}7)${NC} Установка XUIBOT"
+    echo -e "${GREEN}8)${NC} Логи XUIBOT"
+    echo -e "${GREEN}9)${NC} Перезапуск XUIBOT"
+    echo -e "${GREEN}10)${NC} Пересборка XUIBOT"
+    echo -e "${GREEN}11)${NC} Обновление XUIBOT"
+    echo -e "${GREEN}12)${NC} Удаление XUIBOT"
     echo -e "${BLUE}---${NC}"
-    echo -e "${YELLOW}AWG Bot:${NC}"
-    echo -e "${GREEN}15)${NC} Установка AWGBOT"
-    echo -e "${GREEN}16)${NC} Логи AWGBOT"
-    echo -e "${GREEN}17)${NC} Перезапуск AWGBOT"
-    echo -e "${GREEN}18)${NC} Пересборка AWGBOT"
-    echo -e "${GREEN}19)${NC} Обновление AWGBOT"
-    echo -e "${GREEN}20)${NC} Удаление AWGBOT"
+    echo -e "${YELLOW}AWGBOT:${NC}"
+    echo -e "${GREEN}13)${NC} Установка AWGBOT"
+    echo -e "${GREEN}14)${NC} Логи AWGBOT"
+    echo -e "${GREEN}15)${NC} Перезапуск AWGBOT"
+    echo -e "${GREEN}16)${NC} Пересборка AWGBOT"
+    echo -e "${GREEN}17)${NC} Обновление AWGBOT"
+    echo -e "${GREEN}18)${NC} Удаление AWGBOT"
     echo -e "${BLUE}---${NC}"
     echo -e "${YELLOW}Системные утилиты:${NC}"
-    echo -e "${GREEN}21)${NC} Анализ диска и памяти"
-    echo -e "${GREEN}22)${NC} Показать статус системы"
+    echo -e "${GREEN}19)${NC} Анализ диска и памяти"
+    echo -e "${GREEN}20)${NC} Показать статус системы"
     echo -e "${BLUE}---${NC}"
     echo -e "${RED}99)${NC} Удалить ВСЁ (AWG + Боты + 3x-ui)"
     echo -e "${GREEN}0)${NC} Выход"
@@ -2824,67 +2855,61 @@ while true; do
             remove_3xui
             ;;
         3)
-            install_awg_v1
+            install_awg
             ;;
         4)
-            install_awg_v2
+            remove_awg
             ;;
         5)
-            remove_awg_v1
-            ;;
-        6)
-            remove_awg_v2
-            ;;
-        7)
             generate_awg_config "v1"
             ;;
-        8)
+        6)
             generate_awg_config "v2"
             ;;
-        9)
+        7)
             install_xuibot
             ;;
-        10)
+        8)
             show_xuibot_logs
             ;;
-        11)
+        9)
             restart_xuibot
             ;;
-        12)
+        10)
             rebuild_xuibot
             ;;
-        13)
+        11)
             update_xuibot
             ;;
-        14)
+        12)
             remove_xuibot
             ;;
-        15)
+        13)
             install_awgbot
             ;;
-        16)
+        14)
             show_awgbot_logs
             ;;
-        17)
+        15)
             restart_awgbot
             ;;
-        18)
+        16)
             rebuild_awgbot
             ;;
-        19)
+        17)
             update_awgbot
             ;;
-        20)
+        18)
             remove_awgbot
             ;;
-        21)
+        19)
             if [ -f "disk_analyzer.sh" ]; then
                 bash disk_analyzer.sh
             else
                 echo -e "${RED}❌ Файл disk_analyzer.sh не найден!${NC}"
             fi
             ;;
-        22)
+        20)
             show_status
             ;;
         99)
