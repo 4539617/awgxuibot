@@ -30,7 +30,7 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 # Проверка наличия файлов проекта
-if [ ! -f "docker-compose.yml" ] || [ ! -f "Dockerfile" ] || [ ! -f "package.json" ]; then
+if [ ! -f "docker-compose.awgbot.yml" ] || [ ! -f "Dockerfile" ] || [ ! -f "package.json" ]; then
     echo -e "${RED}❌ Файлы проекта не найдены!${NC}"
     echo -e "${YELLOW}Пожалуйста, сначала склонируйте репозиторий:${NC}"
     echo -e "${BLUE}  git clone https://github.com/4539617/awgxuibot.git ${WORK_DIR}${NC}"
