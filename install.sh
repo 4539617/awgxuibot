@@ -1443,6 +1443,31 @@ STREAMEOF
                     # Сохраняем ID в .env
                     update_env_value "INBOUND_ID" "${INBOUND_ID}"
                     
+                    # Извлекаем реальные Reality ключи из созданного inbound
+                    echo -e "${YELLOW}🔑 Извлечение Reality ключей из inbound...${NC}"
+                    ACTUAL_PUBLIC_KEY=$(sqlite3 /etc/x-ui/x-ui.db "SELECT json_extract(stream_settings, '$.realitySettings.settings.publicKey') FROM inbounds WHERE id=${INBOUND_ID};" 2>/dev/null)
+                    ACTUAL_SHORT_ID=$(sqlite3 /etc/x-ui/x-ui.db "SELECT json_extract(stream_settings, '$.realitySettings.shortIds[0]') FROM inbounds WHERE id=${INBOUND_ID};" 2>/dev/null)
+                    ACTUAL_FINGERPRINT=$(sqlite3 /etc/x-ui/x-ui.db "SELECT json_extract(stream_settings, '$.realitySettings.settings.fingerprint') FROM inbounds WHERE id=${INBOUND_ID};" 2>/dev/null)
+                    ACTUAL_SNI=$(sqlite3 /etc/x-ui/x-ui.db "SELECT json_extract(stream_settings, '$.realitySettings.serverNames[0]') FROM inbounds WHERE id=${INBOUND_ID};" 2>/dev/null)
+                    
+                    if [ -n "$ACTUAL_PUBLIC_KEY" ] && [ -n "$ACTUAL_SHORT_ID" ]; then
+                        echo -e "${GREEN}✅ Reality ключи извлечены из inbound${NC}"
+                        echo -e "${GREEN}   Public Key: ${ACTUAL_PUBLIC_KEY:0:30}...${NC}"
+                        echo -e "${GREEN}   Short ID: ${ACTUAL_SHORT_ID}${NC}"
+                        echo -e "${GREEN}   Fingerprint: ${ACTUAL_FINGERPRINT}${NC}"
+                        echo -e "${GREEN}   SNI: ${ACTUAL_SNI}${NC}"
+                        
+                        # Обновляем .env с реальными ключами из inbound
+                        update_env_value "REALITY_PUBLIC_KEY" "${ACTUAL_PUBLIC_KEY}"
+                        update_env_value "REALITY_SHORT_ID" "${ACTUAL_SHORT_ID}"
+                        update_env_value "REALITY_FINGERPRINT" "${ACTUAL_FINGERPRINT}"
+                        update_env_value "REALITY_SNI" "${ACTUAL_SNI}"
+                        
+                        echo -e "${GREEN}✅ Ключи сохранены в .env${NC}"
+                    else
+                        echo -e "${YELLOW}⚠ Не удалось извлечь ключи из inbound, используем сгенерированные${NC}"
+                    fi
+                    
                     # Отключаем WAL режим для совместимости с Docker
                     echo -e "${YELLOW}🔧 Оптимизация базы данных для Docker...${NC}"
                     systemctl stop x-ui
@@ -1680,6 +1705,31 @@ STREAMEOF
             update_env_value "INBOUND_ID" "${INBOUND_ID}"
             update_env_value "TRANSPORT" "xhttp"
             
+            # Извлекаем реальные Reality ключи из созданного inbound
+            echo -e "${YELLOW}🔑 Извлечение Reality ключей из inbound...${NC}"
+            ACTUAL_PUBLIC_KEY=$(sqlite3 /etc/x-ui/x-ui.db "SELECT json_extract(stream_settings, '$.realitySettings.settings.publicKey') FROM inbounds WHERE id=${INBOUND_ID};" 2>/dev/null)
+            ACTUAL_SHORT_ID=$(sqlite3 /etc/x-ui/x-ui.db "SELECT json_extract(stream_settings, '$.realitySettings.shortIds[0]') FROM inbounds WHERE id=${INBOUND_ID};" 2>/dev/null)
+            ACTUAL_FINGERPRINT=$(sqlite3 /etc/x-ui/x-ui.db "SELECT json_extract(stream_settings, '$.realitySettings.settings.fingerprint') FROM inbounds WHERE id=${INBOUND_ID};" 2>/dev/null)
+            ACTUAL_SNI=$(sqlite3 /etc/x-ui/x-ui.db "SELECT json_extract(stream_settings, '$.realitySettings.serverNames[0]') FROM inbounds WHERE id=${INBOUND_ID};" 2>/dev/null)
+            
+            if [ -n "$ACTUAL_PUBLIC_KEY" ] && [ -n "$ACTUAL_SHORT_ID" ]; then
+                echo -e "${GREEN}✅ Reality ключи извлечены из inbound${NC}"
+                echo -e "${GREEN}   Public Key: ${ACTUAL_PUBLIC_KEY:0:30}...${NC}"
+                echo -e "${GREEN}   Short ID: ${ACTUAL_SHORT_ID}${NC}"
+                echo -e "${GREEN}   Fingerprint: ${ACTUAL_FINGERPRINT}${NC}"
+                echo -e "${GREEN}   SNI: ${ACTUAL_SNI}${NC}"
+                
+                # Обновляем .env с реальными ключами из inbound
+                update_env_value "REALITY_PUBLIC_KEY" "${ACTUAL_PUBLIC_KEY}"
+                update_env_value "REALITY_SHORT_ID" "${ACTUAL_SHORT_ID}"
+                update_env_value "REALITY_FINGERPRINT" "${ACTUAL_FINGERPRINT}"
+                update_env_value "REALITY_SNI" "${ACTUAL_SNI}"
+                
+                echo -e "${GREEN}✅ Ключи сохранены в .env${NC}"
+            else
+                echo -e "${YELLOW}⚠ Не удалось извлечь ключи из inbound, используем сгенерированные${NC}"
+            fi
+            
             # Перезапускаем панель
             systemctl stop x-ui > /dev/null 2>&1
             sleep 2
@@ -1780,6 +1830,31 @@ STREAMEOF
             
             update_env_value "INBOUND_ID" "${INBOUND_ID}"
             update_env_value "TRANSPORT" "tcp"
+            
+            # Извлекаем реальные Reality ключи из созданного inbound
+            echo -e "${YELLOW}🔑 Извлечение Reality ключей из inbound...${NC}"
+            ACTUAL_PUBLIC_KEY=$(sqlite3 /etc/x-ui/x-ui.db "SELECT json_extract(stream_settings, '$.realitySettings.settings.publicKey') FROM inbounds WHERE id=${INBOUND_ID};" 2>/dev/null)
+            ACTUAL_SHORT_ID=$(sqlite3 /etc/x-ui/x-ui.db "SELECT json_extract(stream_settings, '$.realitySettings.shortIds[0]') FROM inbounds WHERE id=${INBOUND_ID};" 2>/dev/null)
+            ACTUAL_FINGERPRINT=$(sqlite3 /etc/x-ui/x-ui.db "SELECT json_extract(stream_settings, '$.realitySettings.settings.fingerprint') FROM inbounds WHERE id=${INBOUND_ID};" 2>/dev/null)
+            ACTUAL_SNI=$(sqlite3 /etc/x-ui/x-ui.db "SELECT json_extract(stream_settings, '$.realitySettings.serverNames[0]') FROM inbounds WHERE id=${INBOUND_ID};" 2>/dev/null)
+            
+            if [ -n "$ACTUAL_PUBLIC_KEY" ] && [ -n "$ACTUAL_SHORT_ID" ]; then
+                echo -e "${GREEN}✅ Reality ключи извлечены из inbound${NC}"
+                echo -e "${GREEN}   Public Key: ${ACTUAL_PUBLIC_KEY:0:30}...${NC}"
+                echo -e "${GREEN}   Short ID: ${ACTUAL_SHORT_ID}${NC}"
+                echo -e "${GREEN}   Fingerprint: ${ACTUAL_FINGERPRINT}${NC}"
+                echo -e "${GREEN}   SNI: ${ACTUAL_SNI}${NC}"
+                
+                # Обновляем .env с реальными ключами из inbound
+                update_env_value "REALITY_PUBLIC_KEY" "${ACTUAL_PUBLIC_KEY}"
+                update_env_value "REALITY_SHORT_ID" "${ACTUAL_SHORT_ID}"
+                update_env_value "REALITY_FINGERPRINT" "${ACTUAL_FINGERPRINT}"
+                update_env_value "REALITY_SNI" "${ACTUAL_SNI}"
+                
+                echo -e "${GREEN}✅ Ключи сохранены в .env${NC}"
+            else
+                echo -e "${YELLOW}⚠ Не удалось извлечь ключи из inbound, используем сгенерированные${NC}"
+            fi
             
             # Перезапускаем панель
             systemctl stop x-ui > /dev/null 2>&1
