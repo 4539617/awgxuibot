@@ -96,7 +96,8 @@ create_env_if_not_exists() {
         
         cat > .env << EOF
 # Telegram Bot Configuration
-TELEGRAM_BOT_TOKEN=
+XUI_BOT_TOKEN=
+AWG_BOT_TOKEN=
 ADMIN_IDS=
 
 # Server Configuration
@@ -236,12 +237,12 @@ interactive_setup() {
     # ==================== Telegram Bot ====================
     echo -e "\n${GREEN}📱 Настройка Telegram Bot${NC}\n"
     
-    TELEGRAM_BOT_TOKEN=$(get_env_value "TELEGRAM_BOT_TOKEN")
-    if [ -z "$TELEGRAM_BOT_TOKEN" ]; then
-        read -p "Введите TELEGRAM_BOT_TOKEN: " TELEGRAM_BOT_TOKEN
-        update_env_value "TELEGRAM_BOT_TOKEN" "$TELEGRAM_BOT_TOKEN"
+    XUI_BOT_TOKEN=$(get_env_value "XUI_BOT_TOKEN")
+    if [ -z "$XUI_BOT_TOKEN" ]; then
+        read -p "Введите XUI_BOT_TOKEN: " XUI_BOT_TOKEN
+        update_env_value "XUI_BOT_TOKEN" "$XUI_BOT_TOKEN"
     else
-        echo -e "TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:0:10}... ${GREEN}✓${NC}"
+        echo -e "XUI_BOT_TOKEN: ${XUI_BOT_TOKEN:0:10}... ${GREEN}✓${NC}"
     fi
     
     ADMIN_IDS=$(get_env_value "ADMIN_IDS")
@@ -456,11 +457,11 @@ install_xuibot() {
     # Создание .env файла если не существует
     create_env_if_not_exists
     
-    # Проверка TELEGRAM_BOT_TOKEN
-    if ! grep -q "^TELEGRAM_BOT_TOKEN=.\+" .env; then
+    # Проверка XUI_BOT_TOKEN
+    if ! grep -q "^XUI_BOT_TOKEN=.\+" .env; then
         echo -e "${YELLOW}📱 Настройка Telegram Bot для XUI${NC}\n"
-        read -p "Введите TELEGRAM_BOT_TOKEN для XUI бота: " xui_token
-        update_env_value "TELEGRAM_BOT_TOKEN" "$xui_token"
+        read -p "Введите XUI_BOT_TOKEN для XUI бота: " xui_token
+        update_env_value "XUI_BOT_TOKEN" "$xui_token"
     fi
     
     # Проверка ADMIN_IDS
@@ -580,6 +581,20 @@ remove_xuibot() {
     echo -e "${YELLOW}🗑️  Удаление образа...${NC}"
     docker rmi awgxuibot-xuibot 2>/dev/null || true
     
+    # Очистка XUI_BOT_TOKEN из .env
+    if [ -f ".env" ]; then
+        echo -e "${YELLOW}🧹 Очистка XUI_BOT_TOKEN из .env...${NC}"
+        if grep -q "^XUI_BOT_TOKEN=" .env; then
+            sed -i '/^XUI_BOT_TOKEN=/d' .env
+            echo -e "${GREEN}✅ XUI_BOT_TOKEN удален из .env${NC}"
+        fi
+        # Также удаляем старый TELEGRAM_BOT_TOKEN если он есть (для обратной совместимости)
+        if grep -q "^TELEGRAM_BOT_TOKEN=" .env; then
+            sed -i '/^TELEGRAM_BOT_TOKEN=/d' .env
+            echo -e "${GREEN}✅ TELEGRAM_BOT_TOKEN удален из .env${NC}"
+        fi
+    fi
+    
     echo -e "${GREEN}✅ XUI Бот удален!${NC}"
 }
 
@@ -602,7 +617,7 @@ install_awgbot() {
     # Проверка AWG_BOT_TOKEN
     if ! grep -q "^AWG_BOT_TOKEN=.\+" .env; then
         echo -e "${YELLOW}📱 Настройка Telegram Bot для AWG${NC}\n"
-        read -p "Введите TELEGRAM_BOT_TOKEN для AWG бота: " awg_token
+        read -p "Введите AWG_BOT_TOKEN для AWG бота: " awg_token
         
         # Добавляем AWG_BOT_TOKEN если его нет
         if ! grep -q "^AWG_BOT_TOKEN=" .env; then
@@ -728,6 +743,15 @@ remove_awgbot() {
     # Удаление образа
     echo -e "${YELLOW}🗑️  Удаление образа...${NC}"
     docker rmi awgxuibot-awgbot 2>/dev/null || true
+    
+    # Очистка AWG_BOT_TOKEN из .env
+    if [ -f ".env" ]; then
+        echo -e "${YELLOW}🧹 Очистка AWG_BOT_TOKEN из .env...${NC}"
+        if grep -q "^AWG_BOT_TOKEN=" .env; then
+            sed -i '/^AWG_BOT_TOKEN=/d' .env
+            echo -e "${GREEN}✅ AWG_BOT_TOKEN удален из .env${NC}"
+        fi
+    fi
     
     echo -e "${GREEN}✅ AWG Бот удален!${NC}"
 }
@@ -875,7 +899,7 @@ show_status() {
     
     # XUI Bot
     if docker ps --filter name=xuibot --format "{{.Names}}" | grep -q xuibot; then
-        local xui_token=$(grep "^TELEGRAM_BOT_TOKEN=" .env 2>/dev/null | cut -d'=' -f2)
+        local xui_token=$(grep "^XUI_BOT_TOKEN=" .env 2>/dev/null | cut -d'=' -f2)
         local xui_bot_username=$(get_bot_username "$xui_token" "xuibot")
         
         echo -e "  XUI Bot: ${GREEN}✅ Запущен${NC}"
