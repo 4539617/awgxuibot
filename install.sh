@@ -1154,6 +1154,10 @@ EOF
                 fi
                 if [ -z "$XUI_PATH" ]; then
                     XUI_PATH=$(echo "$XUI_SETTINGS" | grep "webBasePath:" | awk '{print $2}' | sed 's/\/$//')
+                    # Добавляем leading slash если нужно
+                    if [ -n "$XUI_PATH" ] && [[ "$XUI_PATH" != /* ]] && [ "$XUI_PATH" != "/" ]; then
+                        XUI_PATH="/${XUI_PATH}"
+                    fi
                 fi
             fi
             
@@ -1971,6 +1975,10 @@ install_3xui_v294() {
                 fi
                 if [ -z "$XUI_PATH" ]; then
                     XUI_PATH=$(echo "$XUI_SETTINGS" | grep "webBasePath:" | awk '{print $2}' | sed 's/\/$//')
+                    # Добавляем leading slash если нужно
+                    if [ -n "$XUI_PATH" ] && [[ "$XUI_PATH" != /* ]] && [ "$XUI_PATH" != "/" ]; then
+                        XUI_PATH="/${XUI_PATH}"
+                    fi
                 fi
             fi
             
