@@ -2331,7 +2331,15 @@ while true; do
             generate_awg_config "v2"
             ;;
         0)
-            echo -e "\n${GREEN}👋 До свидания!${NC}"
+            echo -e "\n${YELLOW}Каталог awgxuibot удалён, вернитесь на уровень назад командой:${NC}"
+            echo -e "${GREEN}cd ..${NC}"
+            echo -e "\n${YELLOW}Переустановка скрипта:${NC}"
+            echo -e "${GREEN}git clone https://github.com/4539617/awgxuibot.git /opt/awgxuibot${NC}"
+            echo -e "${GREEN}cd /opt/awgxuibot${NC}"
+            echo -e "${GREEN}bash install.sh${NC}"
+            echo -e "\n${BLUE}========================================${NC}"
+            echo -e "${GREEN}👋 До свидания!${NC}"
+            echo -e "${BLUE}========================================${NC}"
             cd ..
             exit 0
             ;;
