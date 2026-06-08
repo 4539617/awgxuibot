@@ -481,7 +481,7 @@ install_xuibot() {
     echo -e "\n${YELLOW}🐳 Сборка и запуск XUI бота...${NC}"
     echo -e "${BLUE}Это может занять несколько минут...${NC}\n"
     
-    if ! docker compose up -d --build xuibot; then
+    if ! docker compose -f docker-compose.xuibot.yml up -d --build; then
         echo -e "\n${RED}❌ Ошибка при запуске XUI бота${NC}"
         echo -e "${YELLOW}Проверьте логи: docker logs xuibot${NC}"
         return
@@ -545,11 +545,11 @@ update_xuibot() {
     
     # Пересборка образа
     echo -e "${YELLOW}🐳 Пересборка образа...${NC}"
-    docker compose build --no-cache xuibot
+    docker compose -f docker-compose.xuibot.yml build --no-cache
     
     # Запуск
     echo -e "${YELLOW}🚀 Запуск обновленного контейнера...${NC}"
-    docker compose up -d xuibot
+    docker compose -f docker-compose.xuibot.yml up -d
     
     sleep 5
     echo -e "\n${GREEN}✅ XUI Бот обновлен!${NC}"
@@ -680,7 +680,7 @@ install_awgbot() {
     echo -e "\n${YELLOW}🐳 Сборка и запуск AWG бота...${NC}"
     echo -e "${BLUE}Это может занять несколько минут...${NC}\n"
     
-    if ! docker compose up -d --build awgbot; then
+    if ! docker compose -f docker-compose.awgbot.yml up -d --build; then
         echo -e "\n${RED}❌ Ошибка при запуске AWG бота${NC}"
         echo -e "${YELLOW}Проверьте логи: docker logs awgbot${NC}"
         return
@@ -744,11 +744,11 @@ update_awgbot() {
     
     # Пересборка образа
     echo -e "${YELLOW}🐳 Пересборка образа...${NC}"
-    docker compose build --no-cache awgbot
+    docker compose -f docker-compose.awgbot.yml build --no-cache
     
     # Запуск
     echo -e "${YELLOW}🚀 Запуск обновленного контейнера...${NC}"
-    docker compose up -d awgbot
+    docker compose -f docker-compose.awgbot.yml up -d
     
     sleep 5
     echo -e "\n${GREEN}✅ AWG Бот обновлен!${NC}"
@@ -942,13 +942,13 @@ rebuild_xuibot() {
     echo -e "${BLUE}========================================${NC}\n"
     
     echo -e "${YELLOW}🛑 Остановка контейнера xuibot...${NC}"
-    docker compose down xuibot 2>/dev/null || true
+    docker compose -f docker-compose.xuibot.yml down 2>/dev/null || true
     
     echo -e "${YELLOW}🔨 Пересборка образа xuibot...${NC}"
-    docker compose build --no-cache xuibot
+    docker compose -f docker-compose.xuibot.yml build --no-cache
     
     echo -e "${YELLOW}🚀 Запуск контейнера xuibot...${NC}"
-    docker compose up -d xuibot
+    docker compose -f docker-compose.xuibot.yml up -d
     
     sleep 5
     echo -e "${GREEN}✅ Контейнер XUIBOT перезапущен!${NC}"
@@ -963,13 +963,13 @@ rebuild_awgbot() {
     echo -e "${BLUE}========================================${NC}\n"
     
     echo -e "${YELLOW}🛑 Остановка контейнера awgbot...${NC}"
-    docker compose down awgbot 2>/dev/null || true
+    docker compose -f docker-compose.awgbot.yml down 2>/dev/null || true
     
     echo -e "${YELLOW}🔨 Пересборка образа awgbot...${NC}"
-    docker compose build --no-cache awgbot
+    docker compose -f docker-compose.awgbot.yml build --no-cache
     
     echo -e "${YELLOW}🚀 Запуск контейнера awgbot...${NC}"
-    docker compose up -d awgbot
+    docker compose -f docker-compose.awgbot.yml up -d
     
     sleep 5
     echo -e "${GREEN}✅ Контейнер AWGBOT перезапущен!${NC}"
