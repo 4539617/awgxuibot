@@ -60,12 +60,24 @@ def get_inbound_reality_settings(db_path: str, inbound_id: int) -> Dict:
             reality_config = stream_settings.get('realitySettings', {})
             
             # Извлекаем параметры
+            # SNI из serverNames
             reality_settings['sni'] = reality_config.get('serverNames', [''])[0] if reality_config.get('serverNames') else ''
-            reality_settings['fingerprint'] = reality_config.get('fingerprint', 'chrome')
-            reality_settings['public_key'] = reality_config.get('publicKey', '')
+            
+            # Fingerprint может быть в разных местах
+            # 1. В realitySettings.settings.fingerprint (новый формат)
+            # 2. В realitySettings.fingerprint (старый формат)
+            settings_obj = reality_config.get('settings', {})
+            if isinstance(settings_obj, dict):
+                reality_settings['fingerprint'] = settings_obj.get('fingerprint', reality_config.get('fingerprint', 'chrome'))
+                reality_settings['public_key'] = settings_obj.get('publicKey', reality_config.get('publicKey', ''))
+            else:
+                reality_settings['fingerprint'] = reality_config.get('fingerprint', 'chrome')
+                reality_settings['public_key'] = reality_config.get('publicKey', '')
+            
+            # Short ID из shortIds
             reality_settings['short_id'] = reality_config.get('shortIds', [''])[0] if reality_config.get('shortIds') else ''
             
-            logger.info(f"Извлечены параметры Reality из inbound {inbound_id}: SNI={reality_settings['sni']}, FP={reality_settings['fingerprint']}")
+            logger.info(f"Извлечены параметры Reality из inbound {inbound_id}: SNI={reality_settings['sni']}, FP={reality_settings['fingerprint']}, PBK={reality_settings['public_key'][:20]}..., SID={reality_settings['short_id']}")
         
         return reality_settings
         
