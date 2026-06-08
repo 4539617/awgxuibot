@@ -2161,47 +2161,333 @@ remove_3xui() {
     echo -e "${GREEN}   - Данные из .env очищены${NC}"
 }
 
+# ============================================
+# Standalone AWG Installation Functions
+# ============================================
+
+# Генерация ключей AWG через Docker
+generate_awg_keys() {
+    echo -e "${YELLOW}🔑 Генерация ключей...${NC}"
+    
+    # Генерируем приватный ключ
+    local private_key=$(docker run --rm alpine:latest sh -c "apk add -q wireguard-tools >/dev/null 2>&1 && wg genkey" 2>/dev/null)
+    if [ -z "$private_key" ]; then
+        echo -e "${RED}❌ Ошибка генерации приватного ключа${NC}"
+        return 1
+    fi
+    
+    # Генерируем публичный ключ из приватного
+    local public_key=$(echo "$private_key" | docker run --rm -i alpine:latest sh -c "apk add -q wireguard-tools >/dev/null 2>&1 && wg pubkey" 2>/dev/null)
+    if [ -z "$public_key" ]; then
+        echo -e "${RED}❌ Ошибка генерации публичного ключа${NC}"
+        return 1
+    fi
+    
+    # Генерируем preshared key
+    local preshared_key=$(docker run --rm alpine:latest sh -c "apk add -q wireguard-tools >/dev/null 2>&1 && wg genpsk" 2>/dev/null)
+    if [ -z "$preshared_key" ]; then
+        echo -e "${RED}❌ Ошибка генерации preshared ключа${NC}"
+        return 1
+    fi
+    
+    # Экспортируем ключи
+    export AWG_PRIVATE_KEY="$private_key"
+    export AWG_PUBLIC_KEY="$public_key"
+    export AWG_PRESHARED_KEY="$preshared_key"
+    
+    echo -e "${GREEN}✅ Ключи успешно сгенерированы${NC}"
+    return 0
+}
+
+# Создание конфигурации AWG сервера
+create_awg_server_config() {
+    local version=$1
+    local port=$2
+    local config_path=$3
+    
+    echo -e "${YELLOW}📝 Создание конфигурации для ${version}...${NC}"
+    
+    # Создаём директорию
+    mkdir -p "$config_path"
+    
+    # Параметры для v1
+    local jc=6
+    local jmin=10
+    local jmax=50
+    local s1=90
+    local s2=52
+    local h1=547255503
+    local h2=446059580
+    local h3=1955843234
+    local h4=1872536766
+    local config_file="wg0.conf"
+    
+    # Параметры для v2 (отличаются)
+    if [ "$version" = "v2" ]; then
+        s1=103
+        s2=79
+        local s3=31
+        local s4=9
+        h1="1726271876-1813116022"
+        h2="1831845225-2080655774"
+        h3="2099907137-2143693563"
+        h4="2146332087-2147440200"
+        config_file="awg0.conf"
+    fi
+    
+    # Создаём конфигурационный файл
+    cat > "$config_path/$config_file" <<EOF
+[Interface]
+PrivateKey = $AWG_PRIVATE_KEY
+Address = 10.8.1.0/24
+ListenPort = $port
+Jc = $jc
+Jmin = $jmin
+Jmax = $jmax
+S1 = $s1
+S2 = $s2
+EOF
+    
+    # Для v2 добавляем дополнительные параметры
+    if [ "$version" = "v2" ]; then
+        cat >> "$config_path/$config_file" <<EOF
+S3 = $s3
+S4 = $s4
+EOF
+    fi
+    
+    # Добавляем H-параметры
+    cat >> "$config_path/$config_file" <<EOF
+H1 = $h1
+H2 = $h2
+H3 = $h3
+H4 = $h4
+EOF
+    
+    # Сохраняем ключи
+    echo "$AWG_PRIVATE_KEY" > "$config_path/wireguard_server_private_key.key"
+    echo "$AWG_PUBLIC_KEY" > "$config_path/wireguard_server_public_key.key"
+    echo "$AWG_PRESHARED_KEY" > "$config_path/wireguard_psk.key"
+    
+    # Устанавливаем права доступа
+    chmod 600 "$config_path/$config_file"
+    chmod 600 "$config_path"/*.key
+    
+    echo -e "${GREEN}✅ Конфигурация создана: $config_path/$config_file${NC}"
+    return 0
+}
+
+# Запуск AWG контейнера
+start_awg_container() {
+    local version=$1
+    local port=$2
+    local config_path=$3
+    local container_name=$4
+    local image=$5
+    
+    echo -e "${YELLOW}🐳 Запуск контейнера $container_name...${NC}"
+    
+    # Проверяем, не запущен ли уже контейнер
+    if docker ps -a --format '{{.Names}}' | grep -q "^${container_name}$"; then
+        echo -e "${YELLOW}⚠️  Контейнер $container_name уже существует. Удаляю...${NC}"
+        docker stop "$container_name" 2>/dev/null || true
+        docker rm "$container_name" 2>/dev/null || true
+    fi
+    
+    # Запускаем контейнер
+    docker run -d \
+        --name "$container_name" \
+        --restart=always \
+        --privileged \
+        --cap-add=NET_ADMIN \
+        --cap-add=SYS_MODULE \
+        --sysctl net.ipv4.conf.all.src_valid_mark=1 \
+        --sysctl net.ipv4.ip_forward=1 \
+        --sysctl net.ipv6.conf.all.forwarding=1 \
+        -p "${port}:${port}/udp" \
+        -v "${config_path}:/etc/amnezia/amneziawg" \
+        -v /lib/modules:/lib/modules:ro \
+        --device /dev/net/tun:/dev/net/tun \
+        "$image" >/dev/null 2>&1
+    
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}❌ Ошибка запуска контейнера${NC}"
+        return 1
+    fi
+    
+    # Ждём инициализации
+    echo -e "${YELLOW}⏳ Ожидание инициализации контейнера...${NC}"
+    sleep 3
+    
+    # Проверяем статус
+    local status=$(docker ps --filter name="^${container_name}$" --format "{{.Status}}" 2>/dev/null)
+    if [[ "$status" != *"Up"* ]]; then
+        echo -e "${RED}❌ Контейнер не запустился${NC}"
+        echo -e "${YELLOW}Логи контейнера:${NC}"
+        docker logs "$container_name" 2>&1 | tail -20
+        return 1
+    fi
+    
+    echo -e "${GREEN}✅ Контейнер $container_name успешно запущен${NC}"
+    return 0
+}
+
+# Получение или создание Docker образа
+get_or_pull_awg_image() {
+    local image=$1
+    local fallback_image=$2
+    
+    echo -e "${YELLOW}🔍 Проверка Docker образа...${NC}"
+    
+    # Проверяем локальный образ
+    if docker images --format "{{.Repository}}:{{.Tag}}" | grep -q "^${image}$"; then
+        echo -e "${GREEN}✅ Локальный образ найден: $image${NC}"
+        echo "$image"
+        return 0
+    fi
+    
+    # Пытаемся скачать публичный образ
+    echo -e "${YELLOW}📥 Скачивание образа $fallback_image...${NC}"
+    if docker pull "$fallback_image" >/dev/null 2>&1; then
+        echo -e "${GREEN}✅ Образ успешно скачан${NC}"
+        echo "$fallback_image"
+        return 0
+    fi
+    
+    # Проверяем fallback образ локально
+    if docker images --format "{{.Repository}}:{{.Tag}}" | grep -q "^${fallback_image}$"; then
+        echo -e "${GREEN}✅ Локальный fallback образ найден: $fallback_image${NC}"
+        echo "$fallback_image"
+        return 0
+    fi
+    
+    echo -e "${RED}❌ Не удалось получить Docker образ${NC}"
+    echo -e "${YELLOW}Убедитесь что:${NC}"
+    echo -e "  1. Есть доступ к Docker Hub для $fallback_image"
+    echo -e "  2. Или создан локальный образ $image"
+    return 1
+}
+
+# Основная функция standalone установки AWG
+install_awg_standalone() {
+    local version=$1
+    local port=$2
+    
+    # Определяем параметры в зависимости от версии
+    local container_name="amnezia-awg"
+    local config_path="/opt/amnezia/amnezia-awg"
+    local image="amnezia-awg:latest"
+    local fallback_image="amneziavpn/amnezia-wg:latest"
+    
+    if [ "$version" = "v2" ]; then
+        container_name="amnezia-awg2"
+        config_path="/opt/amnezia/amnezia-awg2"
+        image="amnezia-awg2:latest"
+    fi
+    
+    echo -e "${BLUE}📦 Standalone установка AWG $version${NC}"
+    
+    # Шаг 1: Проверка порта
+    echo -e "${YELLOW}🔍 Проверка порта $port...${NC}"
+    if netstat -tuln 2>/dev/null | grep -q ":${port} " || ss -tuln 2>/dev/null | grep -q ":${port} "; then
+        echo -e "${RED}❌ Порт $port уже используется${NC}"
+        return 1
+    fi
+    echo -e "${GREEN}✅ Порт $port свободен${NC}"
+    
+    # Шаг 2: Генерация ключей
+    if ! generate_awg_keys; then
+        return 1
+    fi
+    
+    # Шаг 3: Создание конфигурации
+    if ! create_awg_server_config "$version" "$port" "$config_path"; then
+        return 1
+    fi
+    
+    # Шаг 4: Получение образа
+    local final_image=$(get_or_pull_awg_image "$image" "$fallback_image")
+    if [ $? -ne 0 ]; then
+        return 1
+    fi
+    
+    # Шаг 5: Запуск контейнера
+    if ! start_awg_container "$version" "$port" "$config_path" "$container_name" "$final_image"; then
+        return 1
+    fi
+    
+    echo -e "\n${GREEN}✅ AWG $version успешно установлен!${NC}"
+    echo -e "${BLUE}========================================${NC}"
+    echo -e "${GREEN}📊 Информация:${NC}"
+    echo -e "  Контейнер: $container_name"
+    echo -e "  Порт: $port"
+    echo -e "  Конфигурация: $config_path"
+    echo -e "  Public Key: $AWG_PUBLIC_KEY"
+    echo -e "${BLUE}========================================${NC}"
+    
+    return 0
+}
+
 # Функция установки AWG v1
 install_awg_v1() {
     echo -e "\n${BLUE}========================================${NC}"
     echo -e "${BLUE}   Установка AWG v1${NC}"
     echo -e "${BLUE}========================================${NC}\n"
     
-    # Проверка что AWG бот установлен
-    if ! docker ps --filter name=awgbot --format "{{.Names}}" | grep -q awgbot; then
-        echo -e "${RED}❌ AWG Бот не установлен!${NC}"
-        echo -e "${YELLOW}Сначала установите AWG бот (пункт 5)${NC}"
-        return
+    # Проверяем, установлен ли AWG v1
+    if docker ps -a --format '{{.Names}}' | grep -q "^amnezia-awg$"; then
+        echo -e "${YELLOW}⚠️  AWG v1 уже установлен!${NC}"
+        read -p "Переустановить? (y/n): " reinstall
+        if [ "$reinstall" != "y" ]; then
+            return
+        fi
+        echo -e "${YELLOW}🗑️  Удаление старого контейнера...${NC}"
+        docker stop amnezia-awg 2>/dev/null || true
+        docker rm amnezia-awg 2>/dev/null || true
     fi
     
     read -p "Введите порт для AWG v1 (по умолчанию 51820): " AWG_PORT
     AWG_PORT=${AWG_PORT:-51820}
     
-    echo -e "${YELLOW}🔧 Установка AWG v1 на порту $AWG_PORT...${NC}"
+    echo -e "${YELLOW}🔧 Установка AWG v1 на порту $AWG_PORT...${NC}\n"
     
-    # Запускаем установку через AWG бот
-    docker exec awgbot node -e "
-    import('./src/awgInstaller.js').then(async (module) => {
-        const result = await module.installServer('v1', $AWG_PORT, (msg) => console.log(msg));
-        if (result.success) {
-            console.log('✅ AWG v1 установлен успешно!');
-            console.log('Порт:', result.port);
-            console.log('Путь к конфигурации:', result.configPath);
-            process.exit(0);
-        } else {
-            console.error('❌ Ошибка установки:', result.error);
+    # Проверяем, запущен ли awgbot
+    if docker ps --filter name=awgbot --format "{{.Names}}" | grep -q awgbot; then
+        echo -e "${BLUE}ℹ️  Обнаружен awgbot, использую его для установки...${NC}\n"
+        
+        # Запускаем установку через AWG бот
+        docker exec awgbot node -e "
+        import('./src/awgInstaller.js').then(async (module) => {
+            const result = await module.installServer('v1', $AWG_PORT, (msg) => console.log(msg));
+            if (result.success) {
+                console.log('✅ AWG v1 установлен успешно!');
+                console.log('Порт:', result.port);
+                console.log('Путь к конфигурации:', result.configPath);
+                process.exit(0);
+            } else {
+                console.error('❌ Ошибка установки:', result.error);
+                process.exit(1);
+            }
+        }).catch(err => {
+            console.error('❌ Ошибка:', err.message);
             process.exit(1);
-        }
-    }).catch(err => {
-        console.error('❌ Ошибка:', err.message);
-        process.exit(1);
-    });
-    "
-    
-    if [ $? -eq 0 ]; then
-        echo -e "\n${GREEN}✅ AWG v1 успешно установлен!${NC}"
+        });
+        "
+        
+        if [ $? -eq 0 ]; then
+            echo -e "\n${GREEN}✅ AWG v1 успешно установлен через awgbot!${NC}"
+        else
+            echo -e "\n${RED}❌ Ошибка установки AWG v1 через awgbot${NC}"
+        fi
     else
-        echo -e "\n${RED}❌ Ошибка установки AWG v1${NC}"
+        echo -e "${BLUE}ℹ️  awgbot не обнаружен, использую standalone установку...${NC}\n"
+        
+        # Standalone установка
+        if install_awg_standalone "v1" "$AWG_PORT"; then
+            echo -e "\n${GREEN}💡 Совет: Вы можете установить awgbot (пункт 11) для удобного управления через Telegram${NC}"
+        else
+            echo -e "\n${RED}❌ Ошибка standalone установки AWG v1${NC}"
+        fi
     fi
 }
 
@@ -2211,41 +2497,60 @@ install_awg_v2() {
     echo -e "${BLUE}   Установка AWG v2${NC}"
     echo -e "${BLUE}========================================${NC}\n"
     
-    # Проверка что бот установлен
-    if ! docker ps --filter name=awgbot --format "{{.Names}}" | grep -q awgbot; then
-        echo -e "${RED}❌ AWG Бот не установлен!${NC}"
-        echo -e "${YELLOW}Сначала установите AWG бот (пункт 5)${NC}"
-        return
+    # Проверяем, установлен ли AWG v2
+    if docker ps -a --format '{{.Names}}' | grep -q "^amnezia-awg2$"; then
+        echo -e "${YELLOW}⚠️  AWG v2 уже установлен!${NC}"
+        read -p "Переустановить? (y/n): " reinstall
+        if [ "$reinstall" != "y" ]; then
+            return
+        fi
+        echo -e "${YELLOW}🗑️  Удаление старого контейнера...${NC}"
+        docker stop amnezia-awg2 2>/dev/null || true
+        docker rm amnezia-awg2 2>/dev/null || true
     fi
     
     read -p "Введите порт для AWG v2 (по умолчанию 51821): " AWG_PORT
     AWG_PORT=${AWG_PORT:-51821}
     
-    echo -e "${YELLOW}🔧 Установка AWG v2 на порту $AWG_PORT...${NC}"
+    echo -e "${YELLOW}🔧 Установка AWG v2 на порту $AWG_PORT...${NC}\n"
     
-    # Запускаем установку через AWG бот
-    docker exec awgbot node -e "
-    import('./src/awgInstaller.js').then(async (module) => {
-        const result = await module.installServer('v2', $AWG_PORT, (msg) => console.log(msg));
-        if (result.success) {
-            console.log('✅ AWG v2 установлен успешно!');
-            console.log('Порт:', result.port);
-            console.log('Путь к конфигурации:', result.configPath);
-            process.exit(0);
-        } else {
-            console.error('❌ Ошибка установки:', result.error);
+    # Проверяем, запущен ли awgbot
+    if docker ps --filter name=awgbot --format "{{.Names}}" | grep -q awgbot; then
+        echo -e "${BLUE}ℹ️  Обнаружен awgbot, использую его для установки...${NC}\n"
+        
+        # Запускаем установку через AWG бот
+        docker exec awgbot node -e "
+        import('./src/awgInstaller.js').then(async (module) => {
+            const result = await module.installServer('v2', $AWG_PORT, (msg) => console.log(msg));
+            if (result.success) {
+                console.log('✅ AWG v2 установлен успешно!');
+                console.log('Порт:', result.port);
+                console.log('Путь к конфигурации:', result.configPath);
+                process.exit(0);
+            } else {
+                console.error('❌ Ошибка установки:', result.error);
+                process.exit(1);
+            }
+        }).catch(err => {
+            console.error('❌ Ошибка:', err.message);
             process.exit(1);
-        }
-    }).catch(err => {
-        console.error('❌ Ошибка:', err.message);
-        process.exit(1);
-    });
-    "
-    
-    if [ $? -eq 0 ]; then
-        echo -e "\n${GREEN}✅ AWG v2 успешно установлен!${NC}"
+        });
+        "
+        
+        if [ $? -eq 0 ]; then
+            echo -e "\n${GREEN}✅ AWG v2 успешно установлен через awgbot!${NC}"
+        else
+            echo -e "\n${RED}❌ Ошибка установки AWG v2 через awgbot${NC}"
+        fi
     else
-        echo -e "\n${RED}❌ Ошибка установки AWG v2${NC}"
+        echo -e "${BLUE}ℹ️  awgbot не обнаружен, использую standalone установку...${NC}\n"
+        
+        # Standalone установка
+        if install_awg_standalone "v2" "$AWG_PORT"; then
+            echo -e "\n${GREEN}💡 Совет: Вы можете установить awgbot (пункт 11) для удобного управления через Telegram${NC}"
+        else
+            echo -e "\n${RED}❌ Ошибка standalone установки AWG v2${NC}"
+        fi
     fi
 }
 # Генерация AWG конфигурации
