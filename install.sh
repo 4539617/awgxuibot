@@ -812,6 +812,87 @@ remove_awg_v2() {
     
     echo -e "${GREEN}✅ AWG v2 удален!${NC}"
 }
+
+# Функция перезапуска XUIBOT
+restart_xuibot() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Перезапуск XUIBOT${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+    
+    if ! docker ps --filter name=xuibot --format "{{.Names}}" | grep -q xuibot; then
+        echo -e "${RED}❌ Контейнер xuibot не запущен${NC}"
+        return
+    fi
+    
+    echo -e "${YELLOW}🔄 Перезапуск xuibot...${NC}"
+    docker restart xuibot
+    
+    sleep 3
+    echo -e "${GREEN}✅ XUIBOT перезапущен!${NC}"
+    docker logs --tail=10 xuibot
+}
+
+# Функция перезапуска AWGBOT
+restart_awgbot() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Перезапуск AWGBOT${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+    
+    if ! docker ps --filter name=awgbot --format "{{.Names}}" | grep -q awgbot; then
+        echo -e "${RED}❌ Контейнер awgbot не запущен${NC}"
+        return
+    fi
+    
+    echo -e "${YELLOW}🔄 Перезапуск awgbot...${NC}"
+    docker restart awgbot
+    
+    sleep 3
+    echo -e "${GREEN}✅ AWGBOT перезапущен!${NC}"
+    docker logs --tail=10 awgbot
+}
+
+# Функция перезапуска контейнера XUIBOT с rebuild
+rebuild_xuibot() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Перезапуск контейнера XUIBOT${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+    
+    echo -e "${YELLOW}🛑 Остановка контейнера xuibot...${NC}"
+    docker compose down xuibot 2>/dev/null || true
+    
+    echo -e "${YELLOW}🔨 Пересборка образа xuibot...${NC}"
+    docker compose build --no-cache xuibot
+    
+    echo -e "${YELLOW}🚀 Запуск контейнера xuibot...${NC}"
+    docker compose up -d xuibot
+    
+    sleep 5
+    echo -e "${GREEN}✅ Контейнер XUIBOT перезапущен!${NC}"
+    echo -e "\n${YELLOW}📋 Логи (последние 15 строк):${NC}"
+    docker logs --tail=15 xuibot
+}
+
+# Функция перезапуска контейнера AWGBOT с rebuild
+rebuild_awgbot() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Перезапуск контейнера AWGBOT${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+    
+    echo -e "${YELLOW}🛑 Остановка контейнера awgbot...${NC}"
+    docker compose down awgbot 2>/dev/null || true
+    
+    echo -e "${YELLOW}🔨 Пересборка образа awgbot...${NC}"
+    docker compose build --no-cache awgbot
+    
+    echo -e "${YELLOW}🚀 Запуск контейнера awgbot...${NC}"
+    docker compose up -d awgbot
+    
+    sleep 5
+    echo -e "${GREEN}✅ Контейнер AWGBOT перезапущен!${NC}"
+    echo -e "\n${YELLOW}📋 Логи (последние 15 строк):${NC}"
+    docker logs --tail=15 awgbot
+}
+
 # Функция получения username бота через API
 get_bot_username() {
     local token=$1
@@ -2664,24 +2745,28 @@ show_menu() {
     echo -e "${YELLOW}XUI Bot:${NC}"
     echo -e "${GREEN}7)${NC} Установка XUIBOT"
     echo -e "${GREEN}8)${NC} Логи XUIBOT"
-    echo -e "${GREEN}9)${NC} Обновление XUIBOT"
-    echo -e "${GREEN}10)${NC} Удаление XUIBOT"
+    echo -e "${GREEN}9)${NC} Перезапуск XUIBOT"
+    echo -e "${GREEN}10)${NC} Перезапуск контейнера (rebuild)"
+    echo -e "${GREEN}11)${NC} Обновление XUIBOT"
+    echo -e "${GREEN}12)${NC} Удаление XUIBOT"
     echo -e "${BLUE}---${NC}"
     echo -e "${YELLOW}AWG Bot:${NC}"
-    echo -e "${GREEN}11)${NC} Установка AWGBOT"
-    echo -e "${GREEN}12)${NC} Логи AWGBOT"
-    echo -e "${GREEN}13)${NC} Обновление AWGBOT"
-    echo -e "${GREEN}14)${NC} Удаление AWGBOT"
+    echo -e "${GREEN}13)${NC} Установка AWGBOT"
+    echo -e "${GREEN}14)${NC} Логи AWGBOT"
+    echo -e "${GREEN}15)${NC} Перезапуск AWGBOT"
+    echo -e "${GREEN}16)${NC} Перезапуск контейнера (rebuild)"
+    echo -e "${GREEN}17)${NC} Обновление AWGBOT"
+    echo -e "${GREEN}18)${NC} Удаление AWGBOT"
     echo -e "${BLUE}---${NC}"
     echo -e "${YELLOW}Генерация конфигураций:${NC}"
-    echo -e "${GREEN}18)${NC} Сформировать конфигурацию AWG v1"
-    echo -e "${GREEN}19)${NC} Сформировать конфигурацию AWG v2"
+    echo -e "${GREEN}19)${NC} Сформировать конфигурацию AWG v1"
+    echo -e "${GREEN}20)${NC} Сформировать конфигурацию AWG v2"
     echo -e "${BLUE}---${NC}"
     echo -e "${YELLOW}Системные утилиты:${NC}"
-    echo -e "${GREEN}16)${NC} Анализ диска и памяти"
-    echo -e "${GREEN}17)${NC} Показать статус системы"
+    echo -e "${GREEN}21)${NC} Анализ диска и памяти"
+    echo -e "${GREEN}22)${NC} Показать статус системы"
     echo -e "${BLUE}---${NC}"
-    echo -e "${RED}15)${NC} Удалить ВСЁ (AWG + Боты + 3x-ui)"
+    echo -e "${RED}99)${NC} Удалить ВСЁ (AWG + Боты + 3x-ui)"
     echo -e "${GREEN}0)${NC} Выход"
     echo -e "${BLUE}========================================${NC}"
 }
@@ -2720,41 +2805,53 @@ while true; do
             show_xuibot_logs
             ;;
         9)
-            update_xuibot
+            restart_xuibot
             ;;
         10)
-            remove_xuibot
+            rebuild_xuibot
             ;;
         11)
-            install_awgbot
+            update_xuibot
             ;;
         12)
-            show_awgbot_logs
+            remove_xuibot
             ;;
         13)
-            update_awgbot
+            install_awgbot
             ;;
         14)
-            remove_awgbot
+            show_awgbot_logs
             ;;
         15)
-            remove_all
+            restart_awgbot
             ;;
         16)
+            rebuild_awgbot
+            ;;
+        17)
+            update_awgbot
+            ;;
+        18)
+            remove_awgbot
+            ;;
+        19)
+            generate_awg_config "v1"
+            ;;
+        20)
+            generate_awg_config "v2"
+            ;;
+        21)
             if [ -f "disk_analyzer.sh" ]; then
                 bash disk_analyzer.sh
             else
                 echo -e "${RED}❌ Файл disk_analyzer.sh не найден!${NC}"
             fi
             ;;
-        17)
+        22)
             show_status
             ;;
-        18)
-            generate_awg_config "v1"
-            ;;
-        19)
-            generate_awg_config "v2"
+        99)
+            remove_all
             ;;
         0)
             echo -e "\n${YELLOW}Каталог awgxuibot удалён, вернитесь на уровень назад командой:${NC}"
