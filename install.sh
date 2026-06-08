@@ -2294,10 +2294,7 @@ start_awg_container() {
         docker rm "$container_name" 2>/dev/null || true
     fi
     
-    # Запускаем контейнер с выводом ошибок
-    echo -e "${YELLOW}📋 Команда запуска:${NC}"
-    echo "docker run -d --name $container_name --restart=always --privileged --cap-add=NET_ADMIN --cap-add=SYS_MODULE -p ${port}:${port}/udp -v ${config_path}:/etc/amnezia/amneziawg $image"
-    
+    # Запускаем контейнер
     local container_id=$(docker run -d \
         --name "$container_name" \
         --restart=always \
@@ -2313,10 +2310,14 @@ start_awg_container() {
         --device /dev/net/tun:/dev/net/tun \
         "$image" 2>&1)
     
-    if [ $? -ne 0 ]; then
+    local exit_code=$?
+    
+    if [ $exit_code -ne 0 ]; then
         echo -e "${RED}❌ Ошибка запуска контейнера${NC}"
         echo -e "${YELLOW}Детали ошибки:${NC}"
         echo "$container_id"
+        echo -e "\n${YELLOW}Команда для отладки:${NC}"
+        echo "docker run -d --name $container_name --restart=always --privileged --cap-add=NET_ADMIN --cap-add=SYS_MODULE -p ${port}:${port}/udp -v ${config_path}:/etc/amnezia/amneziawg $image"
         return 1
     fi
     
@@ -2344,34 +2345,34 @@ get_or_pull_awg_image() {
     local image=$1
     local fallback_image=$2
     
-    echo -e "${YELLOW}🔍 Проверка Docker образа...${NC}"
+    echo -e "${YELLOW}🔍 Проверка Docker образа...${NC}" >&2
     
     # Проверяем локальный образ
     if docker images --format "{{.Repository}}:{{.Tag}}" | grep -q "^${image}$"; then
-        echo -e "${GREEN}✅ Локальный образ найден: $image${NC}"
+        echo -e "${GREEN}✅ Локальный образ найден: $image${NC}" >&2
         echo "$image"
         return 0
     fi
     
     # Пытаемся скачать публичный образ
-    echo -e "${YELLOW}📥 Скачивание образа $fallback_image...${NC}"
+    echo -e "${YELLOW}📥 Скачивание образа $fallback_image...${NC}" >&2
     if docker pull "$fallback_image" >/dev/null 2>&1; then
-        echo -e "${GREEN}✅ Образ успешно скачан${NC}"
+        echo -e "${GREEN}✅ Образ успешно скачан${NC}" >&2
         echo "$fallback_image"
         return 0
     fi
     
     # Проверяем fallback образ локально
     if docker images --format "{{.Repository}}:{{.Tag}}" | grep -q "^${fallback_image}$"; then
-        echo -e "${GREEN}✅ Локальный fallback образ найден: $fallback_image${NC}"
+        echo -e "${GREEN}✅ Локальный fallback образ найден: $fallback_image${NC}" >&2
         echo "$fallback_image"
         return 0
     fi
     
-    echo -e "${RED}❌ Не удалось получить Docker образ${NC}"
-    echo -e "${YELLOW}Убедитесь что:${NC}"
-    echo -e "  1. Есть доступ к Docker Hub для $fallback_image"
-    echo -e "  2. Или создан локальный образ $image"
+    echo -e "${RED}❌ Не удалось получить Docker образ${NC}" >&2
+    echo -e "${YELLOW}Убедитесь что:${NC}" >&2
+    echo -e "  1. Есть доступ к Docker Hub для $fallback_image" >&2
+    echo -e "  2. Или создан локальный образ $image" >&2
     return 1
 }
 
