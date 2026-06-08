@@ -8,7 +8,7 @@ import { logger } from './logger.js';
 const execAsync = promisify(exec);
 
 /**
- * AWG Manager - управление AmneziaWG контейнерами
+ * AWG Manager - управление AWG контейнерами
  * Автоматически определяет доступные контейнеры и их параметры
  */
 export class AWGManager {

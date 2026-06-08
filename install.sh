@@ -953,7 +953,7 @@ show_status() {
     # ============================================
     # AWG SERVERS
     # ============================================
-    echo -e "\n${YELLOW}${BOLD}AMNEZIAWG SERVERS:${NC}"
+    echo -e "\n${YELLOW}${BOLD}AWG SERVERS:${NC}"
     
     # AWG v1
     if docker ps --filter name=amnezia-awg --format "{{.Names}}" | grep -q "amnezia-awg"; then
@@ -2775,7 +2775,7 @@ show_menu() {
     echo -e "${GREEN}1)${NC} Установка 3x-ui Panel v2.9.4"
     echo -e "${GREEN}2)${NC} Удаление 3x-ui Panel"
     echo -e "${BLUE}---${NC}"
-    echo -e "${YELLOW}AmneziaWG:${NC}"
+    echo -e "${YELLOW}AWG:${NC}"
     echo -e "${GREEN}3)${NC} Установка AWG v1"
     echo -e "${GREEN}4)${NC} Установка AWG v2"
     echo -e "${GREEN}5)${NC} Удаление AWG v1"

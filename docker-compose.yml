@@ -6,7 +6,7 @@ version: '3.8'
 # - docker-compose.awgbot.yml (только AWGBot)
 
 services:
-  # AWGBot - AmneziaWG Management
+  # AWGBot - AWG Management
   awgbot:
     build:
       context: .

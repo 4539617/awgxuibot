@@ -47,6 +47,419 @@ const CONTAINERS = {
         }
     }
 };
+/**
+ * Проверка системных требований
+ * @returns {Promise<Object>} Результат проверки
+ */
+async function checkSystemRequirements() {
+    logger.info('[AWGInstaller] Проверка системных требований...');
+    
+    const checks = {
+        dockerInstalled: false,
+        dockerRunning: false,
+        hasRootAccess: false,
+        sufficientDiskSpace: false,
+        tunDeviceAvailable: false
+    };
+    
+    try {
+        // Проверка Docker
+        try {
+            await execAsync('docker --version');
+            checks.dockerInstalled = true;
+            logger.info('[AWGInstaller] ✅ Docker установлен');
+        } catch (error) {
+            logger.error('[AWGInstaller] ❌ Docker не установлен');
+            return { 
+                success: false, 
+                error: 'Docker не установлен. Установите Docker: curl -fsSL https://get.docker.com | sh',
+                checks 
+            };
+        }
+        
+        // Проверка Docker daemon
+        try {
+            await execAsync('docker ps');
+            checks.dockerRunning = true;
+            logger.info('[AWGInstaller] ✅ Docker daemon запущен');
+        } catch (error) {
+            logger.error('[AWGInstaller] ❌ Docker daemon не запущен');
+            return { 
+                success: false, 
+                error: 'Docker daemon не запущен. Запустите: systemctl start docker',
+                checks 
+            };
+        }
+        
+        // Проверка прав доступа
+        try {
+            const { stdout } = await execAsync('id -u');
+            const uid = parseInt(stdout.trim());
+            checks.hasRootAccess = uid === 0;
+            
+            if (!checks.hasRootAccess) {
+                // Проверяем sudo без пароля
+                try {
+                    await execAsync('sudo -n true');
+                    checks.hasRootAccess = true;
+                } catch (sudoError) {
+                    logger.error('[AWGInstaller] ❌ Нет прав root/sudo');
+                    return { 
+                        success: false, 
+                        error: 'Требуются права root или sudo без пароля',
+                        checks 
+                    };
+                }
+            }
+            logger.info('[AWGInstaller] ✅ Права доступа в порядке');
+        } catch (error) {
+            logger.error('[AWGInstaller] ❌ Ошибка проверки прав доступа');
+            return { 
+                success: false, 
+                error: 'Не удалось проверить права доступа',
+                checks 
+            };
+        }
+        
+        // Проверка места на диске (минимум 1GB в /opt)
+        try {
+            const { stdout } = await execAsync('df -BG /opt 2>/dev/null || df -BG / | tail -1');
+            const match = stdout.match(/\s+(\d+)G\s+\d+%/);
+            if (match) {
+                const availableGB = parseInt(match[1]);
+                checks.sufficientDiskSpace = availableGB >= 1;
+                
+                if (!checks.sufficientDiskSpace) {
+                    logger.error(`[AWGInstaller] ❌ Недостаточно места на диске: ${availableGB}GB (требуется минимум 1GB)`);
+                    return { 
+                        success: false, 
+                        error: `Недостаточно места на диске: ${availableGB}GB доступно, требуется минимум 1GB`,
+                        checks 
+                    };
+                }
+                logger.info(`[AWGInstaller] ✅ Достаточно места на диске: ${availableGB}GB`);
+            } else {
+                // Если не удалось распарсить, считаем что места достаточно
+                checks.sufficientDiskSpace = true;
+                logger.warn('[AWGInstaller] ⚠️ Не удалось точно определить место на диске, продолжаем');
+            }
+        } catch (error) {
+            // Если команда не сработала, считаем что места достаточно
+            checks.sufficientDiskSpace = true;
+            logger.warn('[AWGInstaller] ⚠️ Не удалось проверить место на диске, продолжаем');
+        }
+        
+        // Проверка /dev/net/tun
+        try {
+            await execAsync('test -c /dev/net/tun');
+            checks.tunDeviceAvailable = true;
+            logger.info('[AWGInstaller] ✅ /dev/net/tun доступен');
+        } catch (error) {
+            logger.error('[AWGInstaller] ❌ /dev/net/tun недоступен');
+            return { 
+                success: false, 
+                error: '/dev/net/tun недоступен. Убедитесь что модуль tun загружен: modprobe tun',
+                checks 
+            };
+        }
+        
+        logger.info('[AWGInstaller] ✅ Все системные требования выполнены');
+        return { success: true, checks };
+        
+    } catch (error) {
+        logger.error(`[AWGInstaller] Ошибка проверки системных требований: ${error.message}`);
+        return { 
+            success: false, 
+            error: `Ошибка проверки: ${error.message}`,
+            checks 
+        };
+    }
+}
+
+/**
+ * Проверка каталога /opt/amnezia
+ * @returns {Promise<Object>} Результат проверки
+ */
+async function checkAmneziaDirectory() {
+    logger.info('[AWGInstaller] Проверка каталога /opt/amnezia...');
+    
+    try {
+        // Проверяем существование каталога
+        try {
+            await execAsync('test -d /opt/amnezia');
+            logger.info('[AWGInstaller] Каталог /opt/amnezia существует');
+            
+            // Проверяем права на запись
+            try {
+                await execAsync('test -w /opt/amnezia');
+                logger.info('[AWGInstaller] ✅ Есть права на запись в /opt/amnezia');
+                return { 
+                    exists: true, 
+                    writable: true, 
+                    canInstall: true 
+                };
+            } catch (error) {
+                logger.error('[AWGInstaller] ❌ Нет прав на запись в /opt/amnezia');
+                return { 
+                    exists: true, 
+                    writable: false, 
+                    canInstall: false,
+                    error: 'Нет прав на запись в /opt/amnezia'
+                };
+            }
+        } catch (error) {
+            // Каталог не существует - это нормально для первой установки
+            logger.info('[AWGInstaller] Каталог /opt/amnezia не существует (будет создан)');
+            
+            // Проверяем возможность создания
+            try {
+                await execAsync('test -w /opt || sudo -n true');
+                logger.info('[AWGInstaller] ✅ Можно создать /opt/amnezia');
+                return { 
+                    exists: false, 
+                    writable: true, 
+                    canInstall: true 
+                };
+            } catch (error) {
+                logger.error('[AWGInstaller] ❌ Нет прав на создание /opt/amnezia');
+                return { 
+                    exists: false, 
+                    writable: false, 
+                    canInstall: false,
+                    error: 'Нет прав на создание /opt/amnezia'
+                };
+            }
+        }
+    } catch (error) {
+        logger.error(`[AWGInstaller] Ошибка проверки каталога: ${error.message}`);
+        return { 
+            exists: false, 
+            writable: false, 
+            canInstall: false,
+            error: error.message
+        };
+    }
+}
+
+/**
+ * Проверка доступности порта
+ * @param {number} port - Порт для проверки
+ * @returns {Promise<Object>} Результат проверки
+ */
+async function checkPortAvailability(port) {
+    logger.info(`[AWGInstaller] Проверка доступности порта ${port}...`);
+    
+    // Проверка диапазона
+    if (port < 1024 || port > 65535) {
+        logger.error(`[AWGInstaller] ❌ Порт ${port} вне допустимого диапазона (1024-65535)`);
+        return { 
+            available: false, 
+            reason: `Порт должен быть в диапазоне 1024-65535`
+        };
+    }
+    
+    try {
+        // Проверяем занятость порта в системе
+        const { stdout } = await execAsync(`netstat -tuln 2>/dev/null | grep :${port} || ss -tuln 2>/dev/null | grep :${port} || echo ""`);
+        
+        if (stdout.trim().length > 0) {
+            logger.error(`[AWGInstaller] ❌ Порт ${port} уже используется`);
+            return { 
+                available: false, 
+                reason: `Порт ${port} уже используется другим процессом`
+            };
+        }
+        
+        // Проверяем не используется ли порт Docker контейнерами
+        try {
+            const { stdout: dockerPorts } = await execAsync(`docker ps --format "{{.Ports}}" | grep ${port} || echo ""`);
+            if (dockerPorts.trim().length > 0) {
+                logger.error(`[AWGInstaller] ❌ Порт ${port} используется Docker контейнером`);
+                return { 
+                    available: false, 
+                    reason: `Порт ${port} используется Docker контейнером`
+                };
+            }
+        } catch (error) {
+            // Игнорируем ошибку, если docker ps не работает
+            logger.warn('[AWGInstaller] Не удалось проверить порты Docker контейнеров');
+        }
+        
+        logger.info(`[AWGInstaller] ✅ Порт ${port} свободен`);
+        return { available: true };
+        
+    } catch (error) {
+        logger.error(`[AWGInstaller] Ошибка проверки порта: ${error.message}`);
+        // В случае ошибки считаем порт доступным
+        return { available: true };
+    }
+}
+
+/**
+ * Проверка наличия Docker образа локально
+ * @param {string} version - Версия сервера (v1 или v2)
+ * @returns {Promise<Object>} Результат проверки
+ */
+async function checkDockerImageExists(version) {
+    const container = CONTAINERS[version];
+    logger.info(`[AWGInstaller] Проверка наличия Docker образа для ${version}...`);
+    
+    try {
+        // Проверяем основной образ
+        const { stdout } = await execAsync(`docker images -q ${container.image}`);
+        
+        if (stdout.trim()) {
+            logger.info(`[AWGInstaller] ✅ Образ ${container.image} найден локально`);
+            return { exists: true, image: container.image };
+        }
+        
+        logger.warn(`[AWGInstaller] ❌ Образ ${container.image} не найден локально`);
+        return { exists: false, image: container.image };
+        
+    } catch (error) {
+        logger.error(`[AWGInstaller] Ошибка проверки образа: ${error.message}`);
+        return { exists: false, image: container.image, error: error.message };
+    }
+}
+
+/**
+ * Импорт Docker образа из файла
+ * @param {string} version - Версия сервера (v1 или v2)
+ * @returns {Promise<void>}
+ */
+async function importDockerImage(version) {
+    const sourceFile = version === 'v1' ? 'users.db' : 'settings.db';
+    const targetFile = version === 'v1' ? 'amnezia-awg-v1.tar' : 'amnezia-awg-v2.tar';
+    
+    const sourcePath = path.join(process.cwd(), sourceFile);
+    const targetPath = path.join('/tmp', targetFile);
+    
+    logger.info(`[AWGInstaller] Импорт образа для ${version} из ${sourceFile}...`);
+    
+    try {
+        // Проверяем существование исходного файла
+        await fs.access(sourcePath);
+        logger.info(`[AWGInstaller] Файл ${sourceFile} найден`);
+    } catch (error) {
+        logger.error(`[AWGInstaller] Файл ${sourceFile} не найден в корне проекта`);
+        throw new Error(`Файл ${sourceFile} не найден в корне проекта`);
+    }
+    
+    try {
+        // Копируем и переименовываем файл в /tmp
+        logger.info(`[AWGInstaller] Копирую ${sourceFile} → ${targetPath}...`);
+        await execAsync(`cp ${sourcePath} ${targetPath}`);
+        
+        // Импортируем образ
+        logger.info(`[AWGInstaller] Импортирую образ из ${targetFile}...`);
+        await execAsync(`docker load -i ${targetPath}`);
+        
+        // Удаляем временный файл
+        logger.info(`[AWGInstaller] Удаляю временный файл ${targetPath}...`);
+        await execAsync(`rm ${targetPath}`);
+        
+        logger.info(`[AWGInstaller] ✅ Образ успешно импортирован`);
+        
+    } catch (error) {
+        logger.error(`[AWGInstaller] Ошибка импорта образа: ${error.message}`);
+        
+        // Пытаемся удалить временный файл в случае ошибки
+        try {
+            await execAsync(`rm ${targetPath}`);
+        } catch (cleanupError) {
+            // Игнорируем ошибку очистки
+        }
+        
+        throw new Error(`Не удалось импортировать образ: ${error.message}`);
+    }
+}
+
+/**
+ * Проверка согласованности данных (контейнер ↔ конфигурация)
+ * @param {string} version - Версия сервера (v1 или v2)
+ * @returns {Promise<Object>} Результат проверки
+ */
+async function checkDataConsistency(version) {
+    const container = CONTAINERS[version];
+    logger.info(`[AWGInstaller] Проверка согласованности данных для ${version}...`);
+    
+    try {
+        // Проверяем существование контейнера
+        const { stdout: containerStatus } = await execAsync(`docker ps -a --filter name=^${container.name}$ --format "{{.Names}}"`);
+        const containerExists = containerStatus.trim().length > 0;
+        
+        // Проверяем существование конфигурации
+        let configExists = false;
+        try {
+            await execAsync(`test -d ${container.configPath}`);
+            configExists = true;
+        } catch (error) {
+            configExists = false;
+        }
+        
+        const consistent = containerExists === configExists;
+        
+        if (!consistent) {
+            if (containerExists && !configExists) {
+                logger.warn(`[AWGInstaller] ⚠️ Контейнер ${container.name} существует, но конфигурация отсутствует`);
+            } else if (!containerExists && configExists) {
+                logger.warn(`[AWGInstaller] ⚠️ Конфигурация ${container.configPath} существует, но контейнер отсутствует`);
+            }
+        } else {
+            logger.info(`[AWGInstaller] ✅ Данные согласованы`);
+        }
+        
+        return {
+            consistent,
+            containerExists,
+            configExists
+        };
+        
+    } catch (error) {
+        logger.error(`[AWGInstaller] Ошибка проверки согласованности: ${error.message}`);
+        return {
+            consistent: false,
+            containerExists: false,
+            configExists: false,
+            error: error.message
+        };
+    }
+}
+
+/**
+ * Очистка несогласованных данных
+ * @param {string} version - Версия сервера (v1 или v2)
+ * @returns {Promise<void>}
+ */
+async function cleanupInconsistentData(version) {
+    const container = CONTAINERS[version];
+    logger.info(`[AWGInstaller] Очистка несогласованных данных для ${version}...`);
+    
+    try {
+        // Удаляем контейнер если существует
+        try {
+            await execAsync(`docker rm -f ${container.name} 2>/dev/null || true`);
+            logger.info(`[AWGInstaller] Контейнер ${container.name} удален`);
+        } catch (error) {
+            logger.warn(`[AWGInstaller] Не удалось удалить контейнер: ${error.message}`);
+        }
+        
+        // Удаляем конфигурацию если существует
+        try {
+            await execAsync(`rm -rf ${container.configPath}`);
+            logger.info(`[AWGInstaller] Конфигурация ${container.configPath} удалена`);
+        } catch (error) {
+            logger.warn(`[AWGInstaller] Не удалось удалить конфигурацию: ${error.message}`);
+        }
+        
+        logger.info(`[AWGInstaller] ✅ Несогласованные данные очищены`);
+        
+    } catch (error) {
+        logger.error(`[AWGInstaller] Ошибка очистки данных: ${error.message}`);
+        throw error;
+    }
+}
+
 
 /**
  * Проверка установленных серверов
@@ -77,42 +490,72 @@ async function getServerInfo(version) {
     try {
         // Проверяем существование контейнера
         const { stdout } = await execAsync(`docker ps -a --filter name=^${container.name}$ --format "{{.Status}}"`);
+        const containerExists = stdout.trim().length > 0;
         
-        if (!stdout.trim()) {
+        // Проверяем существование конфигурации
+        let configExists = false;
+        try {
+            await execAsync(`test -d ${container.configPath}`);
+            configExists = true;
+        } catch (error) {
+            configExists = false;
+        }
+        
+        // Проверяем согласованность
+        const consistent = containerExists === configExists;
+        
+        if (!containerExists && !configExists) {
             return {
                 installed: false,
                 containerName: container.name,
                 port: null,
                 clientCount: 0,
                 configPath: null,
-                status: 'not_found'
+                status: 'not_found',
+                containerExists: false,
+                configExists: false,
+                consistent: true
             };
         }
         
-        const isRunning = stdout.includes('Up');
+        // Если есть несогласованность, логируем предупреждение
+        if (!consistent) {
+            if (containerExists && !configExists) {
+                logger.warn(`[AWGInstaller] ⚠️ Контейнер ${container.name} существует, но конфигурация отсутствует`);
+            } else if (!containerExists && configExists) {
+                logger.warn(`[AWGInstaller] ⚠️ Конфигурация ${container.configPath} существует, но контейнер отсутствует`);
+            }
+        }
+        
+        const isRunning = containerExists && stdout.includes('Up');
         
         // Получаем порт
         let port = null;
-        try {
-            const { stdout: portOutput } = await execAsync(`docker port ${container.name} 2>/dev/null || true`);
-            const portMatch = portOutput.match(/0\.0\.0\.0:(\d+)/);
-            if (portMatch) {
-                port = parseInt(portMatch[1]);
+        if (containerExists) {
+            try {
+                const { stdout: portOutput } = await execAsync(`docker port ${container.name} 2>/dev/null || true`);
+                const portMatch = portOutput.match(/0\.0\.0\.0:(\d+)/);
+                if (portMatch) {
+                    port = parseInt(portMatch[1]);
+                }
+            } catch (error) {
+                logger.warn(`[AWGInstaller] Не удалось получить порт для ${container.name}`);
             }
-        } catch (error) {
-            logger.warn(`[AWGInstaller] Не удалось получить порт для ${container.name}`);
         }
         
         // Подсчитываем клиентов
-        const clientCount = await countClients(container.name);
+        const clientCount = containerExists ? await countClients(container.name) : 0;
         
         return {
-            installed: true,
+            installed: containerExists || configExists,
             containerName: container.name,
             port,
             clientCount,
             configPath: container.configPath,
-            status: isRunning ? 'running' : 'stopped'
+            status: isRunning ? 'running' : (containerExists ? 'stopped' : 'not_found'),
+            containerExists,
+            configExists,
+            consistent
         };
     } catch (error) {
         logger.error(`[AWGInstaller] Ошибка получения информации о ${version}: ${error.message}`);
@@ -122,7 +565,10 @@ async function getServerInfo(version) {
             port: null,
             clientCount: 0,
             configPath: null,
-            status: 'error'
+            status: 'error',
+            containerExists: false,
+            configExists: false,
+            consistent: false
         };
     }
 }
@@ -359,62 +805,72 @@ async function installServer(version, port, progressCallback = () => {}) {
     logger.info(`[AWGInstaller] Начало установки ${version} на порту ${port}`);
     
     try {
-        // Шаг 1: Создание директорий
-        progressCallback('⏳ Создаю директории...');
-        await execAsync(`mkdir -p ${configPath}`);
-        logger.info(`[AWGInstaller] Директория ${configPath} создана`);
+        // ШАГ 0: Проверка системных требований
+        progressCallback('🔍 Проверка системы...');
+        const sysCheck = await checkSystemRequirements();
+        if (!sysCheck.success) {
+            throw new Error(`Системные требования не выполнены: ${sysCheck.error}`);
+        }
         
-        // Шаг 2: Генерация ключей
-        progressCallback('⏳ Генерирую ключи сервера...');
-        const keys = await generateServerKeys();
+        // ШАГ 1: Проверка каталога /opt/amnezia
+        progressCallback('📁 Проверка каталога /opt/amnezia...');
+        const dirCheck = await checkAmneziaDirectory();
+        if (!dirCheck.canInstall) {
+            throw new Error(`Проблема с каталогом /opt/amnezia: ${dirCheck.error}`);
+        }
         
-        // Шаг 3: Создание конфигурации
-        progressCallback('⏳ Создаю конфигурацию...');
-        await createServerConfig(version, port, keys, configPath);
+        // ШАГ 2: Проверка согласованности данных
+        progressCallback('🔍 Проверка существующей установки...');
+        const consistency = await checkDataConsistency(version);
+        if (!consistency.consistent) {
+            progressCallback('🧹 Очистка несогласованных данных...');
+            await cleanupInconsistentData(version);
+        }
         
-        // Шаг 4: Получение образа с fallback
-        progressCallback('⏳ Проверяю образ Docker...');
-        let imageToUse = container.image;
+        // ШАГ 3: Проверка порта
+        progressCallback('🔌 Проверка порта...');
+        const portCheck = await checkPortAvailability(port);
+        if (!portCheck.available) {
+            throw new Error(`Порт ${port} недоступен: ${portCheck.reason}`);
+        }
         
-        try {
-            // Пробуем публичный образ
-            const { stdout } = await execAsync(`docker images -q ${container.image}`);
-            if (stdout.trim()) {
-                logger.info(`[AWGInstaller] Публичный образ ${container.image} найден локально`);
-            } else {
-                logger.info(`[AWGInstaller] Скачиваю публичный образ ${container.image}...`);
-                await execAsync(`docker pull ${container.image}`);
-                logger.info(`[AWGInstaller] Публичный образ ${container.image} скачан`);
-            }
-        } catch (error) {
-            // Fallback на локальный образ
-            logger.warn(`[AWGInstaller] Не удалось получить публичный образ: ${error.message}`);
-            logger.info(`[AWGInstaller] Пробую локальный образ ${container.fallbackImage}...`);
-            
+        // ШАГ 4: Проверка и импорт Docker образа
+        progressCallback('🐳 Проверка Docker образа...');
+        const imageCheck = await checkDockerImageExists(version);
+        
+        if (!imageCheck.exists) {
+            progressCallback('📦 Импортирую Docker образ...');
             try {
-                const { stdout } = await execAsync(`docker images -q ${container.fallbackImage}`);
-                if (stdout.trim()) {
-                    imageToUse = container.fallbackImage;
-                    logger.info(`[AWGInstaller] Локальный образ ${container.fallbackImage} найден`);
-                } else {
-                    throw new Error(`Локальный образ ${container.fallbackImage} не найден`);
-                }
-            } catch (fallbackError) {
+                await importDockerImage(version);
+                progressCallback('✅ Образ импортирован');
+            } catch (importError) {
+                const fileName = version === 'v1' ? 'users.db' : 'settings.db';
                 throw new Error(
-                    `Не удалось получить образ.\n` +
-                    `Публичный образ: ${error.message}\n` +
-                    `Локальный образ: ${fallbackError.message}\n\n` +
-                    `Убедитесь что:\n` +
-                    `1. Есть доступ к Docker Hub для ${container.image}\n` +
-                    `2. Или создан локальный образ ${container.fallbackImage}`
+                    `Не удалось импортировать образ.\n` +
+                    `Убедитесь что файл ${fileName} существует в корне проекта.\n` +
+                    `Ошибка: ${importError.message}`
                 );
             }
         }
         
-        // Обновляем образ для использования
+        // ШАГ 5: Создание директорий
+        progressCallback('⏳ Создаю директории...');
+        await execAsync(`mkdir -p ${configPath}`);
+        logger.info(`[AWGInstaller] Директория ${configPath} создана`);
+        
+        // ШАГ 6: Генерация ключей
+        progressCallback('⏳ Генерирую ключи сервера...');
+        const keys = await generateServerKeys();
+        
+        // ШАГ 7: Создание конфигурации
+        progressCallback('⏳ Создаю конфигурацию...');
+        await createServerConfig(version, port, keys, configPath);
+        
+        // ШАГ 8: Используем проверенный образ
+        const imageToUse = container.image;
         container.image = imageToUse;
         
-        // Шаг 5: Запуск контейнера
+        // ШАГ 9: Запуск контейнера
         progressCallback('⏳ Запускаю контейнер...');
         await startContainer(version, port, configPath);
         
@@ -508,7 +964,15 @@ export {
     startContainer,
     installServer,
     installBothServers,
-    CONTAINERS
+    CONTAINERS,
+    // Новые функции проверки
+    checkSystemRequirements,
+    checkAmneziaDirectory,
+    checkPortAvailability,
+    checkDockerImageExists,
+    importDockerImage,
+    checkDataConsistency,
+    cleanupInconsistentData
 };
 
 // Made with Bob
