@@ -1042,10 +1042,17 @@ remove_all() {
     echo -e "${YELLOW}🗑️  Удаление образов...${NC}"
     docker rmi awgxuibot-awgbot awgxuibot-xuibot 2>/dev/null || true
     
-    # Удаление конфигураций AWG
+    # Удаление конфигураций AWG и каталога amnezia
     echo -e "${YELLOW}🗑️  Удаление конфигураций AWG...${NC}"
     rm -rf /opt/amnezia/amnezia-awg 2>/dev/null || true
     rm -rf /opt/amnezia/amnezia-awg2 2>/dev/null || true
+    
+    # Удаление всего каталога /opt/amnezia если он пустой или содержит только AWG данные
+    if [ -d "/opt/amnezia" ]; then
+        echo -e "${YELLOW}🗑️  Удаление каталога /opt/amnezia...${NC}"
+        rm -rf /opt/amnezia 2>/dev/null || true
+        echo -e "${GREEN}✅ Каталог /opt/amnezia удален${NC}"
+    fi
     
     # Удаление 3x-ui панели
     echo -e "${YELLOW}🗑️  Удаление 3x-ui панели...${NC}"
