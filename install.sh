@@ -2390,6 +2390,16 @@ start_awg_container() {
     local container_name=$4
     local image=$5
     
+    # Определяем имя конфигурационного файла и интерфейса
+    local config_file interface_name
+    if [ "$version" = "v1" ]; then
+        config_file="wg0.conf"
+        interface_name="wg0"
+    else
+        config_file="awg0.conf"
+        interface_name="awg0"
+    fi
+    
     echo -e "${YELLOW}🐳 Запуск контейнера $container_name...${NC}"
     
     # Проверяем, не запущен ли уже контейнер
@@ -2398,6 +2408,9 @@ start_awg_container() {
         docker stop "$container_name" 2>/dev/null || true
         docker rm "$container_name" 2>/dev/null || true
     fi
+    
+    # Команда для запуска WireGuard и поддержания контейнера в рабочем состоянии
+    local start_cmd="sh -c 'wg-quick up $interface_name && tail -f /dev/null'"
     
     # Запускаем контейнер
     local container_id=$(docker run -d \
@@ -2410,10 +2423,10 @@ start_awg_container() {
         --sysctl net.ipv4.ip_forward=1 \
         --sysctl net.ipv6.conf.all.forwarding=1 \
         -p "${port}:${port}/udp" \
-        -v "${config_path}:/etc/amnezia/amneziawg" \
+        -v "${config_path}/${config_file}:/etc/wireguard/${interface_name}.conf" \
         -v /lib/modules:/lib/modules:ro \
         --device /dev/net/tun:/dev/net/tun \
-        "$image" 2>&1)
+        "$image" $start_cmd 2>&1)
     
     local exit_code=$?
     
@@ -2746,7 +2759,7 @@ show_menu() {
     echo -e "${GREEN}7)${NC} Установка XUIBOT"
     echo -e "${GREEN}8)${NC} Логи XUIBOT"
     echo -e "${GREEN}9)${NC} Перезапуск XUIBOT"
-    echo -e "${GREEN}10)${NC} Перезапуск контейнера (rebuild)"
+    echo -e "${GREEN}10)${NC} Пересборка XUIBOT"
     echo -e "${GREEN}11)${NC} Обновление XUIBOT"
     echo -e "${GREEN}12)${NC} Удаление XUIBOT"
     echo -e "${BLUE}---${NC}"
@@ -2754,7 +2767,7 @@ show_menu() {
     echo -e "${GREEN}13)${NC} Установка AWGBOT"
     echo -e "${GREEN}14)${NC} Логи AWGBOT"
     echo -e "${GREEN}15)${NC} Перезапуск AWGBOT"
-    echo -e "${GREEN}16)${NC} Перезапуск контейнера (rebuild)"
+    echo -e "${GREEN}16)${NC} Пересборка AWGBOT"
     echo -e "${GREEN}17)${NC} Обновление AWGBOT"
     echo -e "${GREEN}18)${NC} Удаление AWGBOT"
     echo -e "${BLUE}---${NC}"

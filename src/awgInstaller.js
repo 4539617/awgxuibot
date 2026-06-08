@@ -299,7 +299,13 @@ H4 = ${params.H4}
  */
 async function startContainer(version, port, configPath) {
     const container = CONTAINERS[version];
+    const configFileName = version === 'v1' ? 'wg0.conf' : 'awg0.conf';
+    const interfaceName = version === 'v1' ? 'wg0' : 'awg0';
+    
     logger.info(`[AWGInstaller] Запуск контейнера ${container.name}...`);
+    
+    // Команда для запуска WireGuard и поддержания контейнера в рабочем состоянии
+    const startCmd = `sh -c "wg-quick up ${interfaceName} && tail -f /dev/null"`;
     
     const dockerCmd = `docker run -d \
   --name ${container.name} \
@@ -311,10 +317,10 @@ async function startContainer(version, port, configPath) {
   --sysctl net.ipv4.ip_forward=1 \
   --sysctl net.ipv6.conf.all.forwarding=1 \
   -p ${port}:${port}/udp \
-  -v ${configPath}:/etc/amnezia/amneziawg \
+  -v ${configPath}/${configFileName}:/etc/wireguard/${interfaceName}.conf \
   -v /lib/modules:/lib/modules:ro \
   --device /dev/net/tun:/dev/net/tun \
-  ${container.image}`;
+  ${container.image} ${startCmd}`;
     
     try {
         const { stdout: containerId } = await execAsync(dockerCmd);
