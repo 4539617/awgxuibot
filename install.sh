@@ -2780,26 +2780,24 @@ show_menu() {
     echo -e "${GREEN}4)${NC} Установка AWG v2"
     echo -e "${GREEN}5)${NC} Удаление AWG v1"
     echo -e "${GREEN}6)${NC} Удаление AWG v2"
+    echo -e "${GREEN}7)${NC} Сформировать конфигурацию AWG v1"
+    echo -e "${GREEN}8)${NC} Сформировать конфигурацию AWG v2"
     echo -e "${BLUE}---${NC}"
     echo -e "${YELLOW}XUI Bot:${NC}"
-    echo -e "${GREEN}7)${NC} Установка XUIBOT"
-    echo -e "${GREEN}8)${NC} Логи XUIBOT"
-    echo -e "${GREEN}9)${NC} Перезапуск XUIBOT"
-    echo -e "${GREEN}10)${NC} Пересборка XUIBOT"
-    echo -e "${GREEN}11)${NC} Обновление XUIBOT"
-    echo -e "${GREEN}12)${NC} Удаление XUIBOT"
+    echo -e "${GREEN}9)${NC} Установка XUIBOT"
+    echo -e "${GREEN}10)${NC} Логи XUIBOT"
+    echo -e "${GREEN}11)${NC} Перезапуск XUIBOT"
+    echo -e "${GREEN}12)${NC} Пересборка XUIBOT"
+    echo -e "${GREEN}13)${NC} Обновление XUIBOT"
+    echo -e "${GREEN}14)${NC} Удаление XUIBOT"
     echo -e "${BLUE}---${NC}"
     echo -e "${YELLOW}AWG Bot:${NC}"
-    echo -e "${GREEN}13)${NC} Установка AWGBOT"
-    echo -e "${GREEN}14)${NC} Логи AWGBOT"
-    echo -e "${GREEN}15)${NC} Перезапуск AWGBOT"
-    echo -e "${GREEN}16)${NC} Пересборка AWGBOT"
-    echo -e "${GREEN}17)${NC} Обновление AWGBOT"
-    echo -e "${GREEN}18)${NC} Удаление AWGBOT"
-    echo -e "${BLUE}---${NC}"
-    echo -e "${YELLOW}Генерация конфигураций:${NC}"
-    echo -e "${GREEN}19)${NC} Сформировать конфигурацию AWG v1"
-    echo -e "${GREEN}20)${NC} Сформировать конфигурацию AWG v2"
+    echo -e "${GREEN}15)${NC} Установка AWGBOT"
+    echo -e "${GREEN}16)${NC} Логи AWGBOT"
+    echo -e "${GREEN}17)${NC} Перезапуск AWGBOT"
+    echo -e "${GREEN}18)${NC} Пересборка AWGBOT"
+    echo -e "${GREEN}19)${NC} Обновление AWGBOT"
+    echo -e "${GREEN}20)${NC} Удаление AWGBOT"
     echo -e "${BLUE}---${NC}"
     echo -e "${YELLOW}Системные утилиты:${NC}"
     echo -e "${GREEN}21)${NC} Анализ диска и памяти"
@@ -2838,46 +2836,46 @@ while true; do
             remove_awg_v2
             ;;
         7)
-            install_xuibot
-            ;;
-        8)
-            show_xuibot_logs
-            ;;
-        9)
-            restart_xuibot
-            ;;
-        10)
-            rebuild_xuibot
-            ;;
-        11)
-            update_xuibot
-            ;;
-        12)
-            remove_xuibot
-            ;;
-        13)
-            install_awgbot
-            ;;
-        14)
-            show_awgbot_logs
-            ;;
-        15)
-            restart_awgbot
-            ;;
-        16)
-            rebuild_awgbot
-            ;;
-        17)
-            update_awgbot
-            ;;
-        18)
-            remove_awgbot
-            ;;
-        19)
             generate_awg_config "v1"
             ;;
-        20)
+        8)
             generate_awg_config "v2"
+            ;;
+        9)
+            install_xuibot
+            ;;
+        10)
+            show_xuibot_logs
+            ;;
+        11)
+            restart_xuibot
+            ;;
+        12)
+            rebuild_xuibot
+            ;;
+        13)
+            update_xuibot
+            ;;
+        14)
+            remove_xuibot
+            ;;
+        15)
+            install_awgbot
+            ;;
+        16)
+            show_awgbot_logs
+            ;;
+        17)
+            restart_awgbot
+            ;;
+        18)
+            rebuild_awgbot
+            ;;
+        19)
+            update_awgbot
+            ;;
+        20)
+            remove_awgbot
             ;;
         21)
             if [ -f "disk_analyzer.sh" ]; then
