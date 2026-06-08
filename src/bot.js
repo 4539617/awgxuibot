@@ -1013,8 +1013,10 @@ google.com
         await execAsync(`rm ${tempFile}`);
         
         // Restart WireGuard interface
-        await execAsync(`docker exec ${container.name} wg-quick down ${configFile.replace('.conf', '')} || true`);
-        await execAsync(`docker exec ${container.name} wg-quick up ${configFile.replace('.conf', '')}`);
+        const configName = configFile.replace('.conf', '');
+        const fullConfigPath = `/etc/amnezia/amneziawg/${configFile}`;
+        await execAsync(`docker exec ${container.name} wg-quick down ${fullConfigPath} || true`);
+        await execAsync(`docker exec ${container.name} wg-quick up ${fullConfigPath}`);
         
         logger.info(`Successfully deleted client ${ip} from ${container.name}`);
         
