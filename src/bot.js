@@ -40,7 +40,18 @@ export class RouteBot {
     this.bot.onText(/\/start/, (msg) => {
       const chatId = msg.chat.id;
       const userId = msg.from.id;
-      logger.info(`/start command received from chat ${chatId}`);
+      logger.info(`/start command received from chat ${chatId}, user ${userId}`);
+      
+      // Only admins can use the bot
+      if (!this.isAdmin(userId)) {
+        // Check anti-flood for non-admins
+        const limitCheck = this.antiFlood.checkLimit(userId);
+        if (!limitCheck.allowed) {
+          logger.warn(`Anti-flood triggered for non-admin user ${userId}, remaining time: ${limitCheck.remainingTime}s`);
+        }
+        logger.warn(`Non-admin user ${userId} tried to use /start`);
+        return; // Silently ignore for non-admins
+      }
       
       let welcomeMessage = `
 🚀 *Отправьте*
@@ -49,12 +60,8 @@ rutube.ru
 ozon.ru
 google.com
 \`\`\`
-/start - Начало работы`;
-
-      // Add admin command for administrators
-      if (this.isAdmin(userId)) {
-        welcomeMessage += `\n/admin - Панель администратора`;
-      }
+/start - Начало работы
+/admin - Панель администратора`;
       
       this.bot.sendMessage(chatId, welcomeMessage, { parse_mode: 'Markdown' });
     });
@@ -226,7 +233,19 @@ google.com
     // Handle document uploads (.bat and .conf files)
     this.bot.on('document', async (msg) => {
       const chatId = msg.chat.id;
+      const userId = msg.from.id;
       const document = msg.document;
+
+      // Check if user is admin
+      if (!this.isAdmin(userId)) {
+        // Check anti-flood for non-admins
+        const limitCheck = this.antiFlood.checkLimit(userId);
+        if (!limitCheck.allowed) {
+          logger.warn(`Anti-flood triggered for non-admin user ${userId}, remaining time: ${limitCheck.remainingTime}s`);
+        }
+        logger.warn(`Non-admin user ${userId} tried to upload document: ${document.file_name}`);
+        return; // Silently ignore for non-admins
+      }
 
       logger.info(`Document received from chat ${chatId}: ${document.file_name}`);
 
@@ -258,6 +277,19 @@ google.com
         // Show start message for unknown commands
         if (!msg.text.match(/^\/(start|help|admin|awgstats)$/)) {
           const chatId = msg.chat.id;
+          const userId = msg.from.id;
+          
+          // Check if user is admin
+          if (!this.isAdmin(userId)) {
+            // Check anti-flood for non-admins
+            const limitCheck = this.antiFlood.checkLimit(userId);
+            if (!limitCheck.allowed) {
+              logger.warn(`Anti-flood triggered for non-admin user ${userId}, remaining time: ${limitCheck.remainingTime}s`);
+            }
+            logger.warn(`Non-admin user ${userId} tried to use unknown command: ${msg.text}`);
+            return; // Silently ignore for non-admins
+          }
+          
           const welcomeMessage = `/start - Начало работы`;
           this.bot.sendMessage(chatId, welcomeMessage, { parse_mode: 'Markdown' });
         }
@@ -272,11 +304,15 @@ google.com
         return;
       }
 
-      // Check if user is in port selection mode
-      const session = this.installSessions.get(userId);
-      if (session && session.step === 'port_selection') {
-        await this.handlePortInput(chatId, userId, text);
-        return;
+      // Check if user is admin
+      if (!this.isAdmin(userId)) {
+        // Check anti-flood for non-admins
+        const limitCheck = this.antiFlood.checkLimit(userId);
+        if (!limitCheck.allowed) {
+          logger.warn(`Anti-flood triggered for non-admin user ${userId}, remaining time: ${limitCheck.remainingTime}s`);
+        }
+        logger.warn(`Non-admin user ${userId} tried to send text message: ${text.substring(0, 50)}...`);
+        return; // Silently ignore for non-admins
       }
 
       // Check if user is in VPS label input mode
