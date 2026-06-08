@@ -1890,13 +1890,12 @@ install_3xui_v294() {
     
     SERVER_IP=$(curl -s ifconfig.me)
     
-    echo -e "${YELLOW}📦 Загрузка и установка 3x-ui v2.9.4...${NC}"
-    echo -e "${YELLOW}Это может занять несколько минут...${NC}\n"
+    echo -e "${YELLOW}📦 Загрузка и установка 3x-ui v2.9.4...${NC}\n"
     
-    # Запускаем установку с перенаправлением вывода только в файл (без вывода на экран)
+    # Запускаем установку с выводом на экран и в файл одновременно
     INSTALL_LOG="/tmp/xui_install_$$.log"
     # Передаем пустые ответы (Enter) на все вопросы через stdin
-    printf '\n\n\n\n\n' | bash <(curl -Ls "https://raw.githubusercontent.com/MHSanaei/3x-ui/v2.9.4/install.sh") v2.9.4 > "$INSTALL_LOG" 2>&1
+    printf '\n\n\n\n\n' | bash <(curl -Ls "https://raw.githubusercontent.com/MHSanaei/3x-ui/v2.9.4/install.sh") v2.9.4 2>&1 | tee "$INSTALL_LOG"
     
     # Читаем вывод из лог-файла
     INSTALL_OUTPUT=$(cat "$INSTALL_LOG" 2>/dev/null || echo "")
