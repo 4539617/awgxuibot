@@ -42,11 +42,20 @@ docker stop netcrazybot xuibot
 docker start netcrazybot xuibot
 ```
 
-## ▶️ Перезапуск контейнера
+## ▶️ Перезапуск контейнера xuibot
 
 ```bash
 docker compose down xuibot
 docker compose build --no-cache xuibot
 docker compose up -d xuibot
 docker logs -f xuibot
+```
+
+## ▶️ Перезапуск контейнера awgbot
+
+```bash
+docker compose down awgbot
+docker compose build --no-cache awgbot
+docker compose up -d awgbot
+docker logs -f awgbot
 ```
