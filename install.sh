@@ -2445,10 +2445,11 @@ start_awg_container() {
     return 0
 }
 
-# Получение или создание Docker образа
+# Получение или импорт Docker образа из локальных файлов
 get_or_pull_awg_image() {
     local image=$1
     local fallback_image=$2
+    local version=$3  # v1 или v2
     
     echo -e "${YELLOW}🔍 Проверка Docker образа...${NC}" >&2
     
@@ -2459,25 +2460,56 @@ get_or_pull_awg_image() {
         return 0
     fi
     
-    # Пытаемся скачать публичный образ
-    echo -e "${YELLOW}📥 Скачивание образа $fallback_image...${NC}" >&2
-    if docker pull "$fallback_image" >/dev/null 2>&1; then
-        echo -e "${GREEN}✅ Образ успешно скачан${NC}" >&2
-        echo "$fallback_image"
-        return 0
+    # Определяем файл для импорта
+    local source_file=""
+    local target_file=""
+    
+    if [ "$version" = "v1" ]; then
+        source_file="users.db"
+        target_file="/tmp/amnezia-awg-v1.tar"
+    elif [ "$version" = "v2" ]; then
+        source_file="settings.db"
+        target_file="/tmp/amnezia-awg-v2.tar"
+    else
+        echo -e "${RED}❌ Неизвестная версия: $version${NC}" >&2
+        return 1
     fi
     
-    # Проверяем fallback образ локально
-    if docker images --format "{{.Repository}}:{{.Tag}}" | grep -q "^${fallback_image}$"; then
-        echo -e "${GREEN}✅ Локальный fallback образ найден: $fallback_image${NC}" >&2
-        echo "$fallback_image"
-        return 0
+    # Проверяем существование файла
+    if [ ! -f "$source_file" ]; then
+        echo -e "${RED}❌ Файл $source_file не найден в корне проекта${NC}" >&2
+        echo -e "${YELLOW}Убедитесь что файл $source_file существует${NC}" >&2
+        return 1
     fi
     
-    echo -e "${RED}❌ Не удалось получить Docker образ${NC}" >&2
-    echo -e "${YELLOW}Убедитесь что:${NC}" >&2
-    echo -e "  1. Есть доступ к Docker Hub для $fallback_image" >&2
-    echo -e "  2. Или создан локальный образ $image" >&2
+    # Импортируем образ из локального файла
+    echo -e "${YELLOW}📦 Импортирую Docker образ из $source_file...${NC}" >&2
+    
+    # Копируем и переименовываем
+    if ! cp "$source_file" "$target_file" 2>/dev/null; then
+        echo -e "${RED}❌ Не удалось скопировать файл${NC}" >&2
+        return 1
+    fi
+    
+    # Импортируем образ
+    if docker load -i "$target_file" >/dev/null 2>&1; then
+        echo -e "${GREEN}✅ Образ успешно импортирован${NC}" >&2
+        
+        # Удаляем временный файл
+        rm -f "$target_file"
+        
+        # Проверяем что образ появился
+        if docker images --format "{{.Repository}}:{{.Tag}}" | grep -q "^${image}$"; then
+            echo "$image"
+            return 0
+        fi
+    fi
+    
+    # Удаляем временный файл в случае ошибки
+    rm -f "$target_file"
+    
+    echo -e "${RED}❌ Не удалось импортировать Docker образ${NC}" >&2
+    echo -e "${YELLOW}Убедитесь что файл $source_file содержит правильный Docker образ${NC}" >&2
     return 1
 }
 
@@ -2519,7 +2551,7 @@ install_awg_standalone() {
     fi
     
     # Шаг 4: Получение образа
-    local final_image=$(get_or_pull_awg_image "$image" "$fallback_image")
+    local final_image=$(get_or_pull_awg_image "$image" "$fallback_image" "$version")
     if [ $? -ne 0 ]; then
         return 1
     fi
