@@ -38,8 +38,8 @@ if [ "$(pwd)" != "$WORK_DIR" ]; then
     
     if [ -d "$WORK_DIR" ]; then
         echo -e "${YELLOW}⚠ Директория ${WORK_DIR} уже существует${NC}"
-        read -p "Переместить файлы в ${WORK_DIR}? (y/n): " move_files
-        if [[ "$move_files" =~ ^[Yy]$ ]]; then
+        read -p "Переместить файлы в ${WORK_DIR}? (нажмите Enter для подтверждения или n для отмены): " move_files
+        if [[ ! "$move_files" =~ ^[Nn]$ ]]; then
             echo -e "${YELLOW}📦 Перемещение файлов...${NC}"
             mkdir -p "$WORK_DIR"
             cp -r * "$WORK_DIR/" 2>/dev/null || true
@@ -391,9 +391,9 @@ remove_bot() {
     echo -e "${BLUE}   Удаление XUIBot${NC}"
     echo -e "${BLUE}========================================${NC}\n"
     
-    read -p "⚠️  Вы уверены что хотите удалить XUIBot? (y/n): " confirm
+    read -p "⚠️  Вы уверены что хотите удалить XUIBot? (нажмите Enter для подтверждения или n для отмены): " confirm
     
-    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    if [[ "$confirm" =~ ^[Nn]$ ]]; then
         echo -e "${YELLOW}Отменено${NC}"
         return
     fi
@@ -548,9 +548,9 @@ remove_xuibot() {
     echo -e "${BLUE}   Удаление XUI Бота${NC}"
     echo -e "${BLUE}========================================${NC}\n"
     
-    read -p "⚠️  Вы уверены что хотите удалить XUI бот? (y/n): " confirm
+    read -p "⚠️  Вы уверены что хотите удалить XUI бот? (нажмите Enter для подтверждения или n для отмены): " confirm
     
-    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    if [[ "$confirm" =~ ^[Nn]$ ]]; then
         echo -e "${YELLOW}Отменено${NC}"
         return
     fi
@@ -697,9 +697,9 @@ remove_awgbot() {
     echo -e "${BLUE}   Удаление AWG Бота${NC}"
     echo -e "${BLUE}========================================${NC}\n"
     
-    read -p "⚠️  Вы уверены что хотите удалить AWG бот? (y/n): " confirm
+    read -p "⚠️  Вы уверены что хотите удалить AWG бот? (нажмите Enter для подтверждения или n для отмены): " confirm
     
-    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    if [[ "$confirm" =~ ^[Nn]$ ]]; then
         echo -e "${YELLOW}Отменено${NC}"
         return
     fi
@@ -725,9 +725,9 @@ remove_awg_v1() {
     echo -e "${BLUE}   Удаление AWG v1${NC}"
     echo -e "${BLUE}========================================${NC}\n"
     
-    read -p "⚠️  Вы уверены что хотите удалить AWG v1 сервер? (y/n): " confirm
+    read -p "⚠️  Вы уверены что хотите удалить AWG v1 сервер? (нажмите Enter для подтверждения или n для отмены): " confirm
     
-    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    if [[ "$confirm" =~ ^[Nn]$ ]]; then
         echo -e "${YELLOW}Отменено${NC}"
         return
     fi
@@ -753,9 +753,9 @@ remove_awg_v2() {
     echo -e "${BLUE}   Удаление AWG v2${NC}"
     echo -e "${BLUE}========================================${NC}\n"
     
-    read -p "⚠️  Вы уверены что хотите удалить AWG v2 сервер? (y/n): " confirm
+    read -p "⚠️  Вы уверены что хотите удалить AWG v2 сервер? (нажмите Enter для подтверждения или n для отмены): " confirm
     
-    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    if [[ "$confirm" =~ ^[Nn]$ ]]; then
         echo -e "${YELLOW}Отменено${NC}"
         return
     fi
@@ -905,9 +905,9 @@ remove_all() {
     echo -e "  - AWG v2 сервер"
     echo -e "  - Все конфигурации и данные"
     echo -e ""
-    read -p "Вы уверены? (y/n): " confirm
+    read -p "Вы уверены? (нажмите Enter для подтверждения или n для отмены): " confirm
     
-    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    if [[ "$confirm" =~ ^[Nn]$ ]]; then
         echo -e "${YELLOW}Отменено${NC}"
         return
     fi
@@ -1024,8 +1024,8 @@ select_xui_version() {
             echo -e "\n${RED}⚠️  ВНИМАНИЕ!${NC}"
             echo -e "${YELLOW}Последняя версия 3x-ui НЕ совместима с ботом!${NC}"
             echo -e "${YELLOW}Клиенты, созданные через бота, не будут работать.${NC}"
-            read -p "Вы уверены что хотите продолжить? (y/n): " confirm_latest
-            if [[ "$confirm_latest" =~ ^[Yy]$ ]]; then
+            read -p "Вы уверены что хотите продолжить? (нажмите Enter для подтверждения или n для отмены): " confirm_latest
+            if [[ ! "$confirm_latest" =~ ^[Nn]$ ]]; then
                 install_3xui_latest
             else
                 echo -e "${GREEN}Отменено. Устанавливаем v2.9.4...${NC}"
@@ -1053,8 +1053,8 @@ install_3xui_latest() {
     # Проверка установлена ли уже панель
     if systemctl is-active --quiet x-ui; then
         echo -e "${YELLOW}⚠ 3x-ui панель уже установлена${NC}"
-        read -p "Переустановить? (y/n): " reinstall
-        if [[ ! "$reinstall" =~ ^[Yy]$ ]]; then
+        read -p "Переустановить? (нажмите Enter для подтверждения или n для отмены): " reinstall
+        if [[ "$reinstall" =~ ^[Nn]$ ]]; then
             echo -e "${YELLOW}Отменено${NC}"
             return
         fi
@@ -1881,8 +1881,8 @@ install_3xui_v294() {
     # Проверка установлена ли уже панель
     if systemctl is-active --quiet x-ui; then
         echo -e "${YELLOW}⚠ 3x-ui панель уже установлена${NC}"
-        read -p "Переустановить? (y/n): " reinstall
-        if [[ ! "$reinstall" =~ ^[Yy]$ ]]; then
+        read -p "Переустановить? (нажмите Enter для подтверждения или n для отмены): " reinstall
+        if [[ "$reinstall" =~ ^[Nn]$ ]]; then
             echo -e "${YELLOW}Отменено${NC}"
             return
         fi
