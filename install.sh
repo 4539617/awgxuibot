@@ -2159,6 +2159,66 @@ install_awg_v2() {
         echo -e "\n${RED}❌ Ошибка установки AWG v2${NC}"
     fi
 }
+# Генерация AWG конфигурации
+generate_awg_config() {
+    local version=$1
+    
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Генерация конфигурации AWG ${version}${NC}"
+    echo -e "${BLUE}========================================${NC}"
+    
+    # Проверяем наличие Node.js
+    if ! command -v node &> /dev/null; then
+        echo -e "${RED}❌ Node.js не установлен!${NC}"
+        echo -e "${YELLOW}Установите Node.js для генерации конфигураций${NC}"
+        return 1
+    fi
+    
+    # Проверяем наличие контейнера AWG
+    local container_name="amnezia-awg-${version}"
+    if ! docker ps --format '{{.Names}}' | grep -q "^${container_name}$"; then
+        echo -e "${RED}❌ Контейнер ${container_name} не запущен!${NC}"
+        echo -e "${YELLOW}Сначала установите AWG ${version} (пункт меню 3 или 4)${NC}"
+        return 1
+    fi
+    
+    # Создаем временный Node.js скрипт для генерации конфигурации
+    echo -e "${YELLOW}⏳ Генерирую конфигурацию ${version}...${NC}"
+    
+    node -e "
+    import('./src/awgManager.js').then(async (module) => {
+        const { AWGManager } = module;
+        const awgManager = new AWGManager();
+        
+        try {
+            await awgManager.initialize();
+            const result = await awgManager.generateClientConfig('${version}');
+            
+            console.log('');
+            console.log('✅ Конфигурация успешно создана!');
+            console.log('📁 Путь к файлу: ' + result.filepath);
+            console.log('📝 Имя файла: ' + result.filename);
+            console.log('🔑 IP адрес: ' + result.ip);
+            console.log('🔐 Public Key: ' + result.publicKey);
+            process.exit(0);
+        } catch (error) {
+            console.error('❌ Ошибка:', error.message);
+            process.exit(1);
+        }
+    }).catch(err => {
+        console.error('❌ Ошибка загрузки модуля:', err.message);
+        process.exit(1);
+    });
+    "
+    
+    if [ $? -eq 0 ]; then
+        echo -e "\n${GREEN}✅ Конфигурация AWG ${version} успешно создана!${NC}"
+        echo -e "${YELLOW}Файл сохранен в папке: $(pwd)/output/${NC}"
+    else
+        echo -e "\n${RED}❌ Ошибка генерации конфигурации${NC}"
+    fi
+}
+
 
 # Главное меню
 show_menu() {
@@ -2186,6 +2246,10 @@ show_menu() {
     echo -e "${GREEN}12)${NC} Логи AWGBOT"
     echo -e "${GREEN}13)${NC} Обновление AWGBOT"
     echo -e "${GREEN}14)${NC} Удаление AWGBOT"
+    echo -e "${BLUE}---${NC}"
+    echo -e "${YELLOW}Генерация конфигураций:${NC}"
+    echo -e "${GREEN}18)${NC} Сформировать конфигурацию AWG v1"
+    echo -e "${GREEN}19)${NC} Сформировать конфигурацию AWG v2"
     echo -e "${BLUE}---${NC}"
     echo -e "${YELLOW}Системные утилиты:${NC}"
     echo -e "${GREEN}16)${NC} Анализ диска и памяти"
@@ -2260,8 +2324,15 @@ while true; do
         17)
             show_status
             ;;
+        18)
+            generate_awg_config "v1"
+            ;;
+        19)
+            generate_awg_config "v2"
+            ;;
         0)
             echo -e "\n${GREEN}👋 До свидания!${NC}"
+            cd ..
             exit 0
             ;;
         *)
