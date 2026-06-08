@@ -815,6 +815,9 @@ google.com
 
       const clients = await this.awgManager.getClients(container.name);
 
+      // Получаем статистику клиентов (последнее соединение, трафик)
+      const clientsStats = await this.getClientsStats(container.name, version);
+
       await this.bot.deleteMessage(chatId, processingMsg.message_id);
 
       if (clients.length === 0) {
@@ -836,7 +839,16 @@ google.com
       };
       
       clients.forEach((ip, index) => {
+        const stats = clientsStats[ip] || {};
+        const lastSeen = stats.lastHandshake || 'никогда';
+        const transfer = stats.transfer || 'нет данных';
+        
         clientsMessage += `${index + 1}. \`${ip}\`\n`;
+        clientsMessage += `   └ 🕐 Последнее соединение: ${lastSeen}\n`;
+        if (transfer !== 'нет данных') {
+          clientsMessage += `   └ 📊 Трафик: ${transfer}\n`;
+        }
+        clientsMessage += `\n`;
         
         // Добавляем кнопки для каждого IP
         keyboard.inline_keyboard.push([
@@ -863,6 +875,82 @@ google.com
         `❌ Ошибка при получении списка клиентов: ${error.message}`
       );
     }
+  }
+
+  async getClientsStats(containerName, version) {
+    try {
+      const interfaceName = version === 'v2' ? 'awg0' : 'wg0';
+      
+      // Получаем статистику через wg show
+      const { stdout } = await execAsync(`docker exec ${containerName} wg show ${interfaceName}`);
+      
+      const stats = {};
+      const lines = stdout.split('\n');
+      let currentPeer = null;
+      
+      for (const line of lines) {
+        // Ищем публичный ключ пира
+        if (line.startsWith('peer:')) {
+          currentPeer = {};
+        } else if (currentPeer && line.includes('allowed ips:')) {
+          // Извлекаем IP адрес
+          const ipMatch = line.match(/allowed ips:\s*([0-9.]+)\/32/);
+          if (ipMatch) {
+            currentPeer.ip = ipMatch[1];
+          }
+        } else if (currentPeer && line.includes('latest handshake:')) {
+          // Извлекаем время последнего handshake
+          const timeMatch = line.match(/latest handshake:\s*(.+)/);
+          if (timeMatch) {
+            currentPeer.lastHandshake = this.formatHandshakeTime(timeMatch[1].trim());
+          }
+        } else if (currentPeer && line.includes('transfer:')) {
+          // Извлекаем информацию о трафике
+          const transferMatch = line.match(/transfer:\s*([^,]+),\s*(.+)/);
+          if (transferMatch) {
+            currentPeer.transfer = `↓${transferMatch[1].trim()} ↑${transferMatch[2].trim()}`;
+          }
+          
+          // Сохраняем статистику для этого пира
+          if (currentPeer.ip) {
+            stats[currentPeer.ip] = currentPeer;
+          }
+          currentPeer = null;
+        }
+      }
+      
+      return stats;
+    } catch (error) {
+      logger.error(`Error getting clients stats:`, error);
+      return {};
+    }
+  }
+
+  formatHandshakeTime(timeStr) {
+    // Если "1 minute ago" или подобное
+    if (timeStr.includes('ago')) {
+      return timeStr;
+    }
+    
+    // Если это timestamp или другой формат
+    try {
+      const seconds = parseInt(timeStr);
+      if (!isNaN(seconds)) {
+        if (seconds < 60) {
+          return `${seconds} сек назад`;
+        } else if (seconds < 3600) {
+          return `${Math.floor(seconds / 60)} мин назад`;
+        } else if (seconds < 86400) {
+          return `${Math.floor(seconds / 3600)} ч назад`;
+        } else {
+          return `${Math.floor(seconds / 86400)} дн назад`;
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+    
+    return timeStr;
   }
 
   async resendClientConfig(chatId, version, ip) {
@@ -999,12 +1087,26 @@ google.com
         );
         
         // Remove peer section for this IP
-        const peerRegex = new RegExp(
-          `\\[Peer\\][\\s\\S]*?AllowedIPs\\s*=\\s*${ip.replace(/\./g, '\\.')}\\/32[\\s\\S]*?(?=\\[Peer\\]|$)`,
-          'g'
-        );
+        // Разбиваем конфигурацию на секции
+        const sections = currentConfig.split(/(?=\[Peer\])/);
         
-        const newConfig = currentConfig.replace(peerRegex, '');
+        // Фильтруем секции, удаляя ту, которая содержит нужный IP
+        const filteredSections = sections.filter(section => {
+          // Если это не секция [Peer], оставляем её
+          if (!section.trim().startsWith('[Peer]')) {
+            return true;
+          }
+          // Проверяем, содержит ли секция нужный IP
+          const allowedIPsMatch = section.match(/AllowedIPs\s*=\s*([^\n]+)/);
+          if (allowedIPsMatch) {
+            const allowedIP = allowedIPsMatch[1].trim();
+            // Удаляем только секцию с точным совпадением IP
+            return allowedIP !== `${ip}/32`;
+          }
+          return true;
+        });
+        
+        const newConfig = filteredSections.join('');
         
         // Write new config
         const tempFile = `/tmp/awg_config_${Date.now()}.conf`;
