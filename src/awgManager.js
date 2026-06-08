@@ -109,22 +109,42 @@ export class AWGManager {
     // Получаем ключи из файлов
     let serverPublicKey, presharedKey;
     
-    try {
-      const { stdout: pubKey } = await execAsync(
-        `docker exec ${containerName} cat /opt/amnezia/awg/wireguard_server_public_key.key`
-      );
-      serverPublicKey = pubKey.trim();
-    } catch (error) {
-      logger.warn(`Failed to read public key for ${containerName}`);
+    // Пробуем разные пути для ключей
+    const keyPaths = [
+      '/opt/amnezia/awg',
+      '/opt/amnezia/amneziawg',
+      '/etc/amnezia/amneziawg'
+    ];
+    
+    for (const keyPath of keyPaths) {
+      try {
+        const { stdout: pubKey } = await execAsync(
+          `docker exec ${containerName} cat ${keyPath}/wireguard_server_public_key.key`
+        );
+        serverPublicKey = pubKey.trim();
+        logger.info(`Found public key at ${keyPath} for ${containerName}`);
+        break;
+      } catch (error) {
+        continue;
+      }
+    }
+    
+    for (const keyPath of keyPaths) {
+      try {
+        const { stdout: psk } = await execAsync(
+          `docker exec ${containerName} cat ${keyPath}/wireguard_psk.key`
+        );
+        presharedKey = psk.trim();
+        logger.info(`Found PSK at ${keyPath} for ${containerName}`);
+        break;
+      } catch (error) {
+        continue;
+      }
     }
 
-    try {
-      const { stdout: psk } = await execAsync(
-        `docker exec ${containerName} cat /opt/amnezia/awg/wireguard_psk.key`
-      );
-      presharedKey = psk.trim();
-    } catch (error) {
-      logger.warn(`Failed to read PSK for ${containerName}`);
+    // Проверяем что ключи найдены
+    if (!serverPublicKey || !presharedKey) {
+      throw new Error(`Failed to read keys for ${containerName}. Public key: ${serverPublicKey ? 'found' : 'missing'}, PSK: ${presharedKey ? 'found' : 'missing'}`);
     }
 
     return {
