@@ -4,8 +4,9 @@ dotenv.config();
 
 export const config = {
   // Поддержка обоих токенов для обратной совместимости
-  // Приоритет: XUI_BOT_TOKEN > AWG_BOT_TOKEN > TELEGRAM_BOT_TOKEN (legacy)
-  telegramToken: process.env.XUI_BOT_TOKEN || process.env.AWG_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN,
+  // Приоритет: AWG_BOT_TOKEN > TELEGRAM_BOT_TOKEN (legacy)
+  // awgbot должен использовать AWG_BOT_TOKEN, а не XUI_BOT_TOKEN!
+  telegramToken: process.env.AWG_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN,
   outputDir: './output',
   // Admin IDs - только эти пользователи могут генерировать AWG конфиги
   adminIds: process.env.ADMIN_IDS ? process.env.ADMIN_IDS.split(',').map(id => parseInt(id.trim())) : []
