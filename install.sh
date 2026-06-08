@@ -1908,11 +1908,11 @@ install_3xui_v294() {
     
     # Проверяем успешность установки
     if echo "$INSTALL_OUTPUT" | grep -q "installation finished"; then
-        # Извлекаем учетные данные из вывода инсталятора
-        XUI_USERNAME=$(echo "$INSTALL_OUTPUT" | grep -oP 'Username:\s*\K\S+' | head -1)
-        XUI_PASSWORD=$(echo "$INSTALL_OUTPUT" | grep -oP 'Password:\s*\K\S+' | head -1)
-        XUI_PORT=$(echo "$INSTALL_OUTPUT" | grep -oP 'Port:\s*\K\d+' | head -1)
-        XUI_PATH=$(echo "$INSTALL_OUTPUT" | grep -oP 'WebBasePath:\s*\K\S+' | head -1)
+        # Извлекаем учетные данные из вывода инсталятора и очищаем от ANSI кодов
+        XUI_USERNAME=$(echo "$INSTALL_OUTPUT" | grep -oP 'Username:\s*\K\S+' | head -1 | sed 's/\x1b\[[0-9;]*m//g')
+        XUI_PASSWORD=$(echo "$INSTALL_OUTPUT" | grep -oP 'Password:\s*\K\S+' | head -1 | sed 's/\x1b\[[0-9;]*m//g')
+        XUI_PORT=$(echo "$INSTALL_OUTPUT" | grep -oP 'Port:\s*\K\d+' | head -1 | sed 's/\x1b\[[0-9;]*m//g')
+        XUI_PATH=$(echo "$INSTALL_OUTPUT" | grep -oP 'WebBasePath:\s*\K\S+' | head -1 | sed 's/\x1b\[[0-9;]*m//g')
         
         # Исправление проблемы с базой данных x-ui.db
         if [ -d "/etc/x-ui/x-ui.db" ]; then
