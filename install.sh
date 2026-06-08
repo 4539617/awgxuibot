@@ -38,8 +38,8 @@ if [ "$(pwd)" != "$WORK_DIR" ]; then
     
     if [ -d "$WORK_DIR" ]; then
         echo -e "${YELLOW}⚠ Директория ${WORK_DIR} уже существует${NC}"
-        read -p "Переместить файлы в ${WORK_DIR}? (нажмите Enter для подтверждения или n для отмены): " move_files
-        if [[ ! "$move_files" =~ ^[Nn]$ ]]; then
+        read -p "Переместить файлы в ${WORK_DIR}? (нажмите Enter для подтверждения или 0 для отмены): " move_files
+        if [[ "$move_files" != "0" ]]; then
             echo -e "${YELLOW}📦 Перемещение файлов...${NC}"
             mkdir -p "$WORK_DIR"
             cp -r * "$WORK_DIR/" 2>/dev/null || true
@@ -391,9 +391,9 @@ remove_bot() {
     echo -e "${BLUE}   Удаление XUIBot${NC}"
     echo -e "${BLUE}========================================${NC}\n"
     
-    read -p "⚠️  Вы уверены что хотите удалить XUIBot? (нажмите Enter для подтверждения или n для отмены): " confirm
+    read -p "⚠️  Вы уверены что хотите удалить XUIBot? (нажмите Enter для подтверждения или 0 для отмены): " confirm
     
-    if [[ "$confirm" =~ ^[Nn]$ ]]; then
+    if [[ "$confirm" == "0" ]]; then
         echo -e "${YELLOW}Отменено${NC}"
         return
     fi
@@ -548,9 +548,9 @@ remove_xuibot() {
     echo -e "${BLUE}   Удаление XUI Бота${NC}"
     echo -e "${BLUE}========================================${NC}\n"
     
-    read -p "⚠️  Вы уверены что хотите удалить XUI бот? (нажмите Enter для подтверждения или n для отмены): " confirm
+    read -p "⚠️  Вы уверены что хотите удалить XUI бот? (нажмите Enter для подтверждения или 0 для отмены): " confirm
     
-    if [[ "$confirm" =~ ^[Nn]$ ]]; then
+    if [[ "$confirm" == "0" ]]; then
         echo -e "${YELLOW}Отменено${NC}"
         return
     fi
@@ -697,9 +697,9 @@ remove_awgbot() {
     echo -e "${BLUE}   Удаление AWG Бота${NC}"
     echo -e "${BLUE}========================================${NC}\n"
     
-    read -p "⚠️  Вы уверены что хотите удалить AWG бот? (нажмите Enter для подтверждения или n для отмены): " confirm
+    read -p "⚠️  Вы уверены что хотите удалить AWG бот? (нажмите Enter для подтверждения или 0 для отмены): " confirm
     
-    if [[ "$confirm" =~ ^[Nn]$ ]]; then
+    if [[ "$confirm" == "0" ]]; then
         echo -e "${YELLOW}Отменено${NC}"
         return
     fi
@@ -725,9 +725,9 @@ remove_awg_v1() {
     echo -e "${BLUE}   Удаление AWG v1${NC}"
     echo -e "${BLUE}========================================${NC}\n"
     
-    read -p "⚠️  Вы уверены что хотите удалить AWG v1 сервер? (нажмите Enter для подтверждения или n для отмены): " confirm
+    read -p "⚠️  Вы уверены что хотите удалить AWG v1 сервер? (нажмите Enter для подтверждения или 0 для отмены): " confirm
     
-    if [[ "$confirm" =~ ^[Nn]$ ]]; then
+    if [[ "$confirm" == "0" ]]; then
         echo -e "${YELLOW}Отменено${NC}"
         return
     fi
@@ -753,9 +753,9 @@ remove_awg_v2() {
     echo -e "${BLUE}   Удаление AWG v2${NC}"
     echo -e "${BLUE}========================================${NC}\n"
     
-    read -p "⚠️  Вы уверены что хотите удалить AWG v2 сервер? (нажмите Enter для подтверждения или n для отмены): " confirm
+    read -p "⚠️  Вы уверены что хотите удалить AWG v2 сервер? (нажмите Enter для подтверждения или 0 для отмены): " confirm
     
-    if [[ "$confirm" =~ ^[Nn]$ ]]; then
+    if [[ "$confirm" == "0" ]]; then
         echo -e "${YELLOW}Отменено${NC}"
         return
     fi
@@ -905,9 +905,9 @@ remove_all() {
     echo -e "  - AWG v2 сервер"
     echo -e "  - Все конфигурации и данные"
     echo -e ""
-    read -p "Вы уверены? (нажмите Enter для подтверждения или n для отмены): " confirm
+    read -p "Вы уверены? (нажмите Enter для подтверждения или 0 для отмены): " confirm
     
-    if [[ "$confirm" =~ ^[Nn]$ ]]; then
+    if [[ "$confirm" == "0" ]]; then
         echo -e "${YELLOW}Отменено${NC}"
         return
     fi
@@ -1024,8 +1024,8 @@ select_xui_version() {
             echo -e "\n${RED}⚠️  ВНИМАНИЕ!${NC}"
             echo -e "${YELLOW}Последняя версия 3x-ui НЕ совместима с ботом!${NC}"
             echo -e "${YELLOW}Клиенты, созданные через бота, не будут работать.${NC}"
-            read -p "Вы уверены что хотите продолжить? (нажмите Enter для подтверждения или n для отмены): " confirm_latest
-            if [[ ! "$confirm_latest" =~ ^[Nn]$ ]]; then
+            read -p "Вы уверены что хотите продолжить? (нажмите Enter для подтверждения или 0 для отмены): " confirm_latest
+            if [[ "$confirm_latest" != "0" ]]; then
                 install_3xui_latest
             else
                 echo -e "${GREEN}Отменено. Устанавливаем v2.9.4...${NC}"
@@ -1053,8 +1053,8 @@ install_3xui_latest() {
     # Проверка установлена ли уже панель
     if systemctl is-active --quiet x-ui; then
         echo -e "${YELLOW}⚠ 3x-ui панель уже установлена${NC}"
-        read -p "Переустановить? (нажмите Enter для подтверждения или n для отмены): " reinstall
-        if [[ "$reinstall" =~ ^[Nn]$ ]]; then
+        read -p "Переустановить? (нажмите Enter для подтверждения или 0 для отмены): " reinstall
+        if [[ "$reinstall" == "0" ]]; then
             echo -e "${YELLOW}Отменено${NC}"
             return
         fi
@@ -1681,11 +1681,11 @@ STREAMEOF
             update_env_value "TRANSPORT" "xhttp"
             
             # Перезапускаем панель
-            systemctl stop x-ui
+            systemctl stop x-ui > /dev/null 2>&1
             sleep 2
-            sqlite3 /etc/x-ui/x-ui.db "PRAGMA wal_checkpoint(TRUNCATE);" 2>/dev/null || true
-            sqlite3 /etc/x-ui/x-ui.db "PRAGMA journal_mode=DELETE;" 2>/dev/null || true
-            systemctl start x-ui
+            sqlite3 /etc/x-ui/x-ui.db "PRAGMA wal_checkpoint(TRUNCATE);" > /dev/null 2>&1 || true
+            sqlite3 /etc/x-ui/x-ui.db "PRAGMA journal_mode=DELETE;" > /dev/null 2>&1 || true
+            systemctl start x-ui > /dev/null 2>&1
             sleep 3
             
             return 0
@@ -1782,11 +1782,11 @@ STREAMEOF
             update_env_value "TRANSPORT" "tcp"
             
             # Перезапускаем панель
-            systemctl stop x-ui
+            systemctl stop x-ui > /dev/null 2>&1
             sleep 2
-            sqlite3 /etc/x-ui/x-ui.db "PRAGMA wal_checkpoint(TRUNCATE);" 2>/dev/null || true
-            sqlite3 /etc/x-ui/x-ui.db "PRAGMA journal_mode=DELETE;" 2>/dev/null || true
-            systemctl start x-ui
+            sqlite3 /etc/x-ui/x-ui.db "PRAGMA wal_checkpoint(TRUNCATE);" > /dev/null 2>&1 || true
+            sqlite3 /etc/x-ui/x-ui.db "PRAGMA journal_mode=DELETE;" > /dev/null 2>&1 || true
+            systemctl start x-ui > /dev/null 2>&1
             sleep 3
             
             return 0
@@ -1881,8 +1881,8 @@ install_3xui_v294() {
     # Проверка установлена ли уже панель
     if systemctl is-active --quiet x-ui; then
         echo -e "${YELLOW}⚠ 3x-ui панель уже установлена${NC}"
-        read -p "Переустановить? (нажмите Enter для подтверждения или n для отмены): " reinstall
-        if [[ "$reinstall" =~ ^[Nn]$ ]]; then
+        read -p "Переустановить? (нажмите Enter для подтверждения или 0 для отмены): " reinstall
+        if [[ "$reinstall" == "0" ]]; then
             echo -e "${YELLOW}Отменено${NC}"
             return
         fi
@@ -1891,17 +1891,12 @@ install_3xui_v294() {
     SERVER_IP=$(curl -s ifconfig.me)
     
     echo -e "${YELLOW}📦 Загрузка и установка 3x-ui v2.9.4...${NC}"
-    echo -e "${BLUE}Инсталятор автоматически сгенерирует учетные данные${NC}\n"
+    echo -e "${YELLOW}Это может занять несколько минут...${NC}\n"
     
-    # Установка конкретной версии v2.9.4 с правильной ссылкой
-    # Скипаем все вопросы инсталятора, ждем пока он выдаст регистрационные данные
-    echo -e "${YELLOW}Запуск установщика 3x-ui v2.9.4...${NC}\n"
-    
-    # Запускаем установку с перенаправлением вывода в файл и на экран одновременно
+    # Запускаем установку с перенаправлением вывода только в файл (без вывода на экран)
     INSTALL_LOG="/tmp/xui_install_$$.log"
-    # Правильный URL с заглавной M в MHSanaei
     # Передаем пустые ответы (Enter) на все вопросы через stdin
-    printf '\n\n\n\n\n' | bash <(curl -Ls "https://raw.githubusercontent.com/MHSanaei/3x-ui/v2.9.4/install.sh") v2.9.4 2>&1 | tee "$INSTALL_LOG"
+    printf '\n\n\n\n\n' | bash <(curl -Ls "https://raw.githubusercontent.com/MHSanaei/3x-ui/v2.9.4/install.sh") v2.9.4 > "$INSTALL_LOG" 2>&1
     
     # Читаем вывод из лог-файла
     INSTALL_OUTPUT=$(cat "$INSTALL_LOG" 2>/dev/null || echo "")
@@ -2039,9 +2034,9 @@ remove_3xui() {
     echo -e "${BLUE}   Удаление 3x-ui Panel${NC}"
     echo -e "${BLUE}========================================${NC}\n"
     
-    read -p "⚠️  Вы уверены что хотите удалить 3x-ui панель? (нажмите Enter для подтверждения или n для отмены): " confirm
+    read -p "⚠️  Вы уверены что хотите удалить 3x-ui панель? (нажмите Enter для подтверждения или 0 для отмены): " confirm
     
-    if [[ "$confirm" =~ ^[Nn]$ ]]; then
+    if [[ "$confirm" == "0" ]]; then
         echo -e "${YELLOW}Отменено${NC}"
         return
     fi
