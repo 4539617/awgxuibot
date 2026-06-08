@@ -1148,9 +1148,6 @@ google.com
             [
               { text: '📋 Клиенты V1', callback_data: 'awg_clients_v1' },
               { text: '📋 Клиенты V2', callback_data: 'awg_clients_v2' }
-            ],
-            [
-              { text: '🏠 Главное меню', callback_data: 'admin_menu' }
             ]
           ]
         };
