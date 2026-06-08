@@ -1122,11 +1122,27 @@ google.com
         
         logger.info(`Successfully deleted client ${ip} from ${container.name}`);
         
+        // Создаем кнопки для быстрого перехода к клиентам
+        const keyboard = {
+          inline_keyboard: [
+            [
+              { text: '📋 Клиенты V1', callback_data: 'awg_clients_v1' },
+              { text: '📋 Клиенты V2', callback_data: 'awg_clients_v2' }
+            ],
+            [
+              { text: '🏠 Главное меню', callback_data: 'admin_menu' }
+            ]
+          ]
+        };
+        
         this.bot.sendMessage(
           chatId,
           `✅ Клиент \`${ip}\` успешно удалён из ${version.toUpperCase()}\n\n` +
           `IP адрес освобождён и может быть использован для нового клиента`,
-          { parse_mode: 'Markdown' }
+          {
+            parse_mode: 'Markdown',
+            reply_markup: keyboard
+          }
         );
         
       } catch (error) {
