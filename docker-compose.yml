@@ -1,5 +1,10 @@
 version: '3.8'
 
+# Этот файл запускает ОБА бота одновременно
+# Для раздельного запуска используйте:
+# - docker-compose.xuibot.yml (только XUIBot)
+# - docker-compose.awgbot.yml (только AWGBot)
+
 services:
   # AWGBot - AmneziaWG Management
   awgbot:

@@ -287,8 +287,8 @@ interactive_setup() {
 # Функция установки бота
 install_bot() {
     echo -e "\n${BLUE}========================================${NC}"
-    echo -e "${BLUE}   Установка awgxuibot${NC}"
-    echo -e "${BLUE}   NetCrazy + XUI Management${NC}"
+    echo -e "${BLUE}   Установка XUIBot${NC}"
+    echo -e "${BLUE}   XUI Management Bot${NC}"
     echo -e "${BLUE}========================================${NC}\n"
     
     # Интерактивная настройка параметров
@@ -296,47 +296,40 @@ install_bot() {
     
     # Остановка старых контейнеров
     echo -e "\n${YELLOW}🛑 Остановка старых контейнеров...${NC}"
-    docker stop netcrazybot xuibot 2>/dev/null || true
-    docker rm netcrazybot xuibot 2>/dev/null || true
+    docker stop xuibot 2>/dev/null || true
+    docker rm xuibot 2>/dev/null || true
     
-    # Проверка docker-compose.yml
+    # Проверка docker-compose.xuibot.yml
     echo -e "\n${YELLOW}🔍 Проверка конфигурации...${NC}"
-    if ! docker compose config > /dev/null 2>&1; then
-        echo -e "${RED}❌ Ошибка в docker-compose.yml${NC}"
+    if ! docker compose -f docker-compose.xuibot.yml config > /dev/null 2>&1; then
+        echo -e "${RED}❌ Ошибка в docker-compose.xuibot.yml${NC}"
         echo -e "${YELLOW}Запуск диагностики:${NC}"
-        docker compose config
+        docker compose -f docker-compose.xuibot.yml config
         exit 1
     fi
     echo -e "${GREEN}✅ Конфигурация корректна${NC}"
     
-    # Запуск обоих ботов
-    echo -e "\n${YELLOW}🐳 Сборка и запуск объединенного бота...${NC}"
+    # Запуск XUIBot
+    echo -e "\n${YELLOW}🐳 Сборка и запуск XUIBot...${NC}"
     echo -e "${BLUE}Это может занять несколько минут...${NC}\n"
     
-    if ! docker compose up -d --build; then
-        echo -e "\n${RED}❌ Ошибка при запуске контейнеров${NC}"
+    if ! docker compose -f docker-compose.xuibot.yml up -d --build; then
+        echo -e "\n${RED}❌ Ошибка при запуске контейнера${NC}"
         echo -e "${YELLOW}Проверьте логи:${NC}"
-        echo -e "  docker compose logs"
+        echo -e "  docker compose -f docker-compose.xuibot.yml logs"
         exit 1
     fi
     
     # Проверка
-    echo -e "\n${YELLOW}⏳ Ожидание запуска контейнеров...${NC}"
+    echo -e "\n${YELLOW}⏳ Ожидание запуска контейнера...${NC}"
     sleep 5
     
-    # Проверка статуса контейнеров
-    NETCRAZY_STATUS=$(docker ps --filter name=netcrazybot --format "{{.Status}}" 2>/dev/null || echo "not found")
+    # Проверка статуса контейнера
     XUI_STATUS=$(docker ps --filter name=xuibot --format "{{.Status}}" 2>/dev/null || echo "not found")
     
-    echo -e "\n${GREEN}✅ awgxuibot установлен!${NC}"
+    echo -e "\n${GREEN}✅ XUIBot установлен!${NC}"
     echo -e "${BLUE}========================================${NC}"
-    echo -e "${GREEN}📊 Статус контейнеров:${NC}"
-    
-    if [[ "$NETCRAZY_STATUS" == *"Up"* ]]; then
-        echo -e "  NetCrazyBot: ${GREEN}✓ Работает${NC}"
-    else
-        echo -e "  NetCrazyBot: ${RED}✗ Не запущен ($NETCRAZY_STATUS)${NC}"
-    fi
+    echo -e "${GREEN}📊 Статус контейнера:${NC}"
     
     if [[ "$XUI_STATUS" == *"Up"* ]]; then
         echo -e "  XUIBot: ${GREEN}✓ Работает${NC}"
@@ -344,68 +337,61 @@ install_bot() {
         echo -e "  XUIBot: ${RED}✗ Не запущен ($XUI_STATUS)${NC}"
     fi
     
-    echo -e "\n${YELLOW}📋 Логи NetCrazyBot (последние 15 строк):${NC}"
-    docker logs --tail=15 netcrazybot 2>&1 || echo -e "${RED}Не удалось получить логи${NC}"
-    
-    echo -e "\n${YELLOW}📋 Логи XUIBot (последние 15 строк):${NC}"
-    docker logs --tail=15 xuibot 2>&1 || echo -e "${RED}Не удалось получить логи${NC}"
+    echo -e "\n${YELLOW}📋 Логи XUIBot (последние 50 строк):${NC}"
+    docker logs --tail=50 xuibot 2>&1 || echo -e "${RED}Не удалось получить логи${NC}"
     
     echo -e "\n${BLUE}========================================${NC}"
     echo -e "${GREEN}💡 Полезные команды:${NC}"
-    echo -e "  Логи: ${YELLOW}docker logs -f netcrazybot${NC}"
     echo -e "  Логи: ${YELLOW}docker logs -f xuibot${NC}"
     echo -e "  Статус: ${YELLOW}docker ps${NC}"
-    echo -e "  Перезапуск: ${YELLOW}docker compose restart${NC}"
+    echo -e "  Перезапуск: ${YELLOW}docker compose -f docker-compose.xuibot.yml restart${NC}"
+    echo -e "  Остановка: ${YELLOW}docker compose -f docker-compose.xuibot.yml down${NC}"
 }
 
 # Функция показа логов
 show_logs() {
     echo -e "\n${BLUE}========================================${NC}"
-    echo -e "${BLUE}   Логи Бота${NC}"
+    echo -e "${BLUE}   Логи XUIBot${NC}"
     echo -e "${BLUE}========================================${NC}\n"
     
-    echo -e "${YELLOW}📋 Логи NetCrazyBot (последние 30 строк):${NC}"
-    docker logs --tail=30 netcrazybot 2>/dev/null || echo -e "${RED}Контейнер netcrazybot не запущен${NC}"
-    
-    echo -e "\n${YELLOW}📋 Логи XUIBot (последние 30 строк):${NC}"
-    docker logs --tail=30 xuibot 2>/dev/null || echo -e "${RED}Контейнер xuibot не запущен${NC}"
+    echo -e "${YELLOW}📋 Логи XUIBot (последние 50 строк):${NC}"
+    docker logs --tail=50 xuibot 2>/dev/null || echo -e "${RED}Контейнер xuibot не запущен${NC}"
 }
 
 # Функция обновления бота
 update_bot() {
     echo -e "\n${BLUE}========================================${NC}"
-    echo -e "${BLUE}   Обновление awgxuibot${NC}"
+    echo -e "${BLUE}   Обновление XUIBot${NC}"
     echo -e "${BLUE}========================================${NC}\n"
     
     echo -e "${YELLOW}🔄 Обновление бота...${NC}"
     
-    # Остановка контейнеров
-    echo -e "${YELLOW}🛑 Остановка контейнеров...${NC}"
-    docker stop netcrazybot xuibot 2>/dev/null || true
-    docker rm netcrazybot xuibot 2>/dev/null || true
+    # Остановка контейнера
+    echo -e "${YELLOW}🛑 Остановка контейнера...${NC}"
+    docker stop xuibot 2>/dev/null || true
+    docker rm xuibot 2>/dev/null || true
     
-    # Пересборка образов
-    echo -e "${YELLOW}🐳 Пересборка образов...${NC}"
-    docker compose build --no-cache
+    # Пересборка образа
+    echo -e "${YELLOW}🐳 Пересборка образа...${NC}"
+    docker compose -f docker-compose.xuibot.yml build --no-cache
     
     # Запуск
-    echo -e "${YELLOW}🚀 Запуск обновленных контейнеров...${NC}"
-    docker compose up -d
+    echo -e "${YELLOW}🚀 Запуск обновленного контейнера...${NC}"
+    docker compose -f docker-compose.xuibot.yml up -d
     
     sleep 5
     echo -e "\n${GREEN}✅ Бот обновлен!${NC}"
-    echo -e "${GREEN}📊 Статус контейнеров:${NC}"
-    docker ps --filter name=netcrazybot
+    echo -e "${GREEN}📊 Статус контейнера:${NC}"
     docker ps --filter name=xuibot
 }
 
 # Функция удаления бота
 remove_bot() {
     echo -e "\n${BLUE}========================================${NC}"
-    echo -e "${BLUE}   Удаление awgxuibot${NC}"
+    echo -e "${BLUE}   Удаление XUIBot${NC}"
     echo -e "${BLUE}========================================${NC}\n"
     
-    read -p "⚠️  Вы уверены что хотите удалить бот? (y/n): " confirm
+    read -p "⚠️  Вы уверены что хотите удалить XUIBot? (y/n): " confirm
     
     if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
         echo -e "${YELLOW}Отменено${NC}"
@@ -414,17 +400,15 @@ remove_bot() {
     
     echo -e "${YELLOW}🗑️  Удаление бота...${NC}"
     
-    # Остановка и удаление контейнеров
-    echo -e "${YELLOW}🛑 Остановка контейнеров...${NC}"
-    docker stop netcrazybot xuibot 2>/dev/null || true
-    docker rm netcrazybot xuibot 2>/dev/null || true
+    # Остановка и удаление контейнера
+    echo -e "${YELLOW}🛑 Остановка контейнера...${NC}"
+    docker compose -f docker-compose.xuibot.yml down
     
-    # Удаление образов
-    echo -e "${YELLOW}🗑️  Удаление образов...${NC}"
-    docker rmi netcrazexuibot-netcrazybot 2>/dev/null || true
+    # Удаление образа
+    echo -e "${YELLOW}🗑️  Удаление образа...${NC}"
     docker rmi netcrazexuibot-xuibot 2>/dev/null || true
     
-    echo -e "${GREEN}✅ Бот удален!${NC}"
+    echo -e "${GREEN}✅ XUIBot удален!${NC}"
 }
 # ============================================
 # XUI Bot Functions (отдельные функции для XUI бота)

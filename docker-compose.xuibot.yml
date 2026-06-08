@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  # XUIBot - User & VLESS Management
+  xuibot:
+    build:
+      context: .
+      target: xuibot
+    container_name: xuibot
+    restart: always
+    network_mode: host
+    env_file:
+      - .env
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+      - /etc/x-ui:/etc/x-ui:rw
+
+# Made with Bob
