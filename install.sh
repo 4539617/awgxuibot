@@ -1596,6 +1596,290 @@ STREAMEOF
         echo -e "\n${RED}❌ Ошибка установки 3x-ui панели${NC}"
     fi
 }
+# Функция создания XHTTP Reality inbound
+create_xhttp_reality_inbound() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Создание XHTTP Reality Inbound${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+    
+    # Проверяем наличие необходимых данных
+    if [ -z "$REALITY_PRIVATE_KEY" ] || [ -z "$REALITY_PUBLIC_KEY" ] || [ -z "$REALITY_SHORT_ID" ]; then
+        echo -e "${RED}❌ Ошибка: Reality ключи не найдены${NC}"
+        echo -e "${YELLOW}Запустите установку 3x-ui заново${NC}"
+        return 1
+    fi
+    
+    # Создаем JSON конфигурации для settings и streamSettings
+    SETTINGS_JSON='{"clients":[],"decryption":"none","fallbacks":[]}'
+    
+    STREAM_SETTINGS_JSON=$(cat <<STREAMEOF
+{
+  "network": "xhttp",
+  "security": "reality",
+  "externalProxy": [],
+  "realitySettings": {
+    "show": false,
+    "xver": 0,
+    "target": "www.nvidia.com:443",
+    "serverNames": ["www.nvidia.com"],
+    "privateKey": "${REALITY_PRIVATE_KEY}",
+    "minClientVer": "",
+    "maxClientVer": "",
+    "maxTimediff": 0,
+    "shortIds": ["${REALITY_SHORT_ID}"],
+    "settings": {
+      "publicKey": "${REALITY_PUBLIC_KEY}",
+      "fingerprint": "edge",
+      "serverName": "",
+      "spiderX": "/"
+    }
+  },
+  "xhttpSettings": {
+    "path": "/",
+    "host": "",
+    "headers": {},
+    "scMaxBufferedPosts": 30,
+    "scMaxEachPostBytes": "1000000",
+    "scStreamUpServerSecs": "20-80",
+    "noSSEHeader": false,
+    "xPaddingBytes": "100-1000",
+    "mode": "auto",
+    "xPaddingObfsMode": false,
+    "scMinPostsIntervalMs": "30"
+  }
+}
+STREAMEOF
+)
+    
+    SNIFFING_JSON='{"enabled":true,"destOverride":["http","tls","quic","fakedns"],"metadataOnly":false,"routeOnly":false}'
+    
+    # Экранируем JSON для SQL
+    SETTINGS_JSON_ESCAPED=$(echo "$SETTINGS_JSON" | sed "s/'/''/g")
+    STREAM_SETTINGS_JSON_ESCAPED=$(echo "$STREAM_SETTINGS_JSON" | sed "s/'/''/g")
+    SNIFFING_JSON_ESCAPED=$(echo "$SNIFFING_JSON" | sed "s/'/''/g")
+    
+    # Проверяем и удаляем существующий inbound
+    EXISTING_INBOUND=$(sqlite3 /etc/x-ui/x-ui.db "SELECT id FROM inbounds WHERE tag='inbound-443' OR remark='VLESS-Reality-xHTTP';" 2>/dev/null)
+    
+    if [ -n "$EXISTING_INBOUND" ]; then
+        echo -e "${YELLOW}⚠ Найден существующий inbound (ID: ${EXISTING_INBOUND}), удаляем...${NC}"
+        sqlite3 /etc/x-ui/x-ui.db "DELETE FROM inbounds WHERE tag='inbound-443' OR remark='VLESS-Reality-xHTTP';" 2>/dev/null
+    fi
+    
+    # Вставляем inbound в базу данных
+    SQL_INSERT="INSERT INTO inbounds (user_id, up, down, total, remark, enable, expiry_time, listen, port, protocol, settings, stream_settings, tag, sniffing) VALUES (1, 0, 0, 0, 'VLESS-Reality-xHTTP', 1, 0, '', 443, 'vless', '${SETTINGS_JSON_ESCAPED}', '${STREAM_SETTINGS_JSON_ESCAPED}', 'inbound-443', '${SNIFFING_JSON_ESCAPED}');"
+    
+    set +e
+    SQL_RESULT=$(sqlite3 /etc/x-ui/x-ui.db "${SQL_INSERT}" 2>&1)
+    SQL_EXIT_CODE=$?
+    set -e
+    
+    if [ $SQL_EXIT_CODE -eq 0 ]; then
+        INBOUND_ID=$(sqlite3 /etc/x-ui/x-ui.db "SELECT id FROM inbounds WHERE remark='VLESS-Reality-xHTTP' ORDER BY id DESC LIMIT 1;" 2>/dev/null)
+        
+        if [ -n "$INBOUND_ID" ]; then
+            echo -e "${GREEN}✅ XHTTP Reality inbound создан успешно!${NC}"
+            echo -e "${GREEN}   ID: ${INBOUND_ID}${NC}"
+            echo -e "${GREEN}   Порт: 443${NC}"
+            echo -e "${GREEN}   Protocol: VLESS${NC}"
+            echo -e "${GREEN}   Network: xhttp${NC}"
+            echo -e "${GREEN}   Security: reality${NC}"
+            
+            update_env_value "INBOUND_ID" "${INBOUND_ID}"
+            update_env_value "TRANSPORT" "xhttp"
+            
+            # Перезапускаем панель
+            systemctl stop x-ui
+            sleep 2
+            sqlite3 /etc/x-ui/x-ui.db "PRAGMA wal_checkpoint(TRUNCATE);" 2>/dev/null || true
+            sqlite3 /etc/x-ui/x-ui.db "PRAGMA journal_mode=DELETE;" 2>/dev/null || true
+            systemctl start x-ui
+            sleep 3
+            
+            return 0
+        fi
+    fi
+    
+    echo -e "${RED}❌ Ошибка создания inbound${NC}"
+    return 1
+}
+
+# Функция создания TCP Reality inbound
+create_tcp_reality_inbound() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Создание TCP Reality Inbound${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+    
+    # Проверяем наличие необходимых данных
+    if [ -z "$REALITY_PRIVATE_KEY" ] || [ -z "$REALITY_PUBLIC_KEY" ] || [ -z "$REALITY_SHORT_ID" ]; then
+        echo -e "${RED}❌ Ошибка: Reality ключи не найдены${NC}"
+        echo -e "${YELLOW}Запустите установку 3x-ui заново${NC}"
+        return 1
+    fi
+    
+    # Создаем JSON конфигурации для settings и streamSettings
+    SETTINGS_JSON='{"clients":[],"decryption":"none","fallbacks":[]}'
+    
+    STREAM_SETTINGS_JSON=$(cat <<STREAMEOF
+{
+  "network": "tcp",
+  "security": "reality",
+  "externalProxy": [],
+  "realitySettings": {
+    "show": false,
+    "xver": 0,
+    "target": "www.nvidia.com:443",
+    "serverNames": ["www.nvidia.com"],
+    "privateKey": "${REALITY_PRIVATE_KEY}",
+    "minClientVer": "",
+    "maxClientVer": "",
+    "maxTimediff": 0,
+    "shortIds": ["${REALITY_SHORT_ID}"],
+    "settings": {
+      "publicKey": "${REALITY_PUBLIC_KEY}",
+      "fingerprint": "chrome",
+      "serverName": "",
+      "spiderX": "/"
+    }
+  },
+  "tcpSettings": {
+    "acceptProxyProtocol": false,
+    "header": {
+      "type": "none"
+    }
+  }
+}
+STREAMEOF
+)
+    
+    SNIFFING_JSON='{"enabled":true,"destOverride":["http","tls","quic","fakedns"],"metadataOnly":false,"routeOnly":false}'
+    
+    # Экранируем JSON для SQL
+    SETTINGS_JSON_ESCAPED=$(echo "$SETTINGS_JSON" | sed "s/'/''/g")
+    STREAM_SETTINGS_JSON_ESCAPED=$(echo "$STREAM_SETTINGS_JSON" | sed "s/'/''/g")
+    SNIFFING_JSON_ESCAPED=$(echo "$SNIFFING_JSON" | sed "s/'/''/g")
+    
+    # Проверяем и удаляем существующий inbound
+    EXISTING_INBOUND=$(sqlite3 /etc/x-ui/x-ui.db "SELECT id FROM inbounds WHERE tag='inbound-443' OR remark='VLESS-Reality-TCP';" 2>/dev/null)
+    
+    if [ -n "$EXISTING_INBOUND" ]; then
+        echo -e "${YELLOW}⚠ Найден существующий inbound (ID: ${EXISTING_INBOUND}), удаляем...${NC}"
+        sqlite3 /etc/x-ui/x-ui.db "DELETE FROM inbounds WHERE tag='inbound-443' OR remark='VLESS-Reality-TCP';" 2>/dev/null
+    fi
+    
+    # Вставляем inbound в базу данных
+    SQL_INSERT="INSERT INTO inbounds (user_id, up, down, total, remark, enable, expiry_time, listen, port, protocol, settings, stream_settings, tag, sniffing) VALUES (1, 0, 0, 0, 'VLESS-Reality-TCP', 1, 0, '', 443, 'vless', '${SETTINGS_JSON_ESCAPED}', '${STREAM_SETTINGS_JSON_ESCAPED}', 'inbound-443', '${SNIFFING_JSON_ESCAPED}');"
+    
+    set +e
+    SQL_RESULT=$(sqlite3 /etc/x-ui/x-ui.db "${SQL_INSERT}" 2>&1)
+    SQL_EXIT_CODE=$?
+    set -e
+    
+    if [ $SQL_EXIT_CODE -eq 0 ]; then
+        INBOUND_ID=$(sqlite3 /etc/x-ui/x-ui.db "SELECT id FROM inbounds WHERE remark='VLESS-Reality-TCP' ORDER BY id DESC LIMIT 1;" 2>/dev/null)
+        
+        if [ -n "$INBOUND_ID" ]; then
+            echo -e "${GREEN}✅ TCP Reality inbound создан успешно!${NC}"
+            echo -e "${GREEN}   ID: ${INBOUND_ID}${NC}"
+            echo -e "${GREEN}   Порт: 443${NC}"
+            echo -e "${GREEN}   Protocol: VLESS${NC}"
+            echo -e "${GREEN}   Network: tcp${NC}"
+            echo -e "${GREEN}   Security: reality${NC}"
+            
+            update_env_value "INBOUND_ID" "${INBOUND_ID}"
+            update_env_value "TRANSPORT" "tcp"
+            
+            # Перезапускаем панель
+            systemctl stop x-ui
+            sleep 2
+            sqlite3 /etc/x-ui/x-ui.db "PRAGMA wal_checkpoint(TRUNCATE);" 2>/dev/null || true
+            sqlite3 /etc/x-ui/x-ui.db "PRAGMA journal_mode=DELETE;" 2>/dev/null || true
+            systemctl start x-ui
+            sleep 3
+            
+            return 0
+        fi
+    fi
+    
+    echo -e "${RED}❌ Ошибка создания inbound${NC}"
+    return 1
+}
+
+# Функция меню после установки 3x-ui
+post_install_menu() {
+    while true; do
+        echo -e "\n${BLUE}========================================${NC}"
+        echo -e "${BLUE}   Создать подключение?${NC}"
+        echo -e "${BLUE}========================================${NC}"
+        echo -e "${GREEN}Enter${NC} - Да, создать подключение"
+        echo -e "${GREEN}n${NC}     - Нет, вернуться в главное меню"
+        echo -e "${BLUE}========================================${NC}"
+        read -p "Ваш выбор: " create_inbound_choice
+        
+        if [[ "$create_inbound_choice" =~ ^[Nn]$ ]]; then
+            echo -e "${YELLOW}Возврат в главное меню...${NC}"
+            return
+        fi
+        
+        # Меню выбора типа подключения
+        while true; do
+            echo -e "\n${BLUE}========================================${NC}"
+            echo -e "${BLUE}   Выберите тип подключения${NC}"
+            echo -e "${BLUE}========================================${NC}"
+            echo -e "${GREEN}1${NC} - XHTTP Reality (рекомендуется)"
+            echo -e "${GREEN}2${NC} - TCP Reality"
+            echo -e "${GREEN}n${NC} - Вернуться в главное меню"
+            echo -e "${BLUE}========================================${NC}"
+            read -p "Ваш выбор: " inbound_type
+            
+            if [[ "$inbound_type" =~ ^[Nn]$ ]]; then
+                echo -e "${YELLOW}Возврат в главное меню...${NC}"
+                return
+            fi
+            
+            case $inbound_type in
+                1)
+                    if create_xhttp_reality_inbound; then
+                        # Предлагаем установить бота
+                        echo -e "\n${BLUE}========================================${NC}"
+                        echo -e "${BLUE}   Установить xuibot?${NC}"
+                        echo -e "${BLUE}========================================${NC}"
+                        echo -e "${GREEN}Enter${NC} - Да, установить бота"
+                        echo -e "${GREEN}n${NC}     - Нет, вернуться в главное меню"
+                        echo -e "${BLUE}========================================${NC}"
+                        read -p "Ваш выбор: " install_bot_choice
+                        
+                        if [[ ! "$install_bot_choice" =~ ^[Nn]$ ]]; then
+                            install_bot
+                        fi
+                        return
+                    fi
+                    ;;
+                2)
+                    if create_tcp_reality_inbound; then
+                        # Предлагаем установить бота
+                        echo -e "\n${BLUE}========================================${NC}"
+                        echo -e "${BLUE}   Установить xuibot?${NC}"
+                        echo -e "${BLUE}========================================${NC}"
+                        echo -e "${GREEN}Enter${NC} - Да, установить бота"
+                        echo -e "${GREEN}n${NC}     - Нет, вернуться в главное меню"
+                        echo -e "${BLUE}========================================${NC}"
+                        read -p "Ваш выбор: " install_bot_choice
+                        
+                        if [[ ! "$install_bot_choice" =~ ^[Nn]$ ]]; then
+                            install_bot
+                        fi
+                        return
+                    fi
+                    ;;
+                *)
+                    echo -e "${RED}Неверный выбор. Попробуйте снова.${NC}"
+                    ;;
+            esac
+        done
+    done
+}
+
 # Функция установки 3x-ui панели версии 2.9.4
 install_3xui_v294() {
     echo -e "\n${BLUE}========================================${NC}"
@@ -1734,9 +2018,10 @@ install_3xui_v294() {
         update_env_value "XUI_VERSION" "2.9.4"
         
         # Финальное сообщение
-        echo -e "\n${GREEN}✅ Установка завершена${NC}\n"
+        echo -e "\n${GREEN}✅ Установка 3x-ui v2.9.4 панели завершена!${NC}\n"
         
-        echo -e "\n${GREEN}✅ Установка 3x-ui v2.9.4 панели завершена!${NC}"
+        # Интерактивное меню после установки
+        post_install_menu
     else
         echo -e "\n${RED}❌ Ошибка установки 3x-ui v2.9.4 панели${NC}"
     fi
