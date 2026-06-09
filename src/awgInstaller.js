@@ -683,10 +683,13 @@ async function createServerConfig(version, port, keys, configPath) {
     const container = CONTAINERS[version];
     const params = container.params;
     
+    // Используем IP хоста (10.8.1.1), а не адрес сети (10.8.1.0)
+    const serverIP = container.network.replace('.0/', '.1/');
+    
     // Формируем конфигурацию в зависимости от версии
     let config = `[Interface]
 PrivateKey = ${keys.privateKey}
-Address = ${container.network}
+Address = ${serverIP}
 ListenPort = ${port}
 Jc = ${params.Jc}
 Jmin = ${params.Jmin}
@@ -786,6 +789,74 @@ async function startContainer(version, port, configPath) {
         
         logger.info(`[AWGInstaller] Контейнер ${container.name} работает`);
     } catch (error) {
+
+/**
+ * Настройка сети и запуск AWG интерфейса
+ * @param {string} version - Версия сервера (v1 или v2)
+ * @param {string} containerName - Имя контейнера
+ * @returns {Promise<void>}
+ */
+async function configureNetworkAndStartInterface(version, containerName) {
+    logger.info(`[AWGInstaller] Настройка сети для ${containerName}...`);
+    
+    const interfaceName = version === 'v2' ? 'awg0' : 'wg0';
+    
+    try {
+        // Шаг 1: Запускаем AWG интерфейс
+        logger.info(`[AWGInstaller] Запуск интерфейса ${interfaceName}...`);
+        try {
+            await execAsync(`docker exec ${containerName} wg-quick up ${interfaceName}`);
+            logger.info(`[AWGInstaller] ✅ Интерфейс ${interfaceName} запущен`);
+        } catch (error) {
+            // Интерфейс может быть уже запущен
+            if (error.message.includes('already exists')) {
+                logger.info(`[AWGInstaller] ℹ️ Интерфейс ${interfaceName} уже запущен`);
+            } else {
+                logger.warn(`[AWGInstaller] ⚠️ Ошибка запуска интерфейса: ${error.message}`);
+            }
+        }
+        
+        // Шаг 2: Настраиваем NAT (MASQUERADE)
+        logger.info(`[AWGInstaller] Настройка NAT правил...`);
+        
+        // Добавляем MASQUERADE для исходящего трафика
+        try {
+            await execAsync(
+                `docker exec ${containerName} iptables -t nat -A POSTROUTING -s 10.8.1.0/24 -o eth0 -j MASQUERADE`
+            );
+            logger.info(`[AWGInstaller] ✅ NAT MASQUERADE настроен`);
+        } catch (error) {
+            logger.warn(`[AWGInstaller] ⚠️ Ошибка настройки MASQUERADE: ${error.message}`);
+        }
+        
+        // Добавляем правила FORWARD
+        try {
+            await execAsync(
+                `docker exec ${containerName} iptables -A FORWARD -i ${interfaceName} -j ACCEPT`
+            );
+            await execAsync(
+                `docker exec ${containerName} iptables -A FORWARD -o ${interfaceName} -j ACCEPT`
+            );
+            logger.info(`[AWGInstaller] ✅ FORWARD правила настроены`);
+        } catch (error) {
+            logger.warn(`[AWGInstaller] ⚠️ Ошибка настройки FORWARD: ${error.message}`);
+        }
+        
+        // Шаг 3: Проверяем статус интерфейса
+        try {
+            const { stdout: wgStatus } = await execAsync(`docker exec ${containerName} wg show ${interfaceName}`);
+            logger.info(`[AWGInstaller] Статус интерфейса:\n${wgStatus}`);
+        } catch (error) {
+            logger.warn(`[AWGInstaller] ⚠️ Не удалось получить статус интерфейса: ${error.message}`);
+        }
+        
+        logger.info(`[AWGInstaller] ✅ Сеть успешно настроена`);
+        
+    } catch (error) {
+        logger.error(`[AWGInstaller] Ошибка настройки сети: ${error.message}`);
+        throw new Error(`Не удалось настроить сеть: ${error.message}`);
+    }
+}
         logger.error(`[AWGInstaller] Ошибка запуска контейнера: ${error.message}`);
         throw new Error(`Не удалось запустить контейнер: ${error.message}`);
     }
@@ -873,6 +944,10 @@ async function installServer(version, port, progressCallback = () => {}) {
         // ШАГ 9: Запуск контейнера
         progressCallback('⏳ Запускаю контейнер...');
         await startContainer(version, port, configPath);
+        
+        // ШАГ 10: Настройка сети и запуск интерфейса
+        progressCallback('⏳ Настройка сети и запуск интерфейса...');
+        await configureNetworkAndStartInterface(version, container.name);
         
         progressCallback('✅ Установка завершена!');
         
@@ -962,6 +1037,7 @@ export {
     generateServerKeys,
     createServerConfig,
     startContainer,
+    configureNetworkAndStartInterface,
     installServer,
     installBothServers,
     CONTAINERS,
