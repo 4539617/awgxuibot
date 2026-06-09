@@ -2822,15 +2822,24 @@ generate_awg_config() {
     fi
     
     # Проверяем и устанавливаем зависимости Node.js
-    if [ ! -d "node_modules" ] || [ ! -f "node_modules/.package-lock.json" ]; then
+    local current_dir=$(pwd)
+    echo -e "${YELLOW}📍 Текущая директория: ${current_dir}${NC}"
+    
+    if [ ! -d "${current_dir}/node_modules" ] || [ ! -f "${current_dir}/node_modules/.package-lock.json" ]; then
         echo -e "${YELLOW}📦 Установка зависимостей Node.js...${NC}"
-        if npm install --silent > /dev/null 2>&1; then
-            echo -e "${GREEN}✅ Зависимости установлены${NC}"
+        echo -e "${YELLOW}⏳ Выполняется npm install (это может занять минуту)...${NC}"
+        
+        if npm install 2>&1 | tee /tmp/npm-install.log; then
+            echo -e "${GREEN}✅ Зависимости успешно установлены${NC}"
         else
             echo -e "${RED}❌ Ошибка установки зависимостей${NC}"
-            echo -e "${YELLOW}Попробуйте вручную: npm install${NC}"
+            echo -e "${YELLOW}Лог ошибки:${NC}"
+            cat /tmp/npm-install.log
+            echo -e "${YELLOW}Попробуйте вручную: cd ${current_dir} && npm install${NC}"
             return 1
         fi
+    else
+        echo -e "${GREEN}✅ Зависимости Node.js уже установлены${NC}"
     fi
     
     # Проверяем наличие контейнера AWG
