@@ -2376,12 +2376,33 @@ install_existing_certificate() {
     
     echo -e "${YELLOW}📦 Установка существующего сертификата...${NC}"
     
+    # Проверяем что директория с сертификатом существует
+    if [ ! -d "$cert_dir" ]; then
+        echo -e "${RED}❌ Директория с сертификатом не найдена: $cert_dir${NC}"
+        return 1
+    fi
+    
+    # Проверяем что файлы сертификата существуют
+    if [ ! -f "$cert_dir/${server_ip}.key" ]; then
+        echo -e "${RED}❌ Файл ключа не найден: $cert_dir/${server_ip}.key${NC}"
+        return 1
+    fi
+    
+    if [ ! -f "$cert_dir/fullchain.cer" ]; then
+        echo -e "${RED}❌ Файл сертификата не найден: $cert_dir/fullchain.cer${NC}"
+        return 1
+    fi
+    
+    echo -e "${BLUE}📂 Источник: $cert_dir${NC}"
+    echo -e "${BLUE}📂 Назначение: $target_dir${NC}"
+    
     # Создаём целевую директорию
     mkdir -p "$target_dir"
     
     # Копируем сертификаты
-    if cp "$cert_dir/${server_ip}.key" "$target_dir/privkey.pem" && \
-       cp "$cert_dir/fullchain.cer" "$target_dir/fullchain.pem"; then
+    echo -e "${YELLOW}📋 Копирование файлов...${NC}"
+    if cp -v "$cert_dir/${server_ip}.key" "$target_dir/privkey.pem" && \
+       cp -v "$cert_dir/fullchain.cer" "$target_dir/fullchain.pem"; then
         
         # Устанавливаем права
         chmod 600 "$target_dir/privkey.pem"
