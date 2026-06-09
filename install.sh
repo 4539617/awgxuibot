@@ -1149,11 +1149,10 @@ show_status() {
     fi
     
     # ============================================
-    # TELEGRAM BOTS
+    # XUIBOT
     # ============================================
-    echo -e "\n${YELLOW}${BOLD}TELEGRAM BOTS:${NC}"
+    echo -e "\n${YELLOW}${BOLD}XUIBOT:${NC}"
     
-    # XUI Bot
     if docker ps --filter name=xuibot --format "{{.Names}}" | grep -q xuibot; then
         local xui_token=$(grep "^XUI_BOT_TOKEN=" .env 2>/dev/null | cut -d'=' -f2)
         local xui_bot_username=$(get_bot_username "$xui_token" "xuibot")
@@ -1167,7 +1166,11 @@ show_status() {
         echo -e "  XUI Bot: ${RED}❌ Не установлен${NC}"
     fi
     
-    # AWG Bot
+    # ============================================
+    # AWGBOT
+    # ============================================
+    echo -e "\n${YELLOW}${BOLD}AWGBOT:${NC}"
+    
     if docker ps --filter name=awgbot --format "{{.Names}}" | grep -q awgbot; then
         local awg_token=$(grep "^AWG_BOT_TOKEN=" .env 2>/dev/null | cut -d'=' -f2)
         local awg_bot_username=$(get_bot_username "$awg_token" "awgbot")
