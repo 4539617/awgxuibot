@@ -462,21 +462,80 @@ install_xuibot() {
     
     if ! grep -q "^XUI_URL=.\+" .env; then
         echo -e "${YELLOW}📝 Настройка параметров 3x-ui панели${NC}\n"
-        read -p "Введите XUI_URL (например, https://localhost:54321/panel): " xui_url
+        read -p "Введите XUI_URL: " xui_url
         update_env_value "XUI_URL" "$xui_url"
     fi
     
     if ! grep -q "^XUI_USERNAME=.\+" .env; then
-        read -p "Введите XUI_USERNAME (логин от панели): " xui_username
+        read -p "Введите XUI_USERNAME: " xui_username
         update_env_value "XUI_USERNAME" "$xui_username"
     fi
     
     if ! grep -q "^XUI_PASSWORD=.\+" .env; then
-        read -p "Введите XUI_PASSWORD (пароль от панели): " xui_password
+        read -p "Введите XUI_PASSWORD: " xui_password
         update_env_value "XUI_PASSWORD" "$xui_password"
     fi
     
     echo -e "${GREEN}✅ Параметры 3x-ui панели настроены${NC}\n"
+    
+    # Автоматическое определение параметров из первого инбаунда
+    echo -e "${YELLOW}🔍 Анализ существующих инбаундов...${NC}"
+    
+    FIRST_INBOUND_ID=$(sqlite3 /etc/x-ui/x-ui.db "SELECT id FROM inbounds ORDER BY id ASC LIMIT 1;" 2>/dev/null)
+    
+    if [ -n "$FIRST_INBOUND_ID" ]; then
+        echo -e "${GREEN}✅ Найден инбаунд ID: ${FIRST_INBOUND_ID}${NC}"
+        
+        # Получаем транспорт и безопасность
+        TRANSPORT=$(sqlite3 /etc/x-ui/x-ui.db "SELECT json_extract(stream_settings, '$.network') FROM inbounds WHERE id=${FIRST_INBOUND_ID};" 2>/dev/null)
+        SECURITY=$(sqlite3 /etc/x-ui/x-ui.db "SELECT json_extract(stream_settings, '$.security') FROM inbounds WHERE id=${FIRST_INBOUND_ID};" 2>/dev/null)
+        
+        echo -e "${BLUE}Транспорт: ${TRANSPORT}, Безопасность: ${SECURITY}${NC}"
+        
+        # Сохраняем INBOUND_ID
+        update_env_value "INBOUND_ID" "${FIRST_INBOUND_ID}"
+        
+        # Если xhttp и reality - извлекаем ключи
+        if [ "$TRANSPORT" = "xhttp" ] && [ "$SECURITY" = "reality" ]; then
+            echo -e "${YELLOW}🔑 Обнаружен xHTTP с Reality, извлекаем ключи...${NC}"
+            
+            REALITY_PUBLIC=$(sqlite3 /etc/x-ui/x-ui.db "SELECT json_extract(stream_settings, '$.realitySettings.settings.publicKey') FROM inbounds WHERE id=${FIRST_INBOUND_ID};" 2>/dev/null)
+            REALITY_PRIVATE=$(sqlite3 /etc/x-ui/x-ui.db "SELECT json_extract(stream_settings, '$.realitySettings.privateKey') FROM inbounds WHERE id=${FIRST_INBOUND_ID};" 2>/dev/null)
+            REALITY_SHORT=$(sqlite3 /etc/x-ui/x-ui.db "SELECT json_extract(stream_settings, '$.realitySettings.shortIds[0]') FROM inbounds WHERE id=${FIRST_INBOUND_ID};" 2>/dev/null)
+            REALITY_SNI=$(sqlite3 /etc/x-ui/x-ui.db "SELECT json_extract(stream_settings, '$.realitySettings.serverNames[0]') FROM inbounds WHERE id=${FIRST_INBOUND_ID};" 2>/dev/null)
+            REALITY_FINGERPRINT=$(sqlite3 /etc/x-ui/x-ui.db "SELECT json_extract(stream_settings, '$.realitySettings.settings.fingerprint') FROM inbounds WHERE id=${FIRST_INBOUND_ID};" 2>/dev/null)
+            
+            if [ -n "$REALITY_PUBLIC" ] && [ -n "$REALITY_PRIVATE" ] && [ -n "$REALITY_SHORT" ]; then
+                echo -e "${GREEN}✅ Reality параметры извлечены из инбаунда${NC}"
+                update_env_value "REALITY_PUBLIC_KEY" "${REALITY_PUBLIC}"
+                update_env_value "REALITY_PRIVATE_KEY" "${REALITY_PRIVATE}"
+                update_env_value "REALITY_SHORT_ID" "${REALITY_SHORT}"
+                
+                # Сохраняем также SNI и Fingerprint если они есть
+                if [ -n "$REALITY_SNI" ]; then
+                    update_env_value "REALITY_SNI" "${REALITY_SNI}"
+                    echo -e "${BLUE}  SNI: ${REALITY_SNI}${NC}"
+                fi
+                if [ -n "$REALITY_FINGERPRINT" ]; then
+                    update_env_value "REALITY_FINGERPRINT" "${REALITY_FINGERPRINT}"
+                    echo -e "${BLUE}  Fingerprint: ${REALITY_FINGERPRINT}${NC}"
+                fi
+            else
+                echo -e "${YELLOW}⚠️  Не удалось извлечь Reality ключи, запрашиваем вручную...${NC}\n"
+                read -p "Введите REALITY_PUBLIC_KEY: " reality_pub
+                read -p "Введите REALITY_PRIVATE_KEY: " reality_priv
+                read -p "Введите REALITY_SHORT_ID: " reality_short
+                
+                update_env_value "REALITY_PUBLIC_KEY" "${reality_pub}"
+                update_env_value "REALITY_PRIVATE_KEY" "${reality_priv}"
+                update_env_value "REALITY_SHORT_ID" "${reality_short}"
+            fi
+        fi
+    else
+        echo -e "${YELLOW}⚠️  Инбаунды не найдены${NC}"
+    fi
+    
+    echo ""
     
     # Проверка XUI_BOT_TOKEN
     if ! grep -q "^XUI_BOT_TOKEN=.\+" .env; then
