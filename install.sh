@@ -376,10 +376,10 @@ show_logs() {
 # Функция обновления бота
 update_bot() {
     echo -e "\n${BLUE}========================================${NC}"
-    echo -e "${BLUE}   Обновление XUIBot${NC}"
+    echo -e "${BLUE}   Пересборка XUIBot${NC}"
     echo -e "${BLUE}========================================${NC}\n"
     
-    echo -e "${YELLOW}🔄 Обновление бота...${NC}"
+    echo -e "${YELLOW}🔄 Пересборка бота...${NC}"
     
     # Остановка контейнера
     echo -e "${YELLOW}🛑 Остановка контейнера...${NC}"
@@ -391,11 +391,11 @@ update_bot() {
     docker compose -f docker-compose.xuibot.yml build --no-cache
     
     # Запуск
-    echo -e "${YELLOW}🚀 Запуск обновленного контейнера...${NC}"
+    echo -e "${YELLOW}🚀 Запуск пересобранного контейнера...${NC}"
     docker compose -f docker-compose.xuibot.yml up -d
     
     sleep 5
-    echo -e "\n${GREEN}✅ Бот обновлен!${NC}"
+    echo -e "\n${GREEN}✅ Бот пересобран!${NC}"
     echo -e "${GREEN}📊 Статус контейнера:${NC}"
     docker ps --filter name=xuibot
 }
@@ -758,10 +758,10 @@ show_awgbot_logs() {
 # Функция обновления AWG бота
 update_awgbot() {
     echo -e "\n${BLUE}========================================${NC}"
-    echo -e "${BLUE}   Обновление AWG Бота${NC}"
+    echo -e "${BLUE}   Пересборка AWG Бота${NC}"
     echo -e "${BLUE}========================================${NC}\n"
     
-    echo -e "${YELLOW}🔄 Обновление AWG бота...${NC}"
+    echo -e "${YELLOW}🔄 Пересборка AWG бота...${NC}"
     
     # Проверка наличия git
     if command -v git &> /dev/null; then
@@ -799,11 +799,11 @@ update_awgbot() {
     docker compose -f docker-compose.awgbot.yml build --no-cache
     
     # Запуск
-    echo -e "${YELLOW}🚀 Запуск обновленного контейнера...${NC}"
+    echo -e "${YELLOW}🚀 Запуск пересобранного контейнера...${NC}"
     docker compose -f docker-compose.awgbot.yml up -d
     
     sleep 5
-    echo -e "\n${GREEN}✅ AWG Бот обновлен!${NC}"
+    echo -e "\n${GREEN}✅ AWG Бот пересобран!${NC}"
     echo -e "${GREEN}📊 Статус:${NC}"
     docker ps --filter name=awgbot
 }
@@ -3013,14 +3013,14 @@ show_menu() {
     echo -e "${GREEN}8)${NC} Установка XUIBOT"
     echo -e "${GREEN}9)${NC} Логи XUIBOT"
     echo -e "${GREEN}10)${NC} Перезапуск XUIBOT"
-    echo -e "${GREEN}11)${NC} Обновление XUIBOT"
+    echo -e "${GREEN}11)${NC} Пересборка XUIBOT"
     echo -e "${GREEN}12)${NC} Удаление XUIBOT"
     echo -e "${BLUE}---${NC}"
     echo -e "${YELLOW}AWGBOT:${NC}"
     echo -e "${GREEN}13)${NC} Установка AWGBOT"
     echo -e "${GREEN}14)${NC} Логи AWGBOT"
     echo -e "${GREEN}15)${NC} Перезапуск AWGBOT"
-    echo -e "${GREEN}16)${NC} Обновление AWGBOT"
+    echo -e "${GREEN}16)${NC} Пересборка AWGBOT"
     echo -e "${GREEN}17)${NC} Удаление AWGBOT"
     echo -e "${BLUE}---${NC}"
     echo -e "${YELLOW}Системные утилиты:${NC}"
