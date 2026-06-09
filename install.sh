@@ -2652,6 +2652,29 @@ install_awg_standalone() {
         return 1
     fi
     
+    # Шаг 6: Запуск AWG интерфейса
+    echo -e "${YELLOW}🚀 Запуск AWG интерфейса...${NC}"
+    local interface_name="wg0"
+    if [ "$version" = "v2" ]; then
+        interface_name="awg0"
+    fi
+    
+    if docker exec "$container_name" wg-quick up "$interface_name" 2>&1 | grep -q "interface:"; then
+        echo -e "${GREEN}✅ AWG интерфейс запущен${NC}"
+    else
+        echo -e "${YELLOW}⚠️  Попытка запуска AWG интерфейса...${NC}"
+        docker exec "$container_name" wg-quick up "$interface_name" 2>&1 || true
+    fi
+    
+    # Проверка что интерфейс запущен
+    sleep 2
+    if docker exec "$container_name" wg show 2>/dev/null | grep -q "interface:"; then
+        echo -e "${GREEN}✅ AWG интерфейс работает${NC}"
+    else
+        echo -e "${YELLOW}⚠️  AWG интерфейс не запущен. Запустите вручную:${NC}"
+        echo -e "${BLUE}docker exec $container_name wg-quick up $interface_name${NC}"
+    fi
+    
     echo -e "\n${GREEN}✅ AWG $version успешно установлен!${NC}"
     echo -e "${BLUE}========================================${NC}"
     echo -e "${GREEN}📊 Информация:${NC}"
