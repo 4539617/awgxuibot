@@ -1,6 +1,7 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs/promises';
+import fsSync from 'fs';
 import path from 'path';
 import { logger } from './logger.js';
 
@@ -750,6 +751,22 @@ async function startContainer(version, port, configPath) {
     const container = CONTAINERS[version];
     logger.info(`[AWGInstaller] Запуск контейнера ${container.name}...`);
     
+    // Копируем entrypoint скрипт в volume перед запуском контейнера
+    const entrypointPath = path.join(process.cwd(), 'entrypoint-awg.sh');
+    const entrypointDest = path.join(configPath, 'entrypoint.sh');
+    
+    try {
+        if (fsSync.existsSync(entrypointPath)) {
+            fsSync.copyFileSync(entrypointPath, entrypointDest);
+            fsSync.chmodSync(entrypointDest, 0o755);
+            logger.info(`[AWGInstaller] ✅ Entrypoint скрипт скопирован в ${entrypointDest}`);
+        } else {
+            logger.warn(`[AWGInstaller] ⚠️  Entrypoint скрипт не найден: ${entrypointPath}`);
+        }
+    } catch (error) {
+        logger.warn(`[AWGInstaller] ⚠️  Не удалось скопировать entrypoint: ${error.message}`);
+    }
+    
     const dockerCmd = `docker run -d \
   --name ${container.name} \
   --restart=always \
@@ -763,6 +780,7 @@ async function startContainer(version, port, configPath) {
   -v ${configPath}:/etc/amnezia/amneziawg \
   -v /lib/modules:/lib/modules:ro \
   --device /dev/net/tun:/dev/net/tun \
+  --entrypoint /etc/amnezia/amneziawg/entrypoint.sh \
   ${container.image}`;
     
     try {
