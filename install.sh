@@ -3009,20 +3009,18 @@ show_menu() {
     echo -e "${GREEN}8)${NC} Логи XUIBOT"
     echo -e "${GREEN}9)${NC} Перезапуск XUIBOT"
     echo -e "${GREEN}10)${NC} Пересборка XUIBOT"
-    echo -e "${GREEN}11)${NC} Обновление XUIBOT"
-    echo -e "${GREEN}12)${NC} Удаление XUIBOT"
+    echo -e "${GREEN}11)${NC} Удаление XUIBOT"
     echo -e "${BLUE}---${NC}"
     echo -e "${YELLOW}AWGBOT:${NC}"
-    echo -e "${GREEN}13)${NC} Установка AWGBOT"
-    echo -e "${GREEN}14)${NC} Логи AWGBOT"
-    echo -e "${GREEN}15)${NC} Перезапуск AWGBOT"
-    echo -e "${GREEN}16)${NC} Пересборка AWGBOT"
-    echo -e "${GREEN}17)${NC} Обновление AWGBOT"
-    echo -e "${GREEN}18)${NC} Удаление AWGBOT"
+    echo -e "${GREEN}12)${NC} Установка AWGBOT"
+    echo -e "${GREEN}13)${NC} Логи AWGBOT"
+    echo -e "${GREEN}14)${NC} Перезапуск AWGBOT"
+    echo -e "${GREEN}15)${NC} Пересборка AWGBOT"
+    echo -e "${GREEN}16)${NC} Удаление AWGBOT"
     echo -e "${BLUE}---${NC}"
     echo -e "${YELLOW}Системные утилиты:${NC}"
-    echo -e "${GREEN}19)${NC} Анализ диска и памяти"
-    echo -e "${GREEN}20)${NC} Показать статус системы"
+    echo -e "${GREEN}17)${NC} Анализ диска и памяти"
+    echo -e "${GREEN}18)${NC} Показать статус системы"
     echo -e "${BLUE}---${NC}"
     echo -e "${RED}99)${NC} Удалить ВСЁ (AWG + Боты + 3x-ui)"
     echo -e "${GREEN}0)${NC} Выход"
@@ -3146,7 +3144,7 @@ while true; do
                     continue
                 fi
             fi
-            rebuild_xuibot
+            update_xuibot
             ;;
         11)
             sync_repository
@@ -3157,7 +3155,7 @@ while true; do
                     continue
                 fi
             fi
-            update_xuibot
+            remove_xuibot
             ;;
         12)
             sync_repository
@@ -3168,7 +3166,7 @@ while true; do
                     continue
                 fi
             fi
-            remove_xuibot
+            install_awgbot
             ;;
         13)
             sync_repository
@@ -3179,7 +3177,7 @@ while true; do
                     continue
                 fi
             fi
-            install_awgbot
+            show_awgbot_logs
             ;;
         14)
             sync_repository
@@ -3190,7 +3188,7 @@ while true; do
                     continue
                 fi
             fi
-            show_awgbot_logs
+            restart_awgbot
             ;;
         15)
             sync_repository
@@ -3201,7 +3199,7 @@ while true; do
                     continue
                 fi
             fi
-            restart_awgbot
+            update_awgbot
             ;;
         16)
             sync_repository
@@ -3212,31 +3210,9 @@ while true; do
                     continue
                 fi
             fi
-            rebuild_awgbot
-            ;;
-        17)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            update_awgbot
-            ;;
-        18)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
             remove_awgbot
             ;;
-        19)
+        17)
             sync_repository
             if [ $? -ne 0 ]; then
                 read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
@@ -3251,7 +3227,7 @@ while true; do
                 echo -e "${RED}❌ Файл disk_analyzer.sh не найден!${NC}"
             fi
             ;;
-        20)
+        18)
             sync_repository
             if [ $? -ne 0 ]; then
                 read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
