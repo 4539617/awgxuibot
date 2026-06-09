@@ -2435,7 +2435,7 @@ create_awg_server_config() {
     cat > "$config_path/$config_file" <<EOF
 [Interface]
 PrivateKey = $AWG_PRIVATE_KEY
-Address = 10.8.1.0/24
+Address = 10.8.1.1/24
 ListenPort = $port
 Jc = $jc
 Jmin = $jmin
@@ -2674,6 +2674,21 @@ install_awg_standalone() {
         echo -e "${YELLOW}⚠️  AWG интерфейс не запущен. Запустите вручную:${NC}"
         echo -e "${BLUE}docker exec $container_name wg-quick up $interface_name${NC}"
     fi
+    
+    # Шаг 7: Настройка NAT и маршрутизации
+    echo -e "${YELLOW}🔧 Настройка NAT и маршрутизации...${NC}"
+    
+    # Добавляем MASQUERADE для исходящего трафика
+    if docker exec "$container_name" iptables -t nat -A POSTROUTING -s 10.8.1.0/24 -o eth0 -j MASQUERADE 2>/dev/null; then
+        echo -e "${GREEN}✅ NAT MASQUERADE настроен${NC}"
+    else
+        echo -e "${YELLOW}⚠️  Не удалось настроить MASQUERADE${NC}"
+    fi
+    
+    # Добавляем правила FORWARD
+    docker exec "$container_name" iptables -A FORWARD -i "$interface_name" -j ACCEPT 2>/dev/null || true
+    docker exec "$container_name" iptables -A FORWARD -o "$interface_name" -j ACCEPT 2>/dev/null || true
+    echo -e "${GREEN}✅ FORWARD правила настроены${NC}"
     
     echo -e "\n${GREEN}✅ AWG $version успешно установлен!${NC}"
     echo -e "${BLUE}========================================${NC}"
