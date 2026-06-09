@@ -2490,6 +2490,13 @@ start_awg_container() {
         docker rm "$container_name" 2>/dev/null || true
     fi
     
+    # Проверяем наличие entrypoint скрипта
+    local entrypoint_param=""
+    if [ -f "${config_path}/entrypoint.sh" ]; then
+        entrypoint_param="--entrypoint /etc/amnezia/amneziawg/entrypoint.sh"
+        echo -e "${GREEN}✅ Entrypoint будет использован для автозапуска${NC}"
+    fi
+    
     # Запускаем контейнер
     local container_id=$(docker run -d \
         --name "$container_name" \
@@ -2504,6 +2511,7 @@ start_awg_container() {
         -v "${config_path}:/etc/amnezia/amneziawg" \
         -v /lib/modules:/lib/modules:ro \
         --device /dev/net/tun:/dev/net/tun \
+        $entrypoint_param \
         "$image" 2>&1)
     
     local exit_code=$?
@@ -2641,13 +2649,27 @@ install_awg_standalone() {
         return 1
     fi
     
-    # Шаг 4: Получение образа
+    # Шаг 4: Копирование entrypoint скрипта
+    echo -e "${YELLOW}📋 Копирование entrypoint скрипта...${NC}"
+    local entrypoint_source="entrypoint-awg.sh"
+    local entrypoint_dest="$config_path/entrypoint.sh"
+    
+    if [ -f "$entrypoint_source" ]; then
+        cp "$entrypoint_source" "$entrypoint_dest"
+        chmod +x "$entrypoint_dest"
+        echo -e "${GREEN}✅ Entrypoint скрипт скопирован${NC}"
+    else
+        echo -e "${YELLOW}⚠️  Entrypoint скрипт не найден: $entrypoint_source${NC}"
+        echo -e "${YELLOW}   Интерфейс нужно будет запускать вручную после перезапуска${NC}"
+    fi
+    
+    # Шаг 5: Получение образа
     local final_image=$(get_or_pull_awg_image "$image" "$fallback_image" "$version")
     if [ $? -ne 0 ]; then
         return 1
     fi
     
-    # Шаг 5: Запуск контейнера
+    # Шаг 6: Запуск контейнера
     if ! start_awg_container "$version" "$port" "$config_path" "$container_name" "$final_image"; then
         return 1
     fi

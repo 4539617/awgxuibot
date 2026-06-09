@@ -287,7 +287,7 @@ export class AWGManager {
       const ips = Array.from(ipMatches, m => m[1]);
 
       if (ips.length === 0) {
-        return '10.8.1.2';
+        return '10.8.1.1';
       }
 
       // Найти максимальный последний октет

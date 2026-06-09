@@ -748,6 +748,9 @@ google.com
       await this.bot.sendDocument(chatId, result.filepath);
       logger.info(`Sent ${version} config to chat ${chatId}: ${result.filename}`);
 
+      // Show config menu again
+      await this.showConfigMenu(chatId);
+
     } catch (error) {
       logger.error(`Error generating ${version} config for chat ${chatId}:`, error);
       this.bot.sendMessage(
@@ -1033,6 +1036,9 @@ google.com
         `✅ Конфигурация для \`${ip}\` отправлена повторно`,
         { parse_mode: 'Markdown' }
       );
+      
+      // Show config menu again
+      await this.showConfigMenu(chatId);
       
     } catch (error) {
       logger.error(`Error resending config for ${ip}:`, error);
