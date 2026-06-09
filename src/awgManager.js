@@ -147,6 +147,27 @@ export class AWGManager {
       throw new Error(`Failed to read keys for ${containerName}. Public key: ${serverPublicKey ? 'found' : 'missing'}, PSK: ${presharedKey ? 'found' : 'missing'}`);
     }
 
+    // КРИТИЧЕСКАЯ ПРОВЕРКА: Получаем актуальный PublicKey из запущенного интерфейса
+    try {
+      const interfaceName = configPath.includes('awg0') ? 'awg0' : 'wg0';
+      const { stdout: wgShow } = await execAsync(
+        `docker exec ${containerName} wg show ${interfaceName} public-key 2>/dev/null || echo ""`
+      );
+      const actualPublicKey = wgShow.trim();
+      
+      if (actualPublicKey && actualPublicKey !== serverPublicKey) {
+        logger.warn(`⚠️  PublicKey mismatch detected for ${containerName}!`);
+        logger.warn(`   File key: ${serverPublicKey}`);
+        logger.warn(`   Actual key: ${actualPublicKey}`);
+        logger.info(`✅ Using actual key from running interface`);
+        serverPublicKey = actualPublicKey;
+      } else if (actualPublicKey) {
+        logger.info(`✅ PublicKey verified: ${actualPublicKey}`);
+      }
+    } catch (error) {
+      logger.warn(`Could not verify PublicKey from interface, using file key: ${error.message}`);
+    }
+
     return {
       name: containerName,
       version,
@@ -266,7 +287,7 @@ export class AWGManager {
       const ips = Array.from(ipMatches, m => m[1]);
 
       if (ips.length === 0) {
-        return '10.8.1.1';
+        return '10.8.1.2';
       }
 
       // Найти максимальный последний октет
