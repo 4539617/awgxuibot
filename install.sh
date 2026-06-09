@@ -1029,6 +1029,45 @@ rebuild_awgbot() {
     docker logs --tail=15 awgbot
 }
 
+# Функция синхронизации репозитория
+sync_repository() {
+    echo -e "\n${BLUE}🔄 Синхронизация репозитория...${NC}"
+    
+    # Проверка наличия git
+    if ! command -v git &> /dev/null; then
+        echo -e "${YELLOW}⚠️  Git не установлен, пропускаем синхронизацию${NC}"
+        return 0
+    fi
+    
+    # Проверка, является ли текущая директория git репозиторием
+    if ! git rev-parse --git-dir > /dev/null 2>&1; then
+        echo -e "${YELLOW}⚠️  Текущая директория не является git репозиторием${NC}"
+        return 0
+    fi
+    
+    # Сохранение локальных изменений (если есть)
+    if ! git diff-index --quiet HEAD -- 2>/dev/null; then
+        echo -e "${YELLOW}⚠️  Обнаружены локальные изменения, сохраняем...${NC}"
+        git stash push -m "Auto-stash before sync $(date +%Y-%m-%d_%H:%M:%S)" 2>/dev/null || true
+    fi
+    
+    # Получение текущей ветки
+    local current_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+    if [ -z "$current_branch" ]; then
+        current_branch="main"
+    fi
+    
+    # Выполнение git pull
+    echo -e "${BLUE}Выполняется git pull origin ${current_branch}...${NC}"
+    if git pull origin "$current_branch" 2>&1; then
+        echo -e "${GREEN}✅ Репозиторий успешно синхронизирован${NC}"
+        return 0
+    else
+        echo -e "${RED}❌ Ошибка синхронизации репозитория${NC}"
+        return 1
+    fi
+}
+
 # Функция получения username бота через API
 get_bot_username() {
     local token=$1
@@ -3000,60 +3039,212 @@ while true; do
     
     case $choice in
         1)
+            sync_repository
+            if [ $? -ne 0 ]; then
+                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
+                if [[ "$continue_choice" == "0" ]]; then
+                    echo -e "${YELLOW}Операция отменена${NC}"
+                    continue
+                fi
+            fi
             install_3xui
             ;;
         2)
+            sync_repository
+            if [ $? -ne 0 ]; then
+                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
+                if [[ "$continue_choice" == "0" ]]; then
+                    echo -e "${YELLOW}Операция отменена${NC}"
+                    continue
+                fi
+            fi
             remove_3xui
             ;;
         3)
+            sync_repository
+            if [ $? -ne 0 ]; then
+                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
+                if [[ "$continue_choice" == "0" ]]; then
+                    echo -e "${YELLOW}Операция отменена${NC}"
+                    continue
+                fi
+            fi
             install_awg
             ;;
         4)
+            sync_repository
+            if [ $? -ne 0 ]; then
+                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
+                if [[ "$continue_choice" == "0" ]]; then
+                    echo -e "${YELLOW}Операция отменена${NC}"
+                    continue
+                fi
+            fi
             remove_awg
             ;;
         5)
+            sync_repository
+            if [ $? -ne 0 ]; then
+                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
+                if [[ "$continue_choice" == "0" ]]; then
+                    echo -e "${YELLOW}Операция отменена${NC}"
+                    continue
+                fi
+            fi
             generate_awg_config "v1"
             ;;
         6)
+            sync_repository
+            if [ $? -ne 0 ]; then
+                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
+                if [[ "$continue_choice" == "0" ]]; then
+                    echo -e "${YELLOW}Операция отменена${NC}"
+                    continue
+                fi
+            fi
             generate_awg_config "v2"
             ;;
         7)
+            sync_repository
+            if [ $? -ne 0 ]; then
+                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
+                if [[ "$continue_choice" == "0" ]]; then
+                    echo -e "${YELLOW}Операция отменена${NC}"
+                    continue
+                fi
+            fi
             install_xuibot
             ;;
         8)
+            sync_repository
+            if [ $? -ne 0 ]; then
+                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
+                if [[ "$continue_choice" == "0" ]]; then
+                    echo -e "${YELLOW}Операция отменена${NC}"
+                    continue
+                fi
+            fi
             show_xuibot_logs
             ;;
         9)
+            sync_repository
+            if [ $? -ne 0 ]; then
+                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
+                if [[ "$continue_choice" == "0" ]]; then
+                    echo -e "${YELLOW}Операция отменена${NC}"
+                    continue
+                fi
+            fi
             restart_xuibot
             ;;
         10)
+            sync_repository
+            if [ $? -ne 0 ]; then
+                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
+                if [[ "$continue_choice" == "0" ]]; then
+                    echo -e "${YELLOW}Операция отменена${NC}"
+                    continue
+                fi
+            fi
             rebuild_xuibot
             ;;
         11)
+            sync_repository
+            if [ $? -ne 0 ]; then
+                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
+                if [[ "$continue_choice" == "0" ]]; then
+                    echo -e "${YELLOW}Операция отменена${NC}"
+                    continue
+                fi
+            fi
             update_xuibot
             ;;
         12)
+            sync_repository
+            if [ $? -ne 0 ]; then
+                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
+                if [[ "$continue_choice" == "0" ]]; then
+                    echo -e "${YELLOW}Операция отменена${NC}"
+                    continue
+                fi
+            fi
             remove_xuibot
             ;;
         13)
+            sync_repository
+            if [ $? -ne 0 ]; then
+                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
+                if [[ "$continue_choice" == "0" ]]; then
+                    echo -e "${YELLOW}Операция отменена${NC}"
+                    continue
+                fi
+            fi
             install_awgbot
             ;;
         14)
+            sync_repository
+            if [ $? -ne 0 ]; then
+                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
+                if [[ "$continue_choice" == "0" ]]; then
+                    echo -e "${YELLOW}Операция отменена${NC}"
+                    continue
+                fi
+            fi
             show_awgbot_logs
             ;;
         15)
+            sync_repository
+            if [ $? -ne 0 ]; then
+                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
+                if [[ "$continue_choice" == "0" ]]; then
+                    echo -e "${YELLOW}Операция отменена${NC}"
+                    continue
+                fi
+            fi
             restart_awgbot
             ;;
         16)
+            sync_repository
+            if [ $? -ne 0 ]; then
+                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
+                if [[ "$continue_choice" == "0" ]]; then
+                    echo -e "${YELLOW}Операция отменена${NC}"
+                    continue
+                fi
+            fi
             rebuild_awgbot
             ;;
         17)
+            sync_repository
+            if [ $? -ne 0 ]; then
+                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
+                if [[ "$continue_choice" == "0" ]]; then
+                    echo -e "${YELLOW}Операция отменена${NC}"
+                    continue
+                fi
+            fi
             update_awgbot
             ;;
         18)
+            sync_repository
+            if [ $? -ne 0 ]; then
+                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
+                if [[ "$continue_choice" == "0" ]]; then
+                    echo -e "${YELLOW}Операция отменена${NC}"
+                    continue
+                fi
+            fi
             remove_awgbot
             ;;
         19)
+            sync_repository
+            if [ $? -ne 0 ]; then
+                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
+                if [[ "$continue_choice" == "0" ]]; then
+                    echo -e "${YELLOW}Операция отменена${NC}"
+                    continue
+                fi
+            fi
             if [ -f "disk_analyzer.sh" ]; then
                 bash disk_analyzer.sh
             else
@@ -3061,9 +3252,25 @@ while true; do
             fi
             ;;
         20)
+            sync_repository
+            if [ $? -ne 0 ]; then
+                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
+                if [[ "$continue_choice" == "0" ]]; then
+                    echo -e "${YELLOW}Операция отменена${NC}"
+                    continue
+                fi
+            fi
             show_status
             ;;
         99)
+            sync_repository
+            if [ $? -ne 0 ]; then
+                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
+                if [[ "$continue_choice" == "0" ]]; then
+                    echo -e "${YELLOW}Операция отменена${NC}"
+                    continue
+                fi
+            fi
             remove_all
             ;;
         0)
@@ -3087,5 +3294,14 @@ while true; do
     echo -e "\n${YELLOW}Нажмите Enter для продолжения...${NC}"
     read
 done
+
+# ============================================
+# CHANGELOG
+# ============================================
+# 2026-06-09: Добавлена автоматическая синхронизация репозитория (git pull)
+#             перед выполнением каждого пункта меню (1-20, 99).
+#             При ошибке синхронизации пользователь может продолжить работу
+#             или отменить операцию.
+# ============================================
 
 # Made with Bob
