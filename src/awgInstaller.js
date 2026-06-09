@@ -802,6 +802,18 @@ async function configureNetworkAndStartInterface(version, containerName) {
     const interfaceName = version === 'v2' ? 'awg0' : 'wg0';
     
     try {
+        // Шаг 0: Создаём симлинк для wg-quick (только для v1)
+        if (version === 'v1') {
+            logger.info(`[AWGInstaller] Создание симлинка для wg-quick...`);
+            try {
+                await execAsync(`docker exec ${containerName} mkdir -p /etc/wireguard`);
+                await execAsync(`docker exec ${containerName} ln -sf /etc/amnezia/amneziawg/wg0.conf /etc/wireguard/wg0.conf`);
+                logger.info(`[AWGInstaller] ✅ Симлинк создан`);
+            } catch (error) {
+                logger.warn(`[AWGInstaller] ⚠️ Не удалось создать симлинк: ${error.message}`);
+            }
+        }
+        
         // Шаг 1: Запускаем AWG интерфейс
         logger.info(`[AWGInstaller] Запуск интерфейса ${interfaceName}...`);
         try {

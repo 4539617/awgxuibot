@@ -2652,7 +2652,15 @@ install_awg_standalone() {
         return 1
     fi
     
-    # Шаг 6: Запуск AWG интерфейса
+    # Шаг 6: Создание симлинка для wg-quick (для v1)
+    if [ "$version" = "v1" ]; then
+        echo -e "${YELLOW}🔗 Создание симлинка для wg-quick...${NC}"
+        docker exec "$container_name" mkdir -p /etc/wireguard 2>/dev/null || true
+        docker exec "$container_name" ln -sf /etc/amnezia/amneziawg/wg0.conf /etc/wireguard/wg0.conf 2>/dev/null || true
+        echo -e "${GREEN}✅ Симлинк создан${NC}"
+    fi
+    
+    # Шаг 7: Запуск AWG интерфейса
     echo -e "${YELLOW}🚀 Запуск AWG интерфейса...${NC}"
     local interface_name="wg0"
     if [ "$version" = "v2" ]; then
