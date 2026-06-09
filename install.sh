@@ -2800,12 +2800,21 @@ generate_awg_config() {
     fi
     
     # Проверяем наличие контейнера AWG
-    local container_name="amnezia-awg-${version}"
+    # Правильные имена контейнеров: amnezia-awg (v1), amnezia-awg2 (v2)
+    local container_name
+    if [ "$version" = "v1" ]; then
+        container_name="amnezia-awg"
+    else
+        container_name="amnezia-awg2"
+    fi
+    
     if ! docker ps --format '{{.Names}}' | grep -q "^${container_name}$"; then
         echo -e "${RED}❌ Контейнер ${container_name} не запущен!${NC}"
         echo -e "${YELLOW}Сначала установите AWG ${version} (пункт меню 3 или 4)${NC}"
         return 1
     fi
+    
+    echo -e "${GREEN}✅ Контейнер ${container_name} найден${NC}"
     
     # Создаем временный Node.js скрипт для генерации конфигурации
     echo -e "${YELLOW}⏳ Генерирую конфигурацию ${version}...${NC}"
