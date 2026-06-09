@@ -95,11 +95,6 @@ create_env_if_not_exists() {
         SERVER_IP=$(curl -s ifconfig.me)
         
         cat > .env << EOF
-# Telegram Bot Configuration
-XUI_BOT_TOKEN=
-AWG_BOT_TOKEN=
-ADMIN_IDS=
-
 # Server Configuration
 SERVER_ADDRESS=${SERVER_IP}
 SERVER_IP=${SERVER_IP}
@@ -148,9 +143,11 @@ LOG_FILE_PATH=/app/logs/bot.log
 LOG_MAX_SIZE_MB=10
 LOG_BACKUP_COUNT=5
 
-# AWG Configuration
-AWG_VERSION=v1
-AWG_PORT=51820
+# Telegram Bot Configuration
+XUI_BOT_TOKEN=
+AWG_BOT_TOKEN=
+ADMIN_IDS=
+
 EOF
         echo -e "${GREEN}✅ .env файл создан с дефолтными значениями${NC}"
     fi
