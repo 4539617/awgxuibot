@@ -2821,6 +2821,18 @@ generate_awg_config() {
         return 1
     fi
     
+    # Проверяем и устанавливаем зависимости Node.js
+    if [ ! -d "node_modules" ] || [ ! -f "node_modules/.package-lock.json" ]; then
+        echo -e "${YELLOW}📦 Установка зависимостей Node.js...${NC}"
+        if npm install --silent > /dev/null 2>&1; then
+            echo -e "${GREEN}✅ Зависимости установлены${NC}"
+        else
+            echo -e "${RED}❌ Ошибка установки зависимостей${NC}"
+            echo -e "${YELLOW}Попробуйте вручную: npm install${NC}"
+            return 1
+        fi
+    fi
+    
     # Проверяем наличие контейнера AWG
     # Правильные имена контейнеров: amnezia-awg (v1), amnezia-awg2 (v2)
     local container_name
