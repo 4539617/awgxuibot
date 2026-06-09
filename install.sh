@@ -116,8 +116,8 @@ API_TIMEOUT=30
 REALITY_PUBLIC_KEY=
 REALITY_PRIVATE_KEY=
 REALITY_SHORT_ID=
-REALITY_SNI=google.com
-REALITY_FINGERPRINT=firefox
+REALITY_SNI=${DEFAULT_REALITY_SNI}
+REALITY_FINGERPRINT=${DEFAULT_REALITY_FINGERPRINT}
 
 # Transport Configuration
 TRANSPORT=xhttp
@@ -126,7 +126,7 @@ XHTTP_MODE=auto
 INBOUND_ID=1
 
 # TLS Configuration
-TLS_FINGERPRINT=firefox
+TLS_FINGERPRINT=${DEFAULT_REALITY_FINGERPRINT}
 TLS_ALPN=http/1.1
 
 # Traffic Limits
@@ -188,12 +188,12 @@ create_static_params() {
     update_env_value "SERVER_PORT" "443"
     
     # TLS статические параметры
-    update_env_value "TLS_FINGERPRINT" "firefox"
+    update_env_value "TLS_FINGERPRINT" "${DEFAULT_REALITY_FINGERPRINT}"
     update_env_value "TLS_ALPN" "http/1.1"
     
     # Reality статические параметры
-    update_env_value "REALITY_SNI" "google.com"
-    update_env_value "REALITY_FINGERPRINT" "firefox"
+    update_env_value "REALITY_SNI" "${DEFAULT_REALITY_SNI}"
+    update_env_value "REALITY_FINGERPRINT" "${DEFAULT_REALITY_FINGERPRINT}"
     
     # xHTTP статические параметры
     update_env_value "XHTTP_MODE" "auto"
@@ -456,6 +456,27 @@ install_xuibot() {
     
     # Создание .env файла если не существует
     create_env_if_not_exists
+    
+    # Проверка XUI_URL, XUI_USERNAME, XUI_PASSWORD
+    echo -e "\n${YELLOW}🔍 Проверка параметров 3x-ui панели...${NC}"
+    
+    if ! grep -q "^XUI_URL=.\+" .env; then
+        echo -e "${YELLOW}📝 Настройка параметров 3x-ui панели${NC}\n"
+        read -p "Введите XUI_URL (например, https://localhost:54321/panel): " xui_url
+        update_env_value "XUI_URL" "$xui_url"
+    fi
+    
+    if ! grep -q "^XUI_USERNAME=.\+" .env; then
+        read -p "Введите XUI_USERNAME (логин от панели): " xui_username
+        update_env_value "XUI_USERNAME" "$xui_username"
+    fi
+    
+    if ! grep -q "^XUI_PASSWORD=.\+" .env; then
+        read -p "Введите XUI_PASSWORD (пароль от панели): " xui_password
+        update_env_value "XUI_PASSWORD" "$xui_password"
+    fi
+    
+    echo -e "${GREEN}✅ Параметры 3x-ui панели настроены${NC}\n"
     
     # Проверка XUI_BOT_TOKEN
     if ! grep -q "^XUI_BOT_TOKEN=.\+" .env; then
