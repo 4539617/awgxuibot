@@ -789,6 +789,10 @@ async function startContainer(version, port, configPath) {
         
         logger.info(`[AWGInstaller] Контейнер ${container.name} работает`);
     } catch (error) {
+        logger.error(`[AWGInstaller] Ошибка запуска контейнера: ${error.message}`);
+        throw new Error(`Не удалось запустить контейнер: ${error.message}`);
+    }
+}
 
 /**
  * Настройка сети и запуск AWG интерфейса
@@ -867,10 +871,6 @@ async function configureNetworkAndStartInterface(version, containerName) {
     } catch (error) {
         logger.error(`[AWGInstaller] Ошибка настройки сети: ${error.message}`);
         throw new Error(`Не удалось настроить сеть: ${error.message}`);
-    }
-}
-        logger.error(`[AWGInstaller] Ошибка запуска контейнера: ${error.message}`);
-        throw new Error(`Не удалось запустить контейнер: ${error.message}`);
     }
 }
 
