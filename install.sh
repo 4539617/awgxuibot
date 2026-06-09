@@ -2327,6 +2327,89 @@ post_install_menu() {
         done
     done
 }
+# Функция проверки существующего сертификата
+check_existing_certificate() {
+    local server_ip=$1
+    local cert_dir="/root/.acme.sh/${server_ip}_ecc"
+    
+    # Проверяем наличие сертификата
+    if [ -d "$cert_dir" ] && [ -f "$cert_dir/fullchain.cer" ] && [ -f "$cert_dir/${server_ip}.key" ]; then
+        echo -e "${YELLOW}🔍 Найден существующий сертификат для ${server_ip}${NC}"
+        
+        # Проверяем срок действия сертификата
+        local expiry_date=$(openssl x509 -enddate -noout -in "$cert_dir/fullchain.cer" 2>/dev/null | cut -d= -f2)
+        if [ -n "$expiry_date" ]; then
+            local expiry_epoch=$(date -d "$expiry_date" +%s 2>/dev/null)
+            local current_epoch=$(date +%s)
+            local days_left=$(( ($expiry_epoch - $current_epoch) / 86400 ))
+            
+            if [ $days_left -gt 0 ]; then
+                echo -e "${GREEN}✅ Сертификат действителен ещё ${days_left} дней${NC}"
+                echo -e "${BLUE}Срок действия до: ${expiry_date}${NC}"
+                
+                read -p "Использовать существующий сертификат? (Enter - да, 0 - запросить новый): " use_existing
+                
+                if [[ "$use_existing" != "0" ]]; then
+                    return 0  # Использовать существующий
+                else
+                    return 1  # Запросить новый
+                fi
+            else
+                echo -e "${RED}⚠️  Сертификат истёк ${days_left#-} дней назад${NC}"
+                return 1  # Запросить новый
+            fi
+        else
+            echo -e "${YELLOW}⚠️  Не удалось проверить срок действия сертификата${NC}"
+            return 1
+        fi
+    else
+        echo -e "${YELLOW}ℹ️  Существующий сертификат не найден${NC}"
+        return 1  # Запросить новый
+    fi
+}
+
+# Функция установки существующего сертификата в 3x-ui
+install_existing_certificate() {
+    local server_ip=$1
+    local cert_dir="/root/.acme.sh/${server_ip}_ecc"
+    local target_dir="/root/cert/ip"
+    
+    echo -e "${YELLOW}📦 Установка существующего сертификата...${NC}"
+    
+    # Создаём целевую директорию
+    mkdir -p "$target_dir"
+    
+    # Копируем сертификаты
+    if cp "$cert_dir/${server_ip}.key" "$target_dir/privkey.pem" && \
+       cp "$cert_dir/fullchain.cer" "$target_dir/fullchain.pem"; then
+        
+        # Устанавливаем права
+        chmod 600 "$target_dir/privkey.pem"
+        chmod 644 "$target_dir/fullchain.pem"
+        
+        # Настраиваем пути в 3x-ui через базу данных
+        if [ -f "/etc/x-ui/x-ui.db" ]; then
+            echo -e "${YELLOW}🔧 Настройка путей к сертификатам в панели...${NC}"
+            
+            # Обновляем пути в базе данных
+            sqlite3 /etc/x-ui/x-ui.db "UPDATE settings SET value='/root/cert/ip/fullchain.pem' WHERE key='webCertFile';" 2>/dev/null
+            sqlite3 /etc/x-ui/x-ui.db "UPDATE settings SET value='/root/cert/ip/privkey.pem' WHERE key='webKeyFile';" 2>/dev/null
+            
+            echo -e "${GREEN}✅ Пути к сертификатам настроены${NC}"
+        fi
+        
+        # Перезапускаем x-ui
+        echo -e "${YELLOW}🔄 Перезапуск x-ui...${NC}"
+        systemctl restart x-ui 2>/dev/null || rc-service x-ui restart 2>/dev/null
+        
+        echo -e "${GREEN}✅ Существующий сертификат успешно установлен!${NC}"
+        return 0
+    else
+        echo -e "${RED}❌ Ошибка копирования сертификата${NC}"
+        return 1
+    fi
+}
+
 
 # Функция установки 3x-ui панели версии 2.9.4
 install_3xui_v294() {
@@ -2345,6 +2428,19 @@ install_3xui_v294() {
     fi
     
     SERVER_IP=$(curl -s ifconfig.me)
+    
+    # Проверяем существующий сертификат перед установкой
+    echo -e "\n${BLUE}═══════════════════════════════════════════${NC}"
+    echo -e "${BLUE}     Проверка SSL сертификата${NC}"
+    echo -e "${BLUE}═══════════════════════════════════════════${NC}\n"
+    
+    USE_EXISTING_CERT=false
+    if check_existing_certificate "$SERVER_IP"; then
+        USE_EXISTING_CERT=true
+        echo -e "${GREEN}✓ Будет использован существующий сертификат${NC}\n"
+    else
+        echo -e "${YELLOW}ℹ️  Будет запрошен новый сертификат при установке${NC}\n"
+    fi
     
     echo -e "${YELLOW}📦 Загрузка и установка 3x-ui v2.9.4...${NC}\n"
     
@@ -2378,6 +2474,16 @@ install_3xui_v294() {
             chmod 644 /etc/x-ui/x-ui.db
             systemctl start x-ui
             sleep 2
+        fi
+        
+        # Если использовали существующий сертификат, устанавливаем его
+        if [ "$USE_EXISTING_CERT" = true ]; then
+            echo -e "\n${YELLOW}📦 Установка существующего сертификата...${NC}"
+            if install_existing_certificate "$SERVER_IP"; then
+                echo -e "${GREEN}✓ Существующий сертификат успешно установлен${NC}"
+            else
+                echo -e "${YELLOW}⚠️  Не удалось установить существующий сертификат, используется сертификат от установщика${NC}"
+            fi
         fi
         
         # Проверяем что данные получены от инсталятора
