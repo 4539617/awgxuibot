@@ -164,7 +164,16 @@ google.com
           return;
         }
         
-        if (data === 'awg_gen_v1') {
+        if (data.startsWith('awg_select_')) {
+          const version = data.replace('awg_select_', '');
+          await this.showClientSelectionMenu(chatId, version);
+        } else if (data.startsWith('awg_gen_next_')) {
+          const version = data.replace('awg_gen_next_', '');
+          await this.requestVpsLabel(chatId, version);
+        } else if (data.startsWith('awg_gen_by_number_')) {
+          const version = data.replace('awg_gen_by_number_', '');
+          await this.requestIpNumber(chatId, version);
+        } else if (data === 'awg_gen_v1') {
           await this.requestVpsLabel(chatId, 'v1');
         } else if (data === 'awg_gen_v2') {
           await this.requestVpsLabel(chatId, 'v2');
@@ -318,7 +327,13 @@ google.com
       // Check if user is in VPS label input mode
       const vpsSession = this.vpsLabelSessions.get(userId);
       if (vpsSession && vpsSession.waitingForLabel) {
-        await this.handleVpsLabelInput(chatId, userId, text, vpsSession.version);
+        await this.handleVpsLabelInput(chatId, userId, text, vpsSession.version, vpsSession.mode);
+        return;
+      }
+
+      // Check if user is in IP number input mode
+      if (vpsSession && vpsSession.waitingForIpNumber) {
+        await this.handleIpNumberInput(chatId, userId, text, vpsSession.version);
         return;
       }
 
@@ -636,19 +651,90 @@ google.com
       const keyboard = {
         inline_keyboard: [
           [
-            { text: 'v1', callback_data: 'awg_gen_v1' },
-            { text: 'v2', callback_data: 'awg_gen_v2' }
+            { text: 'v1', callback_data: 'awg_select_v1' },
+            { text: 'v2', callback_data: 'awg_select_v2' }
           ]
         ]
       };
 
       this.bot.sendMessage(
         chatId,
-        '🔧 *Конфигурации *\n\nВыберите версию:',
+        '🔧 *Конфигурации*\n\nВыберите версию:',
         { parse_mode: 'Markdown', reply_markup: keyboard }
       );
     } catch (error) {
       logger.error(`Error showing config menu for chat ${chatId}:`, error);
+      this.bot.sendMessage(chatId, `❌ Ошибка: ${error.message}`);
+    }
+  }
+
+  async showClientSelectionMenu(chatId, version) {
+    try {
+      logger.info(`Showing client selection menu for ${version} in chat ${chatId}`);
+      
+      const processingMsg = await this.bot.sendMessage(chatId, '⏳ Загружаю список клиентов...');
+
+      // Initialize AWG manager if needed
+      if (!this.awgManager.initialized) {
+        await this.awgManager.initialize();
+      }
+
+      // Find container by version
+      const container = this.awgManager.availableContainers.find(c => c.version === version);
+      
+      if (!container) {
+        await this.bot.deleteMessage(chatId, processingMsg.message_id);
+        this.bot.sendMessage(
+          chatId,
+          `❌ Контейнер версии ${version} не найден`,
+          { parse_mode: 'Markdown' }
+        );
+        return;
+      }
+
+      // Get clients with status
+      const clients = await this.awgManager.getClientsWithStatus(container.name, version);
+
+      await this.bot.deleteMessage(chatId, processingMsg.message_id);
+
+      // Build message
+      let message = `📋 *Клиенты ${version.toUpperCase()}*\n\n`;
+      
+      if (clients.length === 0) {
+        message += 'Нет клиентов\n\n';
+      } else {
+        clients.forEach((client, index) => {
+          const status = client.active ? '✅ активен' : '❌ неактивен';
+          message += `${index + 1}. \`${client.ip}\` - ${status}\n`;
+        });
+        message += '\n';
+      }
+
+      // Build keyboard
+      const keyboard = {
+        inline_keyboard: [
+          [
+            { text: '📋 Подробнее', callback_data: `awg_clients_${version}` }
+          ],
+          [
+            { text: '➕ Сформировать следующий', callback_data: `awg_gen_next_${version}` }
+          ],
+          [
+            { text: '🔢 Сформировать по номеру', callback_data: `awg_gen_by_number_${version}` }
+          ],
+          [
+            { text: '🔙 Назад', callback_data: 'admin_config' }
+          ]
+        ]
+      };
+
+      this.bot.sendMessage(chatId, message, {
+        parse_mode: 'Markdown',
+        reply_markup: keyboard
+      });
+
+    } catch (error) {
+      logger.error(`Error showing client selection menu for chat ${chatId}:`, error);
       this.bot.sendMessage(chatId, `❌ Ошибка: ${error.message}`);
     }
   }
@@ -660,7 +746,8 @@ google.com
       // Сохраняем сессию
       this.vpsLabelSessions.set(chatId, {
         waitingForLabel: true,
-        version: version
+        version: version,
+        mode: 'next'
       });
       
       await this.bot.sendMessage(
@@ -677,8 +764,37 @@ google.com
     }
   }
 
-  async handleVpsLabelInput(chatId, userId, label, version) {
+  async requestIpNumber(chatId, version) {
     try {
+      logger.info(`Requesting IP number for ${version} from chat ${chatId}`);
+      
+      // Сохраняем сессию
+      this.vpsLabelSessions.set(chatId, {
+        waitingForIpNumber: true,
+        version: version
+      });
+      
+      await this.bot.sendMessage(
+        chatId,
+        `🔢 *Введите номер IP адреса*\n\n` +
+        `Введите число от 1 до 254\n` +
+        `Например: \`8\` для IP \`10.8.1.8\`\n\n` +
+        `Если клиент с этим IP уже существует - будет отправлена существующая конфигурация.\n` +
+        `Если нет - будет создана новая.`,
+        { parse_mode: 'Markdown' }
+      );
+    } catch (error) {
+      logger.error(`Error requesting IP number for chat ${chatId}:`, error);
+      this.bot.sendMessage(chatId, `❌ Ошибка: ${error.message}`);
+    }
+  }
+
+  async handleVpsLabelInput(chatId, userId, label, version, mode = 'next') {
+    try {
+      // Получаем сессию для проверки ipNumber
+      const session = this.vpsLabelSessions.get(userId);
+      const ipNumber = session ? session.ipNumber : null;
+      
       // Очищаем сессию
       this.vpsLabelSessions.delete(userId);
       
@@ -703,13 +819,59 @@ google.com
         return;
       }
       
-      logger.info(`VPS label accepted: ${cleanLabel} for ${version} from chat ${chatId}`);
+      logger.info(`VPS label accepted: ${cleanLabel} for ${version} from chat ${chatId}, mode: ${mode}, ipNumber: ${ipNumber}`);
       
-      // Генерируем конфигурацию с меткой
-      await this.generateAwgConfig(chatId, version, cleanLabel);
+      // Генерируем конфигурацию в зависимости от режима
+      if (mode === 'by_number' && ipNumber) {
+        await this.generateAwgConfigByNumber(chatId, version, ipNumber, cleanLabel);
+      } else {
+        await this.generateAwgConfig(chatId, version, cleanLabel);
+      }
       
     } catch (error) {
       logger.error(`Error handling VPS label input for chat ${chatId}:`, error);
+      this.bot.sendMessage(chatId, `❌ Ошибка: ${error.message}`);
+    }
+  }
+
+  async handleIpNumberInput(chatId, userId, text, version) {
+    try {
+      // Очищаем сессию
+      this.vpsLabelSessions.delete(userId);
+      
+      // Валидация номера
+      const ipNumber = parseInt(text.trim());
+      
+      if (isNaN(ipNumber) || ipNumber < 1 || ipNumber > 254) {
+        await this.bot.sendMessage(
+          chatId,
+          `❌ Некорректный номер. Введите число от 1 до 254.\n\n` +
+          `Попробуйте снова через /admin → Конфигурации`
+        );
+        return;
+      }
+      
+      logger.info(`IP number accepted: ${ipNumber} for ${version} from chat ${chatId}`);
+      
+      // Запрашиваем метку VPS
+      this.vpsLabelSessions.set(chatId, {
+        waitingForLabel: true,
+        version: version,
+        mode: 'by_number',
+        ipNumber: ipNumber
+      });
+      
+      await this.bot.sendMessage(
+        chatId,
+        `📝 *Введите метку сервера*\n\n` +
+        `Например: \`XYZ\`, \`SERVER1\`, \`VPS-NY\`\n\n` +
+        `Эта метка будет добавлена к имени файла конфигурации для IP \`10.8.1.${ipNumber}\`\n` +
+        `Пример: \`XYZ_AWGv${version === 'v1' ? '1' : '2'}_10_8_1_${ipNumber}.conf\``,
+        { parse_mode: 'Markdown' }
+      );
+      
+    } catch (error) {
+      logger.error(`Error handling IP number input for chat ${chatId}:`, error);
       this.bot.sendMessage(chatId, `❌ Ошибка: ${error.message}`);
     }
   }
@@ -753,6 +915,64 @@ google.com
 
     } catch (error) {
       logger.error(`Error generating ${version} config for chat ${chatId}:`, error);
+      this.bot.sendMessage(
+        chatId,
+        `❌ Ошибка при генерации конфигурации: ${error.message}\n\n` +
+        `Убедитесь, что:\n` +
+        `• Docker-контейнер запущен\n`
+      );
+    }
+  }
+
+  async generateAwgConfigByNumber(chatId, version, ipNumber, vpsLabel = null) {
+    try {
+      logger.info(`Generating ${version} config by number ${ipNumber} for chat ${chatId}`);
+      
+      // Check anti-flood
+      const userId = chatId;
+      const limitCheck = this.antiFlood.checkLimit(userId);
+      
+      if (!limitCheck.allowed) {
+        logger.warn(`Anti-flood triggered for generation from chat ${chatId}`);
+        this.bot.sendMessage(
+          chatId,
+          `⏳ Слишком много запросов. Подождите ${limitCheck.remainingTime} секунд.`
+        );
+        return;
+      }
+
+      // Send processing message
+      const processingMsg = await this.bot.sendMessage(
+        chatId,
+        `⏳ Генерирую конфигурацию ${version.toUpperCase()} для IP 10.8.1.${ipNumber}...\n` +
+        `Это может занять несколько секунд...`
+      );
+
+      // Generate config by number
+      const result = await this.awgManager.generateClientConfigByNumber(version, ipNumber, vpsLabel);
+
+      // Delete processing message
+      await this.bot.deleteMessage(chatId, processingMsg.message_id);
+
+      // Send config file
+      await this.bot.sendDocument(chatId, result.filepath);
+      
+      // Send info message
+      let infoMessage = `✅ Конфигурация для \`${result.ip}\` `;
+      if (result.isNew) {
+        infoMessage += `создана`;
+      } else {
+        infoMessage += `восстановлена (IP уже существовал)`;
+      }
+      
+      this.bot.sendMessage(chatId, infoMessage, { parse_mode: 'Markdown' });
+      logger.info(`Sent ${version} config to chat ${chatId}: ${result.filename}`);
+
+      // Show config menu again
+      await this.showConfigMenu(chatId);
+
+    } catch (error) {
+      logger.error(`Error generating ${version} config by number for chat ${chatId}:`, error);
       this.bot.sendMessage(
         chatId,
         `❌ Ошибка при генерации конфигурации: ${error.message}\n\n` +

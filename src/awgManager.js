@@ -306,6 +306,78 @@ export class AWGManager {
   }
 
   /**
+   * Получить список всех клиентов с их статусами (активен/неактивен)
+   */
+  async getClientsWithStatus(containerName, version) {
+    try {
+      const interfaceName = version === 'v2' ? 'awg0' : 'wg0';
+      
+      // Получаем список всех IP из конфигурации
+      const container = this.availableContainers.find(c => c.name === containerName);
+      if (!container) {
+        throw new Error(`Container ${containerName} not found`);
+      }
+
+      const { stdout: configContent } = await execAsync(
+        `docker exec ${containerName} cat ${container.configPath}`
+      );
+
+      // Извлекаем все IP из AllowedIPs
+      const ipMatches = configContent.matchAll(/AllowedIPs\s*=\s*(\d+\.\d+\.\d+\.\d+)\/32/g);
+      const allIPs = Array.from(ipMatches, m => m[1]);
+
+      // Получаем статистику handshake через wg show
+      const { stdout: wgShow } = await execAsync(
+        `docker exec ${containerName} wg show ${interfaceName} 2>/dev/null || echo ""`
+      );
+
+      // Парсим wg show для получения информации о handshake
+      const handshakeMap = new Map();
+      const lines = wgShow.split('\n');
+      let currentIP = null;
+
+      for (const line of lines) {
+        const ipMatch = line.match(/allowed ips:\s*([0-9.]+)\/32/);
+        if (ipMatch) {
+          currentIP = ipMatch[1];
+          handshakeMap.set(currentIP, { hasHandshake: false, lastHandshake: null });
+        } else if (currentIP && line.includes('latest handshake:')) {
+          const timeMatch = line.match(/latest handshake:\s*(.+)/);
+          if (timeMatch) {
+            const handshakeTime = timeMatch[1].trim();
+            // Если есть handshake (не пустой и не "0")
+            if (handshakeTime && handshakeTime !== '0') {
+              handshakeMap.get(currentIP).hasHandshake = true;
+              handshakeMap.get(currentIP).lastHandshake = handshakeTime;
+            }
+          }
+        }
+      }
+
+      // Формируем результат
+      const clientsWithStatus = allIPs.map(ip => {
+        const lastOctet = parseInt(ip.split('.')[3]);
+        const handshakeInfo = handshakeMap.get(ip);
+        
+        return {
+          ip,
+          number: lastOctet,
+          active: handshakeInfo ? handshakeInfo.hasHandshake : false,
+          lastHandshake: handshakeInfo ? handshakeInfo.lastHandshake : null
+        };
+      });
+
+      // Сортируем по номеру IP
+      clientsWithStatus.sort((a, b) => a.number - b.number);
+
+      return clientsWithStatus;
+    } catch (error) {
+      logger.error(`Error getting clients with status for ${containerName}:`, error);
+      throw error;
+    }
+  }
+
+  /**
    * Сгенерировать пару ключей WireGuard
    */
   async generateKeys() {
@@ -488,6 +560,78 @@ PersistentKeepalive = 25
       version: container.version,
       containerName: container.name
     };
+  }
+
+  /**
+   * Сгенерировать клиентский конфиг для конкретного IP номера
+   * Если IP уже существует - вернуть существующий конфиг
+   * Если нет - создать новый
+   */
+  async generateClientConfigByNumber(version, ipNumber, vpsLabel = null) {
+    // Инициализируем если еще не сделали
+    if (!this.initialized) {
+      await this.initialize();
+    }
+
+    // Получаем контейнер
+    const container = this.getContainer(version);
+    const targetIP = `10.8.1.${ipNumber}`;
+    
+    logger.info(`Generating ${container.version} config for IP ${targetIP}${vpsLabel ? ` with label: ${vpsLabel}` : ''}`);
+
+    // Проверяем контейнер
+    const isRunning = await this.checkContainer(container.name);
+    if (!isRunning) {
+      throw new Error(`Container ${container.name} is not running`);
+    }
+
+    // Проверяем, существует ли уже этот IP в конфигурации
+    const { stdout: configContent } = await execAsync(
+      `docker exec ${container.name} cat ${container.configPath}`
+    );
+
+    const ipExists = configContent.includes(`AllowedIPs = ${targetIP}/32`);
+
+    if (ipExists) {
+      // IP уже существует - восстанавливаем конфиг
+      logger.info(`IP ${targetIP} already exists, regenerating config`);
+      return await this.regenerateClientConfig(container.name, targetIP, vpsLabel);
+    } else {
+      // IP не существует - создаем новый
+      logger.info(`IP ${targetIP} does not exist, creating new config`);
+      
+      // Генерируем ключи
+      const keys = await this.generateKeys();
+
+      // Добавляем пира на сервер с указанным IP
+      await this.addPeer(container, keys.publicKey, targetIP);
+
+      // Создаем клиентский конфиг
+      const configContent = this.createClientConfig(container, keys.privateKey, targetIP);
+
+      // Сохраняем конфиг в файл с меткой VPS если указана
+      let filename;
+      if (vpsLabel) {
+        filename = `${vpsLabel}_AWG${container.version}_${targetIP.replace(/\./g, '_')}.conf`;
+      } else {
+        filename = `AWG${container.version}_${targetIP.replace(/\./g, '_')}.conf`;
+      }
+      
+      const filepath = path.join(config.outputDir, filename);
+
+      fs.writeFileSync(filepath, configContent, 'utf8');
+      logger.info(`Saved config: ${filepath}`);
+
+      return {
+        filepath,
+        filename,
+        ip: targetIP,
+        publicKey: keys.publicKey,
+        version: container.version,
+        containerName: container.name,
+        isNew: true
+      };
+    }
   }
 
   /**
