@@ -2412,11 +2412,26 @@ install_existing_certificate() {
         if [ -f "/etc/x-ui/x-ui.db" ]; then
             echo -e "${YELLOW}🔧 Настройка путей к сертификатам в панели...${NC}"
             
-            # Обновляем пути в базе данных
-            sqlite3 /etc/x-ui/x-ui.db "UPDATE settings SET value='/root/cert/ip/fullchain.pem' WHERE key='webCertFile';" 2>/dev/null
-            sqlite3 /etc/x-ui/x-ui.db "UPDATE settings SET value='/root/cert/ip/privkey.pem' WHERE key='webKeyFile';" 2>/dev/null
+            # Устанавливаем sqlite3 если не установлен
+            if ! command -v sqlite3 &> /dev/null; then
+                apt-get update -qq && apt-get install -y sqlite3 -qq > /dev/null 2>&1
+            fi
             
-            echo -e "${GREEN}✅ Пути к сертификатам настроены${NC}"
+            # Добавляем или обновляем пути в базе данных (INSERT OR REPLACE гарантирует что записи будут добавлены)
+            sqlite3 /etc/x-ui/x-ui.db "INSERT OR REPLACE INTO settings (key, value) VALUES ('webCertFile', '/root/cert/ip/fullchain.pem');" 2>/dev/null
+            sqlite3 /etc/x-ui/x-ui.db "INSERT OR REPLACE INTO settings (key, value) VALUES ('webKeyFile', '/root/cert/ip/privkey.pem');" 2>/dev/null
+            
+            # Проверяем что записи добавлены
+            local cert_file=$(sqlite3 /etc/x-ui/x-ui.db "SELECT value FROM settings WHERE key='webCertFile';" 2>/dev/null)
+            local key_file=$(sqlite3 /etc/x-ui/x-ui.db "SELECT value FROM settings WHERE key='webKeyFile';" 2>/dev/null)
+            
+            if [ -n "$cert_file" ] && [ -n "$key_file" ]; then
+                echo -e "${GREEN}✅ Пути к сертификатам настроены${NC}"
+                echo -e "${BLUE}   Certificate: $cert_file${NC}"
+                echo -e "${BLUE}   Private Key: $key_file${NC}"
+            else
+                echo -e "${RED}⚠️  Не удалось настроить пути к сертификатам в базе данных${NC}"
+            fi
         fi
         
         # Перезапускаем x-ui
