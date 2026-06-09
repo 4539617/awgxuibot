@@ -2862,7 +2862,8 @@ generate_awg_config() {
     # Создаем временный Node.js скрипт для генерации конфигурации
     echo -e "${YELLOW}⏳ Генерирую конфигурацию ${version}...${NC}"
     
-    node -e "
+    # Устанавливаем STANDALONE_MODE для работы без бота
+    STANDALONE_MODE=true node -e "
     import('./src/awgManager.js').then(async (module) => {
         const { AWGManager } = module;
         const awgManager = new AWGManager();
