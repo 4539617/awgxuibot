@@ -1978,9 +1978,6 @@ STREAMEOF
             echo -e "\n${GREEN}✅ Установка 3x-ui v${XUI_VERSION} панели завершена!${NC}"
         else
             echo -e "\n${GREEN}✅ Установка 3x-ui панели завершена!${NC}"
-            echo -e "\n${GREEN}Переустановить панель вручную:${NC}"
-            echo -e "${YELLOW}VERSION=v2.9.4 && bash <(curl -Ls "https://raw.githubusercontent.com/mhsanaei/3x-ui/$VERSION/install.sh") $VERSION${NC}"
-
         fi
     else
         echo -e "\n${RED}❌ Ошибка установки 3x-ui панели${NC}"
@@ -2772,8 +2769,12 @@ install_3xui_v294() {
         update_env_value "XUI_VERSION" "2.9.4"
         
         # Финальное сообщение
-        echo -e "\n${GREEN}✅ Установка 3x-ui v2.9.4 панели завершена!${NC}\n"
+        echo -e "\n${GREEN}✅ Установка 3x-ui панели завершена!${NC}\n"
+        echo -e "\n${BLUE}Также можно установить вручную:${NC}\n"
+        echo -e "${YELLOW}VERSION=v2.9.4 && bash <(curl -Ls "https://raw.githubusercontent.com/mhsanaei/3x-ui/$VERSION/install.sh") $VERSION${NC}\n"
         
+
+
         # Интерактивное меню после установки
         post_install_menu
     else
