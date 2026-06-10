@@ -300,6 +300,14 @@ class XUIClient:
                     sql_traffic = f"""sqlite3 {db_path} "INSERT OR IGNORE INTO client_traffics (inbound_id, enable, email, up, down, all_time, expiry_time, total, reset) VALUES ({self.config.xui.inbound_id}, 1, '{email}', 0, 0, 0, {expiry_time}, {total_bytes}, 0);" """
                     subprocess.run(sql_traffic, shell=True, capture_output=True, text=True)
                     
+                    # ВАЖНО: Перезапускаем Xray после добавления через SQL
+                    logger.info("Перезапускаем Xray для применения изменений...")
+                    restart_result = self._restart_xray()
+                    if restart_result:
+                        logger.info("✅ Xray успешно перезапущен, ключ активен")
+                    else:
+                        logger.warning("⚠️ Не удалось перезапустить Xray, ключ может не работать до ручного перезапуска")
+                    
                     return {"success": True, "uuid": client_uuid}
                 else:
                     logger.error(f"Ошибка обновления настроек inbound: {result.stderr}")
@@ -317,6 +325,47 @@ class XUIClient:
         except Exception as e:
             logger.error(f"Ошибка добавления клиента через SQL: {e}")
             return {"success": False, "error": f"Ошибка: {str(e)}"}
+
+    def _restart_xray(self) -> bool:
+        """Перезапуск Xray сервиса для применения изменений в конфигурации"""
+        try:
+            # Пробуем разные команды перезапуска в зависимости от системы
+            restart_commands = [
+                "systemctl restart xray",
+                "systemctl restart x-ray",
+                "service xray restart",
+                "service x-ray restart",
+                "/etc/init.d/xray restart",
+            ]
+            
+            for cmd in restart_commands:
+                try:
+                    result = subprocess.run(
+                        cmd,
+                        shell=True,
+                        capture_output=True,
+                        text=True,
+                        timeout=10
+                    )
+                    
+                    if result.returncode == 0:
+                        logger.info(f"Xray перезапущен командой: {cmd}")
+                        return True
+                    else:
+                        logger.debug(f"Команда {cmd} не сработала: {result.stderr}")
+                        
+                except subprocess.TimeoutExpired:
+                    logger.warning(f"Таймаут при выполнении команды: {cmd}")
+                except Exception as e:
+                    logger.debug(f"Ошибка при выполнении {cmd}: {e}")
+                    continue
+            
+            logger.error("Не удалось перезапустить Xray ни одной из команд")
+            return False
+            
+        except Exception as e:
+            logger.error(f"Критическая ошибка при перезапуске Xray: {e}")
+            return False
 
     async def delete_client(self, client_uuid: str, email: str = None) -> bool:
         """Удаление клиента через API или SQL"""
@@ -417,6 +466,14 @@ class XUIClient:
                 # db_path уже определен выше в функции
                 sql_traffic = f"""sqlite3 {db_path} "DELETE FROM client_traffics WHERE id='{client_uuid}';" """
                 subprocess.run(sql_traffic, shell=True, capture_output=True, text=True)
+                
+                # ВАЖНО: Перезапускаем Xray после удаления через SQL
+                logger.info("Перезапускаем Xray для применения изменений...")
+                restart_result = self._restart_xray()
+                if restart_result:
+                    logger.info("✅ Xray успешно перезапущен")
+                else:
+                    logger.warning("⚠️ Не удалось перезапустить Xray, изменения могут не применится до ручного перезапуска")
                 
                 return True
             else:
@@ -664,6 +721,15 @@ class XUIClient:
             if result.returncode == 0:
                 status_text = "включен" if enable else "выключен"
                 logger.info(f"Клиент {client_uuid} {status_text}")
+                
+                # ВАЖНО: Перезапускаем Xray после изменения статуса через SQL
+                logger.info("Перезапускаем Xray для применения изменений...")
+                restart_result = self._restart_xray()
+                if restart_result:
+                    logger.info("✅ Xray успешно перезапущен")
+                else:
+                    logger.warning("⚠️ Не удалось перезапустить Xray, изменения могут не применится до ручного перезапуска")
+                
                 return True
             else:
                 logger.error(f"Ошибка обновления статуса: {result.stderr}")

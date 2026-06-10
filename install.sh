@@ -1252,8 +1252,29 @@ show_status() {
     echo -e "${YELLOW}${BOLD}3X-UI PANEL:${NC}"
     
     if systemctl is-active --quiet x-ui; then
-        # Получаем версию
-        local xui_version=$(x-ui version 2>/dev/null | grep -oP 'v\d+\.\d+\.\d+' | head -1)
+        # Получаем версию несколькими способами
+        local xui_version=""
+        
+        # Способ 1: Из исполняемого файла x-ui (основной метод)
+        if [ -f "/usr/local/x-ui/x-ui" ]; then
+            xui_version=$(/usr/local/x-ui/x-ui -v 2>/dev/null | grep -oP '\d+\.\d+\.\d+' | head -1)
+            [ -n "$xui_version" ] && xui_version="v${xui_version}"
+        fi
+        
+        # Способ 2: Из .env файла
+        if [ -z "$xui_version" ] && [ -f ".env" ]; then
+            xui_version=$(grep "^XUI_VERSION=" .env 2>/dev/null | cut -d'=' -f2)
+            # Добавляем v если его нет
+            [[ -n "$xui_version" && ! "$xui_version" =~ ^v ]] && xui_version="v${xui_version}"
+        fi
+        
+        # Способ 3: Из бинарного файла в bin/
+        if [ -z "$xui_version" ] && [ -f "/usr/local/x-ui/bin/x-ui" ]; then
+            xui_version=$(/usr/local/x-ui/bin/x-ui -v 2>/dev/null | grep -oP '\d+\.\d+\.\d+' | head -1)
+            [ -n "$xui_version" ] && xui_version="v${xui_version}"
+        fi
+        
+        # Если ничего не нашли
         [ -z "$xui_version" ] && xui_version="Unknown"
         
         # Получаем данные из .env
