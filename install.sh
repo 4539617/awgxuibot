@@ -2482,8 +2482,34 @@ install_3xui_v294() {
     
     # Запускаем установку с выводом на экран и в файл одновременно
     INSTALL_LOG="/tmp/xui_install_$$.log"
-    # Передаем пустые ответы (Enter) на все вопросы через stdin
-    printf '\n\n\n\n\n' | bash <(curl -Ls "https://raw.githubusercontent.com/MHSanaei/3x-ui/v2.9.4/install.sh") v2.9.4 2>&1 | tee "$INSTALL_LOG"
+    
+    # Если есть существующий сертификат, подготавливаем его для установщика
+    if [ "$USE_EXISTING_CERT" = true ]; then
+        # Копируем существующий сертификат во временную директорию для установщика
+        TEMP_CERT_DIR="/tmp/xui_cert_$$"
+        mkdir -p "$TEMP_CERT_DIR"
+        
+        CERT_SOURCE="/root/.acme.sh/${SERVER_IP}_ecc"
+        cp "$CERT_SOURCE/${SERVER_IP}.key" "$TEMP_CERT_DIR/privkey.pem" 2>/dev/null
+        cp "$CERT_SOURCE/fullchain.cer" "$TEMP_CERT_DIR/fullchain.pem" 2>/dev/null
+        
+        # Передаем ответы установщику:
+        # 1. Enter (username)
+        # 2. Enter (password)
+        # 3. Enter (port)
+        # 4. Enter (webBasePath)
+        # 5. 3 (Custom SSL Certificate)
+        # 6. Путь к fullchain
+        # 7. Путь к privkey
+        printf '\n\n\n\n3\n%s\n%s\n' "$TEMP_CERT_DIR/fullchain.pem" "$TEMP_CERT_DIR/privkey.pem" | bash <(curl -Ls "https://raw.githubusercontent.com/MHSanaei/3x-ui/v2.9.4/install.sh") v2.9.4 2>&1 | tee "$INSTALL_LOG"
+        
+        # Удаляем временную директорию
+        rm -rf "$TEMP_CERT_DIR"
+    else
+        # Передаем пустые ответы (Enter) на все вопросы через stdin
+        # Установщик автоматически выберет опцию 2 (Let's Encrypt для IP)
+        printf '\n\n\n\n\n' | bash <(curl -Ls "https://raw.githubusercontent.com/MHSanaei/3x-ui/v2.9.4/install.sh") v2.9.4 2>&1 | tee "$INSTALL_LOG"
+    fi
     
     # Читаем вывод из лог-файла
     INSTALL_OUTPUT=$(cat "$INSTALL_LOG" 2>/dev/null || echo "")
@@ -2512,13 +2538,30 @@ install_3xui_v294() {
             sleep 2
         fi
         
-        # Если использовали существующий сертификат, устанавливаем его
+        # Если использовали существующий сертификат, проверяем что он установлен корректно
         if [ "$USE_EXISTING_CERT" = true ]; then
-            echo -e "\n${YELLOW}📦 Установка существующего сертификата...${NC}"
-            if install_existing_certificate "$SERVER_IP"; then
-                echo -e "${GREEN}✓ Существующий сертификат успешно установлен${NC}"
-            else
-                echo -e "${YELLOW}⚠️  Не удалось установить существующий сертификат, используется сертификат от установщика${NC}"
+            echo -e "\n${GREEN}✓ Существующий сертификат был передан установщику 3x-ui${NC}"
+            
+            # Проверяем что пути к сертификатам настроены в базе данных
+            if [ -f "/etc/x-ui/x-ui.db" ]; then
+                # Устанавливаем sqlite3 если не установлен
+                if ! command -v sqlite3 &> /dev/null; then
+                    apt-get update -qq && apt-get install -y sqlite3 -qq > /dev/null 2>&1
+                fi
+                
+                local cert_file=$(sqlite3 /etc/x-ui/x-ui.db "SELECT value FROM settings WHERE key='webCertFile';" 2>/dev/null)
+                local key_file=$(sqlite3 /etc/x-ui/x-ui.db "SELECT value FROM settings WHERE key='webKeyFile';" 2>/dev/null)
+                
+                if [ -n "$cert_file" ] && [ -n "$key_file" ]; then
+                    echo -e "${GREEN}✓ Пути к сертификатам настроены в панели${NC}"
+                else
+                    echo -e "${YELLOW}⚠️  Пути к сертификатам не найдены в базе, устанавливаем вручную...${NC}"
+                    if install_existing_certificate "$SERVER_IP"; then
+                        echo -e "${GREEN}✓ Существующий сертификат успешно установлен${NC}"
+                    else
+                        echo -e "${YELLOW}⚠️  Не удалось установить существующий сертификат${NC}"
+                    fi
+                fi
             fi
         fi
         
