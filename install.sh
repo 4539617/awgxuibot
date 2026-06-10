@@ -2399,14 +2399,18 @@ install_existing_certificate() {
     # Создаём целевую директорию
     mkdir -p "$target_dir"
     
-    # Копируем сертификаты
-    echo -e "${YELLOW}📋 Копирование файлов...${NC}"
-    if cp -v "$cert_dir/${server_ip}.key" "$target_dir/privkey.pem" && \
-       cp -v "$cert_dir/fullchain.cer" "$target_dir/fullchain.pem"; then
+    # Удаляем старые файлы/симлинки если существуют
+    rm -f "$target_dir/privkey.pem" "$target_dir/fullchain.pem"
+    
+    # Создаём символические ссылки вместо копирования
+    echo -e "${YELLOW}🔗 Создание символических ссылок...${NC}"
+    if ln -sf "$cert_dir/${server_ip}.key" "$target_dir/privkey.pem" && \
+       ln -sf "$cert_dir/fullchain.cer" "$target_dir/fullchain.pem"; then
         
-        # Устанавливаем права
-        chmod 600 "$target_dir/privkey.pem"
-        chmod 644 "$target_dir/fullchain.pem"
+        echo -e "${GREEN}✅ Символические ссылки созданы${NC}"
+        echo -e "${BLUE}   $target_dir/privkey.pem -> $cert_dir/${server_ip}.key${NC}"
+        echo -e "${BLUE}   $target_dir/fullchain.pem -> $cert_dir/fullchain.cer${NC}"
+        echo -e "${GREEN}ℹ️  Сертификат будет автоматически обновляться через acme.sh${NC}"
         
         # Настраиваем пути в 3x-ui через базу данных
         if [ -f "/etc/x-ui/x-ui.db" ]; then
@@ -2485,18 +2489,22 @@ install_3xui_v294() {
     
     # Если есть существующий сертификат, подготавливаем его для установщика
     if [ "$USE_EXISTING_CERT" = true ]; then
-        # Копируем существующий сертификат в стандартную директорию для 3x-ui
+        # Создаём символические ссылки на существующий сертификат
         TARGET_CERT_DIR="/root/cert/ip"
         mkdir -p "$TARGET_CERT_DIR"
         
         CERT_SOURCE="/root/.acme.sh/${SERVER_IP}_ecc"
-        cp "$CERT_SOURCE/${SERVER_IP}.key" "$TARGET_CERT_DIR/privkey.pem" 2>/dev/null
-        cp "$CERT_SOURCE/fullchain.cer" "$TARGET_CERT_DIR/fullchain.pem" 2>/dev/null
-        chmod 600 "$TARGET_CERT_DIR/privkey.pem"
-        chmod 644 "$TARGET_CERT_DIR/fullchain.pem"
         
-        echo -e "${GREEN}✓ Сертификат подготовлен в $TARGET_CERT_DIR${NC}"
-        echo -e "${YELLOW}ℹ️  Установщик попытается получить сертификат (получит Rate Limit), затем мы установим существующий${NC}\n"
+        # Удаляем старые файлы/симлинки если существуют
+        rm -f "$TARGET_CERT_DIR/privkey.pem" "$TARGET_CERT_DIR/fullchain.pem"
+        
+        # Создаём символические ссылки
+        ln -sf "$CERT_SOURCE/${SERVER_IP}.key" "$TARGET_CERT_DIR/privkey.pem"
+        ln -sf "$CERT_SOURCE/fullchain.cer" "$TARGET_CERT_DIR/fullchain.pem"
+        
+        echo -e "${GREEN}✓ Символические ссылки на сертификат созданы в $TARGET_CERT_DIR${NC}"
+        echo -e "${GREEN}ℹ️  Сертификат будет автоматически обновляться через acme.sh${NC}"
+        echo -e "${YELLOW}ℹ️  Установщик попытается получить сертификат (получит Rate Limit), затем мы настроим пути${NC}\n"
     fi
     
     # Передаем пустые ответы (Enter) на все вопросы через stdin
