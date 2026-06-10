@@ -1572,26 +1572,19 @@ EOF
             fi
         fi
         
-        echo -e "${GREEN}✅ Настройки панели получены:${NC}"
-        echo -e "  Порт: ${YELLOW}${XUI_PORT}${NC}"
-        echo -e "  Путь: ${YELLOW}${XUI_PATH}${NC}"
+        # Формируем URL для v2.9.4 (всегда HTTP для старой установки)
+        # Используем корневой путь для упрощения
+        XUI_PATH="/"
+        XUI_URL="http://${SERVER_IP}:${XUI_PORT}"
         
-        # Формируем URL (добавляем /panel для 3x-ui v3.2.8+)
-        if [ -z "$XUI_PATH" ] || [ "$XUI_PATH" = "/" ]; then
-            XUI_URL="http://${SERVER_IP}:${XUI_PORT}/panel"
-        else
-            # Убираем trailing slash если есть и добавляем leading slash если нужно
-            XUI_PATH_CLEAN="${XUI_PATH%/}"
-            # Проверяем есть ли leading slash
-            if [[ "$XUI_PATH_CLEAN" != /* ]]; then
-                XUI_PATH_CLEAN="/${XUI_PATH_CLEAN}"
-            fi
-            XUI_URL="http://${SERVER_IP}:${XUI_PORT}${XUI_PATH_CLEAN}/panel"
-        fi
-        
-        echo -e "${GREEN}✅ Настройки панели получены:${NC}"
-        echo -e "  Порт: ${YELLOW}${XUI_PORT}${NC}"
-        echo -e "  Путь: ${YELLOW}${XUI_PATH:-/}${NC}"
+        echo -e "\n${GREEN}═══════════════════════════════════════════${NC}"
+        echo -e "${GREEN}     Панель 3x-ui успешно установлена!${NC}"
+        echo -e "${GREEN}═══════════════════════════════════════════${NC}"
+        echo -e "${BLUE}📍 URL панели: ${YELLOW}${XUI_URL}${NC}"
+        echo -e "${BLUE}👤 Логин:      ${YELLOW}${XUI_USERNAME}${NC}"
+        echo -e "${BLUE}🔑 Пароль:     ${YELLOW}${XUI_PASSWORD}${NC}"
+        echo -e "${BLUE}🔌 Порт:       ${YELLOW}${XUI_PORT}${NC}"
+        echo -e "${GREEN}═══════════════════════════════════════════${NC}\n"
         
         # Генерация Reality ключей
         echo -e "${YELLOW}🔑 Генерация Reality ключей...${NC}"
@@ -1985,6 +1978,9 @@ STREAMEOF
             echo -e "\n${GREEN}✅ Установка 3x-ui v${XUI_VERSION} панели завершена!${NC}"
         else
             echo -e "\n${GREEN}✅ Установка 3x-ui панели завершена!${NC}"
+            echo -e "\n${GREEN}Переустановить панель вручную:${NC}"
+            echo -e "${YELLOW}VERSION=v2.9.4 && bash <(curl -Ls "https://raw.githubusercontent.com/mhsanaei/3x-ui/$VERSION/install.sh") $VERSION${NC}"
+
         fi
     else
         echo -e "\n${RED}❌ Ошибка установки 3x-ui панели${NC}"
@@ -2641,14 +2637,17 @@ install_3xui_v294() {
                 # Удаляем пути к сертификатам из базы данных
                 sqlite3 /etc/x-ui/x-ui.db "DELETE FROM settings WHERE key IN ('webCertFile', 'webKeyFile');" 2>/dev/null
                 
+                # Сбрасываем webBasePath на корень для упрощения доступа
+                echo -e "${YELLOW}ℹ️  Сброс webBasePath на корневой путь для упрощения доступа...${NC}"
+                sqlite3 /etc/x-ui/x-ui.db "UPDATE settings SET value='/' WHERE key='webBasePath';" 2>/dev/null
+                
                 # Запускаем панель
                 systemctl start x-ui 2>/dev/null || true
                 sleep 2
                 
                 echo -e "${GREEN}✅ Панель настроена для работы по HTTP${NC}"
+                echo -e "${GREEN}✅ webBasePath сброшен на корневой путь (/)${NC}"
             fi
-        else
-            echo -e "${GREEN}✅ SSL сертификат настроен, панель работает по HTTPS${NC}"
         fi
         
         # Проверяем что данные получены от инсталятора
@@ -2672,13 +2671,21 @@ install_3xui_v294() {
         # Получаем порт и путь если не извлечены
         if [ -z "$XUI_PORT" ] || [ -z "$XUI_PATH" ]; then
             sleep 2
+            
+            # Если SSL не удалось настроить, принудительно устанавливаем путь в корень
+            if [ "$SSL_SETUP_FAILED" = true ]; then
+                XUI_PATH="/"
+                echo -e "${YELLOW}ℹ️  Используется корневой путь (/) для HTTP режима${NC}"
+            fi
+            
             XUI_SETTINGS=$(echo "n" | timeout 5 x-ui settings 2>/dev/null || echo "")
             
             if [ -n "$XUI_SETTINGS" ]; then
                 if [ -z "$XUI_PORT" ]; then
                     XUI_PORT=$(echo "$XUI_SETTINGS" | grep "port:" | awk '{print $2}')
                 fi
-                if [ -z "$XUI_PATH" ]; then
+                # Получаем путь только если SSL настроен успешно
+                if [ -z "$XUI_PATH" ] && [ "$SSL_SETUP_FAILED" = false ]; then
                     XUI_PATH=$(echo "$XUI_SETTINGS" | grep "webBasePath:" | awk '{print $2}' | sed 's/\/$//')
                     # Добавляем leading slash если нужно
                     if [ -n "$XUI_PATH" ] && [[ "$XUI_PATH" != /* ]] && [ "$XUI_PATH" != "/" ]; then
@@ -2701,24 +2708,39 @@ install_3xui_v294() {
         PROTOCOL="https"
         if [ "$SSL_SETUP_FAILED" = true ]; then
             PROTOCOL="http"
+            # Для HTTP режима всегда используем корневой путь
+            XUI_PATH="/"
         fi
         
         if [ -z "$XUI_PATH" ] || [ "$XUI_PATH" = "/" ]; then
             XUI_URL="${PROTOCOL}://${SERVER_IP}:${XUI_PORT}"
         else
-            # Убираем trailing slash если есть и добавляем leading slash если нужно
-            XUI_PATH_CLEAN="${XUI_PATH%/}"
-            # Проверяем есть ли leading slash
-            if [[ "$XUI_PATH_CLEAN" != /* ]]; then
-                XUI_PATH_CLEAN="/${XUI_PATH_CLEAN}"
+            # Добавляем leading slash если нужно
+            if [[ "$XUI_PATH" != /* ]]; then
+                XUI_PATH="/${XUI_PATH}"
             fi
-            XUI_URL="${PROTOCOL}://${SERVER_IP}:${XUI_PORT}${XUI_PATH_CLEAN}"
+            # Для HTTPS с webBasePath используем путь как есть (с trailing slash если он есть)
+            # Для HTTP режима путь уже установлен в "/" выше
+            XUI_URL="${PROTOCOL}://${SERVER_IP}:${XUI_PORT}${XUI_PATH}"
         fi
         
-        echo -e "${BLUE}📍 URL панели: ${XUI_URL}${NC}"
-        if [ "$SSL_SETUP_FAILED" = false ]; then
+        echo -e "\n${GREEN}═══════════════════════════════════════════${NC}"
+        echo -e "${GREEN}     Панель 3x-ui успешно установлена!${NC}"
+        echo -e "${GREEN}═══════════════════════════════════════════${NC}"
+        echo -e "${BLUE}📍 URL панели: ${YELLOW}${XUI_URL}${NC}"
+        echo -e "${BLUE}👤 Логин:      ${YELLOW}${XUI_USERNAME}${NC}"
+        echo -e "${BLUE}🔑 Пароль:     ${YELLOW}${XUI_PASSWORD}${NC}"
+        echo -e "${BLUE}🔌 Порт:       ${YELLOW}${XUI_PORT}${NC}"
+        
+        if [ "$SSL_SETUP_FAILED" = true ]; then
+            echo -e "\n${YELLOW}⚠️  Панель работает по HTTP (без SSL)${NC}"
+            echo -e "${YELLOW}ℹ️  SSL сертификат не был получен (rate limit или другая ошибка)${NC}"
+            echo -e "${YELLOW}ℹ️  Для безопасности рекомендуется получить SSL сертификат позже${NC}"
+        else
+            echo -e "\n${GREEN}✅ SSL сертификат настроен, панель работает по HTTPS${NC}"
             echo -e "${YELLOW}ℹ️  Бот автоматически попробует HTTP если HTTPS не работает${NC}"
         fi
+        echo -e "${GREEN}═══════════════════════════════════════════${NC}\n"
         
         # Генерация Reality ключей
         # Установка xray если не установлен
