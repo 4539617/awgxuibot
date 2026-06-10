@@ -330,7 +330,9 @@ class XUIClient:
         """Перезапуск Xray сервиса для применения изменений в конфигурации"""
         try:
             # Пробуем разные команды перезапуска в зависимости от системы
+            # Приоритет: x-ui restart-xray (для 3x-ui панели), затем systemctl
             restart_commands = [
+                "x-ui restart-xray",  # Для 3x-ui панели - обновляет конфиг и перезапускает
                 "systemctl restart xray",
                 "systemctl restart x-ray",
                 "service xray restart",
@@ -345,11 +347,14 @@ class XUIClient:
                         shell=True,
                         capture_output=True,
                         text=True,
-                        timeout=10
+                        timeout=15  # Увеличен таймаут для x-ui команды
                     )
                     
                     if result.returncode == 0:
-                        logger.info(f"Xray перезапущен командой: {cmd}")
+                        logger.info(f"✅ Xray перезапущен командой: {cmd}")
+                        # Даём время на применение изменений
+                        import time
+                        time.sleep(2)
                         return True
                     else:
                         logger.debug(f"Команда {cmd} не сработала: {result.stderr}")
@@ -360,7 +365,7 @@ class XUIClient:
                     logger.debug(f"Ошибка при выполнении {cmd}: {e}")
                     continue
             
-            logger.error("Не удалось перезапустить Xray ни одной из команд")
+            logger.error("❌ Не удалось перезапустить Xray ни одной из команд")
             return False
             
         except Exception as e:
