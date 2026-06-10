@@ -2485,26 +2485,33 @@ install_3xui_v294() {
     
     # Если есть существующий сертификат, подготавливаем его для установщика
     if [ "$USE_EXISTING_CERT" = true ]; then
-        # Копируем существующий сертификат во временную директорию для установщика
-        TEMP_CERT_DIR="/tmp/xui_cert_$$"
-        mkdir -p "$TEMP_CERT_DIR"
+        # Копируем существующий сертификат в стандартную директорию для 3x-ui
+        TARGET_CERT_DIR="/root/cert/ip"
+        mkdir -p "$TARGET_CERT_DIR"
         
         CERT_SOURCE="/root/.acme.sh/${SERVER_IP}_ecc"
-        cp "$CERT_SOURCE/${SERVER_IP}.key" "$TEMP_CERT_DIR/privkey.pem" 2>/dev/null
-        cp "$CERT_SOURCE/fullchain.cer" "$TEMP_CERT_DIR/fullchain.pem" 2>/dev/null
+        cp "$CERT_SOURCE/${SERVER_IP}.key" "$TARGET_CERT_DIR/privkey.pem" 2>/dev/null
+        cp "$CERT_SOURCE/fullchain.cer" "$TARGET_CERT_DIR/fullchain.pem" 2>/dev/null
+        chmod 600 "$TARGET_CERT_DIR/privkey.pem"
+        chmod 644 "$TARGET_CERT_DIR/fullchain.pem"
         
-        # Передаем ответы установщику:
-        # 1. Enter (username)
-        # 2. Enter (password)
-        # 3. Enter (port)
-        # 4. Enter (webBasePath)
-        # 5. 3 (Custom SSL Certificate)
-        # 6. Путь к fullchain
-        # 7. Путь к privkey
-        printf '\n\n\n\n3\n%s\n%s\n' "$TEMP_CERT_DIR/fullchain.pem" "$TEMP_CERT_DIR/privkey.pem" | bash <(curl -Ls "https://raw.githubusercontent.com/MHSanaei/3x-ui/v2.9.4/install.sh") v2.9.4 2>&1 | tee "$INSTALL_LOG"
+        echo -e "${GREEN}✓ Сертификат подготовлен в $TARGET_CERT_DIR${NC}"
         
-        # Удаляем временную директорию
-        rm -rf "$TEMP_CERT_DIR"
+        # Создаём файл с ответами для установщика
+        ANSWERS_FILE="/tmp/xui_answers_$$.txt"
+        cat > "$ANSWERS_FILE" << EOF
+
+
+3
+$TARGET_CERT_DIR/fullchain.pem
+$TARGET_CERT_DIR/privkey.pem
+EOF
+        
+        # Передаем ответы установщику через файл
+        bash <(curl -Ls "https://raw.githubusercontent.com/MHSanaei/3x-ui/v2.9.4/install.sh") v2.9.4 < "$ANSWERS_FILE" 2>&1 | tee "$INSTALL_LOG"
+        
+        # Удаляем файл с ответами
+        rm -f "$ANSWERS_FILE"
     else
         # Передаем пустые ответы (Enter) на все вопросы через stdin
         # Установщик автоматически выберет опцию 2 (Let's Encrypt для IP)
