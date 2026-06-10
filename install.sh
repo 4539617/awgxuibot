@@ -2429,26 +2429,51 @@ install_existing_certificate() {
                 apt-get update -qq && apt-get install -y sqlite3 -qq > /dev/null 2>&1
             fi
             
-            # Добавляем или обновляем пути в базе данных (INSERT OR REPLACE гарантирует что записи будут добавлены)
-            sqlite3 /etc/x-ui/x-ui.db "INSERT OR REPLACE INTO settings (key, value) VALUES ('webCertFile', '/root/cert/ip/fullchain.pem');" 2>/dev/null
-            sqlite3 /etc/x-ui/x-ui.db "INSERT OR REPLACE INTO settings (key, value) VALUES ('webKeyFile', '/root/cert/ip/privkey.pem');" 2>/dev/null
+            # Останавливаем панель для безопасной работы с базой
+            systemctl stop x-ui 2>/dev/null || true
+            sleep 1
             
-            # Проверяем что записи добавлены
-            local cert_file=$(sqlite3 /etc/x-ui/x-ui.db "SELECT value FROM settings WHERE key='webCertFile';" 2>/dev/null)
-            local key_file=$(sqlite3 /etc/x-ui/x-ui.db "SELECT value FROM settings WHERE key='webKeyFile';" 2>/dev/null)
+            # Добавляем пути к сертификатам с несколькими попытками
+            local max_attempts=3
+            local attempt=1
+            local success=false
             
-            if [ -n "$cert_file" ] && [ -n "$key_file" ]; then
-                echo -e "${GREEN}✅ Пути к сертификатам настроены${NC}"
-                echo -e "${BLUE}   Certificate: $cert_file${NC}"
-                echo -e "${BLUE}   Private Key: $key_file${NC}"
-            else
-                echo -e "${RED}⚠️  Не удалось настроить пути к сертификатам в базе данных${NC}"
+            while [ $attempt -le $max_attempts ]; do
+                # Удаляем старые записи если есть
+                sqlite3 /etc/x-ui/x-ui.db "DELETE FROM settings WHERE key IN ('webCertFile', 'webKeyFile');" 2>/dev/null
+                
+                # Добавляем новые записи
+                sqlite3 /etc/x-ui/x-ui.db "INSERT INTO settings (key, value) VALUES ('webCertFile', '/root/cert/ip/fullchain.pem');" 2>/dev/null
+                sqlite3 /etc/x-ui/x-ui.db "INSERT INTO settings (key, value) VALUES ('webKeyFile', '/root/cert/ip/privkey.pem');" 2>/dev/null
+                
+                # Проверяем что записи добавлены
+                local cert_file=$(sqlite3 /etc/x-ui/x-ui.db "SELECT value FROM settings WHERE key='webCertFile';" 2>/dev/null)
+                local key_file=$(sqlite3 /etc/x-ui/x-ui.db "SELECT value FROM settings WHERE key='webKeyFile';" 2>/dev/null)
+                
+                if [ -n "$cert_file" ] && [ -n "$key_file" ]; then
+                    echo -e "${GREEN}✅ Пути к сертификатам настроены (попытка $attempt)${NC}"
+                    echo -e "${BLUE}   Certificate: $cert_file${NC}"
+                    echo -e "${BLUE}   Private Key: $key_file${NC}"
+                    success=true
+                    break
+                else
+                    echo -e "${YELLOW}⚠️  Попытка $attempt не удалась, повторяю...${NC}"
+                    attempt=$((attempt + 1))
+                    sleep 1
+                fi
+            done
+            
+            if [ "$success" = false ]; then
+                echo -e "${RED}⚠️  Не удалось настроить пути к сертификатам после $max_attempts попыток${NC}"
+                echo -e "${YELLOW}💡 Настройте вручную через веб-интерфейс панели:${NC}"
+                echo -e "${YELLOW}   Certificate: /root/cert/ip/fullchain.pem${NC}"
+                echo -e "${YELLOW}   Private Key: /root/cert/ip/privkey.pem${NC}"
             fi
+            
+            # Запускаем панель обратно
+            systemctl start x-ui 2>/dev/null || true
+            sleep 2
         fi
-        
-        # Перезапускаем x-ui
-        echo -e "${YELLOW}🔄 Перезапуск x-ui...${NC}"
-        systemctl restart x-ui 2>/dev/null || rc-service x-ui restart 2>/dev/null
         
         echo -e "${GREEN}✅ Существующий сертификат успешно установлен!${NC}"
         return 0
