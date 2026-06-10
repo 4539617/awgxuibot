@@ -2473,6 +2473,36 @@ install_3xui_v294() {
             echo -e "${YELLOW}Отменено${NC}"
             return
         fi
+        
+        # Удаляем старую панель перед переустановкой
+        echo -e "\n${YELLOW}🗑️  Удаление старой панели перед переустановкой...${NC}"
+        
+        # Остановка сервиса
+        systemctl stop x-ui 2>/dev/null || true
+        systemctl disable x-ui 2>/dev/null || true
+        
+        # Удаление файлов и конфигурации
+        echo -e "${YELLOW}📁 Удаление файлов программы...${NC}"
+        rm -rf /usr/local/x-ui 2>/dev/null || true
+        
+        echo -e "${YELLOW}🗄️  Удаление базы данных и конфигурации...${NC}"
+        rm -rf /etc/x-ui 2>/dev/null || true
+        
+        echo -e "${YELLOW}🔧 Удаление systemd сервиса...${NC}"
+        rm -f /etc/systemd/system/x-ui.service 2>/dev/null || true
+        systemctl daemon-reload
+        
+        # Удаление из .env
+        if [ -f "${WORK_DIR}/.env" ]; then
+            echo -e "${YELLOW}🔑 Очистка данных из .env...${NC}"
+            sed -i '/^XUI_/d' "${WORK_DIR}/.env" 2>/dev/null || true
+            sed -i '/^REALITY_/d' "${WORK_DIR}/.env" 2>/dev/null || true
+            sed -i '/^INBOUND_ID=/d' "${WORK_DIR}/.env" 2>/dev/null || true
+            sed -i '/^TRANSPORT=/d' "${WORK_DIR}/.env" 2>/dev/null || true
+            sed -i '/^SECURITY=/d' "${WORK_DIR}/.env" 2>/dev/null || true
+        fi
+        
+        echo -e "${GREEN}✅ Старая панель удалена${NC}\n"
     fi
     
     SERVER_IP=$(curl -s ifconfig.me)
