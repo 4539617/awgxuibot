@@ -300,13 +300,13 @@ class XUIClient:
                     sql_traffic = f"""sqlite3 {db_path} "INSERT OR IGNORE INTO client_traffics (inbound_id, enable, email, up, down, all_time, expiry_time, total, reset) VALUES ({self.config.xui.inbound_id}, 1, '{email}', 0, 0, 0, {expiry_time}, {total_bytes}, 0);" """
                     subprocess.run(sql_traffic, shell=True, capture_output=True, text=True)
                     
-                    # ВАЖНО: Перезапускаем Xray после добавления через SQL
-                    logger.info("Перезапускаем Xray для применения изменений...")
-                    restart_result = self._restart_xray()
+                    # ВАЖНО: Обновляем inbound через API для применения изменений
+                    logger.info("Обновляем конфигурацию Xray через API...")
+                    restart_result = await self._update_inbound_via_api()
                     if restart_result:
-                        logger.info("✅ Xray успешно перезапущен, ключ активен")
+                        logger.info("✅ Конфигурация обновлена, ключ активен")
                     else:
-                        logger.warning("⚠️ Не удалось перезапустить Xray, ключ может не работать до ручного перезапуска")
+                        logger.warning("⚠️ Не удалось обновить конфигурацию, ключ может не работать до ручного перезапуска")
                     
                     return {"success": True, "uuid": client_uuid}
                 else:
@@ -326,50 +326,104 @@ class XUIClient:
             logger.error(f"Ошибка добавления клиента через SQL: {e}")
             return {"success": False, "error": f"Ошибка: {str(e)}"}
 
-    def _restart_xray(self) -> bool:
-        """Перезапуск Xray сервиса для применения изменений в конфигурации"""
+    async def _update_inbound_via_api(self) -> bool:
+        """Обновление inbound через API X-UI для применения изменений"""
         try:
-            # Пробуем разные команды перезапуска в зависимости от системы
-            # Приоритет: x-ui restart-xray (для 3x-ui панели), затем systemctl
+            if not self.session:
+                if not await self.login():
+                    return False
+            
+            # Получаем текущие настройки inbound из БД
+            db_path = sanitize_path(self.config.xui.db_path)
+            sql_get = f"""sqlite3 {db_path} "SELECT settings, stream_settings, remark, port, protocol FROM inbounds WHERE id={self.config.xui.inbound_id};" """
+            result = subprocess.run(sql_get, shell=True, capture_output=True, text=True)
+            
+            if result.returncode != 0 or not result.stdout:
+                logger.error("Не удалось получить настройки inbound из БД")
+                return False
+            
+            # Парсим данные (формат: settings|stream_settings|remark|port|protocol)
+            parts = result.stdout.strip().split('|')
+            if len(parts) < 5:
+                logger.error("Некорректный формат данных inbound")
+                return False
+            
+            settings_json = parts[0]
+            stream_settings_json = parts[1]
+            remark = parts[2]
+            port = parts[3]
+            protocol = parts[4]
+            
+            # Формируем данные для API
+            update_data = {
+                "id": self.config.xui.inbound_id,
+                "settings": settings_json,
+                "streamSettings": stream_settings_json,
+                "remark": remark,
+                "port": int(port),
+                "protocol": protocol
+            }
+            
+            # Пробуем разные API endpoints для обновления
+            base_url = self.config.xui.url.rstrip('/')
+            endpoints = [
+                f"{base_url}/panel/api/inbounds/update/{self.config.xui.inbound_id}",
+                f"{base_url}/xui/API/inbounds/update/{self.config.xui.inbound_id}",
+            ]
+            
+            for endpoint in endpoints:
+                try:
+                    logger.info(f"Обновляем inbound через API: {endpoint}")
+                    async with self.session.post(endpoint, json=update_data) as resp:
+                        response_text = await resp.text()
+                        
+                        if resp.status == 200:
+                            try:
+                                result_json = json.loads(response_text)
+                                if result_json.get('success'):
+                                    logger.info(f"✅ Inbound обновлён через API, Xray перезапущен")
+                                    import time
+                                    time.sleep(2)  # Даём время на применение
+                                    return True
+                            except:
+                                pass
+                        
+                        logger.debug(f"API ответ: {resp.status} - {response_text[:200]}")
+                except Exception as e:
+                    logger.debug(f"Ошибка на {endpoint}: {e}")
+                    continue
+            
+            logger.warning("⚠️ API обновления не сработал, пробуем команды перезапуска")
+            return self._restart_xray_fallback()
+            
+        except Exception as e:
+            logger.error(f"Ошибка обновления через API: {e}")
+            return self._restart_xray_fallback()
+    
+    def _restart_xray_fallback(self) -> bool:
+        """Резервный метод: перезапуск Xray через команды (для случаев вне Docker)"""
+        try:
             restart_commands = [
-                "x-ui restart-xray",  # Для 3x-ui панели - обновляет конфиг и перезапускает
+                "x-ui restart-xray",
                 "systemctl restart xray",
                 "systemctl restart x-ray",
-                "service xray restart",
-                "service x-ray restart",
-                "/etc/init.d/xray restart",
             ]
             
             for cmd in restart_commands:
                 try:
-                    result = subprocess.run(
-                        cmd,
-                        shell=True,
-                        capture_output=True,
-                        text=True,
-                        timeout=15  # Увеличен таймаут для x-ui команды
-                    )
-                    
+                    result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=15)
                     if result.returncode == 0:
                         logger.info(f"✅ Xray перезапущен командой: {cmd}")
-                        # Даём время на применение изменений
                         import time
                         time.sleep(2)
                         return True
-                    else:
-                        logger.debug(f"Команда {cmd} не сработала: {result.stderr}")
-                        
-                except subprocess.TimeoutExpired:
-                    logger.warning(f"Таймаут при выполнении команды: {cmd}")
-                except Exception as e:
-                    logger.debug(f"Ошибка при выполнении {cmd}: {e}")
+                except:
                     continue
             
-            logger.error("❌ Не удалось перезапустить Xray ни одной из команд")
+            logger.error("❌ Не удалось перезапустить Xray")
             return False
-            
         except Exception as e:
-            logger.error(f"Критическая ошибка при перезапуске Xray: {e}")
+            logger.error(f"Ошибка перезапуска: {e}")
             return False
 
     async def delete_client(self, client_uuid: str, email: str = None) -> bool:
@@ -472,13 +526,13 @@ class XUIClient:
                 sql_traffic = f"""sqlite3 {db_path} "DELETE FROM client_traffics WHERE id='{client_uuid}';" """
                 subprocess.run(sql_traffic, shell=True, capture_output=True, text=True)
                 
-                # ВАЖНО: Перезапускаем Xray после удаления через SQL
-                logger.info("Перезапускаем Xray для применения изменений...")
-                restart_result = self._restart_xray()
+                # ВАЖНО: Обновляем inbound через API после удаления
+                logger.info("Обновляем конфигурацию Xray через API...")
+                restart_result = await self._update_inbound_via_api()
                 if restart_result:
-                    logger.info("✅ Xray успешно перезапущен")
+                    logger.info("✅ Конфигурация обновлена")
                 else:
-                    logger.warning("⚠️ Не удалось перезапустить Xray, изменения могут не применится до ручного перезапуска")
+                    logger.warning("⚠️ Не удалось обновить конфигурацию, изменения могут не применится до ручного перезапуска")
                 
                 return True
             else:
@@ -727,13 +781,13 @@ class XUIClient:
                 status_text = "включен" if enable else "выключен"
                 logger.info(f"Клиент {client_uuid} {status_text}")
                 
-                # ВАЖНО: Перезапускаем Xray после изменения статуса через SQL
-                logger.info("Перезапускаем Xray для применения изменений...")
-                restart_result = self._restart_xray()
+                # ВАЖНО: Обновляем inbound через API после изменения статуса
+                logger.info("Обновляем конфигурацию Xray через API...")
+                restart_result = await self._update_inbound_via_api()
                 if restart_result:
-                    logger.info("✅ Xray успешно перезапущен")
+                    logger.info("✅ Конфигурация обновлена")
                 else:
-                    logger.warning("⚠️ Не удалось перезапустить Xray, изменения могут не применится до ручного перезапуска")
+                    logger.warning("⚠️ Не удалось обновить конфигурацию, изменения могут не применится до ручного перезапуска")
                 
                 return True
             else:
