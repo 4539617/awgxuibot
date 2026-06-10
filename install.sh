@@ -278,10 +278,8 @@ interactive_setup() {
         return 1
     fi
     
-    # Устанавливаем фиксированные значения
-    update_env_value "TRANSPORT" "xhttp"
-    update_env_value "SECURITY" "reality"
-    update_env_value "INBOUND_ID" "1"
+    # Не устанавливаем фиксированные значения здесь
+    # Они будут установлены при создании конкретного типа подключения
     
     echo -e "${GREEN}✅ Все параметры настроены!${NC}"
 }
@@ -2074,6 +2072,7 @@ STREAMEOF
             
             update_env_value "INBOUND_ID" "${INBOUND_ID}"
             update_env_value "TRANSPORT" "xhttp"
+            update_env_value "SECURITY" "reality"
             
             # Извлекаем реальные Reality ключи из созданного inbound
             echo -e "${YELLOW}🔑 Извлечение Reality ключей из inbound...${NC}"
@@ -2200,6 +2199,7 @@ STREAMEOF
             
             update_env_value "INBOUND_ID" "${INBOUND_ID}"
             update_env_value "TRANSPORT" "tcp"
+            update_env_value "SECURITY" "reality"
             
             # Извлекаем реальные Reality ключи из созданного inbound
             echo -e "${YELLOW}🔑 Извлечение Reality ключей из inbound...${NC}"
