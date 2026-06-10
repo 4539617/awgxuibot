@@ -178,6 +178,80 @@ get_env_value() {
     local key=$1
     grep "^${key}=" .env 2>/dev/null | cut -d'=' -f2 | head -1
 }
+# Функция извлечения параметров из существующего инбаунда панели
+extract_inbound_params() {
+    echo -e "${YELLOW}🔍 Извлечение параметров из панели...${NC}"
+    
+    # Проверка наличия базы данных
+    if [ ! -f "/etc/x-ui/x-ui.db" ]; then
+        echo -e "${YELLOW}⚠️  База данных 3x-ui не найдена, пропускаем извлечение${NC}"
+        return 1
+    fi
+    
+    # Получаем ID первого инбаунда
+    local INBOUND_ID=$(sqlite3 /etc/x-ui/x-ui.db "SELECT id FROM inbounds ORDER BY id ASC LIMIT 1;" 2>/dev/null)
+    
+    if [ -z "$INBOUND_ID" ]; then
+        echo -e "${YELLOW}⚠️  Инбаунды не найдены в панели${NC}"
+        return 1
+    fi
+    
+    echo -e "${GREEN}✅ Найден инбаунд ID: ${INBOUND_ID}${NC}"
+    
+    # Извлекаем транспорт и безопасность
+    local TRANSPORT=$(sqlite3 /etc/x-ui/x-ui.db "SELECT json_extract(stream_settings, '$.network') FROM inbounds WHERE id=${INBOUND_ID};" 2>/dev/null)
+    local SECURITY=$(sqlite3 /etc/x-ui/x-ui.db "SELECT json_extract(stream_settings, '$.security') FROM inbounds WHERE id=${INBOUND_ID};" 2>/dev/null)
+    
+    if [ -n "$TRANSPORT" ] && [ -n "$SECURITY" ]; then
+        echo -e "${BLUE}  Транспорт: ${TRANSPORT}${NC}"
+        echo -e "${BLUE}  Безопасность: ${SECURITY}${NC}"
+        
+        # Обновляем базовые параметры
+        update_env_value "INBOUND_ID" "${INBOUND_ID}"
+        update_env_value "TRANSPORT" "${TRANSPORT}"
+        update_env_value "SECURITY" "${SECURITY}"
+    fi
+    
+    # Если Reality - извлекаем ключи
+    if [ "$SECURITY" = "reality" ]; then
+        echo -e "${YELLOW}🔑 Извлечение Reality параметров...${NC}"
+        
+        local REALITY_PUBLIC=$(sqlite3 /etc/x-ui/x-ui.db "SELECT json_extract(stream_settings, '$.realitySettings.settings.publicKey') FROM inbounds WHERE id=${INBOUND_ID};" 2>/dev/null)
+        local REALITY_PRIVATE=$(sqlite3 /etc/x-ui/x-ui.db "SELECT json_extract(stream_settings, '$.realitySettings.privateKey') FROM inbounds WHERE id=${INBOUND_ID};" 2>/dev/null)
+        local REALITY_SHORT=$(sqlite3 /etc/x-ui/x-ui.db "SELECT json_extract(stream_settings, '$.realitySettings.shortIds[0]') FROM inbounds WHERE id=${INBOUND_ID};" 2>/dev/null)
+        local REALITY_SNI=$(sqlite3 /etc/x-ui/x-ui.db "SELECT json_extract(stream_settings, '$.realitySettings.serverNames[0]') FROM inbounds WHERE id=${INBOUND_ID};" 2>/dev/null)
+        local REALITY_FINGERPRINT=$(sqlite3 /etc/x-ui/x-ui.db "SELECT json_extract(stream_settings, '$.realitySettings.settings.fingerprint') FROM inbounds WHERE id=${INBOUND_ID};" 2>/dev/null)
+        
+        if [ -n "$REALITY_PUBLIC" ]; then
+            update_env_value "REALITY_PUBLIC_KEY" "${REALITY_PUBLIC}"
+            echo -e "${GREEN}  ✓ Public Key обновлен${NC}"
+        fi
+        
+        if [ -n "$REALITY_PRIVATE" ]; then
+            update_env_value "REALITY_PRIVATE_KEY" "${REALITY_PRIVATE}"
+            echo -e "${GREEN}  ✓ Private Key обновлен${NC}"
+        fi
+        
+        if [ -n "$REALITY_SHORT" ]; then
+            update_env_value "REALITY_SHORT_ID" "${REALITY_SHORT}"
+            echo -e "${GREEN}  ✓ Short ID обновлен${NC}"
+        fi
+        
+        if [ -n "$REALITY_SNI" ]; then
+            update_env_value "REALITY_SNI" "${REALITY_SNI}"
+            echo -e "${GREEN}  ✓ SNI обновлен: ${REALITY_SNI}${NC}"
+        fi
+        
+        if [ -n "$REALITY_FINGERPRINT" ]; then
+            update_env_value "REALITY_FINGERPRINT" "${REALITY_FINGERPRINT}"
+            echo -e "${GREEN}  ✓ Fingerprint обновлен: ${REALITY_FINGERPRINT}${NC}"
+        fi
+    fi
+    
+    echo -e "${GREEN}✅ Параметры успешно извлечены из панели${NC}"
+    return 0
+}
+
 
 # Функция создания статических параметров
 create_static_params() {
@@ -606,6 +680,11 @@ update_xuibot() {
     echo -e "${BLUE}========================================${NC}\n"
     
     echo -e "${YELLOW}🔄 Обновление XUI бота...${NC}"
+    
+    # Извлекаем параметры из панели перед обновлением
+    echo ""
+    extract_inbound_params
+    echo ""
     
     # Проверка наличия git
     if command -v git &> /dev/null; then
@@ -1061,6 +1140,10 @@ rebuild_xuibot() {
     echo -e "\n${BLUE}========================================${NC}"
     echo -e "${BLUE}   Перезапуск контейнера XUIBOT${NC}"
     echo -e "${BLUE}========================================${NC}\n"
+    
+    # Извлекаем параметры из панели перед пересборкой
+    extract_inbound_params
+    echo ""
     
     echo -e "${YELLOW}🛑 Остановка контейнера xuibot...${NC}"
     docker compose -f docker-compose.xuibot.yml down 2>/dev/null || true
@@ -2820,6 +2903,8 @@ remove_3xui() {
         sed -i '/^XUI_/d' "${WORK_DIR}/.env" 2>/dev/null || true
         sed -i '/^REALITY_/d' "${WORK_DIR}/.env" 2>/dev/null || true
         sed -i '/^INBOUND_ID=/d' "${WORK_DIR}/.env" 2>/dev/null || true
+        sed -i '/^TRANSPORT=/d' "${WORK_DIR}/.env" 2>/dev/null || true
+        sed -i '/^SECURITY=/d' "${WORK_DIR}/.env" 2>/dev/null || true
     fi
     
     echo -e "${GREEN}✅ 3x-ui панель полностью удалена!${NC}"
