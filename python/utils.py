@@ -767,23 +767,21 @@ def generate_vless_link(client_uuid: str, email: str, vpn_config, inbound_id: in
     # Security
     params += f"&security={vpn_config.security}"
     
+    # Reality параметры - ДОЛЖНЫ ИДТИ СРАЗУ ПОСЛЕ SECURITY
+    if vpn_config.security == "reality":
+        # Public key
+        if reality_params.get('public_key'):
+            params += f"&pbk={reality_params['public_key']}"
+        else:
+            reality_public_key = getattr(vpn_config, 'reality_public_key', '')
+            if reality_public_key:
+                params += f"&pbk={reality_public_key}"
+    
     # Fingerprint - используем из inbound если есть, иначе из конфига
     if reality_params.get('fingerprint'):
         params += f"&fp={reality_params['fingerprint']}"
     else:
         params += f"&fp={vpn_config.get_fingerprint()}"
-    
-    # ALPN - для TLS обязательно указываем (URL-encoded)
-    tls_alpn = getattr(vpn_config, 'tls_alpn', 'http/1.1')
-    if vpn_config.security == "tls" and tls_alpn:
-        # URL-encode ALPN (http/1.1 -> http%2F1.1)
-        alpn_encoded = urllib.parse.quote(tls_alpn, safe='')
-        params += f"&alpn={alpn_encoded}"
-    
-    # Flow - только для TCP с Reality или TLS
-    # Для xHTTP flow НЕ добавляется независимо от security
-    if vpn_config.transport == "tcp" and vpn_config.security in ["reality", "tls"]:
-        params += "&flow=xtls-rprx-vision"
     
     # SNI - используем из inbound если есть, иначе из конфига
     if reality_params.get('sni'):
@@ -793,16 +791,8 @@ def generate_vless_link(client_uuid: str, email: str, vpn_config, inbound_id: in
         if sni:
             params += f"&sni={sni}"
     
-    # Reality параметры - используем из inbound если есть
+    # Reality Short ID
     if vpn_config.security == "reality":
-        # Public key
-        if reality_params.get('public_key'):
-            params += f"&pbk={reality_params['public_key']}"
-        else:
-            reality_public_key = getattr(vpn_config, 'reality_public_key', '')
-            if reality_public_key:
-                params += f"&pbk={reality_public_key}"
-        
         # Short ID
         if reality_params.get('short_id'):
             params += f"&sid={reality_params['short_id']}"
@@ -813,6 +803,13 @@ def generate_vless_link(client_uuid: str, email: str, vpn_config, inbound_id: in
         
         # spiderX (SpiderX path)
         params += "&spx=%2F"
+    
+    # ALPN - для TLS обязательно указываем (URL-encoded)
+    tls_alpn = getattr(vpn_config, 'tls_alpn', 'http/1.1')
+    if vpn_config.security == "tls" and tls_alpn:
+        # URL-encode ALPN (http/1.1 -> http%2F1.1)
+        alpn_encoded = urllib.parse.quote(tls_alpn, safe='')
+        params += f"&alpn={alpn_encoded}"
     
     # xHTTP параметры
     if vpn_config.transport == "xhttp":
@@ -825,6 +822,11 @@ def generate_vless_link(client_uuid: str, email: str, vpn_config, inbound_id: in
         # extra параметры для совместимости
         extra = {"xPaddingBytes": "100-1000"}
         params += f"&extra={urllib.parse.quote(json.dumps(extra))}"
+    
+    # Flow - ВАЖНО: должен быть В КОНЦЕ, после всех остальных параметров
+    # Flow используется ТОЛЬКО для TCP с Reality или TLS
+    if vpn_config.transport == "tcp" and vpn_config.security in ["reality", "tls"]:
+        params += "&flow=xtls-rprx-vision"
     
     return f"{base}?{params}#{urllib.parse.quote(email)}"
 
