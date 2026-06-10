@@ -23,7 +23,7 @@ DEFAULT_REALITY_FINGERPRINT="edge"  # Варианты: edge, chrome, firefox, s
 # Включить проверку и переиспользование существующих SSL сертификатов
 # true  - проверять существующие сертификаты и предлагать их использовать (рекомендуется)
 # false - всегда запрашивать новый сертификат при установке 3x-ui (может привести к Rate Limit)
-ENABLE_CERT_REUSE="false"
+ENABLE_CERT_REUSE="true"
 # ============================================
 
 echo -e "${BLUE}========================================${NC}"
@@ -2278,7 +2278,7 @@ post_install_menu() {
             
             if [[ "$inbound_type" =~ ^[Nn]$ ]]; then
                 echo -e "${YELLOW}Возврат в главное меню...${NC}"
-                return
+                break 2
             fi
             
             case $inbound_type in
@@ -2604,9 +2604,16 @@ install_3xui_v294() {
         
         # Проверяем наличие сертификата в установщике
         SSL_SETUP_FAILED=false
-        if echo "$INSTALL_OUTPUT" | grep -q "IP certificate setup failed\|certificate setup failed\|Failed to issue"; then
+        if echo "$INSTALL_OUTPUT" | grep -q "IP certificate setup failed\|certificate setup failed\|Failed to issue\|rateLimited\|too many certificates\|rate.*limit"; then
             SSL_SETUP_FAILED=true
-            echo -e "${YELLOW}⚠️  Установщик не смог получить SSL сертификат${NC}"
+            
+            # Проверяем конкретную причину ошибки
+            if echo "$INSTALL_OUTPUT" | grep -qi "rateLimited\|too many certificates\|rate.*limit"; then
+                echo -e "${YELLOW}⚠️  Достигнут лимит Let's Encrypt (rate limit)${NC}"
+                echo -e "${YELLOW}ℹ️  Панель будет настроена для работы по HTTP${NC}"
+            else
+                echo -e "${YELLOW}⚠️  Установщик не смог получить SSL сертификат${NC}"
+            fi
         fi
         
         # Если использовали существующий сертификат, устанавливаем его
