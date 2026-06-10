@@ -108,27 +108,58 @@ class XUIClient:
         return self.session
     
     async def login(self) -> bool:
-        """Авторизация в панели 3x-ui"""
+        """Авторизация в панели 3x-ui с автоматическим переключением HTTPS/HTTP"""
         await self._get_session()
         
-        login_url = f"{self.config.xui.url}/login"
         login_data = {
             "username": self.config.xui.username,
             "password": self.config.xui.password
         }
         
+        # Пробуем подключиться по URL из конфига
+        login_url = f"{self.config.xui.url}/login"
+        
         try:
             async with self.session.post(login_url, json=login_data) as resp:
                 if resp.status == 200:
                     self.cookies = self.session.cookie_jar
-                    logger.info("Успешная авторизация в 3x-ui")
+                    logger.info(f"Успешная авторизация в 3x-ui ({self.config.xui.url})")
                     return True
                 else:
                     text = await resp.text()
-                    logger.error(f"Ошибка авторизации: {resp.status} - {text[:200]}")
+                    logger.warning(f"Ошибка авторизации по {self.config.xui.url}: {resp.status} - {text[:200]}")
+        except Exception as e:
+            logger.warning(f"Ошибка подключения к {self.config.xui.url}: {e}")
+        
+        # Если не удалось подключиться, пробуем альтернативный протокол
+        if self.config.xui.url.startswith("https://"):
+            # Пробуем HTTP
+            alt_url = self.config.xui.url.replace("https://", "http://")
+            logger.info(f"Пробуем подключиться по HTTP: {alt_url}")
+        elif self.config.xui.url.startswith("http://"):
+            # Пробуем HTTPS
+            alt_url = self.config.xui.url.replace("http://", "https://")
+            logger.info(f"Пробуем подключиться по HTTPS: {alt_url}")
+        else:
+            logger.error("Некорректный URL в конфигурации")
+            return False
+        
+        try:
+            alt_login_url = f"{alt_url}/login"
+            async with self.session.post(alt_login_url, json=login_data) as resp:
+                if resp.status == 200:
+                    self.cookies = self.session.cookie_jar
+                    # Обновляем URL в конфиге для последующих запросов
+                    self.config.xui.url = alt_url
+                    logger.info(f"✅ Успешная авторизация в 3x-ui ({alt_url})")
+                    logger.info(f"ℹ️  URL обновлён на {alt_url}")
+                    return True
+                else:
+                    text = await resp.text()
+                    logger.error(f"Ошибка авторизации по {alt_url}: {resp.status} - {text[:200]}")
                     return False
         except Exception as e:
-            logger.error(f"Ошибка подключения: {e}")
+            logger.error(f"Ошибка подключения к {alt_url}: {e}")
             return False
 
     async def add_client(self, email: str, total_gb: int, expiry_days: float, comment: str = None) -> Dict:

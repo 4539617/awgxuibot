@@ -2679,10 +2679,9 @@ install_3xui_v294() {
         fi
         
         # Формируем URL для v2.9.4 (БЕЗ /panel в конце)
-        # Сначала пробуем HTTPS, если не работает - HTTP
+        # По умолчанию используем HTTPS (бот сам попробует HTTP если HTTPS не работает)
         if [ -z "$XUI_PATH" ] || [ "$XUI_PATH" = "/" ]; then
-            XUI_URL_HTTPS="https://${SERVER_IP}:${XUI_PORT}"
-            XUI_URL_HTTP="http://${SERVER_IP}:${XUI_PORT}"
+            XUI_URL="https://${SERVER_IP}:${XUI_PORT}"
         else
             # Убираем trailing slash если есть и добавляем leading slash если нужно
             XUI_PATH_CLEAN="${XUI_PATH%/}"
@@ -2690,25 +2689,11 @@ install_3xui_v294() {
             if [[ "$XUI_PATH_CLEAN" != /* ]]; then
                 XUI_PATH_CLEAN="/${XUI_PATH_CLEAN}"
             fi
-            XUI_URL_HTTPS="https://${SERVER_IP}:${XUI_PORT}${XUI_PATH_CLEAN}"
-            XUI_URL_HTTP="http://${SERVER_IP}:${XUI_PORT}${XUI_PATH_CLEAN}"
-        fi
-        
-        # Проверяем доступность панели по HTTPS
-        echo -e "${YELLOW}🔍 Проверка доступности панели...${NC}"
-        if curl -k -s -o /dev/null -w "%{http_code}" --connect-timeout 5 "${XUI_URL_HTTPS}/login" | grep -q "200\|302\|401"; then
-            XUI_URL="$XUI_URL_HTTPS"
-            echo -e "${GREEN}✅ Панель доступна по HTTPS${NC}"
-        elif curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 "${XUI_URL_HTTP}/login" | grep -q "200\|302\|401"; then
-            XUI_URL="$XUI_URL_HTTP"
-            echo -e "${YELLOW}⚠️  Панель доступна только по HTTP (SSL не настроен)${NC}"
-        else
-            # Если ни один не работает, используем HTTP по умолчанию
-            XUI_URL="$XUI_URL_HTTP"
-            echo -e "${YELLOW}⚠️  Не удалось проверить доступность, используется HTTP${NC}"
+            XUI_URL="https://${SERVER_IP}:${XUI_PORT}${XUI_PATH_CLEAN}"
         fi
         
         echo -e "${BLUE}📍 URL панели: ${XUI_URL}${NC}"
+        echo -e "${YELLOW}ℹ️  Бот автоматически попробует HTTP если HTTPS не работает${NC}"
         
         # Генерация Reality ключей
         # Установка xray если не установлен
