@@ -1228,11 +1228,10 @@ show_status() {
         local xui_token=$(grep "^XUI_BOT_TOKEN=" .env 2>/dev/null | cut -d'=' -f2)
         local xui_bot_username=$(get_bot_username "$xui_token" "xuibot")
         
-        echo -e "  XUI Bot: ${GREEN}✅ Запущен${NC}"
         if [ "$xui_bot_username" != "Unknown" ]; then
             echo -e "  Ссылка: https://t.me/${xui_bot_username}"
         fi
-        echo -e "  Состояние: ${GREEN}Running${NC}"
+        echo -e "  XUI Bot: ${GREEN}✅ Запущен${NC}"
     else
         echo -e "  XUI Bot: ${RED}❌ Не установлен${NC}"
     fi
@@ -1246,11 +1245,10 @@ show_status() {
         local awg_token=$(grep "^AWG_BOT_TOKEN=" .env 2>/dev/null | cut -d'=' -f2)
         local awg_bot_username=$(get_bot_username "$awg_token" "awgbot")
         
-        echo -e "  AWG Bot: ${GREEN}✅ Запущен${NC}"
         if [ "$awg_bot_username" != "Unknown" ]; then
             echo -e "  Ссылка: https://t.me/${awg_bot_username}"
         fi
-        echo -e "  Состояние: ${GREEN}Running${NC}"
+        echo -e "  AWG Bot: ${GREEN}✅ Запущен${NC}"
     else
         echo -e "  AWG Bot: ${RED}❌ Не установлен${NC}"
     fi
