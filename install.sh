@@ -2496,27 +2496,12 @@ install_3xui_v294() {
         chmod 644 "$TARGET_CERT_DIR/fullchain.pem"
         
         echo -e "${GREEN}✓ Сертификат подготовлен в $TARGET_CERT_DIR${NC}"
-        
-        # Создаём файл с ответами для установщика
-        ANSWERS_FILE="/tmp/xui_answers_$$.txt"
-        cat > "$ANSWERS_FILE" << EOF
-
-
-3
-$TARGET_CERT_DIR/fullchain.pem
-$TARGET_CERT_DIR/privkey.pem
-EOF
-        
-        # Передаем ответы установщику через файл
-        bash <(curl -Ls "https://raw.githubusercontent.com/MHSanaei/3x-ui/v2.9.4/install.sh") v2.9.4 < "$ANSWERS_FILE" 2>&1 | tee "$INSTALL_LOG"
-        
-        # Удаляем файл с ответами
-        rm -f "$ANSWERS_FILE"
-    else
-        # Передаем пустые ответы (Enter) на все вопросы через stdin
-        # Установщик автоматически выберет опцию 2 (Let's Encrypt для IP)
-        printf '\n\n\n\n\n' | bash <(curl -Ls "https://raw.githubusercontent.com/MHSanaei/3x-ui/v2.9.4/install.sh") v2.9.4 2>&1 | tee "$INSTALL_LOG"
+        echo -e "${YELLOW}ℹ️  Установщик попытается получить сертификат (получит Rate Limit), затем мы установим существующий${NC}\n"
     fi
+    
+    # Передаем пустые ответы (Enter) на все вопросы через stdin
+    # Установщик попытается получить сертификат и получит Rate Limit (это нормально)
+    printf '\n\n\n\n\n' | bash <(curl -Ls "https://raw.githubusercontent.com/MHSanaei/3x-ui/v2.9.4/install.sh") v2.9.4 2>&1 | tee "$INSTALL_LOG"
     
     # Читаем вывод из лог-файла
     INSTALL_OUTPUT=$(cat "$INSTALL_LOG" 2>/dev/null || echo "")
