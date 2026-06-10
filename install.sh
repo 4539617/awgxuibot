@@ -23,7 +23,7 @@ DEFAULT_REALITY_FINGERPRINT="edge"  # Варианты: edge, chrome, firefox, s
 # Включить проверку и переиспользование существующих SSL сертификатов
 # true  - проверять существующие сертификаты и предлагать их использовать (рекомендуется)
 # false - всегда запрашивать новый сертификат при установке 3x-ui (может привести к Rate Limit)
-ENABLE_CERT_REUSE="true"
+ENABLE_CERT_REUSE="false"
 # ============================================
 
 echo -e "${BLUE}========================================${NC}"
@@ -2606,31 +2606,54 @@ install_3xui_v294() {
             sleep 2
         fi
         
-        # Если использовали существующий сертификат, проверяем что он установлен корректно
+        # Проверяем успешность установки SSL сертификата
+        echo -e "\n${YELLOW}🔍 Проверка SSL сертификата...${NC}"
+        
+        # Устанавливаем sqlite3 если не установлен
+        if ! command -v sqlite3 &> /dev/null; then
+            apt-get update -qq && apt-get install -y sqlite3 -qq > /dev/null 2>&1
+        fi
+        
+        # Проверяем наличие сертификата в установщике
+        SSL_SETUP_FAILED=false
+        if echo "$INSTALL_OUTPUT" | grep -q "IP certificate setup failed\|certificate setup failed\|Failed to issue"; then
+            SSL_SETUP_FAILED=true
+            echo -e "${YELLOW}⚠️  Установщик не смог получить SSL сертификат${NC}"
+        fi
+        
+        # Если использовали существующий сертификат, устанавливаем его
         if [ "$USE_EXISTING_CERT" = true ]; then
-            echo -e "\n${GREEN}✓ Существующий сертификат был передан установщику 3x-ui${NC}"
+            echo -e "${GREEN}✓ Установка существующего сертификата...${NC}"
             
-            # Проверяем что пути к сертификатам настроены в базе данных
-            if [ -f "/etc/x-ui/x-ui.db" ]; then
-                # Устанавливаем sqlite3 если не установлен
-                if ! command -v sqlite3 &> /dev/null; then
-                    apt-get update -qq && apt-get install -y sqlite3 -qq > /dev/null 2>&1
-                fi
-                
-                local cert_file=$(sqlite3 /etc/x-ui/x-ui.db "SELECT value FROM settings WHERE key='webCertFile';" 2>/dev/null)
-                local key_file=$(sqlite3 /etc/x-ui/x-ui.db "SELECT value FROM settings WHERE key='webKeyFile';" 2>/dev/null)
-                
-                if [ -n "$cert_file" ] && [ -n "$key_file" ]; then
-                    echo -e "${GREEN}✓ Пути к сертификатам настроены в панели${NC}"
-                else
-                    echo -e "${YELLOW}⚠️  Пути к сертификатам не найдены в базе, устанавливаем вручную...${NC}"
-                    if install_existing_certificate "$SERVER_IP"; then
-                        echo -e "${GREEN}✓ Существующий сертификат успешно установлен${NC}"
-                    else
-                        echo -e "${YELLOW}⚠️  Не удалось установить существующий сертификат${NC}"
-                    fi
-                fi
+            if install_existing_certificate "$SERVER_IP"; then
+                echo -e "${GREEN}✓ Существующий сертификат успешно установлен${NC}"
+                SSL_SETUP_FAILED=false
+            else
+                echo -e "${YELLOW}⚠️  Не удалось установить существующий сертификат${NC}"
+                SSL_SETUP_FAILED=true
             fi
+        fi
+        
+        # Если SSL не удалось настроить, удаляем пути к сертификатам для работы по HTTP
+        if [ "$SSL_SETUP_FAILED" = true ]; then
+            echo -e "${YELLOW}⚠️  Настройка панели для работы по HTTP...${NC}"
+            
+            if [ -f "/etc/x-ui/x-ui.db" ]; then
+                # Останавливаем панель
+                systemctl stop x-ui 2>/dev/null || true
+                sleep 1
+                
+                # Удаляем пути к сертификатам из базы данных
+                sqlite3 /etc/x-ui/x-ui.db "DELETE FROM settings WHERE key IN ('webCertFile', 'webKeyFile');" 2>/dev/null
+                
+                # Запускаем панель
+                systemctl start x-ui 2>/dev/null || true
+                sleep 2
+                
+                echo -e "${GREEN}✅ Панель настроена для работы по HTTP${NC}"
+            fi
+        else
+            echo -e "${GREEN}✅ SSL сертификат настроен, панель работает по HTTPS${NC}"
         fi
         
         # Проверяем что данные получены от инсталятора
@@ -2679,9 +2702,14 @@ install_3xui_v294() {
         fi
         
         # Формируем URL для v2.9.4 (БЕЗ /panel в конце)
-        # По умолчанию используем HTTPS (бот сам попробует HTTP если HTTPS не работает)
+        # Используем HTTP если SSL не настроен, иначе HTTPS
+        PROTOCOL="https"
+        if [ "$SSL_SETUP_FAILED" = true ]; then
+            PROTOCOL="http"
+        fi
+        
         if [ -z "$XUI_PATH" ] || [ "$XUI_PATH" = "/" ]; then
-            XUI_URL="https://${SERVER_IP}:${XUI_PORT}"
+            XUI_URL="${PROTOCOL}://${SERVER_IP}:${XUI_PORT}"
         else
             # Убираем trailing slash если есть и добавляем leading slash если нужно
             XUI_PATH_CLEAN="${XUI_PATH%/}"
@@ -2689,11 +2717,13 @@ install_3xui_v294() {
             if [[ "$XUI_PATH_CLEAN" != /* ]]; then
                 XUI_PATH_CLEAN="/${XUI_PATH_CLEAN}"
             fi
-            XUI_URL="https://${SERVER_IP}:${XUI_PORT}${XUI_PATH_CLEAN}"
+            XUI_URL="${PROTOCOL}://${SERVER_IP}:${XUI_PORT}${XUI_PATH_CLEAN}"
         fi
         
         echo -e "${BLUE}📍 URL панели: ${XUI_URL}${NC}"
-        echo -e "${YELLOW}ℹ️  Бот автоматически попробует HTTP если HTTPS не работает${NC}"
+        if [ "$SSL_SETUP_FAILED" = false ]; then
+            echo -e "${YELLOW}ℹ️  Бот автоматически попробует HTTP если HTTPS не работает${NC}"
+        fi
         
         # Генерация Reality ключей
         # Установка xray если не установлен
