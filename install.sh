@@ -259,13 +259,11 @@ interactive_setup() {
     fi
     
     # ==================== Автоматическое заполнение ====================
-    echo -e "\n${GREEN}🔧 Автоматическое заполнение параметров...${NC}\n"
+    echo -e "\n${GREEN}🔧 Автоматическое заполнение параметров...${NC}"
     
     # IP сервера
     update_env_value "SERVER_ADDRESS" "$SERVER_IP"
     update_env_value "SERVER_IP" "$SERVER_IP"
-    echo -e "SERVER_ADDRESS: $SERVER_IP ${GREEN}✓${NC}"
-    echo -e "SERVER_IP: $SERVER_IP ${GREEN}✓${NC}"
     
     # ==================== Проверка данных 3x-ui ====================
     XUI_URL=$(get_env_value "XUI_URL")
@@ -280,22 +278,12 @@ interactive_setup() {
         return 1
     fi
     
-    echo -e "XUI_URL: $XUI_URL ${GREEN}✓${NC}"
-    echo -e "XUI_USERNAME: $XUI_USERNAME ${GREEN}✓${NC}"
-    echo -e "XUI_PASSWORD: ******** ${GREEN}✓${NC}"
-    echo -e "REALITY_PUBLIC_KEY: ${REALITY_PUBLIC_KEY:0:20}... ${GREEN}✓${NC}"
-    echo -e "REALITY_SHORT_ID: $REALITY_SHORT_ID ${GREEN}✓${NC}"
-    
     # Устанавливаем фиксированные значения
     update_env_value "TRANSPORT" "xhttp"
     update_env_value "SECURITY" "reality"
     update_env_value "INBOUND_ID" "1"
     
-    echo -e "\nTRANSPORT: xhttp ${GREEN}✓${NC}"
-    echo -e "SECURITY: reality ${GREEN}✓${NC}"
-    echo -e "INBOUND_ID: 1 ${GREEN}✓${NC}"
-    
-    echo -e "\n${GREEN}✅ Все параметры настроены!${NC}"
+    echo -e "${GREEN}✅ Все параметры настроены!${NC}"
 }
 
 # Функция установки бота
