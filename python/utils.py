@@ -169,211 +169,45 @@ class XUIClient:
             return False
     async def _restart_xui_service(self) -> bool:
         """
-        Универсальный метод перезапуска X-UI/Xray сервиса
-        Пробует несколько методов в порядке приоритета:
-        1. API endpoints панели X-UI
-        2. Системные команды (systemctl, x-ui)
-        3. Docker restart (если бот запущен в Docker)
+        Перезапуск Xray сервиса через API панели X-UI
         """
-        restart_success = False
+        logger.info("🔄 Перезапуск Xray через API панели X-UI...")
         
-        # Метод 1: Пробуем API endpoints для перезапуска Xray
-        # Правильный endpoint: /panel/api/server/restartXrayService
-        restart_endpoints = [
-            "/panel/api/server/restartXrayService",  # ✅ Рабочий endpoint из панели
-            "/panel/api/inbounds/restart",
-            "/server/restartXrayService",
-            "/xui/inbound/restart",
-            "/panel/inbound/restart",
-            "/panel/api/server/restartXray",
-            "/panel/api/inbounds/restartXray",
-            "/xui/API/inbounds/restart"
-        ]
+        # Основной рабочий endpoint
+        restart_endpoint = "/panel/api/server/restartXrayService"
         
-        logger.info("🔄 Попытка перезапуска через API панели X-UI...")
-        
-        # Проверяем наличие cookies
-        if self.session and self.session.cookie_jar:
-            cookies_count = len(self.session.cookie_jar)
-            logger.info(f"📝 Cookies в сессии: {cookies_count}")
-            for cookie in self.session.cookie_jar:
-                logger.debug(f"Cookie: {cookie.key}={cookie.value[:20]}... Path={cookie['path']}")
-        else:
-            logger.warning("⚠️ Нет cookies в сессии! Возможно не авторизованы.")
-        
-        # Заголовки как в браузере для правильной авторизации
+        # Заголовки для API запроса
         headers = {
             'Accept': 'application/json, text/plain, */*',
             'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
             'X-Requested-With': 'XMLHttpRequest'
         }
         
-        for endpoint in restart_endpoints:
-            try:
-                restart_url = f"{self.config.xui.url}{endpoint}"
-                logger.info(f"Пробуем endpoint: {restart_url}")
-                
-                # Используем session с cookies и правильными заголовками
-                async with self.session.post(restart_url, headers=headers) as resp:
-                    logger.info(f"Ответ от {endpoint}: статус {resp.status}")
-                    if resp.status == 200:
-                        try:
-                            result = await resp.json()
-                            logger.info(f"JSON ответ: {result}")
-                            if result.get('success'):
-                                logger.info(f"✅ Xray перезапущен через API: {endpoint}")
-                                await asyncio.sleep(5)  # Даём время на перезапуск
-                                return True
-                            else:
-                                logger.warning(f"API вернул success=false: {result}")
-                        except Exception as json_err:
-                            # Некоторые endpoints не возвращают JSON
-                            text = await resp.text()
-                            logger.info(f"Ответ не JSON: {text[:100]}")
-                            if "success" in text.lower() or "ok" in text.lower():
-                                logger.info(f"✅ Xray перезапущен через API: {endpoint}")
-                                await asyncio.sleep(5)
-                                return True
-                    elif resp.status == 404:
-                        logger.debug(f"Endpoint {endpoint} не найден (404)")
-                    elif resp.status == 401 or resp.status == 403:
-                        logger.warning(f"Нет доступа к {endpoint} (статус {resp.status})")
-                    else:
-                        text = await resp.text()
-                        logger.warning(f"Неожиданный статус {resp.status} от {endpoint}: {text[:200]}")
-            except Exception as e:
-                logger.debug(f"Endpoint {endpoint} не сработал: {e}")
-                continue
-        
-        # Метод 2: Системные команды
-        logger.info("🔄 Попытка перезапуска через системные команды...")
-        restart_commands = [
-            "systemctl restart x-ui",
-            "x-ui restart",
-            "/usr/local/x-ui/x-ui restart",
-            "service x-ui restart"
-        ]
-        
-        for cmd in restart_commands:
-            try:
-                logger.info(f"Выполняем команду: {cmd}")
-                result = subprocess.run(
-                    cmd,
-                    shell=True,
-                    capture_output=True,
-                    text=True,
-                    timeout=15
-                )
-                if result.returncode == 0:
-                    logger.info(f"✅ X-UI перезапущен командой: {cmd}")
-                    time.sleep(3)
-                    return True
-                else:
-                    logger.info(f"Команда {cmd} вернула код {result.returncode}: {result.stderr[:200]}")
-            except subprocess.TimeoutExpired:
-                logger.info(f"Команда {cmd} превысила таймаут")
-            except Exception as e:
-                logger.info(f"Ошибка выполнения {cmd}: {e}")
-                continue
-        
-        # Метод 3: Docker API через curl и socket
-        logger.info("🔄 Попытка перезапуска X-UI через Docker API (curl)...")
         try:
-            # Получаем список контейнеров через curl
-            curl_list_cmd = 'curl -s --unix-socket /var/run/docker.sock http://localhost/containers/json'
-            result = subprocess.run(
-                curl_list_cmd,
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
+            restart_url = f"{self.config.xui.url}{restart_endpoint}"
+            logger.info(f"Отправка запроса: {restart_url}")
             
-            if result.returncode == 0 and result.stdout:
-                try:
-                    containers = json.loads(result.stdout)
-                    logger.info(f"Найдено контейнеров через Docker API: {len(containers)}")
-                    
-                    # Ищем контейнер x-ui
-                    xui_container = None
-                    for container in containers:
-                        names = container.get('Names', [])
-                        logger.info(f"Проверяем контейнер: {names}")
-                        if any('x-ui' in name.lower() for name in names):
-                            xui_container = container
-                            break
-                    
-                    if xui_container:
-                        container_id = xui_container['Id']
-                        container_name = xui_container['Names'][0].lstrip('/')
-                        logger.info(f"Найден контейнер X-UI: {container_name} ({container_id[:12]})")
-                        
-                        # Перезапускаем контейнер через curl
-                        curl_restart_cmd = f'curl -s --unix-socket /var/run/docker.sock -X POST http://localhost/containers/{container_id}/restart'
-                        restart_result = subprocess.run(
-                            curl_restart_cmd,
-                            shell=True,
-                            capture_output=True,
-                            text=True,
-                            timeout=30
-                        )
-                        
-                        if restart_result.returncode == 0:
-                            logger.info(f"✅ X-UI контейнер {container_name} перезапущен через Docker API")
-                            time.sleep(5)
+            async with self.session.post(restart_url, headers=headers) as resp:
+                if resp.status == 200:
+                    try:
+                        result = await resp.json()
+                        if result.get('success'):
+                            logger.info(f"✅ Xray успешно перезапущен через API")
+                            await asyncio.sleep(3)  # Даём время на перезапуск
                             return True
                         else:
-                            logger.info(f"Ошибка перезапуска: {restart_result.stderr[:200]}")
-                    else:
-                        logger.info("Контейнер x-ui не найден в списке Docker контейнеров")
-                except json.JSONDecodeError as e:
-                    logger.info(f"Ошибка парсинга JSON от Docker API: {e}")
-            else:
-                logger.info(f"curl вернул код {result.returncode}: {result.stderr[:200]}")
-        except Exception as e:
-            logger.info(f"Ошибка работы с Docker API через curl: {e}")
-        
-        # Метод 4: Прямой вызов через nsenter с bash хоста
-        logger.info("🔄 Попытка перезапуска через nsenter на хосте...")
-        
-        # ФИНАЛЬНОЕ РЕШЕНИЕ: Вызываем wrapper скрипт на хосте через /proc/1/root
-        nsenter_commands = [
-            # Вызов wrapper скрипта на хосте через /proc/1/root/tmp
-            "nsenter -t 1 -m -u -n -i /proc/1/root/tmp/restart-xui-wrapper.sh",
-            "nsenter -t 1 -m -u -n -i /bin/bash /proc/1/root/tmp/restart-xui-wrapper.sh",
-            "nsenter -t 1 -m -u -n -i /bin/sh /proc/1/root/tmp/restart-xui-wrapper.sh",
-            # Через chroot
-            "nsenter -t 1 -m -u -n -i chroot /proc/1/root /bin/bash /tmp/restart-xui-wrapper.sh",
-            "nsenter -t 1 -m -u -n -i chroot /proc/1/root /bin/sh /tmp/restart-xui-wrapper.sh",
-            # Запускаем bash хоста с командой systemctl
-            "nsenter -t 1 -m -u -n -i -p /bin/bash -c 'systemctl restart x-ui'",
-            "nsenter -t 1 -m -u -n -i -p /usr/bin/bash -c 'systemctl restart x-ui'"
-        ]
-        
-        for cmd in nsenter_commands:
-            try:
-                logger.info(f"Выполняем: {cmd}")
-                result = subprocess.run(
-                    cmd,
-                    shell=True,
-                    capture_output=True,
-                    text=True,
-                    timeout=15
-                )
-                if result.returncode == 0:
-                    logger.info(f"✅ X-UI перезапущен через nsenter: {cmd}")
-                    time.sleep(3)
-                    return True
+                            logger.warning(f"API вернул success=false: {result}")
+                            return False
+                    except Exception as e:
+                        logger.error(f"Ошибка парсинга ответа: {e}")
+                        return False
                 else:
-                    logger.info(f"Команда вернула код {result.returncode}: {result.stderr[:200]}")
-            except Exception as e:
-                logger.info(f"Ошибка выполнения {cmd}: {e}")
-                continue
-        
-        logger.warning("⚠️ Все методы перезапуска не сработали")
-        logger.warning("💡 Рекомендация: Установите libgcrypt.so.20 на хосте или используйте ручной перезапуск")
-        logger.warning("   Команда на хосте: systemctl restart x-ui")
-        return False
+                    text = await resp.text()
+                    logger.error(f"Ошибка перезапуска: статус {resp.status}, ответ: {text[:200]}")
+                    return False
+        except Exception as e:
+            logger.error(f"Ошибка при перезапуске через API: {e}")
+            return False
 
 
     async def add_client(self, email: str, total_gb: int, expiry_days: float, comment: str = None) -> Dict:
