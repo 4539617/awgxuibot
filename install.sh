@@ -636,12 +636,14 @@ install_xuibot() {
         
         echo -e "${BLUE}Транспорт: ${TRANSPORT}, Безопасность: ${SECURITY}${NC}"
         
-        # Сохраняем INBOUND_ID
+        # Сохраняем INBOUND_ID, TRANSPORT и SECURITY
         update_env_value "INBOUND_ID" "${FIRST_INBOUND_ID}"
+        update_env_value "TRANSPORT" "${TRANSPORT}"
+        update_env_value "SECURITY" "${SECURITY}"
         
-        # Если xhttp и reality - извлекаем ключи
-        if [ "$TRANSPORT" = "xhttp" ] && [ "$SECURITY" = "reality" ]; then
-            echo -e "${YELLOW}🔑 Обнаружен xHTTP с Reality, извлекаем ключи...${NC}"
+        # Если security = reality - извлекаем все Reality параметры
+        if [ "$SECURITY" = "reality" ]; then
+            echo -e "${YELLOW}🔑 Обнаружен Reality, извлекаем параметры...${NC}"
             
             REALITY_PUBLIC=$(sqlite3 /etc/x-ui/x-ui.db "SELECT json_extract(stream_settings, '$.realitySettings.settings.publicKey') FROM inbounds WHERE id=${FIRST_INBOUND_ID};" 2>/dev/null)
             REALITY_PRIVATE=$(sqlite3 /etc/x-ui/x-ui.db "SELECT json_extract(stream_settings, '$.realitySettings.privateKey') FROM inbounds WHERE id=${FIRST_INBOUND_ID};" 2>/dev/null)
@@ -651,15 +653,21 @@ install_xuibot() {
             
             if [ -n "$REALITY_PUBLIC" ] && [ -n "$REALITY_PRIVATE" ] && [ -n "$REALITY_SHORT" ]; then
                 echo -e "${GREEN}✅ Reality параметры извлечены из инбаунда${NC}"
+                
+                # Сохраняем все Reality параметры
                 update_env_value "REALITY_PUBLIC_KEY" "${REALITY_PUBLIC}"
                 update_env_value "REALITY_PRIVATE_KEY" "${REALITY_PRIVATE}"
                 update_env_value "REALITY_SHORT_ID" "${REALITY_SHORT}"
                 
-                # Сохраняем также SNI и Fingerprint если они есть
+                echo -e "${BLUE}  Public Key: ${REALITY_PUBLIC:0:20}...${NC}"
+                echo -e "${BLUE}  Short ID: ${REALITY_SHORT}${NC}"
+                
+                # Сохраняем SNI и Fingerprint (обязательно)
                 if [ -n "$REALITY_SNI" ]; then
                     update_env_value "REALITY_SNI" "${REALITY_SNI}"
                     echo -e "${BLUE}  SNI: ${REALITY_SNI}${NC}"
                 fi
+                
                 if [ -n "$REALITY_FINGERPRINT" ]; then
                     update_env_value "REALITY_FINGERPRINT" "${REALITY_FINGERPRINT}"
                     echo -e "${BLUE}  Fingerprint: ${REALITY_FINGERPRINT}${NC}"
