@@ -39,7 +39,7 @@ def sanitize_path(path: str, allowed_prefix: str = '/etc/x-ui/') -> str:
 def get_inbound_reality_settings(db_path: str, inbound_id: int) -> Dict:
     """
     Извлекает реальные параметры Reality из настроек inbound в БД
-    Возвращает словарь с параметрами: sni, fingerprint, public_key, short_id
+    Возвращает словарь с параметрами: sni, fingerprint, public_key, short_id, pqv
     """
     try:
         # Получаем streamSettings из inbound
@@ -71,14 +71,17 @@ def get_inbound_reality_settings(db_path: str, inbound_id: int) -> Dict:
             if isinstance(settings_obj, dict):
                 reality_settings['fingerprint'] = settings_obj.get('fingerprint', reality_config.get('fingerprint', 'chrome'))
                 reality_settings['public_key'] = settings_obj.get('publicKey', reality_config.get('publicKey', ''))
+                # Post-quantum verification key (mldsa65Verify)
+                reality_settings['pqv'] = settings_obj.get('mldsa65Verify', '')
             else:
                 reality_settings['fingerprint'] = reality_config.get('fingerprint', 'chrome')
                 reality_settings['public_key'] = reality_config.get('publicKey', '')
+                reality_settings['pqv'] = ''
             
             # Short ID из shortIds
             reality_settings['short_id'] = reality_config.get('shortIds', [''])[0] if reality_config.get('shortIds') else ''
             
-            logger.info(f"Извлечены параметры Reality из inbound {inbound_id}: SNI={reality_settings['sni']}, FP={reality_settings['fingerprint']}, PBK={reality_settings['public_key'][:20]}..., SID={reality_settings['short_id']}")
+            logger.info(f"Извлечены параметры Reality из inbound {inbound_id}: SNI={reality_settings['sni']}, FP={reality_settings['fingerprint']}, PBK={reality_settings['public_key'][:20]}..., SID={reality_settings['short_id']}, PQV={'present' if reality_settings.get('pqv') else 'absent'}")
         
         return reality_settings
         
@@ -751,16 +754,33 @@ def generate_vless_link(client_uuid: str, email: str, vpn_config, inbound_id: in
     
     base = f"vless://{client_uuid}@{vpn_config.server_address}:{vpn_config.server_port}"
     
-    # Начинаем с type (транспорт должен быть первым)
+    # ПРАВИЛЬНЫЙ ПОРЯДОК (согласно эталонной ссылке из панели):
+    # 1. type, encryption
+    # 2. Параметры транспорта (path, host, mode, x_padding_bytes, extra)
+    # 3. security
+    # 4. Параметры безопасности (pbk, fp, sni, sid, spx, pqv)
+    # 5. flow (только для TCP)
+    
+    # 1. Type (транспорт)
     params = f"type={vpn_config.transport}"
     
-    # Encryption всегда none для VLESS
+    # 2. Encryption всегда none для VLESS
     params += "&encryption=none"
     
-    # Security
+    # 3. Параметры транспорта - ПЕРЕД security!
+    if vpn_config.transport == "xhttp":
+        params += "&path=%2F"
+        params += "&host="
+        xhttp_mode = getattr(vpn_config, 'xhttp_mode', 'auto')
+        params += f"&mode={xhttp_mode}"
+        params += "&x_padding_bytes=100-1000"
+        extra = {"xPaddingBytes": "100-1000"}
+        params += f"&extra={urllib.parse.quote(json.dumps(extra))}"
+    
+    # 4. Security - ПОСЛЕ параметров транспорта
     params += f"&security={vpn_config.security}"
     
-    # Reality параметры - ДОЛЖНЫ ИДТИ СРАЗУ ПОСЛЕ SECURITY
+    # 5. Параметры безопасности
     if vpn_config.security == "reality":
         # Public key
         if reality_params.get('public_key'):
@@ -770,13 +790,13 @@ def generate_vless_link(client_uuid: str, email: str, vpn_config, inbound_id: in
             if reality_public_key:
                 params += f"&pbk={reality_public_key}"
     
-    # Fingerprint - используем из inbound если есть, иначе из конфига
+    # Fingerprint
     if reality_params.get('fingerprint'):
         params += f"&fp={reality_params['fingerprint']}"
     else:
         params += f"&fp={vpn_config.get_fingerprint()}"
     
-    # SNI - используем из inbound если есть, иначе из конфига
+    # SNI
     if reality_params.get('sni'):
         params += f"&sni={reality_params['sni']}"
     else:
@@ -784,9 +804,8 @@ def generate_vless_link(client_uuid: str, email: str, vpn_config, inbound_id: in
         if sni:
             params += f"&sni={sni}"
     
-    # Reality Short ID
+    # Reality Short ID и spiderX
     if vpn_config.security == "reality":
-        # Short ID
         if reality_params.get('short_id'):
             params += f"&sid={reality_params['short_id']}"
         else:
@@ -794,30 +813,19 @@ def generate_vless_link(client_uuid: str, email: str, vpn_config, inbound_id: in
             if reality_short_id:
                 params += f"&sid={reality_short_id}"
         
-        # spiderX (SpiderX path)
         params += "&spx=%2F"
+        
+        # Post-quantum verification key
+        if reality_params.get('pqv'):
+            params += f"&pqv={reality_params['pqv']}"
     
-    # ALPN - для TLS обязательно указываем (URL-encoded)
+    # ALPN для TLS
     tls_alpn = getattr(vpn_config, 'tls_alpn', 'http/1.1')
     if vpn_config.security == "tls" and tls_alpn:
-        # URL-encode ALPN (http/1.1 -> http%2F1.1)
         alpn_encoded = urllib.parse.quote(tls_alpn, safe='')
         params += f"&alpn={alpn_encoded}"
     
-    # xHTTP параметры
-    if vpn_config.transport == "xhttp":
-        xhttp_mode = getattr(vpn_config, 'xhttp_mode', 'auto')
-        params += f"&mode={xhttp_mode}"
-        # Для xHTTP добавляем дополнительные параметры
-        params += "&path=%2F&host="
-        # xPaddingBytes для xHTTP
-        params += "&x_padding_bytes=100-1000"
-        # extra параметры для совместимости
-        extra = {"xPaddingBytes": "100-1000"}
-        params += f"&extra={urllib.parse.quote(json.dumps(extra))}"
-    
-    # Flow - ВАЖНО: должен быть В КОНЦЕ, после всех остальных параметров
-    # Flow используется ТОЛЬКО для TCP с Reality или TLS
+    # Flow - только для TCP в самом конце
     if vpn_config.transport == "tcp" and vpn_config.security in ["reality", "tls"]:
         params += "&flow=xtls-rprx-vision"
     
