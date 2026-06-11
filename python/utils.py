@@ -303,22 +303,22 @@ class XUIClient:
         # Метод 4: Прямой вызов через nsenter (если X-UI на хосте)
         logger.info("🔄 Попытка перезапуска через nsenter на хосте...")
         
-        # Пробуем разные варианты команд на хосте
+        # Пробуем разные варианты команд на хосте с LD_LIBRARY_PATH
         nsenter_commands = [
+            # С установкой LD_LIBRARY_PATH для библиотек хоста
+            "nsenter -t 1 -m -u -n -i bash -c 'LD_LIBRARY_PATH=/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu /bin/systemctl restart x-ui'",
+            "nsenter -t 1 -m -u -n -i bash -c 'LD_LIBRARY_PATH=/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu /usr/bin/systemctl restart x-ui'",
+            # Прямой вызов systemctl с полным путем к библиотекам
+            "nsenter -t 1 -m -u -n -i env LD_LIBRARY_PATH=/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu /bin/systemctl restart x-ui",
+            "nsenter -t 1 -m -u -n -i env LD_LIBRARY_PATH=/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu /usr/bin/systemctl restart x-ui",
+            # Без LD_LIBRARY_PATH (на случай если уже работает)
             "nsenter -t 1 -m -u -n -i /bin/systemctl restart x-ui",
             "nsenter -t 1 -m -u -n -i /usr/bin/systemctl restart x-ui",
-            "nsenter -t 1 -m -u -n -i x-ui restart",
-            "nsenter -t 1 -m -u -n -i /usr/local/x-ui/x-ui restart",
-            "nsenter -t 1 -m -u -n -i service x-ui restart",
-            # Прямой вызов через bash скрипт
-            "nsenter -t 1 -m -u -n -i bash -c 'x-ui restart'",
+            # Через x-ui команду
+            "nsenter -t 1 -m -u -n -i bash -c 'PATH=/usr/local/bin:/usr/bin:/bin x-ui restart'",
             "nsenter -t 1 -m -u -n -i bash -c '/usr/local/x-ui/x-ui restart'",
-            # Через sh
-            "nsenter -t 1 -m -u -n -i sh -c 'x-ui restart'",
-            # Поиск и выполнение x-ui
-            "nsenter -t 1 -m -u -n -i bash -c 'which x-ui && x-ui restart'",
-            # Killall и запуск заново (крайний случай)
-            "nsenter -t 1 -m -u -n -i bash -c 'killall xray && sleep 2 && x-ui start'"
+            # Через service
+            "nsenter -t 1 -m -u -n -i bash -c 'LD_LIBRARY_PATH=/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu service x-ui restart'"
         ]
         
         for cmd in nsenter_commands:
