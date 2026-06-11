@@ -300,22 +300,20 @@ class XUIClient:
         except Exception as e:
             logger.info(f"Ошибка работы с Docker API через curl: {e}")
         
-        # Метод 4: Прямой вызов через nsenter с chroot (если X-UI на хосте)
+        # Метод 4: Прямой вызов через nsenter с динамическим линкером хоста
         logger.info("🔄 Попытка перезапуска через nsenter на хосте...")
         
         # Пробуем разные варианты команд на хосте
         nsenter_commands = [
+            # КЛЮЧЕВОЕ РЕШЕНИЕ: Используем динамический линкер хоста напрямую
+            "nsenter -t 1 -m -u -n -i /proc/1/root/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2 /proc/1/root/bin/systemctl restart x-ui",
+            "nsenter -t 1 -m -u -n -i /proc/1/root/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2 /proc/1/root/usr/bin/systemctl restart x-ui",
+            "nsenter -t 1 -m -u -n -i /proc/1/root/lib64/ld-linux-x86-64.so.2 /proc/1/root/bin/systemctl restart x-ui",
+            "nsenter -t 1 -m -u -n -i /proc/1/root/lib64/ld-linux-x86-64.so.2 /proc/1/root/usr/bin/systemctl restart x-ui",
             # Через chroot для полного переключения в окружение хоста
             "nsenter -t 1 -m -u -n -i chroot /proc/1/root /bin/systemctl restart x-ui",
             "nsenter -t 1 -m -u -n -i chroot /proc/1/root /usr/bin/systemctl restart x-ui",
-            "nsenter -t 1 -m -u -n -i chroot /proc/1/root systemctl restart x-ui",
-            # Через chroot с bash
-            "nsenter -t 1 -m -u -n -i chroot /proc/1/root bash -c 'systemctl restart x-ui'",
-            "nsenter -t 1 -m -u -n -i chroot /proc/1/root bash -c 'x-ui restart'",
-            # Прямой вызов x-ui через chroot
-            "nsenter -t 1 -m -u -n -i chroot /proc/1/root /usr/local/x-ui/x-ui restart",
-            # Через service
-            "nsenter -t 1 -m -u -n -i chroot /proc/1/root service x-ui restart"
+            "nsenter -t 1 -m -u -n -i chroot /proc/1/root systemctl restart x-ui"
         ]
         
         for cmd in nsenter_commands:
