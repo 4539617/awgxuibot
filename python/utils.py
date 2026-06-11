@@ -303,18 +303,20 @@ class XUIClient:
         # Метод 4: Прямой вызов через nsenter с bash хоста
         logger.info("🔄 Попытка перезапуска через nsenter на хосте...")
         
-        # ФИНАЛЬНОЕ РЕШЕНИЕ: Запускаем bash хоста, который имеет полное окружение
+        # ФИНАЛЬНОЕ РЕШЕНИЕ: Вызываем wrapper скрипт на хосте
         nsenter_commands = [
+            # Вызов wrapper скрипта на хосте
+            "nsenter -t 1 -m -u -n -i /tmp/restart-xui-wrapper.sh",
+            "nsenter -t 1 -m -u -n -i /bin/bash /tmp/restart-xui-wrapper.sh",
+            "nsenter -t 1 -m -u -n -i /bin/sh /tmp/restart-xui-wrapper.sh",
+            # Через chroot
+            "nsenter -t 1 -m -u -n -i chroot /proc/1/root /tmp/restart-xui-wrapper.sh",
             # Запускаем bash хоста с командой systemctl
             "nsenter -t 1 -m -u -n -i -p /bin/bash -c 'systemctl restart x-ui'",
             "nsenter -t 1 -m -u -n -i -p /usr/bin/bash -c 'systemctl restart x-ui'",
-            "nsenter -t 1 -m -u -n -i -p /bin/sh -c 'systemctl restart x-ui'",
             # Через chroot с bash
             "nsenter -t 1 -m -u -n -i chroot /proc/1/root /bin/bash -c 'systemctl restart x-ui'",
-            "nsenter -t 1 -m -u -n -i chroot /proc/1/root /usr/bin/bash -c 'systemctl restart x-ui'",
-            # Прямой systemctl через chroot
-            "nsenter -t 1 -m -u -n -i chroot /proc/1/root /bin/systemctl restart x-ui",
-            "nsenter -t 1 -m -u -n -i chroot /proc/1/root /usr/bin/systemctl restart x-ui"
+            "nsenter -t 1 -m -u -n -i chroot /proc/1/root /usr/bin/bash -c 'systemctl restart x-ui'"
         ]
         
         for cmd in nsenter_commands:
