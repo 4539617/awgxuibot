@@ -2486,6 +2486,140 @@ STREAMEOF
     return 1
 }
 
+# Функция создания TCP TLS inbound
+create_tcp_tls_inbound() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Создание TCP TLS Inbound${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+    
+    # Проверяем наличие сертификата
+    if [ ! -f "/root/cert/${SERVER_IP}/fullchain.pem" ] || [ ! -f "/root/cert/${SERVER_IP}/privkey.pem" ]; then
+        echo -e "${RED}❌ Ошибка: TLS сертификаты не найдены${NC}"
+        echo -e "${YELLOW}Сертификаты должны быть в: /root/cert/${SERVER_IP}/${NC}"
+        echo -e "${YELLOW}Запустите установку сертификата сначала${NC}"
+        return 1
+    fi
+    
+    echo -e "${GREEN}✅ Найдены TLS сертификаты${NC}"
+    
+    # Создаем JSON конфигурации для settings и streamSettings
+    SETTINGS_JSON='{"clients":[],"decryption":"none","fallbacks":[{"alpn":"","dest":"8080","name":"","path":"","xver":0}]}'
+    
+    STREAM_SETTINGS_JSON=$(cat <<STREAMEOF
+{
+  "network": "tcp",
+  "security": "tls",
+  "externalProxy": [],
+  "tlsSettings": {
+    "serverName": "",
+    "minVersion": "1.2",
+    "maxVersion": "1.3",
+    "cipherSuites": "",
+    "rejectUnknownSni": false,
+    "disableSystemRoot": false,
+    "enableSessionResumption": false,
+    "certificates": [
+      {
+        "certificateFile": "/root/cert/${SERVER_IP}/fullchain.pem",
+        "keyFile": "/root/cert/${SERVER_IP}/privkey.pem",
+        "oneTimeLoading": false,
+        "usage": "encipherment",
+        "buildChain": false
+      }
+    ],
+    "alpn": ["http/1.1"],
+    "echServerKeys": "",
+    "echForceQuery": "none",
+    "settings": {
+      "fingerprint": "firefox",
+      "echConfigList": ""
+    }
+  },
+  "tcpSettings": {
+    "acceptProxyProtocol": false,
+    "header": {
+      "type": "none"
+    }
+  }
+}
+STREAMEOF
+)
+    
+    SNIFFING_JSON='{"enabled":false,"destOverride":["http","tls","quic","fakedns"],"metadataOnly":false,"routeOnly":false}'
+    
+    # Экранируем JSON для SQL
+    SETTINGS_JSON_ESCAPED=$(echo "$SETTINGS_JSON" | sed "s/'/''/g")
+    STREAM_SETTINGS_JSON_ESCAPED=$(echo "$STREAM_SETTINGS_JSON" | sed "s/'/''/g")
+    SNIFFING_JSON_ESCAPED=$(echo "$SNIFFING_JSON" | sed "s/'/''/g")
+    
+    # Проверяем и удаляем существующий inbound
+    EXISTING_INBOUND=$(sqlite3 /etc/x-ui/x-ui.db "SELECT id FROM inbounds WHERE tag='inbound-443' OR remark='VLESS-TLS-TCP';" 2>/dev/null)
+    
+    if [ -n "$EXISTING_INBOUND" ]; then
+        echo -e "${YELLOW}⚠ Найден существующий inbound (ID: ${EXISTING_INBOUND}), удаляем...${NC}"
+        sqlite3 /etc/x-ui/x-ui.db "DELETE FROM inbounds WHERE tag='inbound-443' OR remark='VLESS-TLS-TCP';" 2>/dev/null
+    fi
+    
+    # Вставляем inbound в базу данных
+    SQL_INSERT="INSERT INTO inbounds (user_id, up, down, total, remark, enable, expiry_time, listen, port, protocol, settings, stream_settings, tag, sniffing) VALUES (1, 0, 0, 0, 'VLESS-TLS-TCP', 1, 0, '', 443, 'vless', '${SETTINGS_JSON_ESCAPED}', '${STREAM_SETTINGS_JSON_ESCAPED}', 'inbound-443', '${SNIFFING_JSON_ESCAPED}');"
+    
+    set +e
+    SQL_RESULT=$(sqlite3 /etc/x-ui/x-ui.db "${SQL_INSERT}" 2>&1)
+    SQL_EXIT_CODE=$?
+    set -e
+    
+    if [ $SQL_EXIT_CODE -eq 0 ]; then
+        INBOUND_ID=$(sqlite3 /etc/x-ui/x-ui.db "SELECT id FROM inbounds WHERE remark='VLESS-TLS-TCP' ORDER BY id DESC LIMIT 1;" 2>/dev/null)
+        
+        if [ -n "$INBOUND_ID" ]; then
+            echo -e "${GREEN}✅ TCP TLS inbound создан успешно!${NC}"
+            echo -e "${GREEN}   ID: ${INBOUND_ID}${NC}"
+            echo -e "${GREEN}   Порт: 443${NC}"
+            echo -e "${GREEN}   Protocol: VLESS${NC}"
+            echo -e "${GREEN}   Network: tcp${NC}"
+            echo -e "${GREEN}   Security: tls${NC}"
+            
+            update_env_value "INBOUND_ID" "${INBOUND_ID}"
+            update_env_value "TRANSPORT" "tcp"
+            update_env_value "SECURITY" "tls"
+            
+            # Извлекаем TLS параметры из созданного inbound
+            echo -e "${YELLOW}🔑 Извлечение TLS параметров из inbound...${NC}"
+            ACTUAL_FINGERPRINT=$(sqlite3 /etc/x-ui/x-ui.db "SELECT json_extract(stream_settings, '$.tlsSettings.settings.fingerprint') FROM inbounds WHERE id=${INBOUND_ID};" 2>/dev/null)
+            ACTUAL_ALPN=$(sqlite3 /etc/x-ui/x-ui.db "SELECT json_extract(stream_settings, '$.tlsSettings.alpn[0]') FROM inbounds WHERE id=${INBOUND_ID};" 2>/dev/null)
+            
+            if [ -n "$ACTUAL_FINGERPRINT" ]; then
+                echo -e "${GREEN}✅ TLS параметры извлечены из inbound${NC}"
+                echo -e "${GREEN}   Fingerprint: ${ACTUAL_FINGERPRINT}${NC}"
+                echo -e "${GREEN}   ALPN: ${ACTUAL_ALPN}${NC}"
+                echo -e "${GREEN}   SNI: ${SERVER_IP}${NC}"
+                
+                # Обновляем .env с реальными параметрами из inbound
+                update_env_value "TLS_FINGERPRINT" "${ACTUAL_FINGERPRINT}"
+                update_env_value "TLS_ALPN" "${ACTUAL_ALPN}"
+                update_env_value "TLS_SNI" "${SERVER_IP}"
+                
+                echo -e "${GREEN}✅ Параметры сохранены в .env${NC}"
+            else
+                echo -e "${YELLOW}⚠ Не удалось извлечь параметры из inbound${NC}"
+            fi
+            
+            # Перезапускаем панель
+            systemctl stop x-ui > /dev/null 2>&1
+            sleep 2
+            sqlite3 /etc/x-ui/x-ui.db "PRAGMA wal_checkpoint(TRUNCATE);" > /dev/null 2>&1 || true
+            sqlite3 /etc/x-ui/x-ui.db "PRAGMA journal_mode=DELETE;" > /dev/null 2>&1 || true
+            systemctl start x-ui > /dev/null 2>&1
+            sleep 3
+            
+            return 0
+        fi
+    fi
+    
+    echo -e "${RED}❌ Ошибка создания inbound${NC}"
+    return 1
+}
+
 # Функция меню после установки 3x-ui
 post_install_menu() {
     while true; do
@@ -2509,6 +2643,7 @@ post_install_menu() {
             echo -e "${BLUE}========================================${NC}"
             echo -e "${GREEN}1${NC} - XHTTP Reality (рекомендуется)"
             echo -e "${GREEN}2${NC} - TCP Reality"
+            echo -e "${GREEN}3${NC} - TCP TLS"
             echo -e "${GREEN}n${NC} - Вернуться в главное меню"
             echo -e "${BLUE}========================================${NC}"
             read -p "Ваш выбор: " inbound_type
@@ -2538,6 +2673,23 @@ post_install_menu() {
                     ;;
                 2)
                     if create_tcp_reality_inbound; then
+                        # Предлагаем установить бота
+                        echo -e "\n${BLUE}========================================${NC}"
+                        echo -e "${BLUE}   Установить xuibot?${NC}"
+                        echo -e "${BLUE}========================================${NC}"
+                        echo -e "${GREEN}Enter${NC} - Да, установить бота"
+                        echo -e "${GREEN}n${NC}     - Нет, вернуться в главное меню"
+                        echo -e "${BLUE}========================================${NC}"
+                        read -p "Ваш выбор: " install_bot_choice
+                        
+                        if [[ ! "$install_bot_choice" =~ ^[Nn]$ ]]; then
+                            install_bot
+                        fi
+                        return
+                    fi
+                    ;;
+                3)
+                    if create_tcp_tls_inbound; then
                         # Предлагаем установить бота
                         echo -e "\n${BLUE}========================================${NC}"
                         echo -e "${BLUE}   Установить xuibot?${NC}"

@@ -740,7 +740,13 @@ class XUIClient:
 
 
 def generate_vless_link(client_uuid: str, email: str, vpn_config, inbound_id: int) -> str:
-    """Универсальная генерация VLESS ссылки в зависимости от настроек"""
+    """Универсальная генерация VLESS ссылки в зависимости от настроек
+    
+    Поддерживаемые сценарии:
+    1. xhttp + reality
+    2. tcp + reality
+    3. tcp + tls
+    """
     import urllib.parse
     
     # Получаем реальные параметры Reality из inbound (если используется Reality)
@@ -774,33 +780,32 @@ def generate_vless_link(client_uuid: str, email: str, vpn_config, inbound_id: in
     # Security
     params += f"&security={vpn_config.security}"
     
-    # Reality параметры - ДОЛЖНЫ ИДТИ СРАЗУ ПОСЛЕ SECURITY
+    # ===== СЦЕНАРИЙ 1 и 2: Reality (xhttp или tcp) =====
     if vpn_config.security == "reality":
-        # Public key
+        # Fingerprint для Reality
+        if reality_params.get('fingerprint'):
+            params += f"&fp={reality_params['fingerprint']}"
+        else:
+            params += f"&fp={vpn_config.reality_fingerprint}"
+        
+        # Public key (pbk) - ОБЯЗАТЕЛЬНЫЙ параметр для Reality
         if reality_params.get('public_key'):
             params += f"&pbk={reality_params['public_key']}"
         else:
             reality_public_key = getattr(vpn_config, 'reality_public_key', '')
             if reality_public_key:
                 params += f"&pbk={reality_public_key}"
-    
-    # Fingerprint - используем из inbound если есть, иначе из конфига
-    if reality_params.get('fingerprint'):
-        params += f"&fp={reality_params['fingerprint']}"
-    else:
-        params += f"&fp={vpn_config.get_fingerprint()}"
-    
-    # SNI - используем из inbound если есть, иначе из конфига
-    if reality_params.get('sni'):
-        params += f"&sni={reality_params['sni']}"
-    else:
-        sni = vpn_config.get_sni()
-        if sni:
-            params += f"&sni={sni}"
-    
-    # Reality Short ID
-    if vpn_config.security == "reality":
-        # Short ID
+            else:
+                logger.error("⚠️ REALITY_PUBLIC_KEY не найден!")
+        
+        # SNI для Reality
+        if reality_params.get('sni'):
+            params += f"&sni={reality_params['sni']}"
+        else:
+            if vpn_config.reality_sni:
+                params += f"&sni={vpn_config.reality_sni}"
+        
+        # Short ID (sid) для Reality
         if reality_params.get('short_id'):
             params += f"&sid={reality_params['short_id']}"
         else:
@@ -808,37 +813,46 @@ def generate_vless_link(client_uuid: str, email: str, vpn_config, inbound_id: in
             if reality_short_id:
                 params += f"&sid={reality_short_id}"
         
-        # spiderX (SpiderX path)
+        # spiderX (SpiderX path) для Reality
         params += "&spx=%2F"
+        
+        # Flow для TCP + Reality
+        if transport == "tcp":
+            params += "&flow=xtls-rprx-vision"
+            logger.debug(f"Добавлен flow для TCP+Reality")
     
-    # ALPN - для TLS обязательно указываем (URL-encoded)
-    tls_alpn = getattr(vpn_config, 'tls_alpn', 'http/1.1')
-    if vpn_config.security == "tls" and tls_alpn:
-        # URL-encode ALPN (http/1.1 -> http%2F1.1)
-        alpn_encoded = urllib.parse.quote(tls_alpn, safe='')
-        params += f"&alpn={alpn_encoded}"
+    # ===== СЦЕНАРИЙ 3: TLS (обычно с tcp) =====
+    elif vpn_config.security == "tls":
+        # Fingerprint для TLS
+        params += f"&fp={vpn_config.tls_fingerprint}"
+        
+        # ALPN - ОБЯЗАТЕЛЬНЫЙ параметр для TLS (URL-encoded)
+        tls_alpn = getattr(vpn_config, 'tls_alpn', 'http/1.1')
+        if tls_alpn:
+            # URL-encode ALPN (http/1.1 -> http%2F1.1)
+            alpn_encoded = urllib.parse.quote(tls_alpn, safe='')
+            params += f"&alpn={alpn_encoded}"
+        
+        # SNI для TLS (если указан)
+        if vpn_config.tls_sni:
+            params += f"&sni={vpn_config.tls_sni}"
+        
+        # Flow для TCP + TLS
+        if transport == "tcp":
+            params += "&flow=xtls-rprx-vision"
+            logger.debug(f"Добавлен flow для TCP+TLS")
     
-    # xHTTP параметры
+    # ===== Дополнительные параметры для xHTTP =====
     if transport == "xhttp":
         xhttp_mode = getattr(vpn_config, 'xhttp_mode', 'auto')
         params += f"&mode={xhttp_mode}"
         # Для xHTTP добавляем дополнительные параметры
         params += "&path=%2F&host="
-        # xPaddingBytes для xHTTP
-        params += "&x_padding_bytes=100-1000"
-        # extra параметры для совместимости
-        extra = {"xPaddingBytes": "100-1000"}
-        params += f"&extra={urllib.parse.quote(json.dumps(extra))}"
         logger.debug(f"Добавлены параметры xhttp: mode={xhttp_mode}")
-    
-    # Flow - ВАЖНО: должен быть В КОНЦЕ, после всех остальных параметров
-    # Flow используется ТОЛЬКО для TCP с Reality или TLS
-    if transport == "tcp" and vpn_config.security in ["reality", "tls"]:
-        params += "&flow=xtls-rprx-vision"
-        logger.debug(f"Добавлен flow для TCP+{vpn_config.security}")
     
     vless_link = f"{base}?{params}#{urllib.parse.quote(email)}"
     logger.info(f"✅ VLESS ссылка сгенерирована успешно для {email}")
+    logger.debug(f"Полная ссылка: {vless_link}")
     return vless_link
 
 
