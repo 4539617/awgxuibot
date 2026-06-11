@@ -87,28 +87,88 @@ install_docker() {
         echo -e "${GREEN}✅ Docker уже установлен${NC}"
     fi
     
-    # Проверка и установка Docker Compose
-    if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/null; then
-        echo -e "${YELLOW}📦 Установка Docker Compose...${NC}"
+    # Проверка и обновление Docker Compose
+    echo -e "${YELLOW}🔍 Проверка Docker Compose...${NC}"
+    
+    # Проверяем наличие V2
+    if docker compose version &> /dev/null 2>&1; then
+        echo -e "${GREEN}✅ Docker Compose V2 уже установлен${NC}"
+        docker compose version
+    # Проверяем наличие V1
+    elif command -v docker-compose &> /dev/null; then
+        COMPOSE_V1_VERSION=$(docker-compose version --short 2>/dev/null || echo "unknown")
+        echo -e "${YELLOW}⚠️  Обнаружен Docker Compose V1 (версия: ${COMPOSE_V1_VERSION})${NC}"
+        echo -e "${YELLOW}🔄 Обновление до Docker Compose V2...${NC}"
         
-        # Попытка установить Docker Compose V2 (plugin)
-        if apt-get update &> /dev/null && apt-get install -y docker-compose-plugin &> /dev/null; then
-            echo -e "${GREEN}✅ Docker Compose V2 (plugin) установлен${NC}"
+        # Устанавливаем V2 тихо (без интерактивных вопросов)
+        export DEBIAN_FRONTEND=noninteractive
+        if apt-get update -qq &> /dev/null && apt-get install -y -qq docker-compose-plugin &> /dev/null; then
+            echo -e "${GREEN}✅ Docker Compose V2 успешно установлен!${NC}"
+            docker compose version
+            echo -e "${YELLOW}💡 Старая версия docker-compose (V1) оставлена для совместимости${NC}"
         else
-            # Если не удалось, устанавливаем V1
-            echo -e "${YELLOW}⚠ Установка Docker Compose V1...${NC}"
-            apt-get install -y docker-compose || {
+            echo -e "${YELLOW}⚠️  Не удалось обновить до V2, продолжаем с V1${NC}"
+            echo -e "${YELLOW}💡 Для ручного обновления выполните: apt install docker-compose-plugin${NC}"
+        fi
+        unset DEBIAN_FRONTEND
+    # Если ничего не установлено
+    else
+        echo -e "${YELLOW}📦 Установка Docker Compose V2...${NC}"
+        
+        # Тихая установка без интерактивных вопросов
+        export DEBIAN_FRONTEND=noninteractive
+        if apt-get update -qq &> /dev/null && apt-get install -y -qq docker-compose-plugin &> /dev/null; then
+            echo -e "${GREEN}✅ Docker Compose V2 установлен${NC}"
+            docker compose version
+        else
+            # Fallback на V1
+            echo -e "${YELLOW}⚠️  Установка Docker Compose V1...${NC}"
+            apt-get install -y -qq docker-compose || {
                 echo -e "${RED}❌ Не удалось установить Docker Compose${NC}"
                 exit 1
             }
             echo -e "${GREEN}✅ Docker Compose V1 установлен${NC}"
+            docker-compose version
+        fi
+        unset DEBIAN_FRONTEND
+    fi
+    
+    # Определяем какую команду использовать
+    if docker compose version &> /dev/null 2>&1; then
+        export DOCKER_COMPOSE_CMD="docker compose"
+        echo -e "${GREEN}✅ Используется команда: docker compose${NC}"
+    else
+        export DOCKER_COMPOSE_CMD="docker-compose"
+        echo -e "${GREEN}✅ Используется команда: docker-compose${NC}"
+    fi
+}
+# Функция проверки и установки Git
+check_and_install_git() {
+    if ! command -v git &> /dev/null; then
+        echo -e "${YELLOW}📦 Git не установлен. Установка...${NC}"
+        if command -v apt-get &> /dev/null; then
+            apt-get update -qq && apt-get install -y git -qq
+        elif command -v yum &> /dev/null; then
+            yum install -y git -q
+        elif command -v dnf &> /dev/null; then
+            dnf install -y git -q
+        else
+            echo -e "${RED}❌ Не удалось установить Git автоматически${NC}"
+            echo -e "${YELLOW}Установите Git вручную и запустите скрипт снова${NC}"
+            exit 1
+        fi
+        
+        if command -v git &> /dev/null; then
+            echo -e "${GREEN}✅ Git успешно установлен${NC}"
+        else
+            echo -e "${RED}❌ Не удалось установить Git${NC}"
+            exit 1
         fi
     else
-        if docker compose version &> /dev/null; then
-            echo -e "${GREEN}✅ Docker Compose V2 уже установлен${NC}"
-        elif command -v docker-compose &> /dev/null; then
-            echo -e "${GREEN}✅ Docker Compose V1 уже установлен${NC}"
-        fi
+        echo -e "${GREEN}✅ Git уже установлен${NC}"
+    fi
+}
+
     fi
 }
 
@@ -403,10 +463,10 @@ install_bot() {
     
     # Проверка docker-compose.xuibot.yml
     echo -e "\n${YELLOW}🔍 Проверка конфигурации...${NC}"
-    if ! docker compose -f docker-compose.xuibot.yml config > /dev/null 2>&1; then
+    if ! $DOCKER_COMPOSE_CMD -f docker-compose.xuibot.yml config > /dev/null 2>&1; then
         echo -e "${RED}❌ Ошибка в docker-compose.xuibot.yml${NC}"
         echo -e "${YELLOW}Запуск диагностики:${NC}"
-        docker compose -f docker-compose.xuibot.yml config
+        $DOCKER_COMPOSE_CMD -f docker-compose.xuibot.yml config
         exit 1
     fi
     echo -e "${GREEN}✅ Конфигурация корректна${NC}"
@@ -415,10 +475,10 @@ install_bot() {
     echo -e "\n${YELLOW}🐳 Сборка и запуск XUIBot...${NC}"
     echo -e "${BLUE}Это может занять несколько минут...${NC}\n"
     
-    if ! docker compose -f docker-compose.xuibot.yml up -d --build; then
+    if ! $DOCKER_COMPOSE_CMD -f docker-compose.xuibot.yml up -d --build; then
         echo -e "\n${RED}❌ Ошибка при запуске контейнера${NC}"
         echo -e "${YELLOW}Проверьте логи:${NC}"
-        echo -e "  docker compose -f docker-compose.xuibot.yml logs"
+        echo -e "  $DOCKER_COMPOSE_CMD -f docker-compose.xuibot.yml logs"
         exit 1
     fi
     
@@ -446,8 +506,8 @@ install_bot() {
     echo -e "${GREEN}💡 Полезные команды:${NC}"
     echo -e "  Логи: ${YELLOW}docker logs -f xuibot${NC}"
     echo -e "  Статус: ${YELLOW}docker ps${NC}"
-    echo -e "  Перезапуск: ${YELLOW}docker compose -f docker-compose.xuibot.yml restart${NC}"
-    echo -e "  Остановка: ${YELLOW}docker compose -f docker-compose.xuibot.yml down${NC}"
+    echo -e "  Перезапуск: ${YELLOW}$DOCKER_COMPOSE_CMD -f docker-compose.xuibot.yml restart${NC}"
+    echo -e "  Остановка: ${YELLOW}$DOCKER_COMPOSE_CMD -f docker-compose.xuibot.yml down${NC}"
 }
 
 # Функция показа логов
@@ -475,11 +535,11 @@ update_bot() {
     
     # Пересборка образа
     echo -e "${YELLOW}🐳 Пересборка образа...${NC}"
-    docker compose -f docker-compose.xuibot.yml build --no-cache
+    $DOCKER_COMPOSE_CMD -f docker-compose.xuibot.yml build --no-cache
     
     # Запуск
     echo -e "${YELLOW}🚀 Запуск пересобранного контейнера...${NC}"
-    docker compose -f docker-compose.xuibot.yml up -d
+    $DOCKER_COMPOSE_CMD -f docker-compose.xuibot.yml up -d
     
     sleep 5
     echo -e "\n${GREEN}✅ Бот пересобран!${NC}"
@@ -504,7 +564,7 @@ remove_bot() {
     
     # Остановка и удаление контейнера
     echo -e "${YELLOW}🛑 Остановка контейнера...${NC}"
-    docker compose -f docker-compose.xuibot.yml down
+    $DOCKER_COMPOSE_CMD -f docker-compose.xuibot.yml down
     
     # Удаление образа
     echo -e "${YELLOW}🗑️  Удаление образа...${NC}"
@@ -648,7 +708,7 @@ install_xuibot() {
     echo -e "\n${YELLOW}🐳 Сборка и запуск XUI бота...${NC}"
     echo -e "${BLUE}Это может занять несколько минут...${NC}\n"
     
-    if ! docker compose -f docker-compose.xuibot.yml up -d --build; then
+    if ! $DOCKER_COMPOSE_CMD -f docker-compose.xuibot.yml up -d --build; then
         echo -e "\n${RED}❌ Ошибка при запуске XUI бота${NC}"
         echo -e "${YELLOW}Проверьте логи: docker logs xuibot${NC}"
         return
@@ -743,11 +803,11 @@ update_xuibot() {
     
     # Пересборка образа
     echo -e "${YELLOW}🐳 Пересборка образа...${NC}"
-    docker compose -f docker-compose.xuibot.yml build --no-cache
+    $DOCKER_COMPOSE_CMD -f docker-compose.xuibot.yml build --no-cache
     
     # Запуск
     echo -e "${YELLOW}🚀 Запуск обновленного контейнера...${NC}"
-    docker compose -f docker-compose.xuibot.yml up -d
+    $DOCKER_COMPOSE_CMD -f docker-compose.xuibot.yml up -d
     
     sleep 5
     echo -e "\n${GREEN}✅ XUI Бот обновлен!${NC}"
@@ -897,7 +957,7 @@ install_awgbot() {
     echo -e "\n${YELLOW}🐳 Сборка и запуск AWG бота...${NC}"
     echo -e "${BLUE}Это может занять несколько минут...${NC}\n"
     
-    if ! docker compose -f docker-compose.awgbot.yml up -d --build; then
+    if ! $DOCKER_COMPOSE_CMD -f docker-compose.awgbot.yml up -d --build; then
         echo -e "\n${RED}❌ Ошибка при запуске AWG бота${NC}"
         echo -e "${YELLOW}Проверьте логи: docker logs awgbot${NC}"
         return
@@ -987,11 +1047,11 @@ update_awgbot() {
     
     # Пересборка образа
     echo -e "${YELLOW}🐳 Пересборка образа...${NC}"
-    docker compose -f docker-compose.awgbot.yml build --no-cache
+    $DOCKER_COMPOSE_CMD -f docker-compose.awgbot.yml build --no-cache
     
     # Запуск
     echo -e "${YELLOW}🚀 Запуск пересобранного контейнера...${NC}"
-    docker compose -f docker-compose.awgbot.yml up -d
+    $DOCKER_COMPOSE_CMD -f docker-compose.awgbot.yml up -d
     
     sleep 5
     echo -e "\n${GREEN}✅ AWG Бот пересобран!${NC}"
@@ -1189,13 +1249,13 @@ rebuild_xuibot() {
     echo ""
     
     echo -e "${YELLOW}🛑 Остановка контейнера xuibot...${NC}"
-    docker compose -f docker-compose.xuibot.yml down 2>/dev/null || true
+    $DOCKER_COMPOSE_CMD -f docker-compose.xuibot.yml down 2>/dev/null || true
     
     echo -e "${YELLOW}🔨 Пересборка образа xuibot...${NC}"
-    docker compose -f docker-compose.xuibot.yml build --no-cache
+    $DOCKER_COMPOSE_CMD -f docker-compose.xuibot.yml build --no-cache
     
     echo -e "${YELLOW}🚀 Запуск контейнера xuibot...${NC}"
-    docker compose -f docker-compose.xuibot.yml up -d
+    $DOCKER_COMPOSE_CMD -f docker-compose.xuibot.yml up -d
     
     sleep 5
     echo -e "${GREEN}✅ Контейнер XUIBOT перезапущен!${NC}"
@@ -1210,13 +1270,13 @@ rebuild_awgbot() {
     echo -e "${BLUE}========================================${NC}\n"
     
     echo -e "${YELLOW}🛑 Остановка контейнера awgbot...${NC}"
-    docker compose -f docker-compose.awgbot.yml down 2>/dev/null || true
+    $DOCKER_COMPOSE_CMD -f docker-compose.awgbot.yml down 2>/dev/null || true
     
     echo -e "${YELLOW}🔨 Пересборка образа awgbot...${NC}"
-    docker compose -f docker-compose.awgbot.yml build --no-cache
+    $DOCKER_COMPOSE_CMD -f docker-compose.awgbot.yml build --no-cache
     
     echo -e "${YELLOW}🚀 Запуск контейнера awgbot...${NC}"
-    docker compose -f docker-compose.awgbot.yml up -d
+    $DOCKER_COMPOSE_CMD -f docker-compose.awgbot.yml up -d
     
     sleep 5
     echo -e "${GREEN}✅ Контейнер AWGBOT перезапущен!${NC}"
@@ -3559,6 +3619,7 @@ show_menu() {
 }
 
 # Основной цикл
+check_and_install_git
 install_docker
 create_directories
 
