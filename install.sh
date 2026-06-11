@@ -611,6 +611,12 @@ update_bot() {
     
     echo -e "${YELLOW}🔄 Пересборка бота...${NC}"
     
+    # Переходим в рабочую директорию
+    cd /opt/awgxuibot || {
+        echo -e "${RED}❌ Ошибка: не удалось перейти в /opt/awgxuibot${NC}"
+        return 1
+    }
+    
     # Обновляем SERVER_ADDRESS и TLS_SNI из XUI_URL если он установлен
     XUI_URL=$(get_env_value "XUI_URL")
     if [ -n "$XUI_URL" ]; then
