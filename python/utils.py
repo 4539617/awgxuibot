@@ -186,32 +186,58 @@ class XUIClient:
         ]
         
         logger.info("🔄 Попытка перезапуска через API панели X-UI...")
+        
+        # Проверяем наличие cookies
+        if self.session and self.session.cookie_jar:
+            cookies_count = len(self.session.cookie_jar)
+            logger.info(f"📝 Cookies в сессии: {cookies_count}")
+            for cookie in self.session.cookie_jar:
+                logger.debug(f"Cookie: {cookie.key}={cookie.value[:20]}... Path={cookie['path']}")
+        else:
+            logger.warning("⚠️ Нет cookies в сессии! Возможно не авторизованы.")
+        
+        # Заголовки как в браузере для правильной авторизации
+        headers = {
+            'Accept': 'application/json, text/plain, */*',
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+        
         for endpoint in restart_endpoints:
             try:
                 restart_url = f"{self.config.xui.url}{endpoint}"
                 logger.info(f"Пробуем endpoint: {restart_url}")
                 
-                async with self.session.post(restart_url) as resp:
+                # Используем session с cookies и правильными заголовками
+                async with self.session.post(restart_url, headers=headers) as resp:
                     logger.info(f"Ответ от {endpoint}: статус {resp.status}")
                     if resp.status == 200:
                         try:
                             result = await resp.json()
+                            logger.info(f"JSON ответ: {result}")
                             if result.get('success'):
                                 logger.info(f"✅ Xray перезапущен через API: {endpoint}")
-                                await asyncio.sleep(3)
+                                await asyncio.sleep(5)  # Даём время на перезапуск
                                 return True
                             else:
-                                logger.info(f"API вернул success=false: {result}")
+                                logger.warning(f"API вернул success=false: {result}")
                         except Exception as json_err:
                             # Некоторые endpoints не возвращают JSON
                             text = await resp.text()
                             logger.info(f"Ответ не JSON: {text[:100]}")
                             if "success" in text.lower() or "ok" in text.lower():
                                 logger.info(f"✅ Xray перезапущен через API: {endpoint}")
-                                await asyncio.sleep(3)
+                                await asyncio.sleep(5)
                                 return True
+                    elif resp.status == 404:
+                        logger.debug(f"Endpoint {endpoint} не найден (404)")
+                    elif resp.status == 401 or resp.status == 403:
+                        logger.warning(f"Нет доступа к {endpoint} (статус {resp.status})")
+                    else:
+                        text = await resp.text()
+                        logger.warning(f"Неожиданный статус {resp.status} от {endpoint}: {text[:200]}")
             except Exception as e:
-                logger.info(f"Endpoint {endpoint} не сработал: {e}")
+                logger.debug(f"Endpoint {endpoint} не сработал: {e}")
                 continue
         
         # Метод 2: Системные команды
