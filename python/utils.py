@@ -202,9 +202,9 @@ class XUIClient:
 
         base_url = self.config.xui.url.rstrip('/')
         endpoints = [
-            f"{base_url}/xui/API/inbounds/addClient",
             f"{base_url}/panel/api/inbounds/addClient",
-            f"{base_url}/server/addClient",
+            f"{base_url}/xui/API/inbounds/addClient",
+            f"{base_url}/panel/inbound/addClient",
         ]
         
         for endpoint in endpoints:
@@ -300,14 +300,6 @@ class XUIClient:
                     sql_traffic = f"""sqlite3 {db_path} "INSERT OR IGNORE INTO client_traffics (inbound_id, enable, email, up, down, all_time, expiry_time, total, reset) VALUES ({self.config.xui.inbound_id}, 1, '{email}', 0, 0, 0, {expiry_time}, {total_bytes}, 0);" """
                     subprocess.run(sql_traffic, shell=True, capture_output=True, text=True)
                     
-                    # ВАЖНО: Обновляем inbound через API для применения изменений
-                    logger.info("Обновляем конфигурацию Xray через API...")
-                    restart_result = await self._update_inbound_via_api()
-                    if restart_result:
-                        logger.info("✅ Конфигурация обновлена, ключ активен")
-                    else:
-                        logger.warning("⚠️ Не удалось обновить конфигурацию, ключ может не работать до ручного перезапуска")
-                    
                     return {"success": True, "uuid": client_uuid}
                 else:
                     logger.error(f"Ошибка обновления настроек inbound: {result.stderr}")
@@ -325,64 +317,6 @@ class XUIClient:
         except Exception as e:
             logger.error(f"Ошибка добавления клиента через SQL: {e}")
             return {"success": False, "error": f"Ошибка: {str(e)}"}
-
-    async def _update_inbound_via_api(self) -> bool:
-        """Перезапуск X-UI для применения изменений из БД"""
-        try:
-            logger.info("Перезапускаем X-UI для синхронизации БД с Xray...")
-            
-            # Перезапуск X-UI - самый безопасный способ
-            # X-UI при старте читает БД и обновляет конфигурацию Xray
-            result = subprocess.run(
-                "systemctl restart x-ui",
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            
-            if result.returncode == 0:
-                logger.info("✅ X-UI перезапущен, ожидаем синхронизации...")
-                import time
-                time.sleep(5)  # Даём время X-UI запуститься и обновить Xray
-                logger.info("✅ Конфигурация синхронизирована, ключ активен")
-                return True
-            else:
-                logger.error(f"Ошибка перезапуска X-UI: {result.stderr}")
-                return False
-                
-        except subprocess.TimeoutExpired:
-            logger.error("Таймаут при перезапуске X-UI")
-            return False
-        except Exception as e:
-            logger.error(f"Ошибка перезапуска X-UI: {e}")
-            return False
-    
-    def _restart_xray_fallback(self) -> bool:
-        """Резервный метод: перезапуск Xray через команды (для случаев вне Docker)"""
-        try:
-            restart_commands = [
-                "x-ui restart-xray",
-                "systemctl restart xray",
-                "systemctl restart x-ray",
-            ]
-            
-            for cmd in restart_commands:
-                try:
-                    result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=15)
-                    if result.returncode == 0:
-                        logger.info(f"✅ Xray перезапущен командой: {cmd}")
-                        import time
-                        time.sleep(2)
-                        return True
-                except:
-                    continue
-            
-            logger.error("❌ Не удалось перезапустить Xray")
-            return False
-        except Exception as e:
-            logger.error(f"Ошибка перезапуска: {e}")
-            return False
 
     async def delete_client(self, client_uuid: str, email: str = None) -> bool:
         """Удаление клиента через API или SQL"""
@@ -483,14 +417,6 @@ class XUIClient:
                 # db_path уже определен выше в функции
                 sql_traffic = f"""sqlite3 {db_path} "DELETE FROM client_traffics WHERE id='{client_uuid}';" """
                 subprocess.run(sql_traffic, shell=True, capture_output=True, text=True)
-                
-                # ВАЖНО: Обновляем inbound через API после удаления
-                logger.info("Обновляем конфигурацию Xray через API...")
-                restart_result = await self._update_inbound_via_api()
-                if restart_result:
-                    logger.info("✅ Конфигурация обновлена")
-                else:
-                    logger.warning("⚠️ Не удалось обновить конфигурацию, изменения могут не применится до ручного перезапуска")
                 
                 return True
             else:
@@ -738,14 +664,6 @@ class XUIClient:
             if result.returncode == 0:
                 status_text = "включен" if enable else "выключен"
                 logger.info(f"Клиент {client_uuid} {status_text}")
-                
-                # ВАЖНО: Обновляем inbound через API после изменения статуса
-                logger.info("Обновляем конфигурацию Xray через API...")
-                restart_result = await self._update_inbound_via_api()
-                if restart_result:
-                    logger.info("✅ Конфигурация обновлена")
-                else:
-                    logger.warning("⚠️ Не удалось обновить конфигурацию, изменения могут не применится до ручного перезапуска")
                 
                 return True
             else:
