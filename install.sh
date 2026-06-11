@@ -1390,6 +1390,26 @@ show_status() {
             local xui_url=$(grep "^XUI_URL=" .env 2>/dev/null | cut -d'=' -f2)
             local xui_user=$(grep "^XUI_USERNAME=" .env 2>/dev/null | cut -d'=' -f2)
             local xui_pass=$(grep "^XUI_PASSWORD=" .env 2>/dev/null | cut -d'=' -f2)
+            local transport=$(grep "^TRANSPORT=" .env 2>/dev/null | cut -d'=' -f2)
+            local security=$(grep "^SECURITY=" .env 2>/dev/null | cut -d'=' -f2)
+            local inbound_id=$(grep "^INBOUND_ID=" .env 2>/dev/null | cut -d'=' -f2)
+            local xui_db_path=$(grep "^XUI_DB_PATH=" .env 2>/dev/null | cut -d'=' -f2)
+            
+            # Значения по умолчанию
+            [ -z "$transport" ] && transport="tcp"
+            [ -z "$security" ] && security="tls"
+            [ -z "$inbound_id" ] && inbound_id="1"
+            [ -z "$xui_db_path" ] && xui_db_path="/etc/x-ui/x-ui.db"
+            
+            # Получаем количество ключей из базы данных
+            local total_keys=0
+            if [ -f "$xui_db_path" ]; then
+                local settings=$(sqlite3 "$xui_db_path" "SELECT settings FROM inbounds WHERE id=${inbound_id};" 2>/dev/null)
+                if [ -n "$settings" ]; then
+                    # Подсчитываем количество клиентов в JSON
+                    total_keys=$(echo "$settings" | grep -o '"id"' | wc -l)
+                fi
+            fi
             
             echo -e "  ${GREEN}✅ Установлена${NC}"
             echo -e "  Версия: ${xui_version}"
@@ -1397,6 +1417,10 @@ show_status() {
             echo -e "  Логин: ${xui_user}"
             echo -e "  Пароль: ${xui_pass}"
             echo -e "  Состояние: ${GREEN}Запущена${NC}"
+            echo -e "  Подключение №:"
+            echo -e "         Транспорт: ${transport}"
+            echo -e "         Безопасность: ${security}"
+            echo -e "         Всего ключей: ${total_keys}"
         else
             echo -e "  ${GREEN}✅ Установлена${NC}"
             echo -e "  Версия: ${xui_version}"
@@ -1437,11 +1461,26 @@ show_status() {
     if docker ps --filter name=xuibot --format "{{.Names}}" | grep -q xuibot; then
         local xui_token=$(grep "^XUI_BOT_TOKEN=" .env 2>/dev/null | cut -d'=' -f2)
         local xui_bot_username=$(get_bot_username "$xui_token" "xuibot")
+        local db_path=$(grep "^DB_PATH=" .env 2>/dev/null | cut -d'=' -f2)
+        
+        # Значение по умолчанию для DB_PATH
+        [ -z "$db_path" ] && db_path="/app/data/bot_users.db"
+        
+        # Получаем количество пользователей из базы данных
+        local user_count=0
+        local admin_ids=$(grep "^ADMIN_IDS=" .env 2>/dev/null | cut -d'=' -f2)
+        local main_admin=$(echo "$admin_ids" | cut -d',' -f1)
+        
+        # Проверяем базу данных внутри контейнера
+        if [ -n "$main_admin" ]; then
+            user_count=$(docker exec xuibot sqlite3 "$db_path" "SELECT COUNT(*) FROM allowed_users WHERE user_id != ${main_admin};" 2>/dev/null || echo "0")
+        fi
         
         if [ "$xui_bot_username" != "Unknown" ]; then
             echo -e "  Ссылка: https://t.me/${xui_bot_username}"
         fi
         echo -e "  XUI Bot: ${GREEN}✅ Запущен${NC}"
+        echo -e "  Пользователей: ${user_count}"
     else
         echo -e "  XUI Bot: ${RED}❌ Не установлен${NC}"
     fi
