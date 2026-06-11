@@ -92,55 +92,52 @@ install_docker() {
     
     # Проверяем наличие V2
     if docker compose version &> /dev/null 2>&1; then
-        echo -e "${GREEN}✅ Docker Compose V2 уже установлен${NC}"
-        docker compose version
+        echo -e "${GREEN}✅ Docker Compose V2 установлен${NC}"
+        export DOCKER_COMPOSE_CMD="docker compose"
     # Проверяем наличие V1
     elif command -v docker-compose &> /dev/null; then
         COMPOSE_V1_VERSION=$(docker-compose version --short 2>/dev/null || echo "unknown")
-        echo -e "${YELLOW}⚠️  Обнаружен Docker Compose V1 (версия: ${COMPOSE_V1_VERSION})${NC}"
-        echo -e "${YELLOW}🔄 Обновление до Docker Compose V2...${NC}"
+        echo -e "${GREEN}✅ Docker Compose V1 установлен (версия: ${COMPOSE_V1_VERSION})${NC}"
+        export DOCKER_COMPOSE_CMD="docker-compose"
         
-        # Устанавливаем V2 тихо (без интерактивных вопросов)
+        # Пробуем тихо обновить до V2 в фоне (не блокируем выполнение)
+        echo -e "${YELLOW}💡 Попытка обновления до Docker Compose V2 в фоне...${NC}"
         export DEBIAN_FRONTEND=noninteractive
-        if apt-get update -qq &> /dev/null && apt-get install -y -qq docker-compose-plugin &> /dev/null; then
-            echo -e "${GREEN}✅ Docker Compose V2 успешно установлен!${NC}"
-            docker compose version
-            echo -e "${YELLOW}💡 Старая версия docker-compose (V1) оставлена для совместимости${NC}"
-        else
-            echo -e "${YELLOW}⚠️  Не удалось обновить до V2, продолжаем с V1${NC}"
-            echo -e "${YELLOW}💡 Для ручного обновления выполните: apt install docker-compose-plugin${NC}"
-        fi
+        (apt-get update -qq && apt-get install -y -qq docker-compose-plugin) &> /dev/null &
         unset DEBIAN_FRONTEND
+        
+        # Проверяем успешность обновления
+        sleep 2
+        if docker compose version &> /dev/null 2>&1; then
+            echo -e "${GREEN}✅ Docker Compose V2 успешно установлен!${NC}"
+            export DOCKER_COMPOSE_CMD="docker compose"
+        fi
     # Если ничего не установлено
     else
-        echo -e "${YELLOW}📦 Установка Docker Compose V2...${NC}"
+        echo -e "${YELLOW}📦 Установка Docker Compose...${NC}"
         
-        # Тихая установка без интерактивных вопросов
         export DEBIAN_FRONTEND=noninteractive
-        if apt-get update -qq &> /dev/null && apt-get install -y -qq docker-compose-plugin &> /dev/null; then
+        
+        # Пробуем установить V2
+        echo -e "${YELLOW}   Попытка установки V2...${NC}"
+        if apt-get update -qq && apt-get install -y -qq docker-compose-plugin; then
             echo -e "${GREEN}✅ Docker Compose V2 установлен${NC}"
-            docker compose version
+            export DOCKER_COMPOSE_CMD="docker compose"
         else
             # Fallback на V1
-            echo -e "${YELLOW}⚠️  Установка Docker Compose V1...${NC}"
-            apt-get install -y -qq docker-compose || {
+            echo -e "${YELLOW}   Установка V1 (fallback)...${NC}"
+            if apt-get install -y -qq docker-compose; then
+                echo -e "${GREEN}✅ Docker Compose V1 установлен${NC}"
+                export DOCKER_COMPOSE_CMD="docker-compose"
+            else
                 echo -e "${RED}❌ Не удалось установить Docker Compose${NC}"
                 exit 1
-            }
-            echo -e "${GREEN}✅ Docker Compose V1 установлен${NC}"
-            docker-compose version
+            fi
         fi
         unset DEBIAN_FRONTEND
     fi
     
-    # Определяем какую команду использовать
-    if docker compose version &> /dev/null 2>&1; then
-        export DOCKER_COMPOSE_CMD="docker compose"
-        echo -e "${GREEN}✅ Используется команда: docker compose${NC}"
-    else
-        export DOCKER_COMPOSE_CMD="docker-compose"
-        echo -e "${GREEN}✅ Используется команда: docker-compose${NC}"
-    fi
+    echo -e "${GREEN}✅ Используется: $DOCKER_COMPOSE_CMD${NC}"
 }
 # Функция проверки и установки Git
 check_and_install_git() {
