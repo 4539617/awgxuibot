@@ -246,22 +246,25 @@ class XUIClient:
         # Метод 3: Docker API через socket
         logger.info("🔄 Попытка перезапуска X-UI через Docker API...")
         try:
-            import requests
+            import requests_unixsocket
+            session = requests_unixsocket.Session()
             docker_socket = "http+unix://%2Fvar%2Frun%2Fdocker.sock"
             
             # Получаем список контейнеров
             try:
-                containers_resp = requests.get(
+                containers_resp = session.get(
                     f"{docker_socket}/containers/json?all=true",
                     timeout=5
                 )
                 if containers_resp.status_code == 200:
                     containers = containers_resp.json()
+                    logger.info(f"Найдено контейнеров: {len(containers)}")
                     
                     # Ищем контейнер x-ui
                     xui_container = None
                     for container in containers:
                         names = container.get('Names', [])
+                        logger.info(f"Проверяем контейнер: {names}")
                         if any('x-ui' in name.lower() for name in names):
                             xui_container = container
                             break
@@ -272,7 +275,7 @@ class XUIClient:
                         logger.info(f"Найден контейнер X-UI: {container_name} ({container_id[:12]})")
                         
                         # Перезапускаем контейнер
-                        restart_resp = requests.post(
+                        restart_resp = session.post(
                             f"{docker_socket}/containers/{container_id}/restart",
                             timeout=30
                         )
@@ -282,13 +285,15 @@ class XUIClient:
                             time.sleep(5)
                             return True
                         else:
-                            logger.info(f"Docker API вернул статус {restart_resp.status_code}")
+                            logger.info(f"Docker API вернул статус {restart_resp.status_code}: {restart_resp.text[:200]}")
                     else:
                         logger.info("Контейнер x-ui не найден в Docker")
+                else:
+                    logger.info(f"Не удалось получить список контейнеров: {containers_resp.status_code}")
             except Exception as e:
                 logger.info(f"Ошибка работы с Docker API: {e}")
         except ImportError:
-            logger.info("Модуль requests не установлен для Docker API")
+            logger.info("Модуль requests_unixsocket не установлен для Docker API")
         
         # Метод 4: Прямой вызов через nsenter (если X-UI на хосте)
         logger.info("🔄 Попытка перезапуска через nsenter на хосте...")
