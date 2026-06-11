@@ -300,25 +300,22 @@ class XUIClient:
         except Exception as e:
             logger.info(f"Ошибка работы с Docker API через curl: {e}")
         
-        # Метод 4: Прямой вызов через nsenter (если X-UI на хосте)
+        # Метод 4: Прямой вызов через nsenter с chroot (если X-UI на хосте)
         logger.info("🔄 Попытка перезапуска через nsenter на хосте...")
         
-        # Пробуем разные варианты команд на хосте с LD_LIBRARY_PATH
+        # Пробуем разные варианты команд на хосте
         nsenter_commands = [
-            # С установкой LD_LIBRARY_PATH для библиотек хоста
-            "nsenter -t 1 -m -u -n -i bash -c 'LD_LIBRARY_PATH=/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu /bin/systemctl restart x-ui'",
-            "nsenter -t 1 -m -u -n -i bash -c 'LD_LIBRARY_PATH=/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu /usr/bin/systemctl restart x-ui'",
-            # Прямой вызов systemctl с полным путем к библиотекам
-            "nsenter -t 1 -m -u -n -i env LD_LIBRARY_PATH=/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu /bin/systemctl restart x-ui",
-            "nsenter -t 1 -m -u -n -i env LD_LIBRARY_PATH=/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu /usr/bin/systemctl restart x-ui",
-            # Без LD_LIBRARY_PATH (на случай если уже работает)
-            "nsenter -t 1 -m -u -n -i /bin/systemctl restart x-ui",
-            "nsenter -t 1 -m -u -n -i /usr/bin/systemctl restart x-ui",
-            # Через x-ui команду
-            "nsenter -t 1 -m -u -n -i bash -c 'PATH=/usr/local/bin:/usr/bin:/bin x-ui restart'",
-            "nsenter -t 1 -m -u -n -i bash -c '/usr/local/x-ui/x-ui restart'",
+            # Через chroot для полного переключения в окружение хоста
+            "nsenter -t 1 -m -u -n -i chroot /proc/1/root /bin/systemctl restart x-ui",
+            "nsenter -t 1 -m -u -n -i chroot /proc/1/root /usr/bin/systemctl restart x-ui",
+            "nsenter -t 1 -m -u -n -i chroot /proc/1/root systemctl restart x-ui",
+            # Через chroot с bash
+            "nsenter -t 1 -m -u -n -i chroot /proc/1/root bash -c 'systemctl restart x-ui'",
+            "nsenter -t 1 -m -u -n -i chroot /proc/1/root bash -c 'x-ui restart'",
+            # Прямой вызов x-ui через chroot
+            "nsenter -t 1 -m -u -n -i chroot /proc/1/root /usr/local/x-ui/x-ui restart",
             # Через service
-            "nsenter -t 1 -m -u -n -i bash -c 'LD_LIBRARY_PATH=/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu service x-ui restart'"
+            "nsenter -t 1 -m -u -n -i chroot /proc/1/root service x-ui restart"
         ]
         
         for cmd in nsenter_commands:
