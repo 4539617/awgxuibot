@@ -243,33 +243,74 @@ class XUIClient:
                 logger.info(f"Ошибка выполнения {cmd}: {e}")
                 continue
         
-        # Метод 3: Docker restart (если бот в контейнере)
-        logger.info("🔄 Попытка перезапуска X-UI контейнера через Docker...")
-        docker_commands = [
-            "docker restart x-ui",
-            "docker-compose restart x-ui",
-            "docker compose restart x-ui"
-        ]
-        
-        for cmd in docker_commands:
+        # Метод 3: Docker API через socket
+        logger.info("🔄 Попытка перезапуска X-UI через Docker API...")
+        try:
+            import requests
+            docker_socket = "http+unix://%2Fvar%2Frun%2Fdocker.sock"
+            
+            # Получаем список контейнеров
             try:
-                logger.info(f"Выполняем Docker команду: {cmd}")
-                result = subprocess.run(
-                    cmd,
-                    shell=True,
-                    capture_output=True,
-                    text=True,
-                    timeout=30
+                containers_resp = requests.get(
+                    f"{docker_socket}/containers/json?all=true",
+                    timeout=5
                 )
-                if result.returncode == 0:
-                    logger.info(f"✅ X-UI контейнер перезапущен: {cmd}")
-                    time.sleep(5)
-                    return True
-                else:
-                    logger.info(f"Docker команда {cmd} вернула код {result.returncode}: {result.stderr[:200]}")
+                if containers_resp.status_code == 200:
+                    containers = containers_resp.json()
+                    
+                    # Ищем контейнер x-ui
+                    xui_container = None
+                    for container in containers:
+                        names = container.get('Names', [])
+                        if any('x-ui' in name.lower() for name in names):
+                            xui_container = container
+                            break
+                    
+                    if xui_container:
+                        container_id = xui_container['Id']
+                        container_name = xui_container['Names'][0].lstrip('/')
+                        logger.info(f"Найден контейнер X-UI: {container_name} ({container_id[:12]})")
+                        
+                        # Перезапускаем контейнер
+                        restart_resp = requests.post(
+                            f"{docker_socket}/containers/{container_id}/restart",
+                            timeout=30
+                        )
+                        
+                        if restart_resp.status_code in [200, 204]:
+                            logger.info(f"✅ X-UI контейнер {container_name} перезапущен через Docker API")
+                            time.sleep(5)
+                            return True
+                        else:
+                            logger.info(f"Docker API вернул статус {restart_resp.status_code}")
+                    else:
+                        logger.info("Контейнер x-ui не найден в Docker")
             except Exception as e:
-                logger.info(f"Docker команда {cmd} не сработала: {e}")
-                continue
+                logger.info(f"Ошибка работы с Docker API: {e}")
+        except ImportError:
+            logger.info("Модуль requests не установлен для Docker API")
+        
+        # Метод 4: Прямой вызов через nsenter (если X-UI на хосте)
+        logger.info("🔄 Попытка перезапуска через nsenter на хосте...")
+        try:
+            # Получаем PID процесса init хоста (обычно PID 1 вне контейнера)
+            nsenter_cmd = "nsenter -t 1 -m -u -n -i systemctl restart x-ui"
+            logger.info(f"Выполняем: {nsenter_cmd}")
+            result = subprocess.run(
+                nsenter_cmd,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=15
+            )
+            if result.returncode == 0:
+                logger.info(f"✅ X-UI перезапущен через nsenter на хосте")
+                time.sleep(3)
+                return True
+            else:
+                logger.info(f"nsenter вернул код {result.returncode}: {result.stderr[:200]}")
+        except Exception as e:
+            logger.info(f"Ошибка nsenter: {e}")
         
         logger.warning("⚠️ Все методы перезапуска не сработали")
         return False
