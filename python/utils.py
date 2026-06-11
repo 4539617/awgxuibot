@@ -327,78 +327,36 @@ class XUIClient:
             return {"success": False, "error": f"Ошибка: {str(e)}"}
 
     async def _update_inbound_via_api(self) -> bool:
-        """Обновление inbound через API X-UI для применения изменений"""
+        """Перезапуск X-UI для применения изменений из БД"""
         try:
-            if not self.session:
-                if not await self.login():
-                    return False
+            logger.info("Перезапускаем X-UI для синхронизации БД с Xray...")
             
-            # Получаем текущие настройки inbound из БД
-            db_path = sanitize_path(self.config.xui.db_path)
-            sql_get = f"""sqlite3 {db_path} "SELECT settings, stream_settings, remark, port, protocol FROM inbounds WHERE id={self.config.xui.inbound_id};" """
-            result = subprocess.run(sql_get, shell=True, capture_output=True, text=True)
+            # Перезапуск X-UI - самый безопасный способ
+            # X-UI при старте читает БД и обновляет конфигурацию Xray
+            result = subprocess.run(
+                "systemctl restart x-ui",
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
             
-            if result.returncode != 0 or not result.stdout:
-                logger.error("Не удалось получить настройки inbound из БД")
+            if result.returncode == 0:
+                logger.info("✅ X-UI перезапущен, ожидаем синхронизации...")
+                import time
+                time.sleep(5)  # Даём время X-UI запуститься и обновить Xray
+                logger.info("✅ Конфигурация синхронизирована, ключ активен")
+                return True
+            else:
+                logger.error(f"Ошибка перезапуска X-UI: {result.stderr}")
                 return False
-            
-            # Парсим данные (формат: settings|stream_settings|remark|port|protocol)
-            parts = result.stdout.strip().split('|')
-            if len(parts) < 5:
-                logger.error("Некорректный формат данных inbound")
-                return False
-            
-            settings_json = parts[0]
-            stream_settings_json = parts[1]
-            remark = parts[2]
-            port = parts[3]
-            protocol = parts[4]
-            
-            # Формируем данные для API
-            update_data = {
-                "id": self.config.xui.inbound_id,
-                "settings": settings_json,
-                "streamSettings": stream_settings_json,
-                "remark": remark,
-                "port": int(port),
-                "protocol": protocol
-            }
-            
-            # Пробуем разные API endpoints для обновления
-            base_url = self.config.xui.url.rstrip('/')
-            endpoints = [
-                f"{base_url}/panel/api/inbounds/update/{self.config.xui.inbound_id}",
-                f"{base_url}/xui/API/inbounds/update/{self.config.xui.inbound_id}",
-            ]
-            
-            for endpoint in endpoints:
-                try:
-                    logger.info(f"Обновляем inbound через API: {endpoint}")
-                    async with self.session.post(endpoint, json=update_data) as resp:
-                        response_text = await resp.text()
-                        
-                        if resp.status == 200:
-                            try:
-                                result_json = json.loads(response_text)
-                                if result_json.get('success'):
-                                    logger.info(f"✅ Inbound обновлён через API, Xray перезапущен")
-                                    import time
-                                    time.sleep(2)  # Даём время на применение
-                                    return True
-                            except:
-                                pass
-                        
-                        logger.debug(f"API ответ: {resp.status} - {response_text[:200]}")
-                except Exception as e:
-                    logger.debug(f"Ошибка на {endpoint}: {e}")
-                    continue
-            
-            logger.warning("⚠️ API обновления не сработал, пробуем команды перезапуска")
-            return self._restart_xray_fallback()
-            
+                
+        except subprocess.TimeoutExpired:
+            logger.error("Таймаут при перезапуске X-UI")
+            return False
         except Exception as e:
-            logger.error(f"Ошибка обновления через API: {e}")
-            return self._restart_xray_fallback()
+            logger.error(f"Ошибка перезапуска X-UI: {e}")
+            return False
     
     def _restart_xray_fallback(self) -> bool:
         """Резервный метод: перезапуск Xray через команды (для случаев вне Docker)"""
