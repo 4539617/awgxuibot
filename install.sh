@@ -885,7 +885,34 @@ update_xuibot() {
         return 1
     }
     
-    # Обновляем SERVER_ADDRESS и TLS_SNI из XUI_URL если он установлен
+    # Проверка наличия git и обновление кода
+    if command -v git &> /dev/null; then
+        echo -e "${YELLOW}📥 Получение обновлений из репозитория...${NC}"
+        
+        # Сохраняем текущую ветку
+        CURRENT_BRANCH=$(git branch --show-current 2>/dev/null || echo "main")
+        
+        # Проверяем есть ли изменения
+        if git status --porcelain | grep -q .; then
+            echo -e "${YELLOW}⚠️  Обнаружены локальные изменения${NC}"
+            echo -e "${YELLOW}Создаем резервную копию...${NC}"
+            git stash push -m "Auto-stash before update $(date +%Y%m%d_%H%M%S)" 2>/dev/null || true
+        fi
+        
+        # Выполняем git pull
+        if git pull origin "$CURRENT_BRANCH" 2>&1 | tee /tmp/git-pull.log; then
+            echo -e "${GREEN}✅ Код успешно обновлен${NC}"
+        else
+            echo -e "${YELLOW}⚠️  Не удалось обновить код из репозитория${NC}"
+            echo -e "${YELLOW}Продолжаем с текущей версией...${NC}"
+        fi
+    else
+        echo -e "${YELLOW}⚠️  Git не установлен, пропускаем обновление кода${NC}"
+        echo -e "${YELLOW}Пересобираем с текущей версией...${NC}"
+    fi
+    
+    # Обновляем SERVER_ADDRESS и TLS_SNI из XUI_URL (ПОСЛЕ git pull, чтобы всегда выполнялось)
+    echo ""
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${BLUE}📋 Шаг 1: Чтение XUI_URL из .env${NC}"
     XUI_URL=$(get_env_value "XUI_URL")
@@ -931,36 +958,10 @@ update_xuibot() {
     fi
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
     
-    # Извлекаем параметры из панели перед обновлением
+    # Извлекаем параметры из панели (TLS_FINGERPRINT, TLS_ALPN и т.д.)
     echo ""
     extract_inbound_params
     echo ""
-    
-    # Проверка наличия git
-    if command -v git &> /dev/null; then
-        echo -e "${YELLOW}📥 Получение обновлений из репозитория...${NC}"
-        
-        # Сохраняем текущую ветку
-        CURRENT_BRANCH=$(git branch --show-current 2>/dev/null || echo "main")
-        
-        # Проверяем есть ли изменения
-        if git status --porcelain | grep -q .; then
-            echo -e "${YELLOW}⚠️  Обнаружены локальные изменения${NC}"
-            echo -e "${YELLOW}Создаем резервную копию...${NC}"
-            git stash push -m "Auto-stash before update $(date +%Y%m%d_%H%M%S)" 2>/dev/null || true
-        fi
-        
-        # Выполняем git pull
-        if git pull origin "$CURRENT_BRANCH" 2>&1 | tee /tmp/git-pull.log; then
-            echo -e "${GREEN}✅ Код успешно обновлен${NC}"
-        else
-            echo -e "${YELLOW}⚠️  Не удалось обновить код из репозитория${NC}"
-            echo -e "${YELLOW}Продолжаем с текущей версией...${NC}"
-        fi
-    else
-        echo -e "${YELLOW}⚠️  Git не установлен, пропускаем обновление кода${NC}"
-        echo -e "${YELLOW}Пересобираем с текущей версией...${NC}"
-    fi
     
     # Остановка контейнера
     echo -e "${YELLOW}🛑 Остановка контейнера...${NC}"
