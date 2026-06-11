@@ -84,8 +84,8 @@ class VPNConfig:
     server_address: str
     server_port: int
     xui_db_path: str = "/etc/x-ui/x-ui.db"
-    transport: str = "tcp"
-    security: str = "tls"
+    transport: str = "tcp"  # Допустимые значения: tcp, xhttp, ws, grpc, httpupgrade, splithttp
+    security: str = "tls"   # Допустимые значения: tls, reality
     tls_sni: str = ""
     tls_fingerprint: str = "chrome"
     tls_alpn: str = "http/1.1"
@@ -101,8 +101,8 @@ class VPNConfig:
             server_address=os.getenv("SERVER_ADDRESS", ""),
             server_port=int(os.getenv("SERVER_PORT", "443")),
             xui_db_path=os.getenv("XUI_DB_PATH", "/etc/x-ui/x-ui.db"),
-            transport=os.getenv("TRANSPORT", "tcp"),
-            security=os.getenv("SECURITY", "tls"),
+            transport=os.getenv("TRANSPORT", "tcp"),  # ВАЖНО: Установите в .env файле!
+            security=os.getenv("SECURITY", "tls"),    # ВАЖНО: Установите в .env файле!
             tls_sni=os.getenv("TLS_SNI", ""),
             tls_fingerprint=os.getenv("TLS_FINGERPRINT", "chrome"),
             tls_alpn=os.getenv("TLS_ALPN", "http/1.1"),
