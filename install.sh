@@ -253,32 +253,42 @@ update_env_value() {
     
     # Если обновляется XUI_URL, автоматически обновляем SERVER_ADDRESS и TLS_SNI
     if [ "$key" = "XUI_URL" ] && [ -n "$value" ]; then
-        # Извлекаем домен из URL (например: https://websrvinfo.run:48531/path -> websrvinfo.run)
+        # Извлекаем домен/IP из URL (например: https://websrvinfo.run:48531/path -> websrvinfo.run)
         local domain=$(echo "$value" | sed -E 's|^https?://([^:/]+).*|\1|')
         
         if [ -n "$domain" ] && [ "$domain" != "localhost" ] && [ "$domain" != "127.0.0.1" ]; then
-            # Получаем текущий SERVER_ADDRESS
-            local current_server_address=$(get_env_value "SERVER_ADDRESS")
-            
-            # Обновляем SERVER_ADDRESS если он отличается от домена
-            if [ "$current_server_address" != "$domain" ]; then
-                echo -e "${YELLOW}🔄 Обновление SERVER_ADDRESS: ${current_server_address} -> ${domain}${NC}"
-                if grep -q "^SERVER_ADDRESS=" .env 2>/dev/null; then
-                    sed -i "s|^SERVER_ADDRESS=.*|SERVER_ADDRESS=${domain}|" .env
-                else
-                    echo "SERVER_ADDRESS=${domain}" >> .env
+            # Проверяем, является ли это доменом (не IP адресом)
+            # IP адрес содержит только цифры и точки
+            if [[ ! "$domain" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                # Это домен, обновляем SERVER_ADDRESS и TLS_SNI
+                echo -e "${YELLOW}🔄 Обнаружен домен в XUI_URL: ${domain}${NC}"
+                
+                # Получаем текущий SERVER_ADDRESS
+                local current_server_address=$(get_env_value "SERVER_ADDRESS")
+                
+                # Обновляем SERVER_ADDRESS если он отличается от домена
+                if [ "$current_server_address" != "$domain" ]; then
+                    echo -e "${YELLOW}🔄 Обновление SERVER_ADDRESS: ${current_server_address} -> ${domain}${NC}"
+                    if grep -q "^SERVER_ADDRESS=" .env 2>/dev/null; then
+                        sed -i "s|^SERVER_ADDRESS=.*|SERVER_ADDRESS=${domain}|" .env
+                    else
+                        echo "SERVER_ADDRESS=${domain}" >> .env
+                    fi
                 fi
-            fi
-            
-            # Обновляем TLS_SNI если он пустой или отличается
-            local current_tls_sni=$(get_env_value "TLS_SNI")
-            if [ -z "$current_tls_sni" ] || [ "$current_tls_sni" != "$domain" ]; then
-                echo -e "${YELLOW}🔄 Обновление TLS_SNI: ${current_tls_sni} -> ${domain}${NC}"
-                if grep -q "^TLS_SNI=" .env 2>/dev/null; then
-                    sed -i "s|^TLS_SNI=.*|TLS_SNI=${domain}|" .env
-                else
-                    echo "TLS_SNI=${domain}" >> .env
+                
+                # Обновляем TLS_SNI если он пустой или отличается
+                local current_tls_sni=$(get_env_value "TLS_SNI")
+                if [ -z "$current_tls_sni" ] || [ "$current_tls_sni" != "$domain" ]; then
+                    echo -e "${YELLOW}🔄 Обновление TLS_SNI: ${current_tls_sni} -> ${domain}${NC}"
+                    if grep -q "^TLS_SNI=" .env 2>/dev/null; then
+                        sed -i "s|^TLS_SNI=.*|TLS_SNI=${domain}|" .env
+                    else
+                        echo "TLS_SNI=${domain}" >> .env
+                    fi
                 fi
+            else
+                # Это IP адрес, не обновляем
+                echo -e "${BLUE}ℹ️  Обнаружен IP адрес в XUI_URL: ${domain}, SERVER_ADDRESS и TLS_SNI не изменяются${NC}"
             fi
         fi
     fi
