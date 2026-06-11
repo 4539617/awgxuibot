@@ -579,6 +579,10 @@ update_bot() {
     
     echo -e "${YELLOW}🔄 Пересборка бота...${NC}"
     
+    # Извлекаем параметры из inbound перед пересборкой
+    echo -e "${YELLOW}🔍 Обновление параметров из inbound...${NC}"
+    extract_inbound_params
+    
     # Остановка контейнера
     echo -e "${YELLOW}🛑 Остановка контейнера...${NC}"
     docker stop xuibot 2>/dev/null || true
@@ -735,6 +739,30 @@ install_xuibot() {
                 update_env_value "REALITY_PUBLIC_KEY" "${reality_pub}"
                 update_env_value "REALITY_PRIVATE_KEY" "${reality_priv}"
                 update_env_value "REALITY_SHORT_ID" "${reality_short}"
+            fi
+        fi
+        
+        # Если security = tls - извлекаем TLS параметры
+        if [ "$SECURITY" = "tls" ]; then
+            echo -e "${YELLOW}🔑 Обнаружен TLS, извлекаем параметры...${NC}"
+            
+            TLS_FINGERPRINT=$(sqlite3 /etc/x-ui/x-ui.db "SELECT json_extract(stream_settings, '$.tlsSettings.settings.fingerprint') FROM inbounds WHERE id=${FIRST_INBOUND_ID};" 2>/dev/null)
+            TLS_ALPN=$(sqlite3 /etc/x-ui/x-ui.db "SELECT json_extract(stream_settings, '$.tlsSettings.alpn[0]') FROM inbounds WHERE id=${FIRST_INBOUND_ID};" 2>/dev/null)
+            TLS_SNI=$(sqlite3 /etc/x-ui/x-ui.db "SELECT json_extract(stream_settings, '$.tlsSettings.serverName') FROM inbounds WHERE id=${FIRST_INBOUND_ID};" 2>/dev/null)
+            
+            if [ -n "$TLS_FINGERPRINT" ] && [ "$TLS_FINGERPRINT" != "null" ]; then
+                update_env_value "TLS_FINGERPRINT" "${TLS_FINGERPRINT}"
+                echo -e "${GREEN}✅ TLS Fingerprint: ${TLS_FINGERPRINT}${NC}"
+            fi
+            
+            if [ -n "$TLS_ALPN" ] && [ "$TLS_ALPN" != "null" ]; then
+                update_env_value "TLS_ALPN" "${TLS_ALPN}"
+                echo -e "${GREEN}✅ TLS ALPN: ${TLS_ALPN}${NC}"
+            fi
+            
+            if [ -n "$TLS_SNI" ] && [ "$TLS_SNI" != "null" ]; then
+                update_env_value "TLS_SNI" "${TLS_SNI}"
+                echo -e "${GREEN}✅ TLS SNI: ${TLS_SNI}${NC}"
             fi
         fi
     else
