@@ -86,6 +86,30 @@ install_docker() {
     else
         echo -e "${GREEN}✅ Docker уже установлен${NC}"
     fi
+    
+    # Проверка и установка Docker Compose
+    if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/null; then
+        echo -e "${YELLOW}📦 Установка Docker Compose...${NC}"
+        
+        # Попытка установить Docker Compose V2 (plugin)
+        if apt-get update &> /dev/null && apt-get install -y docker-compose-plugin &> /dev/null; then
+            echo -e "${GREEN}✅ Docker Compose V2 (plugin) установлен${NC}"
+        else
+            # Если не удалось, устанавливаем V1
+            echo -e "${YELLOW}⚠ Установка Docker Compose V1...${NC}"
+            apt-get install -y docker-compose || {
+                echo -e "${RED}❌ Не удалось установить Docker Compose${NC}"
+                exit 1
+            }
+            echo -e "${GREEN}✅ Docker Compose V1 установлен${NC}"
+        fi
+    else
+        if docker compose version &> /dev/null; then
+            echo -e "${GREEN}✅ Docker Compose V2 уже установлен${NC}"
+        elif command -v docker-compose &> /dev/null; then
+            echo -e "${GREEN}✅ Docker Compose V1 уже установлен${NC}"
+        fi
+    fi
 }
 
 # Функция создания директорий
