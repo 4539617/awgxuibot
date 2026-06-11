@@ -312,7 +312,6 @@ class XUIClient:
                         )
                         if result.returncode == 0:
                             logger.info("✅ X-UI перезапущен, ключ активен")
-                            import time
                             time.sleep(3)  # Даём время на запуск
                         else:
                             logger.warning(f"⚠️ Не удалось перезапустить X-UI: {result.stderr}")
