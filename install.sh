@@ -517,6 +517,28 @@ install_bot() {
     # Интерактивная настройка параметров
     interactive_setup
     
+    # Обновляем SERVER_ADDRESS и TLS_SNI из XUI_URL если он установлен
+    XUI_URL=$(get_env_value "XUI_URL")
+    if [ -n "$XUI_URL" ]; then
+        DOMAIN=$(echo "$XUI_URL" | sed -E 's|^https?://([^:/]+).*|\1|')
+        if [ -n "$DOMAIN" ] && [[ ! "$DOMAIN" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo -e "${YELLOW}🔄 Обнаружен домен в XUI_URL: ${DOMAIN}${NC}"
+            CURRENT_SERVER=$(get_env_value "SERVER_ADDRESS")
+            if [ "$CURRENT_SERVER" != "$DOMAIN" ]; then
+                update_env_value "SERVER_ADDRESS" "$DOMAIN"
+                echo -e "${GREEN}✅ SERVER_ADDRESS обновлён: ${DOMAIN}${NC}"
+            fi
+            CURRENT_TLS_SNI=$(get_env_value "TLS_SNI")
+            if [ "$CURRENT_TLS_SNI" != "$DOMAIN" ]; then
+                update_env_value "TLS_SNI" "$DOMAIN"
+                echo -e "${GREEN}✅ TLS_SNI обновлён: ${DOMAIN}${NC}"
+            fi
+        fi
+    fi
+    
+    # Извлекаем параметры из inbound
+    extract_inbound_params
+    
     # Остановка старых контейнеров
     echo -e "\n${YELLOW}🛑 Остановка старых контейнеров...${NC}"
     docker stop xuibot 2>/dev/null || true
@@ -588,6 +610,25 @@ update_bot() {
     echo -e "${BLUE}========================================${NC}\n"
     
     echo -e "${YELLOW}🔄 Пересборка бота...${NC}"
+    
+    # Обновляем SERVER_ADDRESS и TLS_SNI из XUI_URL если он установлен
+    XUI_URL=$(get_env_value "XUI_URL")
+    if [ -n "$XUI_URL" ]; then
+        DOMAIN=$(echo "$XUI_URL" | sed -E 's|^https?://([^:/]+).*|\1|')
+        if [ -n "$DOMAIN" ] && [[ ! "$DOMAIN" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo -e "${YELLOW}🔄 Обнаружен домен в XUI_URL: ${DOMAIN}${NC}"
+            CURRENT_SERVER=$(get_env_value "SERVER_ADDRESS")
+            if [ "$CURRENT_SERVER" != "$DOMAIN" ]; then
+                update_env_value "SERVER_ADDRESS" "$DOMAIN"
+                echo -e "${GREEN}✅ SERVER_ADDRESS обновлён: ${DOMAIN}${NC}"
+            fi
+            CURRENT_TLS_SNI=$(get_env_value "TLS_SNI")
+            if [ "$CURRENT_TLS_SNI" != "$DOMAIN" ]; then
+                update_env_value "TLS_SNI" "$DOMAIN"
+                echo -e "${GREEN}✅ TLS_SNI обновлён: ${DOMAIN}${NC}"
+            fi
+        fi
+    fi
     
     # Извлекаем параметры из inbound перед пересборкой
     echo -e "${YELLOW}🔍 Обновление параметров из inbound...${NC}"
@@ -689,6 +730,32 @@ install_xuibot() {
     fi
     
     echo -e "${GREEN}✅ Параметры 3x-ui панели настроены${NC}\n"
+    
+    # Обновляем SERVER_ADDRESS и TLS_SNI из XUI_URL если он уже установлен
+    XUI_URL=$(get_env_value "XUI_URL")
+    if [ -n "$XUI_URL" ]; then
+        # Извлекаем домен/IP из URL
+        DOMAIN=$(echo "$XUI_URL" | sed -E 's|^https?://([^:/]+).*|\1|')
+        
+        # Проверяем, является ли это доменом (не IP адресом)
+        if [ -n "$DOMAIN" ] && [[ ! "$DOMAIN" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo -e "${YELLOW}🔄 Обнаружен домен в XUI_URL: ${DOMAIN}${NC}"
+            
+            # Обновляем SERVER_ADDRESS
+            CURRENT_SERVER=$(get_env_value "SERVER_ADDRESS")
+            if [ "$CURRENT_SERVER" != "$DOMAIN" ]; then
+                update_env_value "SERVER_ADDRESS" "$DOMAIN"
+                echo -e "${GREEN}✅ SERVER_ADDRESS обновлён: ${DOMAIN}${NC}"
+            fi
+            
+            # Обновляем TLS_SNI
+            CURRENT_TLS_SNI=$(get_env_value "TLS_SNI")
+            if [ "$CURRENT_TLS_SNI" != "$DOMAIN" ]; then
+                update_env_value "TLS_SNI" "$DOMAIN"
+                echo -e "${GREEN}✅ TLS_SNI обновлён: ${DOMAIN}${NC}"
+            fi
+        fi
+    fi
     
     # Автоматическое определение параметров из первого инбаунда
     echo -e "${YELLOW}🔍 Анализ существующих инбаундов...${NC}"
