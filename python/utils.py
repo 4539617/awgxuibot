@@ -243,22 +243,23 @@ class XUIClient:
                 logger.info(f"Ошибка выполнения {cmd}: {e}")
                 continue
         
-        # Метод 3: Docker API через socket
-        logger.info("🔄 Попытка перезапуска X-UI через Docker API...")
+        # Метод 3: Docker API через curl и socket
+        logger.info("🔄 Попытка перезапуска X-UI через Docker API (curl)...")
         try:
-            import requests_unixsocket
-            session = requests_unixsocket.Session()
-            docker_socket = "http+unix://%2Fvar%2Frun%2Fdocker.sock"
+            # Получаем список контейнеров через curl
+            curl_list_cmd = 'curl -s --unix-socket /var/run/docker.sock http://localhost/containers/json'
+            result = subprocess.run(
+                curl_list_cmd,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
             
-            # Получаем список контейнеров
-            try:
-                containers_resp = session.get(
-                    f"{docker_socket}/containers/json?all=true",
-                    timeout=5
-                )
-                if containers_resp.status_code == 200:
-                    containers = containers_resp.json()
-                    logger.info(f"Найдено контейнеров: {len(containers)}")
+            if result.returncode == 0 and result.stdout:
+                try:
+                    containers = json.loads(result.stdout)
+                    logger.info(f"Найдено контейнеров через Docker API: {len(containers)}")
                     
                     # Ищем контейнер x-ui
                     xui_container = None
@@ -274,26 +275,30 @@ class XUIClient:
                         container_name = xui_container['Names'][0].lstrip('/')
                         logger.info(f"Найден контейнер X-UI: {container_name} ({container_id[:12]})")
                         
-                        # Перезапускаем контейнер
-                        restart_resp = session.post(
-                            f"{docker_socket}/containers/{container_id}/restart",
+                        # Перезапускаем контейнер через curl
+                        curl_restart_cmd = f'curl -s --unix-socket /var/run/docker.sock -X POST http://localhost/containers/{container_id}/restart'
+                        restart_result = subprocess.run(
+                            curl_restart_cmd,
+                            shell=True,
+                            capture_output=True,
+                            text=True,
                             timeout=30
                         )
                         
-                        if restart_resp.status_code in [200, 204]:
+                        if restart_result.returncode == 0:
                             logger.info(f"✅ X-UI контейнер {container_name} перезапущен через Docker API")
                             time.sleep(5)
                             return True
                         else:
-                            logger.info(f"Docker API вернул статус {restart_resp.status_code}: {restart_resp.text[:200]}")
+                            logger.info(f"Ошибка перезапуска: {restart_result.stderr[:200]}")
                     else:
-                        logger.info("Контейнер x-ui не найден в Docker")
-                else:
-                    logger.info(f"Не удалось получить список контейнеров: {containers_resp.status_code}")
-            except Exception as e:
-                logger.info(f"Ошибка работы с Docker API: {e}")
-        except ImportError:
-            logger.info("Модуль requests_unixsocket не установлен для Docker API")
+                        logger.info("Контейнер x-ui не найден в списке Docker контейнеров")
+                except json.JSONDecodeError as e:
+                    logger.info(f"Ошибка парсинга JSON от Docker API: {e}")
+            else:
+                logger.info(f"curl вернул код {result.returncode}: {result.stderr[:200]}")
+        except Exception as e:
+            logger.info(f"Ошибка работы с Docker API через curl: {e}")
         
         # Метод 4: Прямой вызов через nsenter (если X-UI на хосте)
         logger.info("🔄 Попытка перезапуска через nsenter на хосте...")
