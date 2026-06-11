@@ -168,6 +168,9 @@ async def cmd_start(message: Message, state: FSMContext):
         if is_admin(user_id):
             await message.answer(
                 f"👑 Администратор\n {username or first_name}\n\n"
+                f"🔐 <b>Настройки подключения:</b>\n"
+                f"• Transport: <code>{config.vpn.transport}</code>\n"
+                f"• Security: <code>{config.vpn.security}</code>\n\n"
                 f"Команды:\n"
                 f"/new - Создать ключ\n"
                 f"/tempkey - Временный ключ\n"
