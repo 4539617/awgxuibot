@@ -303,18 +303,36 @@ class XUIClient:
                     # Перезапускаем X-UI для применения изменений
                     logger.info("Перезапускаем X-UI для применения изменений...")
                     try:
-                        result = subprocess.run(
-                            "systemctl restart x-ui",
-                            shell=True,
-                            capture_output=True,
-                            text=True,
-                            timeout=10
-                        )
-                        if result.returncode == 0:
-                            logger.info("✅ X-UI перезапущен, ключ активен")
-                            time.sleep(3)  # Даём время на запуск
-                        else:
-                            logger.warning(f"⚠️ Не удалось перезапустить X-UI: {result.stderr}")
+                        # Пробуем несколько способов перезапуска
+                        restart_commands = [
+                            "x-ui restart",
+                            "/usr/local/x-ui/x-ui restart",
+                            "systemctl restart x-ui"
+                        ]
+                        
+                        restart_success = False
+                        for cmd in restart_commands:
+                            try:
+                                result = subprocess.run(
+                                    cmd,
+                                    shell=True,
+                                    capture_output=True,
+                                    text=True,
+                                    timeout=10
+                                )
+                                if result.returncode == 0:
+                                    logger.info(f"✅ X-UI перезапущен командой: {cmd}")
+                                    restart_success = True
+                                    time.sleep(3)  # Даём время на запуск
+                                    break
+                                else:
+                                    logger.debug(f"Команда {cmd} не сработала: {result.stderr}")
+                            except Exception as e:
+                                logger.debug(f"Ошибка команды {cmd}: {e}")
+                                continue
+                        
+                        if not restart_success:
+                            logger.warning("⚠️ Не удалось перезапустить X-UI автоматически. Требуется ручной перезапуск: systemctl restart x-ui")
                     except Exception as e:
                         logger.warning(f"⚠️ Ошибка перезапуска X-UI: {e}")
                     
