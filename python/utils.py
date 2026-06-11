@@ -173,11 +173,13 @@ class XUIClient:
         restart_success = False
         
         # Метод 1: Пробуем API endpoints для перезапуска Xray
+        # Правильный endpoint: /panel/api/server/restartXrayService
         restart_endpoints = [
+            "/panel/api/server/restartXrayService",  # ✅ Рабочий endpoint из панели
             "/panel/api/inbounds/restart",
-            "/xui/inbound/restart", 
-            "/panel/inbound/restart",
             "/server/restartXrayService",
+            "/xui/inbound/restart",
+            "/panel/inbound/restart",
             "/panel/api/server/restartXray",
             "/panel/api/inbounds/restartXray",
             "/xui/API/inbounds/restart"
