@@ -7,11 +7,16 @@ services:
     container_name: xuibot
     restart: always
     network_mode: host
+    privileged: true
     env_file:
       - .env
     volumes:
       - ./logs:/app/logs
       - ./data:/app/data
       - /etc/x-ui:/etc/x-ui:rw
+      - /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket:ro
+      - /run/systemd:/run/systemd:ro
+      - /bin/systemctl:/bin/systemctl:ro
+      - /usr/bin/systemctl:/usr/bin/systemctl:ro
 
 # Made with Bob

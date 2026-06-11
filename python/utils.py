@@ -300,6 +300,25 @@ class XUIClient:
                     sql_traffic = f"""sqlite3 {db_path} "INSERT OR IGNORE INTO client_traffics (inbound_id, enable, email, up, down, all_time, expiry_time, total, reset) VALUES ({self.config.xui.inbound_id}, 1, '{email}', 0, 0, 0, {expiry_time}, {total_bytes}, 0);" """
                     subprocess.run(sql_traffic, shell=True, capture_output=True, text=True)
                     
+                    # Перезапускаем X-UI для применения изменений
+                    logger.info("Перезапускаем X-UI для применения изменений...")
+                    try:
+                        result = subprocess.run(
+                            "systemctl restart x-ui",
+                            shell=True,
+                            capture_output=True,
+                            text=True,
+                            timeout=10
+                        )
+                        if result.returncode == 0:
+                            logger.info("✅ X-UI перезапущен, ключ активен")
+                            import time
+                            time.sleep(3)  # Даём время на запуск
+                        else:
+                            logger.warning(f"⚠️ Не удалось перезапустить X-UI: {result.stderr}")
+                    except Exception as e:
+                        logger.warning(f"⚠️ Ошибка перезапуска X-UI: {e}")
+                    
                     return {"success": True, "uuid": client_uuid}
                 else:
                     logger.error(f"Ошибка обновления настроек inbound: {result.stderr}")
