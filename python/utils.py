@@ -162,6 +162,110 @@ class XUIClient:
         except Exception as e:
             logger.error(f"Ошибка подключения к {alt_url}: {e}")
             return False
+    async def _restart_xui_service(self) -> bool:
+        """
+        Универсальный метод перезапуска X-UI/Xray сервиса
+        Пробует несколько методов в порядке приоритета:
+        1. API endpoints панели X-UI
+        2. Системные команды (systemctl, x-ui)
+        3. Docker restart (если бот запущен в Docker)
+        """
+        restart_success = False
+        
+        # Метод 1: Пробуем API endpoints для перезапуска Xray
+        restart_endpoints = [
+            "/panel/api/inbounds/restart",
+            "/xui/inbound/restart", 
+            "/panel/inbound/restart",
+            "/server/restartXrayService",
+            "/panel/api/server/restartXray",
+            "/panel/api/inbounds/restartXray",
+            "/xui/API/inbounds/restart"
+        ]
+        
+        logger.info("🔄 Попытка перезапуска через API панели X-UI...")
+        for endpoint in restart_endpoints:
+            try:
+                restart_url = f"{self.config.xui.url}{endpoint}"
+                logger.debug(f"Пробуем endpoint: {restart_url}")
+                
+                async with self.session.post(restart_url) as resp:
+                    if resp.status == 200:
+                        try:
+                            result = await resp.json()
+                            if result.get('success'):
+                                logger.info(f"✅ Xray перезапущен через API: {endpoint}")
+                                await asyncio.sleep(3)
+                                return True
+                        except:
+                            # Некоторые endpoints не возвращают JSON
+                            logger.info(f"✅ Xray перезапущен через API: {endpoint}")
+                            await asyncio.sleep(3)
+                            return True
+            except Exception as e:
+                logger.debug(f"Endpoint {endpoint} не сработал: {e}")
+                continue
+        
+        # Метод 2: Системные команды
+        logger.info("🔄 Попытка перезапуска через системные команды...")
+        restart_commands = [
+            "systemctl restart x-ui",
+            "x-ui restart",
+            "/usr/local/x-ui/x-ui restart",
+            "service x-ui restart"
+        ]
+        
+        for cmd in restart_commands:
+            try:
+                logger.debug(f"Выполняем команду: {cmd}")
+                result = subprocess.run(
+                    cmd, 
+                    shell=True, 
+                    capture_output=True, 
+                    text=True, 
+                    timeout=15
+                )
+                if result.returncode == 0:
+                    logger.info(f"✅ X-UI перезапущен командой: {cmd}")
+                    time.sleep(3)
+                    return True
+                else:
+                    logger.debug(f"Команда {cmd} вернула код {result.returncode}: {result.stderr}")
+            except subprocess.TimeoutExpired:
+                logger.debug(f"Команда {cmd} превысила таймаут")
+            except Exception as e:
+                logger.debug(f"Ошибка выполнения {cmd}: {e}")
+                continue
+        
+        # Метод 3: Docker restart (если бот в контейнере)
+        logger.info("🔄 Попытка перезапуска X-UI контейнера через Docker...")
+        docker_commands = [
+            "docker restart x-ui",
+            "docker-compose restart x-ui",
+            "docker compose restart x-ui"
+        ]
+        
+        for cmd in docker_commands:
+            try:
+                logger.debug(f"Выполняем Docker команду: {cmd}")
+                result = subprocess.run(
+                    cmd,
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
+                if result.returncode == 0:
+                    logger.info(f"✅ X-UI контейнер перезапущен: {cmd}")
+                    time.sleep(5)
+                    return True
+            except Exception as e:
+                logger.debug(f"Docker команда {cmd} не сработала: {e}")
+                continue
+        
+        logger.warning("⚠️ Все методы перезапуска не сработали")
+        return False
+
 
     async def add_client(self, email: str, total_gb: int, expiry_days: float, comment: str = None) -> Dict:
         """Создание нового клиента через API 3x-ui с комментарием"""
@@ -303,41 +407,10 @@ class XUIClient:
                     
                     # Перезапускаем X-UI для применения изменений
                     logger.info("Перезапускаем X-UI для применения изменений...")
-                    # Перезапускаем Xray через API X-UI
-                    try:
-                        restart_url = f"{self.config.xui.url}/server/restartXrayService"
-                        logger.info(f"Перезапускаем Xray через API: {restart_url}")
-                        
-                        async with self.session.post(restart_url) as resp:
-                            if resp.status == 200:
-                                result = await resp.json()
-                                if result.get('success'):
-                                    logger.info("✅ Xray перезапущен через API, ключ активен")
-                                    await asyncio.sleep(2)  # Даём время на применение изменений
-                                else:
-                                    logger.warning(f"⚠️ API вернул ошибку: {result}")
-                            else:
-                                logger.warning(f"⚠️ Не удалось перезапустить Xray через API (статус {resp.status})")
-                    except Exception as e:
-                        logger.warning(f"⚠️ Ошибка перезапуска Xray через API: {e}")
-                        logger.info("💡 Попытка перезапуска через системную команду...")
-                        
-                        # Fallback: пробуем системные команды
-                        restart_commands = [
-                            "x-ui restart",
-                            "/usr/local/x-ui/x-ui restart",
-                            "systemctl restart x-ui"
-                        ]
-                        
-                        for cmd in restart_commands:
-                            try:
-                                result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10)
-                                if result.returncode == 0:
-                                    logger.info(f"✅ X-UI перезапущен командой: {cmd}")
-                                    time.sleep(3)
-                                    break
-                            except:
-                                continue
+                    restart_success = await self._restart_xui_service()
+                    
+                    if not restart_success:
+                        logger.warning("⚠️ Не удалось перезапустить автоматически. Требуется ручной перезапуск: systemctl restart x-ui")
                     
                     return {"success": True, "uuid": client_uuid}
                 else:

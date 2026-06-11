@@ -14,8 +14,9 @@ services:
       - ./logs:/app/logs
       - ./data:/app/data
       - /etc/x-ui:/etc/x-ui:rw
-      - /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket:ro
-      - /run/systemd:/run/systemd:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket
+      - /run/systemd:/run/systemd
       - /bin/systemctl:/bin/systemctl:ro
       - /usr/bin/systemctl:/usr/bin/systemctl:ro
 
