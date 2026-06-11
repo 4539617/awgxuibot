@@ -230,6 +230,7 @@ REALITY_SNI=${DEFAULT_REALITY_SNI}
 REALITY_FINGERPRINT=${DEFAULT_REALITY_FINGERPRINT}
 TRANSPORT=
 SECURITY=reality
+TLS_SNI=
 INBOUND_ID=1
 
 EOF
@@ -248,6 +249,38 @@ update_env_value() {
     else
         # Добавляем новое значение
         echo "${key}=${value}" >> .env
+    fi
+    
+    # Если обновляется XUI_URL, автоматически обновляем SERVER_ADDRESS и TLS_SNI
+    if [ "$key" = "XUI_URL" ] && [ -n "$value" ]; then
+        # Извлекаем домен из URL (например: https://websrvinfo.run:48531/path -> websrvinfo.run)
+        local domain=$(echo "$value" | sed -E 's|^https?://([^:/]+).*|\1|')
+        
+        if [ -n "$domain" ] && [ "$domain" != "localhost" ] && [ "$domain" != "127.0.0.1" ]; then
+            # Получаем текущий SERVER_ADDRESS
+            local current_server_address=$(get_env_value "SERVER_ADDRESS")
+            
+            # Обновляем SERVER_ADDRESS если он отличается от домена
+            if [ "$current_server_address" != "$domain" ]; then
+                echo -e "${YELLOW}🔄 Обновление SERVER_ADDRESS: ${current_server_address} -> ${domain}${NC}"
+                if grep -q "^SERVER_ADDRESS=" .env 2>/dev/null; then
+                    sed -i "s|^SERVER_ADDRESS=.*|SERVER_ADDRESS=${domain}|" .env
+                else
+                    echo "SERVER_ADDRESS=${domain}" >> .env
+                fi
+            fi
+            
+            # Обновляем TLS_SNI если он пустой или отличается
+            local current_tls_sni=$(get_env_value "TLS_SNI")
+            if [ -z "$current_tls_sni" ] || [ "$current_tls_sni" != "$domain" ]; then
+                echo -e "${YELLOW}🔄 Обновление TLS_SNI: ${current_tls_sni} -> ${domain}${NC}"
+                if grep -q "^TLS_SNI=" .env 2>/dev/null; then
+                    sed -i "s|^TLS_SNI=.*|TLS_SNI=${domain}|" .env
+                else
+                    echo "TLS_SNI=${domain}" >> .env
+                fi
+            fi
+        fi
     fi
 }
 
@@ -323,6 +356,30 @@ extract_inbound_params() {
         if [ -n "$REALITY_FINGERPRINT" ]; then
             update_env_value "REALITY_FINGERPRINT" "${REALITY_FINGERPRINT}"
             echo -e "${GREEN}  ✓ Fingerprint обновлен: ${REALITY_FINGERPRINT}${NC}"
+        fi
+    fi
+    
+    # Если TLS - извлекаем параметры
+    if [ "$SECURITY" = "tls" ]; then
+        echo -e "${YELLOW}🔑 Извлечение TLS параметров...${NC}"
+        
+        local TLS_FINGERPRINT=$(sqlite3 /etc/x-ui/x-ui.db "SELECT json_extract(stream_settings, '$.tlsSettings.settings.fingerprint') FROM inbounds WHERE id=${INBOUND_ID};" 2>/dev/null)
+        local TLS_ALPN=$(sqlite3 /etc/x-ui/x-ui.db "SELECT json_extract(stream_settings, '$.tlsSettings.alpn[0]') FROM inbounds WHERE id=${INBOUND_ID};" 2>/dev/null)
+        local TLS_SNI=$(sqlite3 /etc/x-ui/x-ui.db "SELECT json_extract(stream_settings, '$.tlsSettings.serverName') FROM inbounds WHERE id=${INBOUND_ID};" 2>/dev/null)
+        
+        if [ -n "$TLS_FINGERPRINT" ]; then
+            update_env_value "TLS_FINGERPRINT" "${TLS_FINGERPRINT}"
+            echo -e "${GREEN}  ✓ TLS Fingerprint обновлен: ${TLS_FINGERPRINT}${NC}"
+        fi
+        
+        if [ -n "$TLS_ALPN" ]; then
+            update_env_value "TLS_ALPN" "${TLS_ALPN}"
+            echo -e "${GREEN}  ✓ TLS ALPN обновлен: ${TLS_ALPN}${NC}"
+        fi
+        
+        if [ -n "$TLS_SNI" ] && [ "$TLS_SNI" != "null" ]; then
+            update_env_value "TLS_SNI" "${TLS_SNI}"
+            echo -e "${GREEN}  ✓ TLS SNI обновлен: ${TLS_SNI}${NC}"
         fi
     fi
     
