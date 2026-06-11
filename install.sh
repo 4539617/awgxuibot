@@ -169,9 +169,6 @@ check_and_install_git() {
     fi
 }
 
-    fi
-}
-
 # Функция создания директорий
 create_directories() {
     echo -e "${GREEN}📁 Создание директорий...${NC}"
