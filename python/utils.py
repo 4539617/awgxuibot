@@ -309,7 +309,16 @@ class XUIClient:
             "nsenter -t 1 -m -u -n -i /usr/bin/systemctl restart x-ui",
             "nsenter -t 1 -m -u -n -i x-ui restart",
             "nsenter -t 1 -m -u -n -i /usr/local/x-ui/x-ui restart",
-            "nsenter -t 1 -m -u -n -i service x-ui restart"
+            "nsenter -t 1 -m -u -n -i service x-ui restart",
+            # Прямой вызов через bash скрипт
+            "nsenter -t 1 -m -u -n -i bash -c 'x-ui restart'",
+            "nsenter -t 1 -m -u -n -i bash -c '/usr/local/x-ui/x-ui restart'",
+            # Через sh
+            "nsenter -t 1 -m -u -n -i sh -c 'x-ui restart'",
+            # Поиск и выполнение x-ui
+            "nsenter -t 1 -m -u -n -i bash -c 'which x-ui && x-ui restart'",
+            # Killall и запуск заново (крайний случай)
+            "nsenter -t 1 -m -u -n -i bash -c 'killall xray && sleep 2 && x-ui start'"
         ]
         
         for cmd in nsenter_commands:
@@ -333,6 +342,8 @@ class XUIClient:
                 continue
         
         logger.warning("⚠️ Все методы перезапуска не сработали")
+        logger.warning("💡 Рекомендация: Установите libgcrypt.so.20 на хосте или используйте ручной перезапуск")
+        logger.warning("   Команда на хосте: systemctl restart x-ui")
         return False
 
 
