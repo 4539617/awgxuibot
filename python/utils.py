@@ -1,5 +1,6 @@
 # utils.py
 import aiohttp
+import asyncio
 import logging
 import subprocess
 import json
@@ -302,39 +303,41 @@ class XUIClient:
                     
                     # Перезапускаем X-UI для применения изменений
                     logger.info("Перезапускаем X-UI для применения изменений...")
+                    # Перезапускаем Xray через API X-UI
                     try:
-                        # Пробуем несколько способов перезапуска
+                        restart_url = f"{self.config.xui.url}/server/restartXrayService"
+                        logger.info(f"Перезапускаем Xray через API: {restart_url}")
+                        
+                        async with self.session.post(restart_url) as resp:
+                            if resp.status == 200:
+                                result = await resp.json()
+                                if result.get('success'):
+                                    logger.info("✅ Xray перезапущен через API, ключ активен")
+                                    await asyncio.sleep(2)  # Даём время на применение изменений
+                                else:
+                                    logger.warning(f"⚠️ API вернул ошибку: {result}")
+                            else:
+                                logger.warning(f"⚠️ Не удалось перезапустить Xray через API (статус {resp.status})")
+                    except Exception as e:
+                        logger.warning(f"⚠️ Ошибка перезапуска Xray через API: {e}")
+                        logger.info("💡 Попытка перезапуска через системную команду...")
+                        
+                        # Fallback: пробуем системные команды
                         restart_commands = [
                             "x-ui restart",
                             "/usr/local/x-ui/x-ui restart",
                             "systemctl restart x-ui"
                         ]
                         
-                        restart_success = False
                         for cmd in restart_commands:
                             try:
-                                result = subprocess.run(
-                                    cmd,
-                                    shell=True,
-                                    capture_output=True,
-                                    text=True,
-                                    timeout=10
-                                )
+                                result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10)
                                 if result.returncode == 0:
                                     logger.info(f"✅ X-UI перезапущен командой: {cmd}")
-                                    restart_success = True
-                                    time.sleep(3)  # Даём время на запуск
+                                    time.sleep(3)
                                     break
-                                else:
-                                    logger.debug(f"Команда {cmd} не сработала: {result.stderr}")
-                            except Exception as e:
-                                logger.debug(f"Ошибка команды {cmd}: {e}")
+                            except:
                                 continue
-                        
-                        if not restart_success:
-                            logger.warning("⚠️ Не удалось перезапустить X-UI автоматически. Требуется ручной перезапуск: systemctl restart x-ui")
-                    except Exception as e:
-                        logger.warning(f"⚠️ Ошибка перезапуска X-UI: {e}")
                     
                     return {"success": True, "uuid": client_uuid}
                 else:
