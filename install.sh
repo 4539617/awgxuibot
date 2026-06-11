@@ -618,31 +618,50 @@ update_bot() {
     }
     
     # Обновляем SERVER_ADDRESS и TLS_SNI из XUI_URL если он установлен
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BLUE}📋 Шаг 1: Чтение XUI_URL из .env${NC}"
     XUI_URL=$(get_env_value "XUI_URL")
+    echo -e "${GREEN}✓ XUI_URL прочитан: ${XUI_URL}${NC}"
+    
     if [ -n "$XUI_URL" ]; then
+        echo -e "\n${BLUE}📋 Шаг 2: Извлечение домена из URL${NC}"
         DOMAIN=$(echo "$XUI_URL" | sed -E 's|^https?://([^:/]+).*|\1|')
-        if [ -n "$DOMAIN" ] && [[ ! "$DOMAIN" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo -e "${YELLOW}🔄 Обнаружен домен в XUI_URL: ${DOMAIN}${NC}"
+        echo -e "${GREEN}✓ Извлечён домен/IP: ${DOMAIN}${NC}"
+        
+        echo -e "\n${BLUE}📋 Шаг 3: Проверка - домен или IP?${NC}"
+        if [[ ! "$DOMAIN" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo -e "${GREEN}✓ Это ДОМЕН (не IP адрес)${NC}"
+            echo -e "${YELLOW}🔄 Будут обновлены SERVER_ADDRESS и TLS_SNI${NC}"
             
-            # При пересборке ВСЕГДА обновляем SERVER_ADDRESS
+            echo -e "\n${BLUE}📋 Шаг 4: Обновление SERVER_ADDRESS${NC}"
             CURRENT_SERVER=$(get_env_value "SERVER_ADDRESS")
-            echo -e "${YELLOW}🔄 Обновление SERVER_ADDRESS: ${CURRENT_SERVER} -> ${DOMAIN}${NC}"
+            echo -e "${YELLOW}  Текущее значение: ${CURRENT_SERVER}${NC}"
+            echo -e "${YELLOW}  Новое значение: ${DOMAIN}${NC}"
             sed -i "s|^SERVER_ADDRESS=.*|SERVER_ADDRESS=${DOMAIN}|" .env
-            echo -e "${GREEN}✅ SERVER_ADDRESS обновлён: ${DOMAIN}${NC}"
+            NEW_SERVER=$(get_env_value "SERVER_ADDRESS")
+            echo -e "${GREEN}✅ SERVER_ADDRESS обновлён: ${NEW_SERVER}${NC}"
             
-            # При пересборке ВСЕГДА обновляем TLS_SNI
+            echo -e "\n${BLUE}📋 Шаг 5: Обновление TLS_SNI${NC}"
             CURRENT_TLS_SNI=$(get_env_value "TLS_SNI")
-            echo -e "${YELLOW}🔄 Обновление TLS_SNI: ${CURRENT_TLS_SNI} -> ${DOMAIN}${NC}"
+            echo -e "${YELLOW}  Текущее значение: ${CURRENT_TLS_SNI:-<пусто>}${NC}"
+            echo -e "${YELLOW}  Новое значение: ${DOMAIN}${NC}"
             if grep -q "^TLS_SNI=" .env 2>/dev/null; then
                 sed -i "s|^TLS_SNI=.*|TLS_SNI=${DOMAIN}|" .env
+                echo -e "${GREEN}✓ Строка TLS_SNI обновлена${NC}"
             else
                 echo "TLS_SNI=${DOMAIN}" >> .env
+                echo -e "${GREEN}✓ Строка TLS_SNI добавлена${NC}"
             fi
-            echo -e "${GREEN}✅ TLS_SNI обновлён: ${DOMAIN}${NC}"
+            NEW_TLS_SNI=$(get_env_value "TLS_SNI")
+            echo -e "${GREEN}✅ TLS_SNI обновлён: ${NEW_TLS_SNI}${NC}"
         else
-            echo -e "${BLUE}ℹ️  В XUI_URL указан IP адрес, SERVER_ADDRESS и TLS_SNI не изменяются${NC}"
+            echo -e "${YELLOW}⚠️  Это IP АДРЕС (не домен)${NC}"
+            echo -e "${BLUE}ℹ️  SERVER_ADDRESS и TLS_SNI НЕ изменяются${NC}"
         fi
+    else
+        echo -e "${RED}❌ XUI_URL не найден в .env${NC}"
     fi
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
     
     # Извлекаем параметры из inbound перед пересборкой
     echo -e "${YELLOW}🔍 Обновление параметров из inbound...${NC}"
