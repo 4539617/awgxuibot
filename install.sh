@@ -603,89 +603,6 @@ show_logs() {
     docker logs --tail=50 xuibot 2>/dev/null || echo -e "${RED}Контейнер xuibot не запущен${NC}"
 }
 
-# Функция обновления бота
-update_bot() {
-    echo -e "\n${BLUE}========================================${NC}"
-    echo -e "${BLUE}   Пересборка XUIBot${NC}"
-    echo -e "${BLUE}========================================${NC}\n"
-    
-    echo -e "${YELLOW}🔄 Пересборка бота...${NC}"
-    
-    # Переходим в рабочую директорию
-    cd /opt/awgxuibot || {
-        echo -e "${RED}❌ Ошибка: не удалось перейти в /opt/awgxuibot${NC}"
-        return 1
-    }
-    
-    # Обновляем SERVER_ADDRESS и TLS_SNI из XUI_URL если он установлен
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${BLUE}📋 Шаг 1: Чтение XUI_URL из .env${NC}"
-    XUI_URL=$(get_env_value "XUI_URL")
-    echo -e "${GREEN}✓ XUI_URL прочитан: ${XUI_URL}${NC}"
-    
-    if [ -n "$XUI_URL" ]; then
-        echo -e "\n${BLUE}📋 Шаг 2: Извлечение домена из URL${NC}"
-        DOMAIN=$(echo "$XUI_URL" | sed -E 's|^https?://([^:/]+).*|\1|')
-        echo -e "${GREEN}✓ Извлечён домен/IP: ${DOMAIN}${NC}"
-        
-        echo -e "\n${BLUE}📋 Шаг 3: Проверка - домен или IP?${NC}"
-        if [[ ! "$DOMAIN" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo -e "${GREEN}✓ Это ДОМЕН (не IP адрес)${NC}"
-            echo -e "${YELLOW}🔄 Будут обновлены SERVER_ADDRESS и TLS_SNI${NC}"
-            
-            echo -e "\n${BLUE}📋 Шаг 4: Обновление SERVER_ADDRESS${NC}"
-            CURRENT_SERVER=$(get_env_value "SERVER_ADDRESS")
-            echo -e "${YELLOW}  Текущее значение: ${CURRENT_SERVER}${NC}"
-            echo -e "${YELLOW}  Новое значение: ${DOMAIN}${NC}"
-            sed -i "s|^SERVER_ADDRESS=.*|SERVER_ADDRESS=${DOMAIN}|" .env
-            NEW_SERVER=$(get_env_value "SERVER_ADDRESS")
-            echo -e "${GREEN}✅ SERVER_ADDRESS обновлён: ${NEW_SERVER}${NC}"
-            
-            echo -e "\n${BLUE}📋 Шаг 5: Обновление TLS_SNI${NC}"
-            CURRENT_TLS_SNI=$(get_env_value "TLS_SNI")
-            echo -e "${YELLOW}  Текущее значение: ${CURRENT_TLS_SNI:-<пусто>}${NC}"
-            echo -e "${YELLOW}  Новое значение: ${DOMAIN}${NC}"
-            if grep -q "^TLS_SNI=" .env 2>/dev/null; then
-                sed -i "s|^TLS_SNI=.*|TLS_SNI=${DOMAIN}|" .env
-                echo -e "${GREEN}✓ Строка TLS_SNI обновлена${NC}"
-            else
-                echo "TLS_SNI=${DOMAIN}" >> .env
-                echo -e "${GREEN}✓ Строка TLS_SNI добавлена${NC}"
-            fi
-            NEW_TLS_SNI=$(get_env_value "TLS_SNI")
-            echo -e "${GREEN}✅ TLS_SNI обновлён: ${NEW_TLS_SNI}${NC}"
-        else
-            echo -e "${YELLOW}⚠️  Это IP АДРЕС (не домен)${NC}"
-            echo -e "${BLUE}ℹ️  SERVER_ADDRESS и TLS_SNI НЕ изменяются${NC}"
-        fi
-    else
-        echo -e "${RED}❌ XUI_URL не найден в .env${NC}"
-    fi
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
-    
-    # Извлекаем параметры из inbound перед пересборкой
-    echo -e "${YELLOW}🔍 Обновление параметров из inbound...${NC}"
-    extract_inbound_params
-    
-    # Остановка контейнера
-    echo -e "${YELLOW}🛑 Остановка контейнера...${NC}"
-    docker stop xuibot 2>/dev/null || true
-    docker rm xuibot 2>/dev/null || true
-    
-    # Пересборка образа
-    echo -e "${YELLOW}🐳 Пересборка образа...${NC}"
-    $DOCKER_COMPOSE_CMD -f docker-compose.xuibot.yml build --no-cache
-    
-    # Запуск
-    echo -e "${YELLOW}🚀 Запуск пересобранного контейнера...${NC}"
-    $DOCKER_COMPOSE_CMD -f docker-compose.xuibot.yml up -d
-    
-    sleep 5
-    echo -e "\n${GREEN}✅ Бот пересобран!${NC}"
-    echo -e "${GREEN}📊 Статус контейнера:${NC}"
-    docker ps --filter name=xuibot
-}
-
 # Функция удаления бота
 remove_bot() {
     echo -e "\n${BLUE}========================================${NC}"
@@ -961,6 +878,58 @@ update_xuibot() {
     echo -e "${BLUE}========================================${NC}\n"
     
     echo -e "${YELLOW}🔄 Обновление XUI бота...${NC}"
+    
+    # Переходим в рабочую директорию
+    cd /opt/awgxuibot || {
+        echo -e "${RED}❌ Ошибка: не удалось перейти в /opt/awgxuibot${NC}"
+        return 1
+    }
+    
+    # Обновляем SERVER_ADDRESS и TLS_SNI из XUI_URL если он установлен
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BLUE}📋 Шаг 1: Чтение XUI_URL из .env${NC}"
+    XUI_URL=$(get_env_value "XUI_URL")
+    echo -e "${GREEN}✓ XUI_URL прочитан: ${XUI_URL}${NC}"
+    
+    if [ -n "$XUI_URL" ]; then
+        echo -e "\n${BLUE}📋 Шаг 2: Извлечение домена из URL${NC}"
+        DOMAIN=$(echo "$XUI_URL" | sed -E 's|^https?://([^:/]+).*|\1|')
+        echo -e "${GREEN}✓ Извлечён домен/IP: ${DOMAIN}${NC}"
+        
+        echo -e "\n${BLUE}📋 Шаг 3: Проверка - домен или IP?${NC}"
+        if [[ ! "$DOMAIN" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo -e "${GREEN}✓ Это ДОМЕН (не IP адрес)${NC}"
+            echo -e "${YELLOW}🔄 Будут обновлены SERVER_ADDRESS и TLS_SNI${NC}"
+            
+            echo -e "\n${BLUE}📋 Шаг 4: Обновление SERVER_ADDRESS${NC}"
+            CURRENT_SERVER=$(get_env_value "SERVER_ADDRESS")
+            echo -e "${YELLOW}  Текущее значение: ${CURRENT_SERVER}${NC}"
+            echo -e "${YELLOW}  Новое значение: ${DOMAIN}${NC}"
+            sed -i "s|^SERVER_ADDRESS=.*|SERVER_ADDRESS=${DOMAIN}|" .env
+            NEW_SERVER=$(get_env_value "SERVER_ADDRESS")
+            echo -e "${GREEN}✅ SERVER_ADDRESS обновлён: ${NEW_SERVER}${NC}"
+            
+            echo -e "\n${BLUE}📋 Шаг 5: Обновление TLS_SNI${NC}"
+            CURRENT_TLS_SNI=$(get_env_value "TLS_SNI")
+            echo -e "${YELLOW}  Текущее значение: ${CURRENT_TLS_SNI:-<пусто>}${NC}"
+            echo -e "${YELLOW}  Новое значение: ${DOMAIN}${NC}"
+            if grep -q "^TLS_SNI=" .env 2>/dev/null; then
+                sed -i "s|^TLS_SNI=.*|TLS_SNI=${DOMAIN}|" .env
+                echo -e "${GREEN}✓ Строка TLS_SNI обновлена${NC}"
+            else
+                echo "TLS_SNI=${DOMAIN}" >> .env
+                echo -e "${GREEN}✓ Строка TLS_SNI добавлена${NC}"
+            fi
+            NEW_TLS_SNI=$(get_env_value "TLS_SNI")
+            echo -e "${GREEN}✅ TLS_SNI обновлён: ${NEW_TLS_SNI}${NC}"
+        else
+            echo -e "${YELLOW}⚠️  Это IP АДРЕС (не домен)${NC}"
+            echo -e "${BLUE}ℹ️  SERVER_ADDRESS и TLS_SNI НЕ изменяются${NC}"
+        fi
+    else
+        echo -e "${RED}❌ XUI_URL не найден в .env${NC}"
+    fi
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
     
     # Извлекаем параметры из панели перед обновлением
     echo ""
