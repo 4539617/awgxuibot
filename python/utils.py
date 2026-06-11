@@ -187,9 +187,10 @@ class XUIClient:
         for endpoint in restart_endpoints:
             try:
                 restart_url = f"{self.config.xui.url}{endpoint}"
-                logger.debug(f"Пробуем endpoint: {restart_url}")
+                logger.info(f"Пробуем endpoint: {restart_url}")
                 
                 async with self.session.post(restart_url) as resp:
+                    logger.info(f"Ответ от {endpoint}: статус {resp.status}")
                     if resp.status == 200:
                         try:
                             result = await resp.json()
@@ -197,13 +198,18 @@ class XUIClient:
                                 logger.info(f"✅ Xray перезапущен через API: {endpoint}")
                                 await asyncio.sleep(3)
                                 return True
-                        except:
+                            else:
+                                logger.info(f"API вернул success=false: {result}")
+                        except Exception as json_err:
                             # Некоторые endpoints не возвращают JSON
-                            logger.info(f"✅ Xray перезапущен через API: {endpoint}")
-                            await asyncio.sleep(3)
-                            return True
+                            text = await resp.text()
+                            logger.info(f"Ответ не JSON: {text[:100]}")
+                            if "success" in text.lower() or "ok" in text.lower():
+                                logger.info(f"✅ Xray перезапущен через API: {endpoint}")
+                                await asyncio.sleep(3)
+                                return True
             except Exception as e:
-                logger.debug(f"Endpoint {endpoint} не сработал: {e}")
+                logger.info(f"Endpoint {endpoint} не сработал: {e}")
                 continue
         
         # Метод 2: Системные команды
@@ -217,12 +223,12 @@ class XUIClient:
         
         for cmd in restart_commands:
             try:
-                logger.debug(f"Выполняем команду: {cmd}")
+                logger.info(f"Выполняем команду: {cmd}")
                 result = subprocess.run(
-                    cmd, 
-                    shell=True, 
-                    capture_output=True, 
-                    text=True, 
+                    cmd,
+                    shell=True,
+                    capture_output=True,
+                    text=True,
                     timeout=15
                 )
                 if result.returncode == 0:
@@ -230,11 +236,11 @@ class XUIClient:
                     time.sleep(3)
                     return True
                 else:
-                    logger.debug(f"Команда {cmd} вернула код {result.returncode}: {result.stderr}")
+                    logger.info(f"Команда {cmd} вернула код {result.returncode}: {result.stderr[:200]}")
             except subprocess.TimeoutExpired:
-                logger.debug(f"Команда {cmd} превысила таймаут")
+                logger.info(f"Команда {cmd} превысила таймаут")
             except Exception as e:
-                logger.debug(f"Ошибка выполнения {cmd}: {e}")
+                logger.info(f"Ошибка выполнения {cmd}: {e}")
                 continue
         
         # Метод 3: Docker restart (если бот в контейнере)
@@ -247,7 +253,7 @@ class XUIClient:
         
         for cmd in docker_commands:
             try:
-                logger.debug(f"Выполняем Docker команду: {cmd}")
+                logger.info(f"Выполняем Docker команду: {cmd}")
                 result = subprocess.run(
                     cmd,
                     shell=True,
@@ -259,8 +265,10 @@ class XUIClient:
                     logger.info(f"✅ X-UI контейнер перезапущен: {cmd}")
                     time.sleep(5)
                     return True
+                else:
+                    logger.info(f"Docker команда {cmd} вернула код {result.returncode}: {result.stderr[:200]}")
             except Exception as e:
-                logger.debug(f"Docker команда {cmd} не сработала: {e}")
+                logger.info(f"Docker команда {cmd} не сработала: {e}")
                 continue
         
         logger.warning("⚠️ Все методы перезапуска не сработали")
