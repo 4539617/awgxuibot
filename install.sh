@@ -623,16 +623,24 @@ update_bot() {
         DOMAIN=$(echo "$XUI_URL" | sed -E 's|^https?://([^:/]+).*|\1|')
         if [ -n "$DOMAIN" ] && [[ ! "$DOMAIN" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo -e "${YELLOW}🔄 Обнаружен домен в XUI_URL: ${DOMAIN}${NC}"
+            
+            # При пересборке ВСЕГДА обновляем SERVER_ADDRESS
             CURRENT_SERVER=$(get_env_value "SERVER_ADDRESS")
-            if [ "$CURRENT_SERVER" != "$DOMAIN" ]; then
-                update_env_value "SERVER_ADDRESS" "$DOMAIN"
-                echo -e "${GREEN}✅ SERVER_ADDRESS обновлён: ${DOMAIN}${NC}"
-            fi
+            echo -e "${YELLOW}🔄 Обновление SERVER_ADDRESS: ${CURRENT_SERVER} -> ${DOMAIN}${NC}"
+            sed -i "s|^SERVER_ADDRESS=.*|SERVER_ADDRESS=${DOMAIN}|" .env
+            echo -e "${GREEN}✅ SERVER_ADDRESS обновлён: ${DOMAIN}${NC}"
+            
+            # При пересборке ВСЕГДА обновляем TLS_SNI
             CURRENT_TLS_SNI=$(get_env_value "TLS_SNI")
-            if [ "$CURRENT_TLS_SNI" != "$DOMAIN" ]; then
-                update_env_value "TLS_SNI" "$DOMAIN"
-                echo -e "${GREEN}✅ TLS_SNI обновлён: ${DOMAIN}${NC}"
+            echo -e "${YELLOW}🔄 Обновление TLS_SNI: ${CURRENT_TLS_SNI} -> ${DOMAIN}${NC}"
+            if grep -q "^TLS_SNI=" .env 2>/dev/null; then
+                sed -i "s|^TLS_SNI=.*|TLS_SNI=${DOMAIN}|" .env
+            else
+                echo "TLS_SNI=${DOMAIN}" >> .env
             fi
+            echo -e "${GREEN}✅ TLS_SNI обновлён: ${DOMAIN}${NC}"
+        else
+            echo -e "${BLUE}ℹ️  В XUI_URL указан IP адрес, SERVER_ADDRESS и TLS_SNI не изменяются${NC}"
         fi
     fi
     
