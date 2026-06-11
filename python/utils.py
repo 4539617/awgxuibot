@@ -95,15 +95,20 @@ class XUIClient:
         self.cookies = None
     
     async def _get_session(self):
-        """Создание сессии с SSL контекстом"""
+        """Создание сессии с SSL контекстом и cookie jar"""
         if self.session is None:
             ssl_context = ssl.create_default_context()
             ssl_context.check_hostname = False
             ssl_context.verify_mode = ssl.CERT_NONE
             
             connector = aiohttp.TCPConnector(ssl=ssl_context)
+            
+            # Создаём cookie jar с unsafe=True для работы с IP адресами
+            cookie_jar = aiohttp.CookieJar(unsafe=True)
+            
             self.session = aiohttp.ClientSession(
                 connector=connector,
+                cookie_jar=cookie_jar,
                 timeout=aiohttp.ClientTimeout(total=self.config.xui.api_timeout)
             )
         return self.session
