@@ -302,25 +302,35 @@ class XUIClient:
         
         # Метод 4: Прямой вызов через nsenter (если X-UI на хосте)
         logger.info("🔄 Попытка перезапуска через nsenter на хосте...")
-        try:
-            # Получаем PID процесса init хоста (обычно PID 1 вне контейнера)
-            nsenter_cmd = "nsenter -t 1 -m -u -n -i systemctl restart x-ui"
-            logger.info(f"Выполняем: {nsenter_cmd}")
-            result = subprocess.run(
-                nsenter_cmd,
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=15
-            )
-            if result.returncode == 0:
-                logger.info(f"✅ X-UI перезапущен через nsenter на хосте")
-                time.sleep(3)
-                return True
-            else:
-                logger.info(f"nsenter вернул код {result.returncode}: {result.stderr[:200]}")
-        except Exception as e:
-            logger.info(f"Ошибка nsenter: {e}")
+        
+        # Пробуем разные варианты команд на хосте
+        nsenter_commands = [
+            "nsenter -t 1 -m -u -n -i /bin/systemctl restart x-ui",
+            "nsenter -t 1 -m -u -n -i /usr/bin/systemctl restart x-ui",
+            "nsenter -t 1 -m -u -n -i x-ui restart",
+            "nsenter -t 1 -m -u -n -i /usr/local/x-ui/x-ui restart",
+            "nsenter -t 1 -m -u -n -i service x-ui restart"
+        ]
+        
+        for cmd in nsenter_commands:
+            try:
+                logger.info(f"Выполняем: {cmd}")
+                result = subprocess.run(
+                    cmd,
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=15
+                )
+                if result.returncode == 0:
+                    logger.info(f"✅ X-UI перезапущен через nsenter: {cmd}")
+                    time.sleep(3)
+                    return True
+                else:
+                    logger.info(f"Команда вернула код {result.returncode}: {result.stderr[:200]}")
+            except Exception as e:
+                logger.info(f"Ошибка выполнения {cmd}: {e}")
+                continue
         
         logger.warning("⚠️ Все методы перезапуска не сработали")
         return False
