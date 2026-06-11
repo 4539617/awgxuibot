@@ -755,17 +755,36 @@ remove_xuibot() {
     echo -e "${YELLOW}🗑️  Удаление образа...${NC}"
     docker rmi awgxuibot-xuibot 2>/dev/null || true
     
-    # Очистка XUI_BOT_TOKEN из .env
+    # Очистка XUI_BOT_TOKEN и XUI credentials из .env
     if [ -f ".env" ]; then
-        echo -e "${YELLOW}🧹 Очистка XUI_BOT_TOKEN из .env...${NC}"
+        echo -e "${YELLOW}🧹 Очистка XUI настроек из .env...${NC}"
+        
+        # Удаляем XUI_BOT_TOKEN
         if grep -q "^XUI_BOT_TOKEN=" .env; then
             sed -i '/^XUI_BOT_TOKEN=/d' .env
             echo -e "${GREEN}✅ XUI_BOT_TOKEN удален из .env${NC}"
         fi
+        
         # Также удаляем старый TELEGRAM_BOT_TOKEN если он есть (для обратной совместимости)
         if grep -q "^TELEGRAM_BOT_TOKEN=" .env; then
             sed -i '/^TELEGRAM_BOT_TOKEN=/d' .env
             echo -e "${GREEN}✅ TELEGRAM_BOT_TOKEN удален из .env${NC}"
+        fi
+        
+        # Очищаем XUI credentials
+        if grep -q "^XUI_URL=" .env; then
+            sed -i 's/^XUI_URL=.*/XUI_URL=/' .env
+            echo -e "${GREEN}✅ XUI_URL очищен${NC}"
+        fi
+        
+        if grep -q "^XUI_USERNAME=" .env; then
+            sed -i 's/^XUI_USERNAME=.*/XUI_USERNAME=/' .env
+            echo -e "${GREEN}✅ XUI_USERNAME очищен${NC}"
+        fi
+        
+        if grep -q "^XUI_PASSWORD=" .env; then
+            sed -i 's/^XUI_PASSWORD=.*/XUI_PASSWORD=/' .env
+            echo -e "${GREEN}✅ XUI_PASSWORD очищен${NC}"
         fi
     fi
     
