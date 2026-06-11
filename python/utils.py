@@ -511,6 +511,14 @@ class XUIClient:
                     
                     # Перезапускаем X-UI для применения изменений
                     logger.info("Перезапускаем X-UI для применения изменений...")
+                    
+                    # Проверяем авторизацию перед перезапуском
+                    if not self.session or not self.cookies:
+                        logger.info("Повторная авторизация перед перезапуском...")
+                        if not await self.login():
+                            logger.error("Не удалось авторизоваться для перезапуска")
+                            return {"success": True, "uuid": client_uuid, "restart": False}
+                    
                     restart_success = await self._restart_xui_service()
                     
                     if not restart_success:
