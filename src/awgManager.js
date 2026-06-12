@@ -287,7 +287,8 @@ export class AWGManager {
       const ips = Array.from(ipMatches, m => m[1]);
 
       if (ips.length === 0) {
-        return '10.8.1.1';
+        // 10.8.1.1 зарезервирован для сервера, начинаем с .2
+        return '10.8.1.2';
       }
 
       // Найти максимальный последний октет
@@ -295,10 +296,16 @@ export class AWGManager {
       const maxOctet = Math.max(...lastOctets);
 
       if (maxOctet >= 254) {
-        throw new Error('No free IPs in pool (10.8.1.1-254)');
+        throw new Error('No free IPs in pool (10.8.1.2-254)');
       }
 
-      return `10.8.1.${maxOctet + 1}`;
+      // Если следующий IP будет .1, пропускаем его
+      const nextOctet = maxOctet + 1;
+      if (nextOctet === 1) {
+        return '10.8.1.2';
+      }
+
+      return `10.8.1.${nextOctet}`;
     } catch (error) {
       logger.error(`Error getting next IP for ${container.name}:`, error);
       throw error;
