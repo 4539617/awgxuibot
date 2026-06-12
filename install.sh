@@ -1603,11 +1603,14 @@ show_status() {
         if docker ps --filter name=^amnezia-awg$ --format "{{.Names}}" | grep -q "amnezia-awg"; then
             local awg1_port=$(docker port amnezia-awg 2>/dev/null | grep -oP '\d+$' | head -1)
             [ -z "$awg1_port" ] && awg1_port="Unknown"
-            local awg1_clients=$(docker exec amnezia-awg grep -c "\[Peer\]" /opt/amnezia/*/awg0.conf /opt/amnezia/*/wg0.conf 2>/dev/null | head -1 | cut -d: -f2 || echo "0")
+            local awg1_clients=$(docker exec amnezia-awg grep -c "\[Peer\]" /opt/amnezia/*/awg0.conf /opt/amnezia/*/wg0.conf 2>/dev/null | head -1 | cut -d: -f2 2>/dev/null || echo "0")
+            awg1_clients=$(echo "$awg1_clients" | tr -d '[:space:]')
             echo -e "  AWG v1: ${GREEN}✅ Запущен${NC}"
             echo -e "    📦 Контейнер: amnezia-awg"
             echo -e "    🔌 Порт: ${awg1_port}"
-            echo -e "    👥 Клиентов: ${awg1_clients}"
+            if [ -n "$awg1_clients" ] && [ "$awg1_clients" != "0" ]; then
+                echo -e "    👥 Клиентов: ${awg1_clients}"
+            fi
         else
             echo -e "  AWG v1: ${YELLOW}⚠️  Остановлен${NC} (Контейнер: amnezia-awg)"
         fi
@@ -1621,11 +1624,14 @@ show_status() {
         if docker ps --filter name=^amnezia-awg2$ --format "{{.Names}}" | grep -q "amnezia-awg2"; then
             local awg2_port=$(docker port amnezia-awg2 2>/dev/null | grep -oP '\d+$' | head -1)
             [ -z "$awg2_port" ] && awg2_port="Unknown"
-            local awg2_clients=$(docker exec amnezia-awg2 grep -c "\[Peer\]" /opt/amnezia/*/awg0.conf /opt/amnezia/*/wg0.conf 2>/dev/null | head -1 | cut -d: -f2 || echo "0")
+            local awg2_clients=$(docker exec amnezia-awg2 grep -c "\[Peer\]" /opt/amnezia/*/awg0.conf /opt/amnezia/*/wg0.conf 2>/dev/null | head -1 | cut -d: -f2 2>/dev/null || echo "0")
+            awg2_clients=$(echo "$awg2_clients" | tr -d '[:space:]')
             echo -e "  AWG v2: ${GREEN}✅ Запущен${NC}"
             echo -e "    📦 Контейнер: amnezia-awg2"
             echo -e "    🔌 Порт: ${awg2_port}"
-            echo -e "    👥 Клиентов: ${awg2_clients}"
+            if [ -n "$awg2_clients" ] && [ "$awg2_clients" != "0" ]; then
+                echo -e "    👥 Клиентов: ${awg2_clients}"
+            fi
         else
             echo -e "  AWG v2: ${YELLOW}⚠️  Остановлен${NC} (Контейнер: amnezia-awg2)"
         fi
