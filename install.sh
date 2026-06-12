@@ -1299,7 +1299,7 @@ remove_awg() {
     echo -e "${GREEN}1)${NC} Удалить AWG v1"
     echo -e "${GREEN}2)${NC} Удалить AWG v2"
     echo -e "${GREEN}3)${NC} Удалить оба сервера"
-    echo -e "${GREEN}0)${NC} Отмена"
+    echo -e "${GREEN}0)${NC} Вернуться в главное меню"
     read -p "Введите номер (0-3): " remove_choice
     
     case $remove_choice in
@@ -1598,19 +1598,37 @@ show_status() {
     echo -e "\n${YELLOW}${BOLD}AWG SERVERS:${NC}"
     
     # AWG v1
-    if docker ps --filter name=amnezia-awg --format "{{.Names}}" | grep -q "amnezia-awg"; then
-        local awg1_port=$(docker port amnezia-awg 2>/dev/null | grep -oP '\d+$' | head -1)
-        [ -z "$awg1_port" ] && awg1_port="Unknown"
-        echo -e "  AWG v1: ${GREEN}✅ Запущен${NC} (Порт: ${awg1_port})"
+    if docker ps -a --filter name=^amnezia-awg$ --format "{{.Names}}" | grep -q "amnezia-awg"; then
+        # Контейнер существует, проверяем запущен ли он
+        if docker ps --filter name=^amnezia-awg$ --format "{{.Names}}" | grep -q "amnezia-awg"; then
+            local awg1_port=$(docker port amnezia-awg 2>/dev/null | grep -oP '\d+$' | head -1)
+            [ -z "$awg1_port" ] && awg1_port="Unknown"
+            local awg1_clients=$(docker exec amnezia-awg grep -c "\[Peer\]" /opt/amnezia/*/awg0.conf /opt/amnezia/*/wg0.conf 2>/dev/null | head -1 | cut -d: -f2 || echo "0")
+            echo -e "  AWG v1: ${GREEN}✅ Запущен${NC}"
+            echo -e "    📦 Контейнер: amnezia-awg"
+            echo -e "    🔌 Порт: ${awg1_port}"
+            echo -e "    👥 Клиентов: ${awg1_clients}"
+        else
+            echo -e "  AWG v1: ${YELLOW}⚠️  Остановлен${NC} (Контейнер: amnezia-awg)"
+        fi
     else
         echo -e "  AWG v1: ${RED}❌ Не установлен${NC}"
     fi
     
     # AWG v2
-    if docker ps --filter name=amnezia-awg2 --format "{{.Names}}" | grep -q "amnezia-awg2"; then
-        local awg2_port=$(docker port amnezia-awg2 2>/dev/null | grep -oP '\d+$' | head -1)
-        [ -z "$awg2_port" ] && awg2_port="Unknown"
-        echo -e "  AWG v2: ${GREEN}✅ Запущен${NC} (Порт: ${awg2_port})"
+    if docker ps -a --filter name=^amnezia-awg2$ --format "{{.Names}}" | grep -q "amnezia-awg2"; then
+        # Контейнер существует, проверяем запущен ли он
+        if docker ps --filter name=^amnezia-awg2$ --format "{{.Names}}" | grep -q "amnezia-awg2"; then
+            local awg2_port=$(docker port amnezia-awg2 2>/dev/null | grep -oP '\d+$' | head -1)
+            [ -z "$awg2_port" ] && awg2_port="Unknown"
+            local awg2_clients=$(docker exec amnezia-awg2 grep -c "\[Peer\]" /opt/amnezia/*/awg0.conf /opt/amnezia/*/wg0.conf 2>/dev/null | head -1 | cut -d: -f2 || echo "0")
+            echo -e "  AWG v2: ${GREEN}✅ Запущен${NC}"
+            echo -e "    📦 Контейнер: amnezia-awg2"
+            echo -e "    🔌 Порт: ${awg2_port}"
+            echo -e "    👥 Клиентов: ${awg2_clients}"
+        else
+            echo -e "  AWG v2: ${YELLOW}⚠️  Остановлен${NC} (Контейнер: amnezia-awg2)"
+        fi
     else
         echo -e "  AWG v2: ${RED}❌ Не установлен${NC}"
     fi
@@ -1795,7 +1813,7 @@ select_xui_version() {
     echo -e "${YELLOW}Версии 3.0.0+ не поддерживают прямую работу с базой данных${NC}\n"
     echo -e "${GREEN}1)${NC} Стабильная версия v2.9.4 (рекомендуется для бота)"
     echo -e "${YELLOW}2)${NC} Последняя версия (Latest - НЕ совместима с ботом)"
-    echo -e "${GREEN}0)${NC} Отмена"
+    echo -e "${GREEN}0)${NC} Вернуться в главное меню"
     echo -e "\n${YELLOW}Выберите версию для установки [1]:${NC} "
     read -p "" version_choice
     version_choice=${version_choice:-1}
@@ -4035,12 +4053,12 @@ show_menu() {
     echo -e "${GREEN}1)${NC} Показать статус системы"
     echo -e "${BLUE}---${NC}"
     echo -e "${YELLOW}3X-UI:${NC}"
-    echo -e "${GREEN}2)${NC} Установка 3x-ui Panel v2.9.4"
+    echo -e "${GREEN}2)${NC} Установка 3x-ui Panel v2.9.4..."
     echo -e "${GREEN}3)${NC} Удаление 3x-ui Panel"
     echo -e "${BLUE}---${NC}"
     echo -e "${YELLOW}AWG:${NC}"
-    echo -e "${GREEN}4)${NC} Установка AWG (v1/v2)"
-    echo -e "${GREEN}5)${NC} Удаление AWG (v1/v2)"
+    echo -e "${GREEN}4)${NC} Установка AWG (v1/v2)..."
+    echo -e "${GREEN}5)${NC} Удаление AWG (v1/v2)..."
     echo -e "${GREEN}6)${NC} Сформировать конфигурацию AWG v1"
     echo -e "${GREEN}7)${NC} Сформировать конфигурацию AWG v2"
     echo -e "${BLUE}---${NC}"
