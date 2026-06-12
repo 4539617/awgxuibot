@@ -3862,14 +3862,12 @@ install_awg() {
         # Установлен только v1
         echo -e "\n${YELLOW}Выберите действие:${NC}"
         echo -e "${GREEN}1)${NC} Установить AWG v2 (порт по умолчанию 51821)"
-        echo -e "${GREEN}2)${NC} Переустановить AWG v1"
-        echo -e "${GREEN}3)${NC} Вернуться в главное меню"
-        read -p "Введите номер (1-3): " choice
+        echo -e "${GREEN}0)${NC} Вернуться в главное меню"
+        read -p "Введите номер (0-1): " choice
         
         case $choice in
             1) install_awg_version "v2" "51821" ;;
-            2) install_awg_version "v1" "51820" ;;
-            3) return 0 ;;
+            0) return 0 ;;
             *) echo -e "${RED}❌ Неверный выбор${NC}"; return 1 ;;
         esac
         
@@ -3877,14 +3875,12 @@ install_awg() {
         # Установлен только v2
         echo -e "\n${YELLOW}Выберите действие:${NC}"
         echo -e "${GREEN}1)${NC} Установить AWG v1 (порт по умолчанию 51820)"
-        echo -e "${GREEN}2)${NC} Переустановить AWG v2"
-        echo -e "${GREEN}3)${NC} Вернуться в главное меню"
-        read -p "Введите номер (1-3): " choice
+        echo -e "${GREEN}0)${NC} Вернуться в главное меню"
+        read -p "Введите номер (0-1): " choice
         
         case $choice in
             1) install_awg_version "v1" "51820" ;;
-            2) install_awg_version "v2" "51821" ;;
-            3) return 0 ;;
+            0) return 0 ;;
             *) echo -e "${RED}❌ Неверный выбор${NC}"; return 1 ;;
         esac
         
