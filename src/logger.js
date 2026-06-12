@@ -10,7 +10,13 @@ class Logger {
 
   initialize() {
     if (!this.initialized) {
-      this.logDir = path.join(config.outputDir, 'logs');
+      // Используем /app/logs если существует (Docker volume), иначе ./output/logs
+      const dockerLogDir = '/app/logs';
+      if (fs.existsSync('/app')) {
+        this.logDir = dockerLogDir;
+      } else {
+        this.logDir = path.join(config.outputDir, 'logs');
+      }
       this.ensureLogDir();
       this.initialized = true;
     }
@@ -26,7 +32,7 @@ class Logger {
     this.initialize();
     const date = new Date();
     const dateStr = date.toISOString().split('T')[0]; // YYYY-MM-DD
-    return path.join(this.logDir, `bot_${dateStr}.log`);
+    return path.join(this.logDir, `awgbot_${dateStr}.log`);
   }
 
   formatMessage(level, message, data = null) {

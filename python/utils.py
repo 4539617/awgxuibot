@@ -858,6 +858,9 @@ def generate_vless_link(client_uuid: str, email: str, vpn_config, inbound_id: in
 
 def setup_logging(logging_config):
     """Настройка логирования"""
+    import os
+    from pathlib import Path
+    
     log_level = getattr(logging, logging_config.level.upper())
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     
@@ -870,12 +873,31 @@ def setup_logging(logging_config):
     
     if logging_config.file_enabled:
         try:
+            # Определяем путь к логам
+            log_path = logging_config.file_path
+            
+            # Если путь относительный и мы в Docker (/app существует), используем /app/logs
+            if not os.path.isabs(log_path) and os.path.exists('/app'):
+                log_dir = '/app/logs'
+                os.makedirs(log_dir, exist_ok=True)
+                # Добавляем префикс xuibot_ к имени файла
+                log_filename = os.path.basename(log_path)
+                if not log_filename.startswith('xuibot_'):
+                    log_filename = f'xuibot_{log_filename}'
+                log_path = os.path.join(log_dir, log_filename)
+            else:
+                # Создаём директорию если нужно
+                log_dir = os.path.dirname(log_path)
+                if log_dir:
+                    os.makedirs(log_dir, exist_ok=True)
+            
             file_handler = RotatingFileHandler(
-                logging_config.file_path,
+                log_path,
                 maxBytes=logging_config.max_size_mb * 1024 * 1024,
                 backupCount=logging_config.backup_count
             )
             file_handler.setFormatter(formatter)
             root_logger.addHandler(file_handler)
+            print(f"📝 Логи сохраняются в: {log_path}")
         except Exception as e:
             print(f"Ошибка создания лог-файла: {e}")
