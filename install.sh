@@ -4061,6 +4061,35 @@ generate_awg_config() {
     fi
 }
 
+# Функция создания глобальной команды awgxui
+create_global_command() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Создание глобальной команды${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+    
+    local script_path="/opt/awgxuibot/install.sh"
+    local command_name="awgxui"
+    local bin_path="/usr/local/bin/$command_name"
+    
+    # Проверка существования скрипта
+    if [ ! -f "$script_path" ]; then
+        echo -e "${RED}❌ Скрипт не найден: $script_path${NC}"
+        return 1
+    fi
+    
+    # Создание символической ссылки
+    echo -e "${YELLOW}🔗 Создание символической ссылки...${NC}"
+    if ln -sf "$script_path" "$bin_path"; then
+        chmod +x "$bin_path"
+        echo -e "${GREEN}✅ Глобальная команда создана!${NC}"
+        echo -e "\n${GREEN}Теперь вы можете запустить скрипт из любой директории командой:${NC}"
+        echo -e "${BLUE}awgxui${NC}"
+    else
+        echo -e "${RED}❌ Ошибка создания символической ссылки${NC}"
+        return 1
+    fi
+}
+
 
 # Главное меню
 show_menu() {
@@ -4095,6 +4124,7 @@ show_menu() {
     echo -e "${BLUE}---${NC}"
     echo -e "${YELLOW}Системные утилиты:${NC}"
     echo -e "${GREEN}18)${NC} Анализ диска и памяти"
+    echo -e "${GREEN}19)${NC} Создать глобальную команду 'awgxui'"
     echo -e "${BLUE}---${NC}"
     echo -e "${RED}99)${NC} Удалить ВСЁ (AWG + Боты + 3x-ui)"
     echo -e "${GREEN}0)${NC} Выход"
@@ -4312,6 +4342,9 @@ while true; do
             else
                 echo -e "${RED}❌ Файл disk_analyzer.sh не найден!${NC}"
             fi
+            ;;
+        19)
+            create_global_command
             ;;
         99)
             sync_repository
