@@ -4325,8 +4325,6 @@ while true; do
             remove_all
             ;;
         0)
-            echo -e "\n${YELLOW}Каталог awgxuibot удалён, вернитесь на уровень назад командой:${NC}"
-            echo -e "${GREEN}cd ..${NC}"
             echo -e "\n${YELLOW}Переустановка скрипта:${NC}"
             echo -e "${GREEN}git clone https://github.com/4539617/awgxuibot.git /opt/awgxuibot${NC}"
             echo -e "${GREEN}cd /opt/awgxuibot${NC}"
