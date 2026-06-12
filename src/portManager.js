@@ -189,5 +189,3 @@ export {
     getNextFreePort,
     checkDockerPorts
 };
-
-// Made with Bob

@@ -7,5 +7,3 @@ startPeriodicCleanup(6, 24);
 // Create and start the bot
 const bot = new RouteBot();
 bot.start();
-
-// Made with Bob

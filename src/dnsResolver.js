@@ -85,5 +85,3 @@ export async function resolveMultipleDomains(domains) {
 
   return results;
 }
-
-// Made with Bob

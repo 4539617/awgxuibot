@@ -278,5 +278,3 @@ export async function processBatFile(filepath, originalFilename) {
     stats
   };
 }
-
-// Made with Bob

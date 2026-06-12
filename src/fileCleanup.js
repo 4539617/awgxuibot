@@ -55,5 +55,3 @@ export function startPeriodicCleanup(intervalHours = 6, maxAgeHours = 24) {
 
   console.log(`Periodic cleanup started: every ${intervalHours} hours, deleting files older than ${maxAgeHours} hours`);
 }
-
-// Made with Bob

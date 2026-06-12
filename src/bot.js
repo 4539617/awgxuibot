@@ -315,12 +315,22 @@ google.com
 
       // Check if user is admin
       if (!this.isAdmin(userId)) {
-        // Check anti-flood for non-admins
+        // Если разрешены DNS запросы для обычных пользователей
+        if (config.allowUserDnsQueries) {
+          // Проверяем, является ли текст валидным доменом
+          if (this.isValidDomainQuery(text)) {
+            // Разрешаем обработку домена БЕЗ промежуточных сообщений
+            await this.processDomains(chatId, text, false); // false = тихий режим
+            return;
+          }
+        }
+        
+        // Для всех остальных случаев - безшумно игнорируем
         const limitCheck = this.antiFlood.checkLimit(userId);
         if (!limitCheck.allowed) {
           logger.warn(`Anti-flood triggered for non-admin user ${userId}, remaining time: ${limitCheck.remainingTime}s`);
         }
-        logger.warn(`Non-admin user ${userId} tried to send text message: ${text.substring(0, 50)}...`);
+        logger.warn(`Non-admin user ${userId} sent non-domain message: ${text.substring(0, 50)}...`);
         return; // Silently ignore for non-admins
       }
 
@@ -346,9 +356,9 @@ google.com
     });
   }
 
-  async processDomains(chatId, text) {
+  async processDomains(chatId, text, verbose = true) {
     try {
-      logger.info(`Processing domains request from chat ${chatId}`);
+      logger.info(`Processing domains request from chat ${chatId} (verbose: ${verbose})`);
       
       // Check anti-flood
       const userId = chatId;
@@ -356,10 +366,12 @@ google.com
       
       if (!limitCheck.allowed) {
         logger.warn(`Anti-flood triggered for chat ${chatId}, remaining time: ${limitCheck.remainingTime}s`);
-        this.bot.sendMessage(
-          chatId,
-          `⏳ Слишком много запросов. Подождите ${limitCheck.remainingTime} секунд.`
-        );
+        if (verbose) {
+          this.bot.sendMessage(
+            chatId,
+            `⏳ Слишком много запросов. Подождите ${limitCheck.remainingTime} секунд.`
+          );
+        }
         return;
       }
 
@@ -390,20 +402,25 @@ google.com
 
       if (invalidDomains.length > 0) {
         logger.warn(`Invalid domains from chat ${chatId}: ${invalidDomains.join(', ')}`);
-        this.bot.sendMessage(
-          chatId,
-          `❌ Неправильный формат:\n${invalidDomains.join('\n')}\n\n` +
-          `/start - Начало работы`,
-          { parse_mode: 'Markdown' }
-        );
+        if (verbose) {
+          this.bot.sendMessage(
+            chatId,
+            `❌ Неправильный формат:\n${invalidDomains.join('\n')}\n\n` +
+            `/start - Начало работы`,
+            { parse_mode: 'Markdown' }
+          );
+        }
         return;
       }
 
-      // Send processing message
-      const processingMsg = await this.bot.sendMessage(
-        chatId, 
-        `⏳ Обрабатываю ${domains.length} домен(ов)...`
-      );
+      // Send processing message only for verbose mode (admins)
+      let processingMsg;
+      if (verbose) {
+        processingMsg = await this.bot.sendMessage(
+          chatId,
+          `⏳ Обрабатываю ${domains.length} домен(ов)...`
+        );
+      }
 
       // Resolve domains
       logger.info(`Starting DNS resolution for ${domains.length} domain(s) from chat ${chatId}`);
@@ -418,10 +435,12 @@ google.com
       // Check if any domains were resolved
       if (domainsMap.size === 0) {
         logger.warn(`No domains resolved for chat ${chatId}`);
-        this.bot.editMessageText(
-          '❌ Не удалось разрешить ни один домен. Проверьте правильность ввода.',
-          { chat_id: chatId, message_id: processingMsg.message_id }
-        );
+        if (verbose && processingMsg) {
+          this.bot.editMessageText(
+            '❌ Не удалось разрешить ни один домен. Проверьте правильность ввода.',
+            { chat_id: chatId, message_id: processingMsg.message_id }
+          );
+        }
         return;
       }
 
@@ -441,8 +460,10 @@ google.com
 
       logger.info(`Generated batch file for chat ${chatId}: ${filename}, Total IPs: ${totalIPs}`);
 
-      // Delete processing message
-      await this.bot.deleteMessage(chatId, processingMsg.message_id);
+      // Delete processing message only if it was sent (verbose mode)
+      if (verbose && processingMsg) {
+        await this.bot.deleteMessage(chatId, processingMsg.message_id);
+      }
 
       // Send file without caption
       await this.bot.sendDocument(chatId, filepath);
@@ -471,10 +492,12 @@ google.com
 
     } catch (error) {
       logger.error(`Error processing domains for chat ${chatId}:`, error);
-      this.bot.sendMessage(
-        chatId,
-        `❌ Произошла ошибка при обработке: ${error.message}`
-      );
+      if (verbose) {
+        this.bot.sendMessage(
+          chatId,
+          `❌ Произошла ошибка при обработке: ${error.message}`
+        );
+      }
     }
   }
 
@@ -1433,6 +1456,49 @@ google.com
     return config.adminIds.includes(userId);
   }
 
+  /**
+   * Проверка, является ли текст валидным доменным запросом
+   * @param {string} text - Текст для проверки
+   * @returns {boolean}
+   */
+  isValidDomainQuery(text) {
+    if (!text || typeof text !== 'string') {
+      return false;
+    }
+
+    const trimmedText = text.trim();
+    
+    // Проверяем, что текст не пустой
+    if (trimmedText === '') {
+      return false;
+    }
+
+    // Разбиваем на строки (поддержка множественных доменов)
+    const lines = trimmedText.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+    
+    if (lines.length === 0) {
+      return false;
+    }
+
+    // Регулярное выражение для проверки домена
+    const domainRegex = /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/;
+    
+    // Проверяем каждую строку
+    for (const line of lines) {
+      const cleanDomain = line
+        .replace(/^https?:\/\//, '')
+        .replace(/^www\./, '')
+        .split('/')[0]
+        .split(':')[0];
+      
+      if (!domainRegex.test(cleanDomain)) {
+        return false;
+      }
+    }
+    
+    return true;
+  }
+
   start() {
     logger.info('Bot started successfully!');
     if (config.adminIds.length > 0) {
@@ -1443,5 +1509,3 @@ google.com
     logger.info('Waiting for messages...');
   }
 }
-
-// Made with Bob

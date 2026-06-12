@@ -244,5 +244,3 @@ export async function processAwgConfig(filepath, originalFilename) {
     converted
   };
 }
-
-// Made with Bob

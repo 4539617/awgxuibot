@@ -85,5 +85,3 @@ export function generateMultipleDomainsFilename(domains) {
 
   return `${firstDomain}_and_${otherCount}_other_keenetic.bat`;
 }
-
-// Made with Bob

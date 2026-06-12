@@ -79,5 +79,3 @@ export class AntiFlood {
     }, this.windowMs);
   }
 }
-
-// Made with Bob
