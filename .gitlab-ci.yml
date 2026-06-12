@@ -124,4 +124,3 @@ deploy_production:
   only:
     - main
 
-# Made with Bob

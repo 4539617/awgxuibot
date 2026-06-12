@@ -55,8 +55,6 @@ FROM awg-base AS awgbot
 # Run the bot
 CMD ["node", "src/index.js"]
 
-# Made with Bob
-
 # ============================================
 # Stage 4: XUIBot Runtime
 # ============================================
@@ -64,5 +62,3 @@ FROM xuibot-base AS xuibot
 
 # Run the bot
 CMD ["python", "-u", "python/bot.py"]
-
-# Made with Bob

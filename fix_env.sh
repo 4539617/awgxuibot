@@ -121,4 +121,3 @@ echo -e "${BLUE}TLS_ALPN:${NC} $(grep "^TLS_ALPN=" .env | cut -d'=' -f2)"
 echo -e "\n${YELLOW}Перезапустите бота:${NC}"
 echo -e "${GREEN}docker restart xuibot${NC}"
 
-# Made with Bob

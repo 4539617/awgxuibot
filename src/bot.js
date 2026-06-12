@@ -18,8 +18,6 @@ import { AWGManager } from './awgManager.js';
 import { logger } from './logger.js';
 import fs from 'fs';
 import path from 'path';
-import * as awgInstaller from './awgInstaller.js';
-import * as portManager from './portManager.js';
 
 export class RouteBot {
   constructor() {
@@ -1015,24 +1013,33 @@ google.com
 
       await this.bot.deleteMessage(chatId, processingMsg.message_id);
 
-      if (stats.length === 0) {
-        this.bot.sendMessage(
-          chatId,
-          `📊 *Статистика серверов*\n\n❌ Контейнеры AWG не найдены.\n\nУбедитесь, что контейнеры запущены\n\`\``,
-          { parse_mode: 'Markdown' }
-        );
-        return;
-      }
+      // Создаем карту найденных контейнеров по версиям
+      const statsMap = new Map();
+      stats.forEach(container => {
+        statsMap.set(container.version, container);
+      });
 
-      let statsMessage = '📊 *Статистика серверов*\n\n';
+      let statsMessage = '📊 *Статистика AWG серверов*\n\n';
       
-      for (const container of stats) {
-        const versionLabel = container.version === 'v1' ? 'v1' : 'v2';
-        statsMessage += `*${versionLabel}:*\n`;
-        statsMessage += `${container.running ? '✅ Работает' : '❌ Не работает'}\n`;
-        statsMessage += `📦 Контейнер: \`${container.name}\`\n`;
-        statsMessage += `👥 Клиентов: ${container.clients}\n`;
-        statsMessage += `🔌 Порт: ${container.port}\n\n`;
+      // Показываем статус для обеих версий
+      const versions = ['v1', 'v2'];
+      
+      for (const version of versions) {
+        const container = statsMap.get(version);
+        
+        if (container) {
+          // Контейнер найден - показываем реальный статус
+          statsMessage += `*AWG ${version.toUpperCase()}:*\n`;
+          statsMessage += `${container.running ? '✅ Запущен' : '⚠️ Остановлен'}\n`;
+          statsMessage += `📦 Контейнер: \`${container.name}\`\n`;
+          statsMessage += `👥 Клиентов: ${container.clients}\n`;
+          statsMessage += `🔌 Порт: ${container.port}\n`;
+          statsMessage += `🌐 Endpoint: \`${container.endpoint}\`\n\n`;
+        } else {
+          // Контейнер не найден
+          statsMessage += `*AWG ${version.toUpperCase()}:*\n`;
+          statsMessage += `❌ Не установлен\n\n`;
+        }
       }
 
       this.bot.sendMessage(chatId, statsMessage, { parse_mode: 'Markdown' });

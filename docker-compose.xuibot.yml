@@ -12,5 +12,3 @@ services:
       - ./logs:/app/logs
       - ./data:/app/data
       - /etc/x-ui:/etc/x-ui:rw  # Доступ к базе данных X-UI
-
-# Made with Bob

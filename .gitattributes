@@ -30,4 +30,3 @@ id_ecdsa filter=git-crypt diff=git-crypt
 *.sqlite binary
 *.sqlite3 binary
 
-# Made with Bob

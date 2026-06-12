@@ -3771,37 +3771,127 @@ install_awg_standalone() {
     return 0
 }
 
+# Функция проверки установленных AWG серверов
+check_installed_awg_servers() {
+    local v1_installed=false
+    local v2_installed=false
+    local v1_running=false
+    local v2_running=false
+    
+    # Проверяем v1
+    if docker ps -a --format '{{.Names}}' | grep -q "^amnezia-awg$"; then
+        v1_installed=true
+        if docker ps --format '{{.Names}}' | grep -q "^amnezia-awg$"; then
+            v1_running=true
+        fi
+    fi
+    
+    # Проверяем v2
+    if docker ps -a --format '{{.Names}}' | grep -q "^amnezia-awg2$"; then
+        v2_installed=true
+        if docker ps --format '{{.Names}}' | grep -q "^amnezia-awg2$"; then
+            v2_running=true
+        fi
+    fi
+    
+    echo "$v1_installed:$v1_running:$v2_installed:$v2_running"
+}
+
 # Объединенная функция установки AWG (v1 и v2)
 install_awg() {
     echo -e "\n${BLUE}========================================${NC}"
     echo -e "${BLUE}   Установка AWG Сервера${NC}"
     echo -e "${BLUE}========================================${NC}\n"
     
-    # Выбор версии
-    echo -e "${YELLOW}Выберите версию AWG:${NC}"
-    echo -e "${GREEN}1)${NC} AWG v1 (порт по умолчанию 51820)"
-    echo -e "${GREEN}2)${NC} AWG v2 (порт по умолчанию 51821)"
-    echo -e "${GREEN}3)${NC} Установить обе версии"
-    read -p "Введите номер (1-3): " version_choice
+    # Проверяем установленные серверы
+    local status=$(check_installed_awg_servers)
+    local v1_installed=$(echo $status | cut -d: -f1)
+    local v1_running=$(echo $status | cut -d: -f2)
+    local v2_installed=$(echo $status | cut -d: -f3)
+    local v2_running=$(echo $status | cut -d: -f4)
     
-    case $version_choice in
-        1)
-            install_awg_version "v1" "51820"
-            ;;
-        2)
-            install_awg_version "v2" "51821"
-            ;;
-        3)
-            echo -e "\n${YELLOW}Установка AWG v1...${NC}"
-            install_awg_version "v1" "51820"
-            echo -e "\n${YELLOW}Установка AWG v2...${NC}"
-            install_awg_version "v2" "51821"
-            ;;
-        *)
-            echo -e "${RED}❌ Неверный выбор${NC}"
-            return 1
-            ;;
-    esac
+    # Показываем статус установленных серверов
+    if [ "$v1_installed" = "true" ]; then
+        if [ "$v1_running" = "true" ]; then
+            echo -e "${GREEN}✅ AWG v1 запущен (контейнер: amnezia-awg)${NC}"
+        else
+            echo -e "${YELLOW}⚠️  AWG v1 остановлен (контейнер: amnezia-awg)${NC}"
+        fi
+    fi
+    
+    if [ "$v2_installed" = "true" ]; then
+        if [ "$v2_running" = "true" ]; then
+            echo -e "${GREEN}✅ AWG v2 запущен (контейнер: amnezia-awg2)${NC}"
+        else
+            echo -e "${YELLOW}⚠️  AWG v2 остановлен (контейнер: amnezia-awg2)${NC}"
+        fi
+    fi
+    
+    # Логика меню в зависимости от установленных серверов
+    if [ "$v1_installed" = "true" ] && [ "$v2_installed" = "true" ]; then
+        # Оба установлены
+        echo -e "\n${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${YELLOW}  Оба сервера AWG уже установлены!${NC}"
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "\n${BLUE}💡 Для управления серверами используйте:${NC}"
+        echo -e "   • Telegram бот (если установлен awgbot)"
+        echo -e "   • Команды Docker: ${GREEN}docker ps${NC}, ${GREEN}docker logs${NC}"
+        echo -e "\n${BLUE}Возврат в главное меню...${NC}"
+        sleep 3
+        return 0
+        
+    elif [ "$v1_installed" = "true" ]; then
+        # Установлен только v1
+        echo -e "\n${YELLOW}Выберите действие:${NC}"
+        echo -e "${GREEN}1)${NC} Установить AWG v2 (порт по умолчанию 51821)"
+        echo -e "${GREEN}2)${NC} Переустановить AWG v1"
+        echo -e "${GREEN}3)${NC} Вернуться в главное меню"
+        read -p "Введите номер (1-3): " choice
+        
+        case $choice in
+            1) install_awg_version "v2" "51821" ;;
+            2) install_awg_version "v1" "51820" ;;
+            3) return 0 ;;
+            *) echo -e "${RED}❌ Неверный выбор${NC}"; return 1 ;;
+        esac
+        
+    elif [ "$v2_installed" = "true" ]; then
+        # Установлен только v2
+        echo -e "\n${YELLOW}Выберите действие:${NC}"
+        echo -e "${GREEN}1)${NC} Установить AWG v1 (порт по умолчанию 51820)"
+        echo -e "${GREEN}2)${NC} Переустановить AWG v2"
+        echo -e "${GREEN}3)${NC} Вернуться в главное меню"
+        read -p "Введите номер (1-3): " choice
+        
+        case $choice in
+            1) install_awg_version "v1" "51820" ;;
+            2) install_awg_version "v2" "51821" ;;
+            3) return 0 ;;
+            *) echo -e "${RED}❌ Неверный выбор${NC}"; return 1 ;;
+        esac
+        
+    else
+        # Ничего не установлено
+        echo -e "\n${YELLOW}Выберите версию AWG:${NC}"
+        echo -e "${GREEN}1)${NC} AWG v1 (порт по умолчанию 51820)"
+        echo -e "${GREEN}2)${NC} AWG v2 (порт по умолчанию 51821)"
+        echo -e "${GREEN}3)${NC} Установить обе версии"
+        echo -e "${GREEN}4)${NC} Вернуться в главное меню"
+        read -p "Введите номер (1-4): " choice
+        
+        case $choice in
+            1) install_awg_version "v1" "51820" ;;
+            2) install_awg_version "v2" "51821" ;;
+            3)
+                echo -e "\n${YELLOW}Установка AWG v1...${NC}"
+                install_awg_version "v1" "51820"
+                echo -e "\n${YELLOW}Установка AWG v2...${NC}"
+                install_awg_version "v2" "51821"
+                ;;
+            4) return 0 ;;
+            *) echo -e "${RED}❌ Неверный выбор${NC}"; return 1 ;;
+        esac
+    fi
 }
 
 # Функция установки конкретной версии AWG
@@ -4230,4 +4320,3 @@ done
 #             или отменить операцию.
 # ============================================
 
-# Made with Bob

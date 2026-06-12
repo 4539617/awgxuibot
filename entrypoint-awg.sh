@@ -59,4 +59,3 @@ wg show "$INTERFACE" 2>/dev/null || echo "⚠️  Не удалось получ
 echo "🔄 Контейнер работает..."
 tail -f /dev/null
 
-# Made with Bob

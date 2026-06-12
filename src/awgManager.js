@@ -647,25 +647,42 @@ PersistentKeepalive = 25
 
     for (const container of this.availableContainers) {
       try {
+        // Проверяем статус контейнера в реальном времени
         const isRunning = await this.checkContainer(container.name);
         
         let clients = 0;
+        let actualPort = container.port;
+        
         if (isRunning) {
           try {
+            // Получаем количество клиентов
             const { stdout } = await execAsync(
               `docker exec ${container.name} grep -c "\\[Peer\\]" ${container.configPath} || echo 0`
             );
             clients = parseInt(stdout.trim()) || 0;
+            
+            // Проверяем актуальный порт из конфига
+            try {
+              const { stdout: configContent } = await execAsync(
+                `docker exec ${container.name} cat ${container.configPath}`
+              );
+              const portMatch = configContent.match(/ListenPort\s*=\s*(\d+)/);
+              if (portMatch) {
+                actualPort = portMatch[1];
+              }
+            } catch (error) {
+              logger.warn(`Failed to read port from config for ${container.name}`);
+            }
           } catch (error) {
-            logger.warn(`Failed to count clients for ${container.name}`);
+            logger.warn(`Failed to get details for ${container.name}: ${error.message}`);
           }
         }
 
         stats.push({
           name: container.name,
           version: container.version,
-          port: container.port,
-          endpoint: container.endpoint,
+          port: actualPort,
+          endpoint: `${this.serverIP}:${actualPort}`,
           running: isRunning,
           clients
         });
