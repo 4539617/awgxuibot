@@ -3645,7 +3645,7 @@ get_or_pull_awg_image() {
     fi
     
     # Импортируем образ из локального файла
-    echo -e "${YELLOW}📦 Импортирую Docker образ из $source_file...${NC}" >&2
+    # echo -e "${YELLOW}📦 Импортирую Docker образ из $source_file...${NC}" >&2
     
     # Копируем и переименовываем
     if ! cp "$source_file" "$target_file" 2>/dev/null; then
@@ -3948,7 +3948,6 @@ install_awg_version() {
     
     if install_awg_standalone "$version" "$AWG_PORT"; then
         echo -e "\n${GREEN}✅ AWG $version успешно установлен!${NC}"
-        echo -e "${GREEN}💡 Совет: Вы можете установить awgbot (пункт 12) для удобного управления через Telegram${NC}"
         return 0
     else
         echo -e "\n${RED}❌ Ошибка standalone установки AWG $version${NC}"
