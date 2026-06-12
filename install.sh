@@ -232,6 +232,7 @@ TRANSPORT=
 SECURITY=reality
 TLS_SNI=
 INBOUND_ID=1
+ALLOW_USER_DNS_QUERIES=true
 
 EOF
         echo -e "${GREEN}✅ .env файл создан с дефолтными значениями${NC}"
@@ -1207,8 +1208,23 @@ update_awgbot() {
         echo -e "${YELLOW}Пересобираем с текущей версией...${NC}"
     fi
     
+    # Проверка и добавление ALLOW_USER_DNS_QUERIES если его нет
+    echo -e "\n${BLUE}📋 Проверка параметра ALLOW_USER_DNS_QUERIES${NC}"
+    if grep -q "^ALLOW_USER_DNS_QUERIES=" .env 2>/dev/null; then
+        CURRENT_VALUE=$(get_env_value "ALLOW_USER_DNS_QUERIES")
+        echo -e "${GREEN}✓ Параметр уже существует: ${CURRENT_VALUE}${NC}"
+        echo -e "${BLUE}ℹ️  Оставляем текущее значение без изменений${NC}"
+    else
+        echo -e "${YELLOW}⚠️  Параметр ALLOW_USER_DNS_QUERIES не найден${NC}"
+        echo -e "${YELLOW}🔧 Добавляем с значением по умолчанию: true${NC}"
+        echo "" >> .env
+        echo "# Разрешить обычным пользователям делать DNS запросы" >> .env
+        echo "ALLOW_USER_DNS_QUERIES=true" >> .env
+        echo -e "${GREEN}✅ Параметр ALLOW_USER_DNS_QUERIES добавлен: true${NC}"
+    fi
+    
     # Остановка контейнера
-    echo -e "${YELLOW}🛑 Остановка контейнера...${NC}"
+    echo -e "\n${YELLOW}🛑 Остановка контейнера...${NC}"
     docker stop awgbot 2>/dev/null || true
     docker rm awgbot 2>/dev/null || true
     
