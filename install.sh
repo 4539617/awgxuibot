@@ -2452,6 +2452,11 @@ create_xhttp_reality_inbound() {
     echo -e "${BLUE}   Создание XHTTP Reality Inbound${NC}"
     echo -e "${BLUE}========================================${NC}\n"
     
+    # Загружаем Reality ключи из .env
+    REALITY_PRIVATE_KEY=$(get_env_value "REALITY_PRIVATE_KEY")
+    REALITY_PUBLIC_KEY=$(get_env_value "REALITY_PUBLIC_KEY")
+    REALITY_SHORT_ID=$(get_env_value "REALITY_SHORT_ID")
+    
     # Проверяем наличие необходимых данных
     if [ -z "$REALITY_PRIVATE_KEY" ] || [ -z "$REALITY_PUBLIC_KEY" ] || [ -z "$REALITY_SHORT_ID" ]; then
         echo -e "${RED}❌ Ошибка: Reality ключи не найдены${NC}"
@@ -2585,6 +2590,11 @@ create_tcp_reality_inbound() {
     echo -e "\n${BLUE}========================================${NC}"
     echo -e "${BLUE}   Создание TCP Reality Inbound${NC}"
     echo -e "${BLUE}========================================${NC}\n"
+    
+    # Загружаем Reality ключи из .env
+    REALITY_PRIVATE_KEY=$(get_env_value "REALITY_PRIVATE_KEY")
+    REALITY_PUBLIC_KEY=$(get_env_value "REALITY_PUBLIC_KEY")
+    REALITY_SHORT_ID=$(get_env_value "REALITY_SHORT_ID")
     
     # Проверяем наличие необходимых данных
     if [ -z "$REALITY_PRIVATE_KEY" ] || [ -z "$REALITY_PUBLIC_KEY" ] || [ -z "$REALITY_SHORT_ID" ]; then
@@ -2865,11 +2875,11 @@ post_install_menu() {
             echo -e "${GREEN}1${NC} - XHTTP Reality (рекомендуется)"
             echo -e "${GREEN}2${NC} - TCP Reality"
             echo -e "${GREEN}3${NC} - TCP TLS"
-            echo -e "${GREEN}n${NC} - Вернуться в главное меню"
+            echo -e "${GREEN}0${NC} - Вернуться в главное меню"
             echo -e "${BLUE}========================================${NC}"
             read -p "Ваш выбор: " inbound_type
             
-            if [[ "$inbound_type" =~ ^[Nn]$ ]]; then
+            if [[ "$inbound_type" == "0" ]]; then
                 echo -e "${YELLOW}Возврат в главное меню...${NC}"
                 break 2
             fi
@@ -2882,11 +2892,11 @@ post_install_menu() {
                         echo -e "${BLUE}   Установить xuibot?${NC}"
                         echo -e "${BLUE}========================================${NC}"
                         echo -e "${GREEN}Enter${NC} - Да, установить бота"
-                        echo -e "${GREEN}n${NC}     - Нет, вернуться в главное меню"
+                        echo -e "${GREEN}0${NC}     - Нет, вернуться в главное меню"
                         echo -e "${BLUE}========================================${NC}"
                         read -p "Ваш выбор: " install_bot_choice
                         
-                        if [[ ! "$install_bot_choice" =~ ^[Nn]$ ]]; then
+                        if [[ "$install_bot_choice" != "0" ]]; then
                             install_bot
                         fi
                         return
@@ -2899,11 +2909,11 @@ post_install_menu() {
                         echo -e "${BLUE}   Установить xuibot?${NC}"
                         echo -e "${BLUE}========================================${NC}"
                         echo -e "${GREEN}Enter${NC} - Да, установить бота"
-                        echo -e "${GREEN}n${NC}     - Нет, вернуться в главное меню"
+                        echo -e "${GREEN}0${NC}     - Нет, вернуться в главное меню"
                         echo -e "${BLUE}========================================${NC}"
                         read -p "Ваш выбор: " install_bot_choice
                         
-                        if [[ ! "$install_bot_choice" =~ ^[Nn]$ ]]; then
+                        if [[ "$install_bot_choice" != "0" ]]; then
                             install_bot
                         fi
                         return
@@ -2916,11 +2926,11 @@ post_install_menu() {
                         echo -e "${BLUE}   Установить xuibot?${NC}"
                         echo -e "${BLUE}========================================${NC}"
                         echo -e "${GREEN}Enter${NC} - Да, установить бота"
-                        echo -e "${GREEN}n${NC}     - Нет, вернуться в главное меню"
+                        echo -e "${GREEN}0${NC}     - Нет, вернуться в главное меню"
                         echo -e "${BLUE}========================================${NC}"
                         read -p "Ваш выбор: " install_bot_choice
                         
-                        if [[ ! "$install_bot_choice" =~ ^[Nn]$ ]]; then
+                        if [[ "$install_bot_choice" != "0" ]]; then
                             install_bot
                         fi
                         return
