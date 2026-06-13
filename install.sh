@@ -3423,11 +3423,17 @@ install_3xui_v3() {
     fi
     
     echo -e "${YELLOW}⚠ Установка 3x-ui v3.x (latest версия)...${NC}"
-    echo -e "${BLUE}Панель будет установлена с автоматической настройкой${NC}\n"
+    echo -e "${BLUE}Панель будет установлена с автоматической настройкой${NC}"
+    echo -e "${GREEN}Для v3 бот работает через API, поэтому можно выбрать любую БД${NC}"
+    echo -e "${GREEN}SQLite - для небольших нагрузок (< 500 клиентов)${NC}"
+    echo -e "${GREEN}PostgreSQL - для высоких нагрузок и множества узлов${NC}\n"
     
     # Установка через официальный скрипт
     echo -e "${YELLOW}⚠ Запуск установщика 3x-ui...${NC}"
-    bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh)
+    echo -e "${YELLOW}⚠ Будет автоматически выбрана база данных SQLite${NC}\n"
+    # Автоматически отвечаем на вопросы установщика:
+    # 1 - выбор SQLite (по умолчанию)
+    echo "1" | bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh)
     
     # Проверка успешности установки
     if systemctl is-active --quiet x-ui; then
