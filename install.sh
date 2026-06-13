@@ -3433,7 +3433,8 @@ install_3xui_v3() {
     echo -e "${YELLOW}⚠ Будет автоматически выбрана база данных SQLite${NC}\n"
     # Автоматически отвечаем на вопросы установщика:
     # 1 - выбор SQLite (по умолчанию)
-    echo "1" | bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh)
+    # Используем yes для автоматического ответа "1" на все вопросы
+    yes "1" | bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh) 2>/dev/null || true
     
     # Проверка успешности установки
     if systemctl is-active --quiet x-ui; then
