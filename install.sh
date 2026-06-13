@@ -3440,13 +3440,17 @@ install_3xui_v3() {
     
     # Установка через официальный скрипт
     echo -e "${YELLOW}⚠ Запуск установщика 3x-ui...${NC}"
-    echo -e "${YELLOW}⚠ Будет автоматически выбрана база данных SQLite${NC}\n"
+    echo -e "${YELLOW}⚠ Будет автоматически выбрана база данных SQLite${NC}"
+    echo -e "${YELLOW}⚠ SSL сертификат будет пропущен (можно настроить позже)${NC}\n"
     
     # Создаем временный файл для сохранения вывода установщика
     INSTALL_OUTPUT=$(mktemp)
     
-    # Автоматически отвечаем на вопросы установщика и сохраняем вывод
-    yes "1" | bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh) 2>&1 | tee "$INSTALL_OUTPUT"
+    # Автоматически отвечаем на вопросы установщика:
+    # 1 - выбор SQLite
+    # 4 - пропуск SSL (Skip SSL)
+    # Используем printf для передачи нескольких ответов
+    (echo "1"; echo "4") | bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh) 2>&1 | tee "$INSTALL_OUTPUT"
     
     # Проверка успешности установки
     if systemctl is-active --quiet x-ui; then
