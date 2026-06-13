@@ -4215,32 +4215,33 @@ show_menu() {
     echo -e "${GREEN}1)${NC} Показать статус системы"
     echo -e "${BLUE}---${NC}"
     echo -e "${YELLOW}3X-UI:${NC}"
-    echo -e "${GREEN}2)${NC} Установка 3x-ui Panel (выбор версии: v2.9.4 / v2.x / v3.x)"
-    echo -e "${GREEN}3)${NC} Удаление 3x-ui Panel"
+    echo -e "${GREEN}2)${NC} Установка 3x-ui Panel v2.9.4"
+    echo -e "${GREEN}3)${NC} Установка 3x-ui Panel v3.x ${YELLOW}[НОВОЕ - с API]${NC}"
+    echo -e "${GREEN}4)${NC} Удаление 3x-ui Panel"
     echo -e "${BLUE}---${NC}"
     echo -e "${YELLOW}AWG:${NC}"
-    echo -e "${GREEN}4)${NC} Установка AWG (v1/v2)..."
-    echo -e "${GREEN}5)${NC} Удаление AWG (v1/v2)..."
-    echo -e "${GREEN}6)${NC} Сформировать конфигурацию AWG v1"
-    echo -e "${GREEN}7)${NC} Сформировать конфигурацию AWG v2"
+    echo -e "${GREEN}5)${NC} Установка AWG (v1/v2)..."
+    echo -e "${GREEN}6)${NC} Удаление AWG (v1/v2)..."
+    echo -e "${GREEN}7)${NC} Сформировать конфигурацию AWG v1"
+    echo -e "${GREEN}8)${NC} Сформировать конфигурацию AWG v2"
     echo -e "${BLUE}---${NC}"
     echo -e "${YELLOW}XUIBOT:${NC}"
-    echo -e "${GREEN}8)${NC} Установка XUIBOT"
-    echo -e "${GREEN}9)${NC} Логи XUIBOT"
-    echo -e "${GREEN}10)${NC} Перезапуск XUIBOT"
-    echo -e "${GREEN}11)${NC} Пересборка XUIBOT"
-    echo -e "${GREEN}12)${NC} Удаление XUIBOT"
+    echo -e "${GREEN}9)${NC} Установка XUIBOT"
+    echo -e "${GREEN}10)${NC} Логи XUIBOT"
+    echo -e "${GREEN}11)${NC} Перезапуск XUIBOT"
+    echo -e "${GREEN}12)${NC} Пересборка XUIBOT"
+    echo -e "${GREEN}13)${NC} Удаление XUIBOT"
     echo -e "${BLUE}---${NC}"
     echo -e "${YELLOW}AWGBOT:${NC}"
-    echo -e "${GREEN}13)${NC} Установка AWGBOT"
-    echo -e "${GREEN}14)${NC} Логи AWGBOT"
-    echo -e "${GREEN}15)${NC} Перезапуск AWGBOT"
-    echo -e "${GREEN}16)${NC} Пересборка AWGBOT"
-    echo -e "${GREEN}17)${NC} Удаление AWGBOT"
+    echo -e "${GREEN}14)${NC} Установка AWGBOT"
+    echo -e "${GREEN}15)${NC} Логи AWGBOT"
+    echo -e "${GREEN}16)${NC} Перезапуск AWGBOT"
+    echo -e "${GREEN}17)${NC} Пересборка AWGBOT"
+    echo -e "${GREEN}18)${NC} Удаление AWGBOT"
     echo -e "${BLUE}---${NC}"
     echo -e "${YELLOW}Системные утилиты:${NC}"
-    echo -e "${GREEN}18)${NC} Анализ диска и памяти"
-    echo -e "${GREEN}19)${NC} Создать глобальную команду 'awgxui'"
+    echo -e "${GREEN}19)${NC} Анализ диска и памяти"
+    echo -e "${GREEN}20)${NC} Создать глобальную команду 'awgxui'"
     echo -e "${BLUE}---${NC}"
     echo -e "${RED}99)${NC} Удалить ВСЁ (AWG + Боты + 3x-ui)"
     echo -e "${GREEN}0)${NC} Выход"
@@ -4277,7 +4278,7 @@ while true; do
                     continue
                 fi
             fi
-            install_3xui
+            install_3xui_v294
             ;;
         3)
             sync_repository
@@ -4288,7 +4289,7 @@ while true; do
                     continue
                 fi
             fi
-            remove_3xui
+            install_3xui_v3
             ;;
         4)
             sync_repository
@@ -4299,7 +4300,7 @@ while true; do
                     continue
                 fi
             fi
-            install_awg
+            remove_3xui
             ;;
         5)
             sync_repository
@@ -4310,7 +4311,7 @@ while true; do
                     continue
                 fi
             fi
-            remove_awg
+            install_awg
             ;;
         6)
             sync_repository
@@ -4321,7 +4322,7 @@ while true; do
                     continue
                 fi
             fi
-            generate_awg_config "v1"
+            remove_awg
             ;;
         7)
             sync_repository
@@ -4332,7 +4333,7 @@ while true; do
                     continue
                 fi
             fi
-            generate_awg_config "v2"
+            generate_awg_config "v1"
             ;;
         8)
             sync_repository
@@ -4343,7 +4344,7 @@ while true; do
                     continue
                 fi
             fi
-            install_xuibot
+            generate_awg_config "v2"
             ;;
         9)
             sync_repository
@@ -4354,7 +4355,7 @@ while true; do
                     continue
                 fi
             fi
-            show_xuibot_logs
+            install_xuibot
             ;;
         10)
             sync_repository
@@ -4365,7 +4366,7 @@ while true; do
                     continue
                 fi
             fi
-            restart_xuibot
+            show_xuibot_logs
             ;;
         11)
             sync_repository
@@ -4376,7 +4377,7 @@ while true; do
                     continue
                 fi
             fi
-            update_xuibot
+            restart_xuibot
             ;;
         12)
             sync_repository
@@ -4387,7 +4388,7 @@ while true; do
                     continue
                 fi
             fi
-            remove_xuibot
+            update_xuibot
             ;;
         13)
             sync_repository
@@ -4398,7 +4399,7 @@ while true; do
                     continue
                 fi
             fi
-            install_awgbot
+            remove_xuibot
             ;;
         14)
             sync_repository
@@ -4409,7 +4410,7 @@ while true; do
                     continue
                 fi
             fi
-            show_awgbot_logs
+            install_awgbot
             ;;
         15)
             sync_repository
@@ -4420,7 +4421,7 @@ while true; do
                     continue
                 fi
             fi
-            restart_awgbot
+            show_awgbot_logs
             ;;
         16)
             sync_repository
@@ -4431,7 +4432,7 @@ while true; do
                     continue
                 fi
             fi
-            update_awgbot
+            restart_awgbot
             ;;
         17)
             sync_repository
@@ -4442,9 +4443,20 @@ while true; do
                     continue
                 fi
             fi
-            remove_awgbot
+            update_awgbot
             ;;
         18)
+            sync_repository
+            if [ $? -ne 0 ]; then
+                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
+                if [[ "$continue_choice" == "0" ]]; then
+                    echo -e "${YELLOW}Операция отменена${NC}"
+                    continue
+                fi
+            fi
+            remove_awgbot
+            ;;
+        19)
             sync_repository
             if [ $? -ne 0 ]; then
                 read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
@@ -4459,7 +4471,7 @@ while true; do
                 echo -e "${RED}❌ Файл disk_analyzer.sh не найден!${NC}"
             fi
             ;;
-        19)
+        20)
             create_global_command
             ;;
         99)
