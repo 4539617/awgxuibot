@@ -1839,11 +1839,13 @@ select_xui_version() {
     echo -e "\n${BLUE}========================================${NC}"
     echo -e "${BLUE}   Выбор версии 3x-ui Panel${NC}"
     echo -e "${BLUE}========================================${NC}\n"
-    echo -e "${RED}⚠️  ВАЖНО: Бот совместим только с версией 2.9.4!${NC}"
-    echo -e "${YELLOW}Версии 3.0.0+ не поддерживают прямую работу с базой данных${NC}\n"
-    echo -e "${GREEN}1)${NC} Стабильная версия v2.9.4 (рекомендуется для бота)"
-    echo -e "${YELLOW}2)${NC} Последняя версия (Latest - НЕ совместима с ботом)"
+    echo -e "${GREEN}1)${NC} Стабильная версия v2.9.4 (для работы через БД)"
+    echo -e "${YELLOW}2)${NC} Последняя версия v2.x (Latest v2.x)"
+    echo -e "${GREEN}3)${NC} Последняя версия v3.x (Latest v3.x) ${YELLOW}[НОВОЕ - с API токеном]${NC}"
     echo -e "${GREEN}0)${NC} Вернуться в главное меню"
+    echo -e "\n${BLUE}Рекомендации:${NC}"
+    echo -e "  ${YELLOW}v2.9.4${NC} - работает через прямой доступ к БД"
+    echo -e "  ${YELLOW}v3.x${NC}   - работает через API (требуется API токен)"
     echo -e "\n${YELLOW}Выберите версию для установки [1]:${NC} "
     read -p "" version_choice
     version_choice=${version_choice:-1}
@@ -1854,8 +1856,8 @@ select_xui_version() {
             ;;
         2)
             echo -e "\n${RED}⚠️  ВНИМАНИЕ!${NC}"
-            echo -e "${YELLOW}Последняя версия 3x-ui НЕ совместима с ботом!${NC}"
-            echo -e "${YELLOW}Клиенты, созданные через бота, не будут работать.${NC}"
+            echo -e "${YELLOW}Последняя версия v2.x может быть нестабильной!${NC}"
+            echo -e "${YELLOW}Рекомендуется использовать v2.9.4 или v3.x${NC}"
             read -p "Вы уверены что хотите продолжить? (нажмите Enter для подтверждения или 0 для отмены): " confirm_latest
             if [[ "$confirm_latest" != "0" ]]; then
                 install_3xui_latest
@@ -1863,6 +1865,12 @@ select_xui_version() {
                 echo -e "${GREEN}Отменено. Устанавливаем v2.9.4...${NC}"
                 install_3xui_v294
             fi
+            ;;
+        3)
+            echo -e "\n${GREEN}✓ Установка 3x-ui v3.x с поддержкой API${NC}"
+            echo -e "${YELLOW}Эта версия полностью поддерживается ботом через API${NC}"
+            echo -e "${YELLOW}API токен будет автоматически извлечен и сохранен${NC}\n"
+            install_3xui_v3
             ;;
         0)
             echo -e "${YELLOW}Отменено${NC}"
@@ -3396,6 +3404,106 @@ install_3xui() {
     install_3xui_v294
 }
 
+# Функция установки 3x-ui Panel версии 3.x (Latest) с API токеном
+install_3xui_v3() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Установка 3x-ui Panel v3.x (Latest)${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+    
+    # Проверка установленной панели
+    if systemctl is-active --quiet x-ui; then
+        echo -e "${YELLOW}⚠ 3x-ui панель уже установлена${NC}"
+        read -p "Переустановить? (нажмите Enter для продолжения или 0 для отмены): " reinstall
+        if [[ "$reinstall" == "0" ]]; then
+            echo -e "${YELLOW}Отменено${NC}"
+            return
+        fi
+        echo -e "${YELLOW}⚠ Остановка панели...${NC}"
+        systemctl stop x-ui
+    fi
+    
+    echo -e "${YELLOW}⚠ Установка 3x-ui v3.x (latest версия)...${NC}"
+    echo -e "${BLUE}Панель будет установлена с автоматической настройкой${NC}\n"
+    
+    # Установка через официальный скрипт
+    echo -e "${YELLOW}⚠ Запуск установщика 3x-ui...${NC}"
+    bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh)
+    
+    # Проверка успешности установки
+    if systemctl is-active --quiet x-ui; then
+        echo -e "\n${GREEN}✓ 3x-ui v3.x установлена успешно${NC}"
+        
+        # Ожидание запуска панели
+        sleep 3
+        
+        # Извлечение учетных данных из панели
+        echo -e "${YELLOW}⚠ Извлечение учетных данных панели...${NC}"
+        
+        XUI_USERNAME=$(x-ui setting -show true 2>/dev/null | grep 'username:' | awk '{print $2}')
+        XUI_PASSWORD=$(x-ui setting -show true 2>/dev/null | grep 'password:' | awk '{print $2}')
+        XUI_PORT=$(x-ui setting -show true 2>/dev/null | grep 'port:' | awk '{print $2}')
+        XUI_WEB_BASE_PATH=$(x-ui setting -show true 2>/dev/null | grep 'webBasePath:' | awk '{print $2}' | sed 's#^/##')
+        
+        # ВАЖНО: Извлечение API токена
+        XUI_API_TOKEN=$(x-ui setting -getApiToken true 2>/dev/null | grep -Eo 'apiToken: .+' | awk '{print $2}')
+        
+        # Определение версии
+        XUI_VERSION=$(x-ui version 2>/dev/null | grep -oP '\d+\.\d+\.\d+' | head -1)
+        if [ -z "$XUI_VERSION" ]; then
+            XUI_VERSION="latest"
+        fi
+        
+        # Получение IP сервера
+        SERVER_IP=$(curl -s https://api4.ipify.org 2>/dev/null || curl -s https://ipv4.icanhazip.com 2>/dev/null || echo "YOUR_SERVER_IP")
+        XUI_URL="http://${SERVER_IP}:${XUI_PORT}"
+        
+        # Сохранение в .env
+        create_env_if_not_exists
+        
+        echo -e "${YELLOW}⚠ Сохранение настроек панели в .env...${NC}"
+        
+        update_env_value "XUI_VERSION" "$XUI_VERSION"
+        update_env_value "XUI_URL" "$XUI_URL"
+        update_env_value "XUI_USERNAME" "$XUI_USERNAME"
+        update_env_value "XUI_PASSWORD" "$XUI_PASSWORD"
+        update_env_value "XUI_API_TOKEN" "$XUI_API_TOKEN"
+        update_env_value "XUI_INBOUND_ID" "1"
+        update_env_value "XUI_DB_PATH" "/etc/x-ui/x-ui.db"
+        
+        # Генерация Reality ключей если их нет
+        REALITY_PRIVATE_KEY=$(get_env_value "REALITY_PRIVATE_KEY")
+        REALITY_PUBLIC_KEY=$(get_env_value "REALITY_PUBLIC_KEY")
+        REALITY_SHORT_ID=$(get_env_value "REALITY_SHORT_ID")
+        
+        if [ -z "$REALITY_PRIVATE_KEY" ] || [ -z "$REALITY_PUBLIC_KEY" ]; then
+            echo -e "${YELLOW}⚠ Генерация Reality ключей...${NC}"
+            REALITY_SHORT_ID=$(openssl rand -hex 8)
+            update_env_value "REALITY_SHORT_ID" "$REALITY_SHORT_ID"
+        fi
+        
+        # Вывод учетных данных
+        echo -e "\n${GREEN}═══════════════════════════════════════════${NC}"
+        echo -e "${GREEN}     Панель 3x-ui v3.x успешно установлена!${NC}"
+        echo -e "${GREEN}═══════════════════════════════════════════${NC}"
+        echo -e "${BLUE}⚠ URL панели:       ${YELLOW}${XUI_URL}/${XUI_WEB_BASE_PATH}${NC}"
+        echo -e "${BLUE}⚠ Имя пользователя: ${YELLOW}${XUI_USERNAME}${NC}"
+        echo -e "${BLUE}⚠ Пароль:           ${YELLOW}${XUI_PASSWORD}${NC}"
+        echo -e "${BLUE}⚠ API Token:        ${YELLOW}${XUI_API_TOKEN}${NC}"
+        echo -e "${BLUE}⚠ Версия:           ${YELLOW}${XUI_VERSION}${NC}"
+        echo -e "${GREEN}═══════════════════════════════════════════${NC}"
+        echo -e "${YELLOW}⚠ ВАЖНО: Сохраните эти данные в безопасном месте!${NC}"
+        echo -e "${YELLOW}⚠ API Token необходим для работы бота с панелью v3${NC}"
+        echo -e "${YELLOW}⚠ Все данные сохранены в файл .env${NC}\n"
+        
+        # Вызов меню после установки
+        post_install_menu
+    else
+        echo -e "\n${RED}✗ Ошибка установки 3x-ui v3.x панели${NC}"
+        echo -e "${YELLOW}Проверьте логи установки выше${NC}"
+        echo -e "${YELLOW}Возможно, установка была прервана или произошла ошибка${NC}"
+    fi
+}
+
 
 # Функция удаления 3x-ui панели
 remove_3xui() {
@@ -4107,7 +4215,7 @@ show_menu() {
     echo -e "${GREEN}1)${NC} Показать статус системы"
     echo -e "${BLUE}---${NC}"
     echo -e "${YELLOW}3X-UI:${NC}"
-    echo -e "${GREEN}2)${NC} Установка 3x-ui Panel v2.9.4..."
+    echo -e "${GREEN}2)${NC} Установка 3x-ui Panel (выбор версии: v2.9.4 / v2.x / v3.x)"
     echo -e "${GREEN}3)${NC} Удаление 3x-ui Panel"
     echo -e "${BLUE}---${NC}"
     echo -e "${YELLOW}AWG:${NC}"
