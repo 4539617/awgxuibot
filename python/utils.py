@@ -435,6 +435,9 @@ class XUIClient:
                 logger.error(f"Ошибка v3 API: {resp.status} - {text}")
                 return {"success": False, "error": text}
         except Exception as e:
+            logger.error(f"Ошибка создания клиента v3: {e}")
+            return {"success": False, "error": str(e)}
+
     async def _get_client_details_v3(self, email: str) -> dict:
         """Получение деталей клиента через v3 API"""
         if not self.session:
