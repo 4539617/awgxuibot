@@ -3446,11 +3446,14 @@ install_3xui_v3() {
     # Создаем временный файл для сохранения вывода установщика
     INSTALL_OUTPUT=$(mktemp)
     
+    # Устанавливаем переменную окружения для пропуска SSL
+    export ENABLE_CERT_REUSE="true"
+    
     # Автоматически отвечаем на вопросы установщика:
     # 1 - выбор SQLite
     # 4 - пропуск SSL (Skip SSL)
-    # Используем printf для передачи нескольких ответов
-    (echo "1"; echo "4") | bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh) 2>&1 | tee "$INSTALL_OUTPUT"
+    # Используем несколько echo для надежности
+    { echo "1"; sleep 1; echo "4"; sleep 1; } | bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh) 2>&1 | tee "$INSTALL_OUTPUT"
     
     # Проверка успешности установки
     if systemctl is-active --quiet x-ui; then
@@ -3503,22 +3506,35 @@ install_3xui_v3() {
         if [ -z "$REALITY_PRIVATE_KEY" ] || [ -z "$REALITY_PUBLIC_KEY" ]; then
             echo -e "${YELLOW}⚠ Генерация Reality ключей...${NC}"
             
-            # Генерация Reality ключей через xray
-            XRAY_PATH="/usr/local/x-ui/bin/xray-linux-amd64"
-            if [ -f "$XRAY_PATH" ]; then
-                REALITY_KEYS=$($XRAY_PATH x25519 2>/dev/null)
-                REALITY_PRIVATE_KEY=$(echo "$REALITY_KEYS" | grep "Private key:" | awk '{print $3}')
-                REALITY_PUBLIC_KEY=$(echo "$REALITY_KEYS" | grep "Public key:" | awk '{print $3}')
-                
-                if [ -n "$REALITY_PRIVATE_KEY" ] && [ -n "$REALITY_PUBLIC_KEY" ]; then
-                    update_env_value "REALITY_PRIVATE_KEY" "$REALITY_PRIVATE_KEY"
-                    update_env_value "REALITY_PUBLIC_KEY" "$REALITY_PUBLIC_KEY"
-                    echo -e "${GREEN}✓ Reality ключи успешно сгенерированы${NC}"
-                else
-                    echo -e "${RED}✗ Ошибка генерации Reality ключей${NC}"
+            # Пробуем разные пути к xray
+            XRAY_PATHS=(
+                "/usr/local/x-ui/bin/xray-linux-amd64"
+                "/usr/local/bin/xray"
+                "/usr/bin/xray"
+                "$(which xray 2>/dev/null)"
+            )
+            
+            XRAY_FOUND=false
+            for XRAY_PATH in "${XRAY_PATHS[@]}"; do
+                if [ -n "$XRAY_PATH" ] && [ -f "$XRAY_PATH" ]; then
+                    echo -e "${BLUE}Используется xray: $XRAY_PATH${NC}"
+                    REALITY_KEYS=$($XRAY_PATH x25519 2>/dev/null)
+                    REALITY_PRIVATE_KEY=$(echo "$REALITY_KEYS" | grep "Private key:" | awk '{print $3}')
+                    REALITY_PUBLIC_KEY=$(echo "$REALITY_KEYS" | grep "Public key:" | awk '{print $3}')
+                    
+                    if [ -n "$REALITY_PRIVATE_KEY" ] && [ -n "$REALITY_PUBLIC_KEY" ]; then
+                        update_env_value "REALITY_PRIVATE_KEY" "$REALITY_PRIVATE_KEY"
+                        update_env_value "REALITY_PUBLIC_KEY" "$REALITY_PUBLIC_KEY"
+                        echo -e "${GREEN}✓ Reality ключи успешно сгенерированы${NC}"
+                        XRAY_FOUND=true
+                        break
+                    fi
                 fi
-            else
-                echo -e "${RED}✗ Xray не найден по пути: $XRAY_PATH${NC}"
+            done
+            
+            if [ "$XRAY_FOUND" = false ]; then
+                echo -e "${RED}✗ Xray не найден ни по одному из путей${NC}"
+                echo -e "${YELLOW}Попробуйте сгенерировать ключи вручную: xray x25519${NC}"
             fi
             
             # Генерация Short ID
