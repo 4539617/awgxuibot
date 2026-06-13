@@ -3431,10 +3431,12 @@ install_3xui_v3() {
     # Установка через официальный скрипт
     echo -e "${YELLOW}⚠ Запуск установщика 3x-ui...${NC}"
     echo -e "${YELLOW}⚠ Будет автоматически выбрана база данных SQLite${NC}\n"
-    # Автоматически отвечаем на вопросы установщика:
-    # 1 - выбор SQLite (по умолчанию)
-    # Используем yes для автоматического ответа "1" на все вопросы
-    yes "1" | bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh) 2>/dev/null || true
+    
+    # Создаем временный файл для сохранения вывода установщика
+    INSTALL_OUTPUT=$(mktemp)
+    
+    # Автоматически отвечаем на вопросы установщика и сохраняем вывод
+    yes "1" | bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh) 2>&1 | tee "$INSTALL_OUTPUT"
     
     # Проверка успешности установки
     if systemctl is-active --quiet x-ui; then
@@ -3443,16 +3445,18 @@ install_3xui_v3() {
         # Ожидание запуска панели
         sleep 3
         
-        # Извлечение учетных данных из панели
+        # Извлечение учетных данных из вывода установщика
         echo -e "${YELLOW}⚠ Извлечение учетных данных панели...${NC}"
         
-        XUI_USERNAME=$(x-ui setting -show true 2>/dev/null | grep 'username:' | awk '{print $2}')
-        XUI_PASSWORD=$(x-ui setting -show true 2>/dev/null | grep 'password:' | awk '{print $2}')
-        XUI_PORT=$(x-ui setting -show true 2>/dev/null | grep 'port:' | awk '{print $2}')
-        XUI_WEB_BASE_PATH=$(x-ui setting -show true 2>/dev/null | grep 'webBasePath:' | awk '{print $2}' | sed 's#^/##')
+        # Парсим вывод установщика для получения данных
+        XUI_USERNAME=$(grep -oP 'Username:\s+\K\S+' "$INSTALL_OUTPUT" | tail -1)
+        XUI_PASSWORD=$(grep -oP 'Password:\s+\K\S+' "$INSTALL_OUTPUT" | tail -1)
+        XUI_PORT=$(grep -oP 'Port:\s+\K\d+' "$INSTALL_OUTPUT" | tail -1)
+        XUI_WEB_BASE_PATH=$(grep -oP 'WebBasePath:\s+\K\S+' "$INSTALL_OUTPUT" | tail -1)
+        XUI_API_TOKEN=$(grep -oP 'API Token:\s+\K\S+' "$INSTALL_OUTPUT" | tail -1)
         
-        # ВАЖНО: Извлечение API токена
-        XUI_API_TOKEN=$(x-ui setting -getApiToken true 2>/dev/null | grep -Eo 'apiToken: .+' | awk '{print $2}')
+        # Удаляем временный файл
+        rm -f "$INSTALL_OUTPUT"
         
         # Определение версии
         XUI_VERSION=$(x-ui version 2>/dev/null | grep -oP '\d+\.\d+\.\d+' | head -1)
@@ -3484,6 +3488,26 @@ install_3xui_v3() {
         
         if [ -z "$REALITY_PRIVATE_KEY" ] || [ -z "$REALITY_PUBLIC_KEY" ]; then
             echo -e "${YELLOW}⚠ Генерация Reality ключей...${NC}"
+            
+            # Генерация Reality ключей через xray
+            XRAY_PATH="/usr/local/x-ui/bin/xray-linux-amd64"
+            if [ -f "$XRAY_PATH" ]; then
+                REALITY_KEYS=$($XRAY_PATH x25519 2>/dev/null)
+                REALITY_PRIVATE_KEY=$(echo "$REALITY_KEYS" | grep "Private key:" | awk '{print $3}')
+                REALITY_PUBLIC_KEY=$(echo "$REALITY_KEYS" | grep "Public key:" | awk '{print $3}')
+                
+                if [ -n "$REALITY_PRIVATE_KEY" ] && [ -n "$REALITY_PUBLIC_KEY" ]; then
+                    update_env_value "REALITY_PRIVATE_KEY" "$REALITY_PRIVATE_KEY"
+                    update_env_value "REALITY_PUBLIC_KEY" "$REALITY_PUBLIC_KEY"
+                    echo -e "${GREEN}✓ Reality ключи успешно сгенерированы${NC}"
+                else
+                    echo -e "${RED}✗ Ошибка генерации Reality ключей${NC}"
+                fi
+            else
+                echo -e "${RED}✗ Xray не найден по пути: $XRAY_PATH${NC}"
+            fi
+            
+            # Генерация Short ID
             REALITY_SHORT_ID=$(openssl rand -hex 8)
             update_env_value "REALITY_SHORT_ID" "$REALITY_SHORT_ID"
         fi
