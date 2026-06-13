@@ -13,7 +13,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 import sqlite3
 from config import config
-from utils import XUIClient, generate_vless_link, setup_logging
+from utils import XUIClient, generate_vless_link, get_client_link, setup_logging
 
 setup_logging(config.logging)
 logger = logging.getLogger(__name__)
@@ -253,8 +253,12 @@ async def process_new_comment(message: Message, state: FSMContext):
     result = await xui_client.add_client(email, 0, 3650, comment)
 
     if result['success']:
-        # Больше не записываем в user_clients - ключи берутся из X-UI
-        vless_link = generate_vless_link(result['uuid'], email, config.vpn, config.xui.inbound_id)
+        # Универсальная генерация ссылки для v2 и v3
+        vless_link = await get_client_link(xui_client, email, result['uuid'], config.vpn, config.xui.inbound_id)
+        if not vless_link:
+            await status_msg.edit_text(f"❌ Ошибка получения ссылки")
+            await state.clear()
+            return
 
         qr = qrcode.QRCode(box_size=8, border=2)
         qr.add_data(vless_link)
@@ -376,7 +380,10 @@ async def process_tempkey_comment(message: Message, state: FSMContext):
     result = await xui_client.add_client(email, 0, days, f"{comment} (Временный {duration_text})")
 
     if result['success']:
-        vless_link = generate_vless_link(result['uuid'], email, config.vpn, config.xui.inbound_id)
+        vless_link = await get_client_link(xui_client, email, result['uuid'], config.vpn, config.xui.inbound_id)
+        if not vless_link:
+            await status_msg.edit_text(f"❌ Ошибка получения ссылки")
+            return
 
         qr = qrcode.QRCode(box_size=8, border=2)
         qr.add_data(vless_link)
@@ -481,7 +488,10 @@ async def show_my_client_details(callback_query: types.CallbackQuery):
     status = client['status']
 
     # Генерируем VLESS ссылку
-    vless_link = generate_vless_link(client_uuid, email, config.vpn, config.xui.inbound_id)
+    vless_link = await get_client_link(xui_client, email, client_uuid, config.vpn, config.xui.inbound_id)
+    if not vless_link:
+        await callback_query.answer("❌ Ошибка получения ссылки", show_alert=True)
+        return
 
     # Генерируем QR-код
     qr = qrcode.QRCode(box_size=8, border=2)
@@ -908,7 +918,10 @@ async def show_client_key(callback_query: types.CallbackQuery):
             return
         
         # Генерируем VLESS ссылку
-        vless_link = generate_vless_link(client['uuid'], client['email'], config.vpn, config.xui.inbound_id)
+        vless_link = await get_client_link(xui_client, client['email'], client['uuid'], config.vpn, config.xui.inbound_id)
+        if not vless_link:
+            await callback_query.answer("❌ Ошибка получения ссылки!", show_alert=True)
+            return
         
         # Генерируем QR-код
         qr = qrcode.QRCode(box_size=8, border=2)
@@ -1320,7 +1333,10 @@ async def process_temp_key_request(callback_query: types.CallbackQuery):
     result = await xui_client.add_client(email, 0, days, comment)
 
     if result['success']:
-        vless_link = generate_vless_link(result['uuid'], email, config.vpn, config.xui.inbound_id)
+        vless_link = await get_client_link(xui_client, email, result['uuid'], config.vpn, config.xui.inbound_id)
+        if not vless_link:
+            await callback_query.message.edit_text(f"❌ Ошибка получения ссылки")
+            return
 
         # Генерируем QR-код
         qr = qrcode.QRCode(box_size=8, border=2)

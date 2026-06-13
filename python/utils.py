@@ -10,7 +10,7 @@ import ssl
 import re
 import tempfile
 import os
-from typing import Dict
+from typing import Dict, Optional
 from logging.handlers import RotatingFileHandler
 
 logger = logging.getLogger(__name__)
@@ -990,6 +990,21 @@ class XUIClient:
         except Exception as e:
             logger.error(f"Ошибка обновления статуса клиента: {e}")
             return False
+
+
+async def get_client_link(xui_client, email: str, client_uuid: str, vpn_config, inbound_id: int) -> Optional[str]:
+    """Универсальная функция получения VLESS ссылки для v2 и v3"""
+    if xui_client.config.xui.is_v3_new_api():
+        # Для v3 получаем готовую ссылку от панели
+        links = await xui_client.get_client_links_v3(email)
+        if links and len(links) > 0:
+            return links[0]
+        else:
+            logger.error(f"Не удалось получить ссылку от панели v3 для {email}")
+            return None
+    else:
+        # Для v2 генерируем вручную
+        return generate_vless_link(client_uuid, email, vpn_config, inbound_id)
 
 
 
