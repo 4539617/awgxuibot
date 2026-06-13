@@ -36,6 +36,7 @@ class XUIConfig:
     db_path: str
     api_timeout: int = 30
     version: str = "latest"
+    api_token: Optional[str] = None
 
     @classmethod
     def from_env(cls):
@@ -46,36 +47,26 @@ class XUIConfig:
             inbound_id=int(os.getenv("INBOUND_ID", "1")),
             db_path=os.getenv("XUI_DB_PATH", "/etc/x-ui/x-ui.db"),
             api_timeout=int(os.getenv("API_TIMEOUT", "30")),
-            version=os.getenv("XUI_VERSION", "latest")
+            version=os.getenv("XUI_VERSION", "latest"),
+            api_token=os.getenv("XUI_API_TOKEN")
         )
     
     def is_v2(self) -> bool:
-        """Проверка является ли версия 2.x"""
+        """Проверка является ли версия 2.x (смотрим только на первую цифру)"""
         return self.version.startswith("2.")
     
     def is_v3(self) -> bool:
-        """Проверка является ли версия 3.x или latest"""
+        """Проверка является ли версия 3.x или latest (смотрим только на первую цифру)"""
         return self.version.startswith("3.") or self.version == "latest"
     
     def is_v3_new_api(self) -> bool:
-        """Проверка использует ли версия новый API (3.2.8+)"""
+        """Проверка использует ли версия новый API v3 (любая версия 3.x)"""
+        # Для v3 всегда используем новый API, независимо от подверсии
         if self.version == "latest":
             return True
+        # Смотрим только на первую цифру
         if self.version.startswith("3."):
-            try:
-                # Парсим версию типа "3.2.8"
-                parts = self.version.split(".")
-                if len(parts) >= 3:
-                    major, minor, patch = int(parts[0]), int(parts[1]), int(parts[2])
-                    # Новый API появился в 3.2.8
-                    if major > 3:
-                        return True
-                    if major == 3 and minor > 2:
-                        return True
-                    if major == 3 and minor == 2 and patch >= 8:
-                        return True
-            except (ValueError, IndexError):
-                pass
+            return True
         return False
 
 

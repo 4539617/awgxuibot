@@ -93,6 +93,7 @@ class XUIClient:
         self.config = config
         self.session = None
         self.cookies = None
+        self.api_token = config.xui.api_token
     
     async def _get_session(self):
         """Создание сессии с SSL контекстом и cookie jar"""
@@ -112,6 +113,12 @@ class XUIClient:
                 timeout=aiohttp.ClientTimeout(total=self.config.xui.api_timeout)
             )
         return self.session
+    
+    async def _get_headers(self):
+        """Универсальные заголовки для v2 и v3"""
+        if self.config.xui.is_v3_new_api() and self.api_token:
+            return {'Authorization': f'Bearer {self.api_token}'}
+        return {}
     
     async def login(self) -> bool:
         """Авторизация в панели 3x-ui с автоматическим переключением HTTPS/HTTP"""
@@ -211,7 +218,14 @@ class XUIClient:
 
 
     async def add_client(self, email: str, total_gb: int, expiry_days: float, comment: str = None) -> Dict:
-        """Создание нового клиента через API 3x-ui с комментарием"""
+        """Универсальный метод создания клиента для v2 и v3"""
+        if self.config.xui.is_v3_new_api():
+            return await self._add_client_v3(email, total_gb, expiry_days, comment)
+        else:
+            return await self._add_client_v2(email, total_gb, expiry_days, comment)
+    
+    async def _add_client_v2(self, email: str, total_gb: int, expiry_days: float, comment: str = None) -> Dict:
+        """Создание нового клиента через API v2 с комментарием"""
         if not self.session:
             if not await self.login():
                 return {"success": False, "error": "Не удалось авторизоваться"}
@@ -380,9 +394,204 @@ class XUIClient:
         except Exception as e:
             logger.error(f"Ошибка добавления клиента через SQL: {e}")
             return {"success": False, "error": f"Ошибка: {str(e)}"}
+    async def _add_client_v3(self, email: str, total_gb: int, expiry_days: float, comment: str = None) -> Dict:
+        """Создание клиента через v3 API"""
+        if not self.session:
+            if not await self.login():
+                return {"success": False, "error": "Не удалось авторизоваться"}
+        
+        expiry_time = int((time.time() + expiry_days * 86400) * 1000)
+        total_bytes = total_gb * 1024 * 1024 * 1024 if total_gb > 0 else 0
+        
+        data = {
+            "client": {
+                "email": email,
+                "totalGB": total_bytes,
+                "expiryTime": expiry_time,
+                "enable": True,
+                "limitIp": 0,
+                "tgId": 0,
+                "subId": ""
+            },
+            "inboundIds": [self.config.xui.inbound_id]
+        }
+        
+        endpoint = f"{self.config.xui.url}/panel/api/clients/add"
+        headers = await self._get_headers()
+        
+        try:
+            async with self.session.post(endpoint, json=data, headers=headers) as resp:
+                if resp.status == 200:
+                    result = await resp.json()
+                    if result.get('success'):
+                        # v3 API не возвращает UUID в ответе, получаем его из списка клиентов
+                        logger.info(f"Клиент {email} создан через v3 API")
+                        # Получаем UUID клиента
+                        client_details = await self._get_client_details_v3(email)
+                        client_uuid = client_details.get('uuid', '') if client_details else ''
+                        return {"success": True, "uuid": client_uuid}
+                
+                text = await resp.text()
+                logger.error(f"Ошибка v3 API: {resp.status} - {text}")
+                return {"success": False, "error": text}
+        except Exception as e:
+    async def _get_client_details_v3(self, email: str) -> dict:
+        """Получение деталей клиента через v3 API"""
+        if not self.session:
+            if not await self.login():
+                return None
+        
+        endpoint = f"{self.config.xui.url}/panel/api/clients/get/{email}"
+        headers = await self._get_headers()
+        
+        try:
+            async with self.session.get(endpoint, headers=headers) as resp:
+                if resp.status == 200:
+                    result = await resp.json()
+                    if result.get('success'):
+                        client = result.get('obj', {})
+                        current_time = int(time.time() * 1000)
+                        expiry_time = client.get('expiryTime', 0)
+                        enable = client.get('enable', True)
+                        
+                        # Определяем статус
+                        if expiry_time > 0 and expiry_time < current_time:
+                            status = 'expired'
+                        elif not enable:
+                            status = 'inactive'
+                        else:
+                            status = 'active'
+                        
+                        traffic = client.get('traffic', {})
+                        return {
+                            'uuid': client.get('uuid', ''),
+                            'email': client.get('email', ''),
+                            'comment': client.get('comment', ''),
+                            'enable': enable,
+                            'expiryTime': expiry_time,
+                            'totalGB': client.get('totalGB', 0),
+                            'status': status,
+                            'up': traffic.get('up', 0),
+                            'down': traffic.get('down', 0)
+                        }
+            
+            return None
+        except Exception as e:
+            logger.error(f"Ошибка получения деталей клиента v3: {e}")
+            return None
+
+    async def _get_all_clients_v3(self) -> list:
+        """Получение всех клиентов через v3 API"""
+        if not self.session:
+            if not await self.login():
+                return []
+        
+        endpoint = f"{self.config.xui.url}/panel/api/clients/list"
+        headers = await self._get_headers()
+        
+        try:
+            async with self.session.get(endpoint, headers=headers) as resp:
+                if resp.status == 200:
+                    result = await resp.json()
+                    if result.get('success'):
+                        clients = result.get('obj', [])
+                        current_time = int(time.time() * 1000)
+                        
+                        # Преобразуем в формат v2 для совместимости
+                        formatted_clients = []
+                        for client in clients:
+                            expiry_time = client.get('expiryTime', 0)
+                            enable = client.get('enable', True)
+                            
+                            # Определяем статус
+                            if expiry_time > 0 and expiry_time < current_time:
+                                status = 'expired'
+                            elif not enable:
+                                status = 'inactive'
+                            else:
+                                status = 'active'
+                            
+                            traffic = client.get('traffic', {})
+                            formatted_clients.append({
+                                'uuid': client.get('uuid', ''),
+                                'email': client.get('email', ''),
+                                'comment': client.get('comment', ''),
+                                'enable': enable,
+                                'expiryTime': expiry_time,
+                                'totalGB': client.get('totalGB', 0),
+                                'status': status,
+                                'up': traffic.get('up', 0),
+                                'down': traffic.get('down', 0)
+                            })
+                        
+                        return formatted_clients
+                
+                logger.error(f"Ошибка получения клиентов v3: {resp.status}")
+                return []
+        except Exception as e:
+            logger.error(f"Ошибка получения клиентов v3: {e}")
+            return []
+
+    async def _delete_client_v3(self, email: str) -> bool:
+        """Удаление клиента через v3 API"""
+        if not self.session:
+            if not await self.login():
+                return False
+        
+        endpoint = f"{self.config.xui.url}/panel/api/clients/del/{email}"
+        headers = await self._get_headers()
+        
+        try:
+            async with self.session.post(endpoint, headers=headers) as resp:
+                if resp.status == 200:
+                    result = await resp.json()
+                    if result.get('success'):
+                        logger.info(f"Клиент {email} удален через v3 API")
+                        return True
+                
+                logger.error(f"Ошибка удаления v3: {resp.status}")
+                return False
+        except Exception as e:
+            logger.error(f"Ошибка удаления клиента v3: {e}")
+            return False
+
+    async def get_client_links_v3(self, email: str) -> list:
+        """Получить готовые ссылки клиента через v3 API"""
+        if not self.session:
+            if not await self.login():
+                return None
+        
+        endpoint = f"{self.config.xui.url}/panel/api/clients/links/{email}"
+        headers = await self._get_headers()
+        
+        try:
+            async with self.session.get(endpoint, headers=headers) as resp:
+                if resp.status == 200:
+                    result = await resp.json()
+                    if result.get('success'):
+                        links = result.get('obj', [])
+                        logger.info(f"Получены ссылки для {email}: {len(links)} шт.")
+                        return links
+            
+            logger.error(f"Ошибка получения ссылок v3: {resp.status}")
+            return None
+        except Exception as e:
+            logger.error(f"Ошибка получения ссылок v3: {e}")
+            return None
+
+            logger.error(f"Ошибка создания клиента v3: {e}")
+            return {"success": False, "error": str(e)}
+
 
     async def delete_client(self, client_uuid: str, email: str = None) -> bool:
-        """Удаление клиента через API или SQL"""
+        """Универсальный метод удаления клиента для v2 и v3"""
+        if self.config.xui.is_v3_new_api():
+            return await self._delete_client_v3(email or client_uuid)
+        else:
+            return await self._delete_client_v2(client_uuid, email)
+    
+    async def _delete_client_v2(self, client_uuid: str, email: str = None) -> bool:
+        """Удаление клиента через API v2 или SQL"""
         if not self.session:
             if not await self.login():
                 return False
@@ -402,12 +611,12 @@ class XUIClient:
                         try:
                             result = json.loads(response_text)
                             if result.get('success'):
-                                logger.info(f"Клиент {email or client_uuid} удален через API")
+                                logger.info(f"Клиент {email or client_uuid} удален через API v2")
                                 return True
                         except:
                             pass
             except Exception as e:
-                logger.error(f"Ошибка удаления через API: {e}")
+                logger.error(f"Ошибка удаления через API v2: {e}")
                 continue
         
         # Если API не сработал, удаляем через SQL
@@ -491,7 +700,31 @@ class XUIClient:
             return False
     
     async def get_expired_clients(self) -> list:
-        """Получение списка истекших клиентов из JSON настроек inbound"""
+        """Универсальный метод получения истекших клиентов для v2 и v3"""
+        if self.config.xui.is_v3_new_api():
+            return await self._get_expired_clients_v3()
+        else:
+            return await self._get_expired_clients_v2()
+    
+    async def _get_expired_clients_v3(self) -> list:
+        """Получение истекших клиентов через v3 API"""
+        all_clients = await self._get_all_clients_v3()
+        current_time = int(time.time() * 1000)
+        
+        expired_clients = []
+        for client in all_clients:
+            expiry_time = client.get('expiryTime', 0)
+            if expiry_time > 0 and expiry_time < current_time:
+                expired_clients.append({
+                    'uuid': client.get('uuid'),
+                    'email': client.get('email'),
+                    'expiry_time': expiry_time
+                })
+        
+        return expired_clients
+    
+    async def _get_expired_clients_v2(self) -> list:
+        """Получение списка истекших клиентов из JSON настроек inbound (v2)"""
         try:
             current_time = int(time.time() * 1000)  # Текущее время в миллисекундах
             
@@ -527,7 +760,14 @@ class XUIClient:
             logger.error(f"Ошибка получения истекших клиентов: {e}")
             return []
     async def get_all_clients(self) -> list:
-        """Получение всех клиентов с полной информацией"""
+        """Универсальный метод получения всех клиентов для v2 и v3"""
+        if self.config.xui.is_v3_new_api():
+            return await self._get_all_clients_v3()
+        else:
+            return await self._get_all_clients_v2()
+    
+    async def _get_all_clients_v2(self) -> list:
+        """Получение всех клиентов с полной информацией (v2)"""
         try:
             current_time = int(time.time() * 1000)  # Текущее время в миллисекундах
             
@@ -605,19 +845,24 @@ class XUIClient:
             logger.error(f"Ошибка получения всех клиентов: {e}")
             return []
     
-    async def get_client_details(self, client_uuid: str) -> dict:
-        """Получение детальной информации о клиенте"""
-        try:
-            all_clients = await self.get_all_clients()
-            
-            for client in all_clients:
-                if client['uuid'] == client_uuid:
-                    return client
-            
-            return None
-            
-        except Exception as e:
-            logger.error(f"Ошибка получения деталей клиента: {e}")
+    async def get_client_details(self, client_uuid: str, email: str = None):
+        """Универсальный метод получения деталей клиента для v2 и v3"""
+        if self.config.xui.is_v3_new_api() and email:
+            return await self._get_client_details_v3(email)
+        else:
+            # Для v2 или если email не указан - используем поиск по UUID
+            try:
+                all_clients = await self.get_all_clients()
+                
+                for client in all_clients:
+                    if client['uuid'] == client_uuid:
+                        return client
+                
+                return None
+                
+            except Exception as e:
+                logger.error(f"Ошибка получения деталей клиента: {e}")
+                return None
     
     async def get_user_clients_by_username(self, username: str) -> list:
         """Получение всех ключей пользователя по username (ищет в email)"""
