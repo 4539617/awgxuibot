@@ -122,6 +122,12 @@ class XUIClient:
     
     async def login(self) -> bool:
         """Авторизация в панели 3x-ui с автоматическим переключением HTTPS/HTTP"""
+        # Для v3 с API токеном авторизация не требуется
+        if self.config.xui.is_v3_new_api() and self.api_token:
+            await self._get_session()
+            logger.info(f"Используется Bearer Token для v3 API")
+            return True
+        
         await self._get_session()
         
         login_data = {
