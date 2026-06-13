@@ -3438,10 +3438,49 @@ install_3xui_v3() {
     echo -e "${GREEN}SQLite - для небольших нагрузок (< 500 клиентов)${NC}"
     echo -e "${GREEN}PostgreSQL - для высоких нагрузок и множества узлов${NC}\n"
     
+    # Получаем IP сервера для проверки сертификата
+    SERVER_IP=$(curl -s https://api4.ipify.org 2>/dev/null || curl -s https://ipv4.icanhazip.com 2>/dev/null || echo "")
+    
+    # Проверка существующего SSL сертификата
+    USE_EXISTING_CERT=false
+    if [ "$ENABLE_CERT_REUSE" = "true" ] && [ -n "$SERVER_IP" ]; then
+        echo -e "\n${BLUE}═══════════════════════════════════════════${NC}"
+        echo -e "${BLUE}     Проверка SSL сертификата${NC}"
+        echo -e "${BLUE}═══════════════════════════════════════════${NC}\n"
+        
+        if check_existing_certificate "$SERVER_IP"; then
+            USE_EXISTING_CERT=true
+            echo -e "${GREEN}✓ Будет использован существующий сертификат${NC}\n"
+            
+            # Создаём символические ссылки на существующий сертификат
+            TARGET_CERT_DIR="/root/cert/ip"
+            mkdir -p "$TARGET_CERT_DIR"
+            
+            CERT_SOURCE="/root/.acme.sh/${SERVER_IP}_ecc"
+            
+            # Удаляем старые файлы/симлинки если существуют
+            rm -f "$TARGET_CERT_DIR/privkey.pem" "$TARGET_CERT_DIR/fullchain.pem"
+            
+            # Создаём символические ссылки
+            ln -sf "$CERT_SOURCE/${SERVER_IP}.key" "$TARGET_CERT_DIR/privkey.pem"
+            ln -sf "$CERT_SOURCE/fullchain.cer" "$TARGET_CERT_DIR/fullchain.pem"
+            
+            echo -e "${GREEN}✓ Символические ссылки на сертификат созданы в $TARGET_CERT_DIR${NC}"
+            echo -e "${GREEN}ℹ️  Сертификат будет автоматически обновляться через acme.sh${NC}"
+            echo -e "${YELLOW}ℹ️  Установщик попытается получить сертификат (получит Rate Limit), затем мы настроим пути${NC}\n"
+        else
+            echo -e "${YELLOW}ℹ️  Будет запрошен новый сертификат при установке${NC}\n"
+        fi
+    else
+        if [ "$ENABLE_CERT_REUSE" != "true" ]; then
+            echo -e "\n${YELLOW}ℹ️  Проверка существующих сертификатов отключена (ENABLE_CERT_REUSE не установлен)${NC}"
+        fi
+        echo -e "${YELLOW}ℹ️  SSL сертификат будет пропущен (можно настроить позже)${NC}\n"
+    fi
+    
     # Установка через официальный скрипт
     echo -e "${YELLOW}⚠ Запуск установщика 3x-ui...${NC}"
     echo -e "${YELLOW}⚠ Будет автоматически выбрана база данных SQLite${NC}"
-    echo -e "${YELLOW}⚠ SSL сертификат будет пропущен (можно настроить позже)${NC}\n"
     
     # Создаем временный файл для сохранения вывода установщика
     INSTALL_OUTPUT=$(mktemp)
@@ -3458,6 +3497,37 @@ install_3xui_v3() {
     # Проверка успешности установки
     if systemctl is-active --quiet x-ui; then
         echo -e "\n${GREEN}✓ 3x-ui v3.x установлена успешно${NC}"
+        
+        # Проверяем наличие ошибок SSL в установщике
+        SSL_SETUP_FAILED=false
+        if echo "$INSTALL_OUTPUT" | grep -q "IP certificate setup failed\|certificate setup failed\|Failed to issue\|rateLimited\|too many certificates\|rate.*limit"; then
+            SSL_SETUP_FAILED=true
+            
+            # Проверяем конкретную причину ошибки
+            if echo "$INSTALL_OUTPUT" | grep -qi "rateLimited\|too many certificates\|rate.*limit"; then
+                echo -e "${YELLOW}⚠️  Достигнут лимит Let's Encrypt (rate limit)${NC}"
+            else
+                echo -e "${YELLOW}⚠️  Установщик не смог получить SSL сертификат${NC}"
+            fi
+        fi
+        
+        # Если использовали существующий сертификат, устанавливаем его
+        if [ "$USE_EXISTING_CERT" = true ]; then
+            echo -e "${GREEN}✓ Установка существующего сертификата...${NC}"
+            
+            if install_existing_certificate "$SERVER_IP"; then
+                echo -e "${GREEN}✓ Существующий сертификат успешно установлен${NC}"
+                SSL_SETUP_FAILED=false
+                
+                # Настраиваем пути к сертификату в панели через x-ui CLI
+                x-ui cert -webCert /root/cert/ip/fullchain.pem -webCertKey /root/cert/ip/privkey.pem >/dev/null 2>&1
+                systemctl restart x-ui
+                sleep 2
+            else
+                echo -e "${YELLOW}⚠️  Не удалось установить существующий сертификат${NC}"
+                SSL_SETUP_FAILED=true
+            fi
+        fi
         
         # Ожидание запуска панели
         sleep 3
