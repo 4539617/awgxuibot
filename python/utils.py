@@ -409,16 +409,23 @@ class XUIClient:
         expiry_time = int((time.time() + expiry_days * 86400) * 1000)
         total_bytes = total_gb * 1024 * 1024 * 1024 if total_gb > 0 else 0
         
+        # Формируем данные клиента согласно API v3
+        client_data = {
+            "email": email,
+            "totalGB": total_bytes,
+            "expiryTime": expiry_time,
+            "enable": True,
+            "limitIp": 0,
+            "tgId": 0,
+            "subId": ""
+        }
+        
+        # Добавляем комментарий если указан
+        if comment:
+            client_data["comment"] = comment
+        
         data = {
-            "client": {
-                "email": email,
-                "totalGB": total_bytes,
-                "expiryTime": expiry_time,
-                "enable": True,
-                "limitIp": 0,
-                "tgId": 0,
-                "subId": ""
-            },
+            "client": client_data,
             "inboundIds": [self.config.xui.inbound_id]
         }
         
@@ -426,20 +433,29 @@ class XUIClient:
         headers = await self._get_headers()
         
         try:
+            logger.info(f"Создание клиента v3: email={email}, inbound={self.config.xui.inbound_id}")
             async with self.session.post(endpoint, json=data, headers=headers) as resp:
+                response_text = await resp.text()
+                
                 if resp.status == 200:
-                    result = await resp.json()
+                    try:
+                        result = await resp.json() if response_text else {}
+                    except:
+                        result = {}
+                    
                     if result.get('success'):
-                        # v3 API не возвращает UUID в ответе, получаем его из списка клиентов
                         logger.info(f"Клиент {email} создан через v3 API")
                         # Получаем UUID клиента
                         client_details = await self._get_client_details_v3(email)
                         client_uuid = client_details.get('uuid', '') if client_details else ''
                         return {"success": True, "uuid": client_uuid}
+                    else:
+                        error_msg = result.get('msg', response_text)
+                        logger.error(f"API вернул success=false: {error_msg}")
+                        return {"success": False, "error": error_msg}
                 
-                text = await resp.text()
-                logger.error(f"Ошибка v3 API: {resp.status} - {text}")
-                return {"success": False, "error": text}
+                logger.error(f"Ошибка v3 API: {resp.status} - {response_text}")
+                return {"success": False, "error": f"{resp.status}: {response_text}"}
         except Exception as e:
             logger.error(f"Ошибка создания клиента v3: {e}")
             return {"success": False, "error": str(e)}
