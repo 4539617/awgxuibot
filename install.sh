@@ -3624,7 +3624,17 @@ install_3xui_v3() {
         
         # Получение IP сервера
         SERVER_IP=$(curl -s https://api4.ipify.org 2>/dev/null || curl -s https://ipv4.icanhazip.com 2>/dev/null || echo "YOUR_SERVER_IP")
-        XUI_URL="http://${SERVER_IP}:${XUI_PORT}"
+        
+        # Формируем URL с webBasePath если он есть
+        if [ -n "$XUI_WEB_BASE_PATH" ] && [ "$XUI_WEB_BASE_PATH" != "/" ]; then
+            # Добавляем leading slash если нужно
+            if [[ "$XUI_WEB_BASE_PATH" != /* ]]; then
+                XUI_WEB_BASE_PATH="/${XUI_WEB_BASE_PATH}"
+            fi
+            XUI_URL="http://${SERVER_IP}:${XUI_PORT}${XUI_WEB_BASE_PATH}"
+        else
+            XUI_URL="http://${SERVER_IP}:${XUI_PORT}"
+        fi
         
         # Сохранение в .env
         create_env_if_not_exists
