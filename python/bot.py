@@ -834,6 +834,11 @@ async def cmd_all_clients(message: Message):
                 InlineKeyboardButton(text=f"🧹 Очистить просроченные ({expired_count})", callback_data="cleanup_expired")
             ])
         
+        # Добавляем кнопку "Назад"
+        buttons.append([
+            InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")
+        ])
+        
         keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
         
         # Сохраняем в кеш с временной меткой
@@ -1187,6 +1192,11 @@ async def back_to_allclients(callback_query: types.CallbackQuery):
             buttons.append([
                 InlineKeyboardButton(text=f"🧹 Очистить просроченные ({expired_count})", callback_data="cleanup_expired")
             ])
+        
+        # Добавляем кнопку "Назад"
+        buttons.append([
+            InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")
+        ])
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
         
