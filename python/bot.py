@@ -1503,7 +1503,27 @@ async def show_server_status(callback_query: types.CallbackQuery):
         
         message += f"🔌 <b>TCP соединений:</b> {tcp_count}"
         
-        await callback_query.message.answer(message, parse_mode="HTML")
+        # Добавляем кнопку "Обновить"
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔄 Обновить", callback_data="server_status")]
+        ])
+        
+        # Если это обновление существующего сообщения, редактируем его
+        # Иначе отправляем новое
+        try:
+            await callback_query.message.edit_text(
+                message,
+                parse_mode="HTML",
+                reply_markup=keyboard
+            )
+        except:
+            # Если не удалось отредактировать (например, сообщение слишком старое),
+            # отправляем новое
+            await callback_query.message.answer(
+                message,
+                parse_mode="HTML",
+                reply_markup=keyboard
+            )
         
     except Exception as e:
         logger.error(f"Ошибка получения статуса сервера: {e}")
