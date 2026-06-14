@@ -861,9 +861,9 @@ google.com
       await this.bot.sendMessage(
         chatId,
         `📝 *Введите метку сервера*\n\n` +
-        `Например: \`XYZ\`, \`SERVER1\`, \`VPS-NY\`\n\n` +
+        `Например: \`VPS3\`, \`SERVER1\`\n\n` +
         `Эта метка будет добавлена к имени файла конфигурации для IP \`10.8.1.${ipNumber}\`\n` +
-        `Пример: \`XYZ_AWGv${version === 'v1' ? '1' : '2'}_10_8_1_${ipNumber}.conf\``,
+        `Пример: \`VPS3_AWGv${version === 'v1' ? '1' : '2'}_10_8_1_${ipNumber}.conf\``,
         { parse_mode: 'Markdown' }
       );
       
@@ -1385,8 +1385,8 @@ google.com
         const keyboard = {
           inline_keyboard: [
             [
-              { text: '📋 Клиенты V1', callback_data: 'awg_clients_v1' },
-              { text: '📋 Клиенты V2', callback_data: 'awg_clients_v2' }
+              { text: '📋 AWG V1', callback_data: 'awg_select_v1' },
+              { text: '📋 AWG V2', callback_data: 'awg_select_v2' }
             ]
           ]
         };
