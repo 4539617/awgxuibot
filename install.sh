@@ -4324,10 +4324,13 @@ create_global_command() {
         return 1
     fi
     
+    # Устанавливаем права на выполнение для самого скрипта
+    echo -e "${YELLOW}🔧 Установка прав на выполнение...${NC}"
+    chmod +x "$script_path"
+    
     # Создание символической ссылки
     echo -e "${YELLOW}🔗 Создание символической ссылки...${NC}"
     if ln -sf "$script_path" "$bin_path"; then
-        chmod +x "$bin_path"
         echo -e "${GREEN}✅ Глобальная команда создана!${NC}"
         echo -e "\n${GREEN}Теперь вы можете запустить скрипт из любой директории командой:${NC}"
         echo -e "${BLUE}awgxui${NC}"
