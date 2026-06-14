@@ -1299,6 +1299,12 @@ update_awgbot() {
     echo -e "\n${GREEN}✅ AWG Бот пересобран!${NC}"
     echo -e "${GREEN}📊 Статус:${NC}"
     docker ps --filter name=awgbot
+    
+    echo -e "\n${GREEN}📋 Логи AWG бота (последние 50 строк):${NC}"
+    docker logs --tail 50 awgbot
+    
+    echo -e "\n${YELLOW}Для просмотра в реальном времени:${NC}"
+    echo -e "${YELLOW}docker logs -f awgbot${NC}"
 }
 
 # Функция удаления AWG бота
