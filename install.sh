@@ -3606,12 +3606,12 @@ install_3xui_v3() {
         # Извлечение учетных данных из вывода установщика
         echo -e "${YELLOW}⚠ Извлечение учетных данных панели...${NC}"
         
-        # Парсим вывод установщика для получения данных
-        XUI_USERNAME=$(grep -oP 'Username:\s+\K\S+' "$INSTALL_OUTPUT" | tail -1)
-        XUI_PASSWORD=$(grep -oP 'Password:\s+\K\S+' "$INSTALL_OUTPUT" | tail -1)
-        XUI_PORT=$(grep -oP 'Port:\s+\K\d+' "$INSTALL_OUTPUT" | tail -1)
-        XUI_WEB_BASE_PATH=$(grep -oP 'WebBasePath:\s+\K\S+' "$INSTALL_OUTPUT" | tail -1)
-        XUI_API_TOKEN=$(grep -oP 'API Token:\s+\K\S+' "$INSTALL_OUTPUT" | tail -1)
+        # Парсим вывод установщика для получения данных и очищаем от ANSI кодов
+        XUI_USERNAME=$(grep -oP 'Username:\s+\K\S+' "$INSTALL_OUTPUT" | tail -1 | sed 's/\x1b\[[0-9;]*m//g')
+        XUI_PASSWORD=$(grep -oP 'Password:\s+\K\S+' "$INSTALL_OUTPUT" | tail -1 | sed 's/\x1b\[[0-9;]*m//g')
+        XUI_PORT=$(grep -oP 'Port:\s+\K\d+' "$INSTALL_OUTPUT" | tail -1 | sed 's/\x1b\[[0-9;]*m//g')
+        XUI_WEB_BASE_PATH=$(grep -oP 'WebBasePath:\s+\K\S+' "$INSTALL_OUTPUT" | tail -1 | sed 's/\x1b\[[0-9;]*m//g')
+        XUI_API_TOKEN=$(grep -oP 'API Token:\s+\K\S+' "$INSTALL_OUTPUT" | tail -1 | sed 's/\x1b\[[0-9;]*m//g')
         
         # Удаляем временный файл
         rm -f "$INSTALL_OUTPUT"
