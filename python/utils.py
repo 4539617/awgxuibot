@@ -406,8 +406,14 @@ class XUIClient:
             if not await self.login():
                 return {"success": False, "error": "Не удалось авторизоваться"}
         
+        # Вычисляем expiry time в миллисекундах
         expiry_time = int((time.time() + expiry_days * 86400) * 1000)
-        total_bytes = total_gb * 1024 * 1024 * 1024 if total_gb > 0 else 0
+        
+        # Для v3 API: если total_gb = 0, не устанавливаем лимит
+        if total_gb == 0:
+            total_bytes = 0  # 0 = без лимита
+        else:
+            total_bytes = total_gb * 1024 * 1024 * 1024
         
         # Формируем данные клиента согласно API v3
         client_data = {
@@ -424,11 +430,14 @@ class XUIClient:
         if comment:
             client_data["comment"] = comment
         
+        # Формируем финальный запрос
         data = {
             "client": client_data,
             "inboundIds": [self.config.xui.inbound_id]
         }
         
+        # ВАЖНО: Используем базовый путь из XUI_URL
+        # URL уже содержит webBasePath, просто добавляем /panel/api/clients/add
         endpoint = f"{self.config.xui.url}/panel/api/clients/add"
         headers = await self._get_headers()
         

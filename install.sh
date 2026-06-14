@@ -2019,30 +2019,35 @@ EOF
                 apt-get update -qq && apt-get install -y sqlite3 -qq > /dev/null 2>&1
             fi
             
-            # Получаем настройки из x-ui settings
-            sleep 2
-            XUI_SETTINGS=$(echo "n" | timeout 5 x-ui settings 2>/dev/null || echo "")
-            
-            if [ -n "$XUI_SETTINGS" ]; then
+            # Получаем настройки напрямую из базы данных для версии 3.x
+            if [ -f "/etc/x-ui/x-ui.db" ]; then
+                echo -e "${YELLOW}🔐 Получение данных из базы данных...${NC}"
+                
+                # Получаем username
+                XUI_USERNAME=$(sqlite3 /etc/x-ui/x-ui.db "SELECT username FROM users LIMIT 1;" 2>/dev/null || echo "")
+                
+                # Получаем webPort
                 if [ -z "$XUI_PORT" ]; then
-                    XUI_PORT=$(echo "$XUI_SETTINGS" | grep "port:" | awk '{print $2}')
+                    XUI_PORT=$(sqlite3 /etc/x-ui/x-ui.db "SELECT value FROM settings WHERE key='webPort';" 2>/dev/null || echo "")
                 fi
+                
+                # Получаем webBasePath
                 if [ -z "$XUI_PATH" ]; then
-                    XUI_PATH=$(echo "$XUI_SETTINGS" | grep "webBasePath:" | awk '{print $2}' | sed 's/\/$//')
-                    # Добавляем leading slash если нужно
-                    if [ -n "$XUI_PATH" ] && [[ "$XUI_PATH" != /* ]] && [ "$XUI_PATH" != "/" ]; then
-                        XUI_PATH="/${XUI_PATH}"
+                    XUI_PATH=$(sqlite3 /etc/x-ui/x-ui.db "SELECT value FROM settings WHERE key='webBasePath';" 2>/dev/null || echo "/")
+                    # Удаляем trailing slash если это не корень
+                    if [ "$XUI_PATH" != "/" ]; then
+                        XUI_PATH=$(echo "$XUI_PATH" | sed 's/\/$//')
                     fi
                 fi
-            fi
-            
-            # Получаем username из базы данных
-            if [ -f "/etc/x-ui/x-ui.db" ]; then
-                echo -e "${YELLOW}🔐 Получение username из базы данных...${NC}"
-                XUI_USERNAME=$(sqlite3 /etc/x-ui/x-ui.db "SELECT username FROM users LIMIT 1;" 2>/dev/null || echo "")
                 
                 if [ -n "$XUI_USERNAME" ]; then
                     echo -e "${GREEN}✅ Username: ${YELLOW}${XUI_USERNAME}${NC}"
+                fi
+                if [ -n "$XUI_PORT" ]; then
+                    echo -e "${GREEN}✅ Port: ${YELLOW}${XUI_PORT}${NC}"
+                fi
+                if [ -n "$XUI_PATH" ] && [ "$XUI_PATH" != "/" ]; then
+                    echo -e "${GREEN}✅ webBasePath: ${YELLOW}${XUI_PATH}${NC}"
                 fi
             fi
             
