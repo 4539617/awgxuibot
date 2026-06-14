@@ -270,29 +270,21 @@ async def process_new_comment(message: Message, state: FSMContext):
             await state.clear()
             return
 
-        # Генерируем QR-код
-        qr = qrcode.QRCode(box_size=10, border=2)
-        qr.add_data(vless_link)
-        qr.make()
-        qr_img = qr.make_image(fill_color="black", back_color="white")
-        buffer = BytesIO()
-        qr_img.save(buffer, format="PNG")
-        buffer.seek(0)
-
         # Удаляем сообщение о создании
         await bot.delete_message(message.chat.id, status_msg.message_id)
         
-        # Отправляем информацию с QR-кодом и кнопками
+        # Отправляем информацию с кнопками
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔑 Показать ключ", callback_data=f"showlink_{result['uuid']}")],
+            [
+                InlineKeyboardButton(text="🔑 Показать ключ", callback_data=f"showlink_{result['uuid']}"),
+                InlineKeyboardButton(text="📱 Показать QR", callback_data=f"showqr_{result['uuid']}")
+            ],
             [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")]
         ])
         
-        await message.answer_photo(
-            photo=types.BufferedInputFile(buffer.getvalue(), filename="vless.png"),
-            caption=f"🔑 <b>Бессрочный ключ</b>\n\n"
-                    f"📝 Комментарий: {comment}\n\n"
-                    f"📱 QR-код для подключения",
+        await message.answer(
+            f"🔑 <b>Бессрочный ключ</b>\n\n"
+            f"📝 Комментарий: {comment}",
             parse_mode="HTML",
             reply_markup=keyboard
         )
@@ -403,29 +395,21 @@ async def process_tempkey_comment(message: Message, state: FSMContext):
             await status_msg.edit_text(f"❌ Ошибка получения ссылки")
             return
 
-        # Генерируем QR-код
-        qr = qrcode.QRCode(box_size=10, border=2)
-        qr.add_data(vless_link)
-        qr.make()
-        qr_img = qr.make_image(fill_color="black", back_color="white")
-        buffer = BytesIO()
-        qr_img.save(buffer, format="PNG")
-        buffer.seek(0)
-
         # Удаляем сообщение о создании
         await bot.delete_message(message.chat.id, status_msg.message_id)
         
-        # Отправляем информацию с QR-кодом и кнопками
+        # Отправляем информацию с кнопками
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔑 Показать ключ", callback_data=f"showlink_{result['uuid']}")],
+            [
+                InlineKeyboardButton(text="🔑 Показать ключ", callback_data=f"showlink_{result['uuid']}"),
+                InlineKeyboardButton(text="📱 Показать QR", callback_data=f"showqr_{result['uuid']}")
+            ],
             [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")]
         ])
         
-        await message.answer_photo(
-            photo=types.BufferedInputFile(buffer.getvalue(), filename="vless.png"),
-            caption=f"⏰ <b>Временный ключ на {duration_text}</b>\n\n"
-                    f"📝 Комментарий: {comment}\n\n"
-                    f"📱 QR-код для подключения",
+        await message.answer(
+            f"⏰ <b>Временный ключ на {duration_text}</b>\n\n"
+            f"📝 Комментарий: {comment}",
             parse_mode="HTML",
             reply_markup=keyboard
         )
@@ -560,30 +544,15 @@ async def show_my_key_link(callback_query: types.CallbackQuery):
             await callback_query.answer("❌ Ошибка получения ссылки!", show_alert=True)
             return
         
-        comment = client.get('comment', '')
-        status = client.get('status', '')
-        
-        # Определяем статус с иконкой
-        if status == 'active':
-            status_text = "✅ Активен"
-        elif status == 'inactive':
-            status_text = "⏸️ Неактивен (выключен)"
-        else:  # expired
-            status_text = "⏰ Просрочен"
-        
         await callback_query.answer()
         
-        # Редактируем caption фото - показываем ссылку
+        # Редактируем текущее сообщение - показываем только ссылку
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 Назад", callback_data=f"myclient_{client_uuid}")]
         ])
         
-        await callback_query.message.edit_caption(
-            caption=f"🔑 <b>Информация о ключе</b>\n\n"
-                    f"Статус: {status_text}\n"
-                    f"📝 Комментарий: {comment if comment else 'Без комментария'}\n\n"
-                    f"🔑 <b>Ключ для подключения:</b>\n"
-                    f"<code>{vless_link}</code>",
+        await callback_query.message.edit_text(
+            f"<code>{vless_link}</code>",
             parse_mode="HTML",
             reply_markup=keyboard
         )
@@ -944,42 +913,15 @@ async def show_link(callback_query: types.CallbackQuery):
             await callback_query.answer("❌ Ошибка получения ссылки!", show_alert=True)
             return
         
-        comment = client.get('comment', '')
-        
-        # Определяем тип ключа
-        if 'Временный' in comment:
-            if '1 час' in comment:
-                key_type = "⏰ <b>Временный ключ на 1 час</b>"
-            elif '1 день' in comment:
-                key_type = "⏰ <b>Временный ключ на 1 день</b>"
-            elif '3 дня' in comment:
-                key_type = "⏰ <b>Временный ключ на 3 дня</b>"
-            elif '7 дней' in comment:
-                key_type = "⏰ <b>Временный ключ на 7 дней</b>"
-            elif '30 дней' in comment:
-                key_type = "⏰ <b>Временный ключ на 30 дней</b>"
-            else:
-                key_type = "⏰ <b>Временный ключ</b>"
-        else:
-            key_type = "🔑 <b>Бессрочный ключ</b>"
-        
-        # Убираем префикс "Временный (...)" из комментария
-        display_comment = comment.replace('Временный (1 час)', '').replace('Временный (1 день)', '').replace('Временный (3 дня)', '').replace('Временный (7 дней)', '').replace('Временный (30 дней)', '').strip()
-        if display_comment.startswith('(') and display_comment.endswith(')'):
-            display_comment = display_comment[1:-1]
-        
         await callback_query.answer()
         
-        # Редактируем caption фото - показываем ссылку
+        # Редактируем текущее сообщение - показываем только ссылку
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 Назад", callback_data=f"backtoinfo_{client_uuid}")]
         ])
         
-        await callback_query.message.edit_caption(
-            caption=f"{key_type}\n\n"
-                    f"📝 Комментарий: {display_comment if display_comment else comment}\n\n"
-                    f"🔑 <b>Ключ для подключения:</b>\n"
-                    f"<code>{vless_link}</code>",
+        await callback_query.message.edit_text(
+            f"<code>{vless_link}</code>",
             parse_mode="HTML",
             reply_markup=keyboard
         )
@@ -1001,10 +943,13 @@ async def back_to_info(callback_query: types.CallbackQuery):
             await callback_query.answer("❌ Ключ не найден!", show_alert=True)
             return
         
+        # Определяем тип ключа по сроку действия
+        expiry_time = client.get('expiryTime', 0)
         comment = client.get('comment', '')
         
-        # Определяем тип ключа
+        # Проверяем, временный ли это ключ
         if 'Временный' in comment:
+            # Извлекаем длительность из комментария
             if '1 час' in comment:
                 key_type = "⏰ <b>Временный ключ на 1 час</b>"
             elif '1 день' in comment:
@@ -1020,24 +965,26 @@ async def back_to_info(callback_query: types.CallbackQuery):
         else:
             key_type = "🔑 <b>Бессрочный ключ</b>"
         
-        # Убираем префикс "Временный (...)" из комментария
+        # Убираем префикс "Временный (...)" из комментария для отображения
         display_comment = comment.replace('Временный (1 час)', '').replace('Временный (1 день)', '').replace('Временный (3 дня)', '').replace('Временный (7 дней)', '').replace('Временный (30 дней)', '').strip()
         if display_comment.startswith('(') and display_comment.endswith(')'):
             display_comment = display_comment[1:-1]
         
         # Создаем кнопки
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔑 Показать ключ", callback_data=f"showlink_{client_uuid}")],
+            [
+                InlineKeyboardButton(text="🔑 Показать ключ", callback_data=f"showlink_{client_uuid}"),
+                InlineKeyboardButton(text="📱 Показать QR", callback_data=f"showqr_{client_uuid}")
+            ],
             [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")]
         ])
         
         await callback_query.answer()
         
-        # Редактируем caption фото (убираем ссылку, оставляем QR)
-        await callback_query.message.edit_caption(
-            caption=f"{key_type}\n\n"
-                    f"📝 Комментарий: {display_comment if display_comment else comment}\n\n"
-                    f"📱 QR-код для подключения",
+        # Редактируем сообщение (теперь это всегда текстовое сообщение)
+        await callback_query.message.edit_text(
+            f"{key_type}\n\n"
+            f"📝 Комментарий: {display_comment if display_comment else comment}",
             parse_mode="HTML",
             reply_markup=keyboard
         )
@@ -1046,6 +993,46 @@ async def back_to_info(callback_query: types.CallbackQuery):
         logger.error(f"Ошибка возврата к информации: {e}")
         await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
 
+@dp.callback_query(lambda c: c.data and c.data.startswith('showqr_'))
+async def show_qr_code(callback_query: types.CallbackQuery):
+    """Показать QR-код для ключа"""
+    client_uuid = callback_query.data.split('_', 1)[1]
+    
+    try:
+        # Получаем детали клиента
+        client = await xui_client.get_client_details(client_uuid)
+        
+        if not client:
+            await callback_query.answer("❌ Ключ не найден!", show_alert=True)
+            return
+        
+        # Генерируем VLESS ссылку
+        vless_link = await get_client_link(xui_client, client['email'], client_uuid, config.vpn, config.xui.inbound_id)
+        if not vless_link:
+            await callback_query.answer("❌ Ошибка получения ссылки!", show_alert=True)
+            return
+        
+        # Генерируем QR-код
+        qr = qrcode.QRCode(box_size=10, border=2)
+        qr.add_data(vless_link)
+        qr.make()
+        qr_img = qr.make_image(fill_color="black", back_color="white")
+        buffer = BytesIO()
+        qr_img.save(buffer, format="PNG")
+        buffer.seek(0)
+        
+        await callback_query.answer()
+        
+        # Отправляем QR-код как отдельное сообщение (не удаляя предыдущее)
+        await callback_query.message.answer_photo(
+            photo=types.BufferedInputFile(buffer.getvalue(), filename="vless.png"),
+            caption=f"📱 <b>QR-код для подключения</b>",
+            parse_mode="HTML"
+        )
+        
+    except Exception as e:
+        logger.error(f"Ошибка показа QR-кода: {e}")
+        await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
 
 
 @dp.callback_query(lambda c: c.data == "back_to_allclients")
