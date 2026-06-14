@@ -1682,14 +1682,8 @@ show_status() {
             
             echo -e "  ${GREEN}✅ Установлена${NC}"
             echo -e "  Версия: ${xui_version}"
-            echo -e "  URL: ${xui_url}"
-            echo -e "  Логин: ${xui_user}"
-            echo -e "  Пароль: ${xui_pass}"
             echo -e "  Состояние: ${GREEN}Запущена${NC}"
-            echo -e "  Подключение №: ${inbound_id}"
-            echo -e "         Транспорт: ${transport}"
-            echo -e "         Безопасность: ${security}"
-            echo -e "         Всего ключей: ${total_keys}"
+            echo -e "  Всего ключей: ${total_keys}"
         else
             echo -e "  ${GREEN}✅ Установлена${NC}"
             echo -e "  Версия: ${xui_version}"

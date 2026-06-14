@@ -77,36 +77,28 @@ google.com
         return; // Silently ignore for non-admins
       }
       
+      // Получаем статистику
+      let statsMessage = '';
+      try {
+        statsMessage = await this.showAwgStats(chatId);
+      } catch (error) {
+        statsMessage = '❌ Ошибка при получении статистики\n\n';
+      }
+      
       const keyboard = {
         inline_keyboard: [
           [
-            { text: '🔧 Конфигурации', callback_data: 'admin_config' }
-          ],
-          [
-            { text: '📊 Статистика', callback_data: 'admin_stats' },
-            { text: '📋 Клиенты', callback_data: 'admin_clients' }
+            { text: 'V1', callback_data: 'awg_select_v1' },
+            { text: 'V2', callback_data: 'awg_select_v2' }
           ]
         ]
       };
 
       this.bot.sendMessage(
         chatId,
-        '🔐 *Панель администратора*\n\nВыберите действие:',
+        `🔐 *Панель администратора*\n\n${statsMessage}Выберите действие:`,
         { parse_mode: 'Markdown', reply_markup: keyboard }
       );
-    });
-
-    // Stats command (admin only)
-    this.bot.onText(/\/awgstats/, async (msg) => {
-      const chatId = msg.chat.id;
-      
-      // Check if user is admin
-      if (!this.isAdmin(chatId)) {
-        logger.warn(`Unauthorized /awgstats command from chat ${chatId}`);
-        return; // Silently ignore for non-admins
-      }
-      
-      await this.showAwgStats(chatId);
     });
 
     // Handle callback queries for Admin, AWG and Install
@@ -126,30 +118,28 @@ google.com
         }
         
         if (data === 'admin_menu') {
-          // Show main admin menu
+          // Получаем статистику
+          let statsMessage = '';
+          try {
+            statsMessage = await this.showAwgStats(chatId);
+          } catch (error) {
+            statsMessage = '❌ Ошибка при получении статистики\n\n';
+          }
+          
           const keyboard = {
             inline_keyboard: [
               [
-                { text: '🔧 Конфигурации', callback_data: 'admin_config' }
-              ],
-              [
-                { text: '📊 Статистика', callback_data: 'admin_stats' },
-                { text: '📋 Клиенты', callback_data: 'admin_clients' }
+                { text: 'V1', callback_data: 'awg_select_v1' },
+                { text: 'V2', callback_data: 'awg_select_v2' }
               ]
             ]
           };
           
           this.bot.sendMessage(
             chatId,
-            '🔐 *Панель администратора*\n\nВыберите действие:',
+            `🔐 *Панель администратора*\n\n${statsMessage}Выберите действие:`,
             { parse_mode: 'Markdown', reply_markup: keyboard }
           );
-        } else if (data === 'admin_config') {
-          await this.showConfigMenu(chatId);
-        } else if (data === 'admin_stats') {
-          await this.showAwgStats(chatId);
-        } else if (data === 'admin_clients') {
-          await this.showAwgClients(chatId);
         }
       }
       // AWG config generation callbacks
@@ -177,8 +167,6 @@ google.com
           await this.requestVpsLabel(chatId, 'v2');
         } else if (data === 'awg_stats') {
           await this.showAwgStats(chatId);
-        } else if (data === 'awg_clients') {
-          await this.showAwgClients(chatId);
         } else if (data.startsWith('awg_clients_')) {
           const version = data.replace('awg_clients_', '');
           await this.showAwgClientsList(chatId, version);
@@ -665,30 +653,6 @@ google.com
       );
     }
   }
-  async showConfigMenu(chatId) {
-    try {
-      logger.info(`Showing config menu for chat ${chatId}`);
-      
-      const keyboard = {
-        inline_keyboard: [
-          [
-            { text: 'v1', callback_data: 'awg_select_v1' },
-            { text: 'v2', callback_data: 'awg_select_v2' }
-          ]
-        ]
-      };
-
-      this.bot.sendMessage(
-        chatId,
-        '🔧 *Конфигурации*\n\nВыберите версию:',
-        { parse_mode: 'Markdown', reply_markup: keyboard }
-      );
-    } catch (error) {
-      logger.error(`Error showing config menu for chat ${chatId}:`, error);
-      this.bot.sendMessage(chatId, `❌ Ошибка: ${error.message}`);
-    }
-  }
-
   async showClientSelectionMenu(chatId, version) {
     try {
       logger.info(`Showing client selection menu for ${version} in chat ${chatId}`);
@@ -744,7 +708,7 @@ google.com
             { text: '🔢 Сформировать по номеру', callback_data: `awg_gen_by_number_${version}` }
           ],
           [
-            { text: '🔙 Назад', callback_data: 'admin_config' }
+            { text: '🔙 Назад', callback_data: 'admin_menu' }
           ]
         ]
       };
@@ -943,8 +907,8 @@ google.com
       await this.bot.sendDocument(chatId, result.filepath);
       logger.info(`Sent ${version} config to chat ${chatId}: ${result.filename}`);
 
-      // Show config menu again
-      await this.showConfigMenu(chatId);
+      // Show client selection menu again
+      await this.showClientSelectionMenu(chatId, version);
 
     } catch (error) {
       logger.error(`Error generating ${version} config for chat ${chatId}:`, error);
@@ -1001,8 +965,8 @@ google.com
       this.bot.sendMessage(chatId, infoMessage, { parse_mode: 'Markdown' });
       logger.info(`Sent ${version} config to chat ${chatId}: ${result.filename}`);
 
-      // Show config menu again
-      await this.showConfigMenu(chatId);
+      // Show client selection menu again
+      await this.showClientSelectionMenu(chatId, version);
 
     } catch (error) {
       logger.error(`Error generating ${version} config by number for chat ${chatId}:`, error);
@@ -1040,13 +1004,27 @@ google.com
         const container = statsMap.get(version);
         
         if (container) {
+          // Получаем количество активных клиентов
+          let activeClients = 0;
+          if (container.running) {
+            try {
+              const clientsWithStatus = await this.awgManager.getClientsWithStatus(
+                container.name,
+                version
+              );
+              activeClients = clientsWithStatus.filter(c => c.active).length;
+            } catch (error) {
+              logger.warn(`Failed to get active clients for ${container.name}`);
+            }
+          }
+          
           // Контейнер найден - показываем реальный статус
           statsMessage += `*AWG ${version.toUpperCase()}:*\n`;
           statsMessage += `${container.running ? '✅ Запущен' : '⚠️ Остановлен'}\n`;
           statsMessage += `📦 Контейнер: \`${container.name}\`\n`;
           statsMessage += `👥 Клиентов: ${container.clients}\n`;
           statsMessage += `🔌 Порт: ${container.port}\n`;
-          statsMessage += `🌐 Endpoint: \`${container.endpoint}\`\n\n`;
+          statsMessage += `👤 Активных: ${activeClients}\n\n`;
         } else {
           // Контейнер не найден
           statsMessage += `*AWG ${version.toUpperCase()}:*\n`;
@@ -1054,41 +1032,11 @@ google.com
         }
       }
 
-      this.bot.sendMessage(chatId, statsMessage, { parse_mode: 'Markdown' });
+      return statsMessage;
 
     } catch (error) {
       logger.error(`Error showing stats for chat ${chatId}:`, error);
-      this.bot.sendMessage(
-        chatId,
-        `❌ Ошибка при получении статистики: ${error.message}`
-      );
-    }
-  }
-
-  async showAwgClients(chatId) {
-    try {
-
-      const keyboard = {
-        inline_keyboard: [
-          [
-            { text: '🚀 Клиенты v1', callback_data: 'awg_clients_v1' },
-            { text: '🚀 Клиенты v2', callback_data: 'awg_clients_v2' }
-          ]
-        ]
-      };
-
-      this.bot.sendMessage(
-        chatId,
-        '📋 *Список клиентов*\n\nВыберите версию:',
-        { parse_mode: 'Markdown', reply_markup: keyboard }
-      );
-
-    } catch (error) {
-      logger.error(`Error showing clients menu for chat ${chatId}:`, error);
-      this.bot.sendMessage(
-        chatId,
-        `❌ Ошибка: ${error.message}`
-      );
+      throw error;
     }
   }
 
@@ -1110,7 +1058,7 @@ google.com
         await this.bot.deleteMessage(chatId, processingMsg.message_id);
         this.bot.sendMessage(
           chatId,
-          `📋 *Клиенты ${version.toUpperCase()}*\n\n❌ Контейнер версии ${version} не найден`,
+          `📋 *Подробнее Клиенты ${version.toUpperCase()}*\n\n❌ Контейнер версии ${version} не найден`,
           { parse_mode: 'Markdown' }
         );
         return;
@@ -1126,13 +1074,13 @@ google.com
       if (clients.length === 0) {
         this.bot.sendMessage(
           chatId,
-          `📋 *Клиенты ${version.toUpperCase()}*\n\n📦 Контейнер: \`${container.name}\`\n\nНет активных клиентов`,
+          `📋 *Подробнее Клиенты ${version.toUpperCase()}*\n\n📦 Контейнер: \`${container.name}\`\n\nНет активных клиентов`,
           { parse_mode: 'Markdown' }
         );
         return;
       }
 
-      let clientsMessage = `📋 *Клиенты ${version.toUpperCase()}*\n\n`;
+      let clientsMessage = `📋 *Подробнее Клиенты ${version.toUpperCase()}*\n\n`;
       clientsMessage += `📦 Контейнер: \`${container.name}\`\n`;
       clientsMessage += `Всего: ${clients.length}\n\n`;
       
@@ -1165,6 +1113,11 @@ google.com
           }
         ]);
       });
+
+      // Добавляем кнопку "Назад"
+      keyboard.inline_keyboard.push([
+        { text: '🔙 Назад', callback_data: `awg_select_${version}` }
+      ]);
 
       this.bot.sendMessage(chatId, clientsMessage, {
         parse_mode: 'Markdown',
@@ -1299,8 +1252,8 @@ google.com
         { parse_mode: 'Markdown' }
       );
       
-      // Show config menu again
-      await this.showConfigMenu(chatId);
+      // Show client selection menu again
+      await this.showClientSelectionMenu(chatId, version);
       
     } catch (error) {
       logger.error(`Error resending config for ${ip}:`, error);
