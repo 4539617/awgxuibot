@@ -981,13 +981,28 @@ async def back_to_info(callback_query: types.CallbackQuery):
         
         await callback_query.answer()
         
-        # Редактируем сообщение
-        await callback_query.message.edit_text(
-            f"{key_type}\n\n"
-            f"📝 Комментарий: {display_comment if display_comment else comment}",
-            parse_mode="HTML",
-            reply_markup=keyboard
-        )
+        # Проверяем, является ли сообщение фото (после показа QR-кода)
+        if callback_query.message.photo:
+            # Если это фото, удаляем его и отправляем новое текстовое сообщение
+            try:
+                await callback_query.message.delete()
+            except:
+                pass
+            
+            await callback_query.message.answer(
+                f"{key_type}\n\n"
+                f"📝 Комментарий: {display_comment if display_comment else comment}",
+                parse_mode="HTML",
+                reply_markup=keyboard
+            )
+        else:
+            # Если это текстовое сообщение, просто редактируем его
+            await callback_query.message.edit_text(
+                f"{key_type}\n\n"
+                f"📝 Комментарий: {display_comment if display_comment else comment}",
+                parse_mode="HTML",
+                reply_markup=keyboard
+            )
         
     except Exception as e:
         logger.error(f"Ошибка возврата к информации: {e}")
