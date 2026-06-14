@@ -3645,13 +3645,19 @@ install_3xui_v3() {
         XUI_WEB_BASE_PATH=$(grep -oP 'WebBasePath:\s+\K\S+' "$INSTALL_OUTPUT" | tail -1 | sed 's/\x1b\[[0-9;]*m//g')
         XUI_API_TOKEN=$(grep -oP 'API Token:\s+\K\S+' "$INSTALL_OUTPUT" | tail -1 | sed 's/\x1b\[[0-9;]*m//g')
         
+        # Извлекаем версию из вывода установщика (например: "Got x-ui latest version: v3.3.1")
+        XUI_VERSION=$(grep -oP 'Got x-ui latest version:\s*v?\K[\d.]+' "$INSTALL_OUTPUT" | head -1 | sed 's/\x1b\[[0-9;]*m//g')
+        
         # Удаляем временный файл
         rm -f "$INSTALL_OUTPUT"
         
-        # Определение версии
-        XUI_VERSION=$(x-ui version 2>/dev/null | grep -oP '\d+\.\d+\.\d+' | head -1)
+        # Если версия не извлечена из установщика, пробуем через x-ui version
         if [ -z "$XUI_VERSION" ]; then
-            # Если версия не определена, это v3 (latest)
+            XUI_VERSION=$(x-ui version 2>/dev/null | grep -oP '\d+\.\d+\.\d+' | head -1)
+        fi
+        
+        # Если всё ещё не определена, ставим 3.0.0 как fallback
+        if [ -z "$XUI_VERSION" ]; then
             XUI_VERSION="3.0.0"
         fi
         
