@@ -3530,7 +3530,22 @@ install_3xui_v3() {
         fi
         
         # Ожидание запуска панели
-        sleep 3
+        echo -e "${YELLOW}⚠ Ожидание запуска панели...${NC}"
+        sleep 5
+        
+        # Проверка что панель запустилась
+        MAX_WAIT=30
+        WAIT_COUNT=0
+        while ! systemctl is-active --quiet x-ui && [ $WAIT_COUNT -lt $MAX_WAIT ]; do
+            sleep 1
+            WAIT_COUNT=$((WAIT_COUNT + 1))
+        done
+        
+        if systemctl is-active --quiet x-ui; then
+            echo -e "${GREEN}✓ Панель успешно запущена${NC}"
+        else
+            echo -e "${RED}✗ Панель не запустилась в течение ${MAX_WAIT} секунд${NC}"
+        fi
         
         # Извлечение учетных данных из вывода установщика
         echo -e "${YELLOW}⚠ Извлечение учетных данных панели...${NC}"
@@ -3587,15 +3602,28 @@ install_3xui_v3() {
             echo -e "${BLUE}ℹ️  API URL: ${API_URL}${NC}"
             echo -e "${BLUE}ℹ️  API Token: ${XUI_API_TOKEN:0:20}...${NC}"
             
+            # Проверяем доступность API перед запросом
+            echo -e "${BLUE}ℹ️  Проверка доступности API...${NC}"
+            API_CHECK=$(curl -s -k --max-time 5 --connect-timeout 3 -o /dev/null -w "%{http_code}" "${XUI_URL}/${WEB_PATH}/panel/api/server/status" -H "Authorization: Bearer $XUI_API_TOKEN" 2>&1)
+            
+            if [ "$API_CHECK" = "200" ] || [ "$API_CHECK" = "401" ]; then
+                echo -e "${GREEN}✓ API доступен (HTTP код: $API_CHECK)${NC}"
+            else
+                echo -e "${YELLOW}⚠️  API может быть недоступен (HTTP код: $API_CHECK)${NC}"
+                echo -e "${YELLOW}ℹ️  Ожидание дополнительных 5 секунд...${NC}"
+                sleep 5
+            fi
+            
             # Используем API v3 для генерации Reality ключей с таймаутом
             echo -e "${BLUE}ℹ️  Отправка запроса к API...${NC}"
-            REALITY_RESPONSE=$(curl -s -k -X GET \
+            REALITY_RESPONSE=$(timeout 15 curl -s -k -X GET \
                 --max-time 10 \
                 --connect-timeout 5 \
                 -H "Authorization: Bearer $XUI_API_TOKEN" \
                 "${API_URL}" 2>&1)
             
             CURL_EXIT_CODE=$?
+            echo -e "${BLUE}ℹ️  Curl завершился с кодом: ${CURL_EXIT_CODE}${NC}"
             
             # Выводим ответ для диагностики
             if [ $CURL_EXIT_CODE -eq 0 ]; then
