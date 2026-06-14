@@ -1801,31 +1801,27 @@ show_status() {
     if [ -f ".env" ]; then
         echo -e "\n${YELLOW}${BOLD}DYNAMIC PARAMETERS (.env):${NC}"
         
-        # Извлекаем динамические параметры
-        local xui_version=$(grep "^XUI_VERSION=" .env 2>/dev/null | cut -d'=' -f2)
-        local xui_url=$(grep "^XUI_URL=" .env 2>/dev/null | cut -d'=' -f2)
-        local xui_username=$(grep "^XUI_USERNAME=" .env 2>/dev/null | cut -d'=' -f2)
-        local xui_api_token=$(grep "^XUI_API_TOKEN=" .env 2>/dev/null | cut -d'=' -f2)
-        local inbound_id=$(grep "^INBOUND_ID=" .env 2>/dev/null | cut -d'=' -f2)
-        local transport=$(grep "^TRANSPORT=" .env 2>/dev/null | cut -d'=' -f2)
-        local security=$(grep "^SECURITY=" .env 2>/dev/null | cut -d'=' -f2)
-        local reality_public_key=$(grep "^REALITY_PUBLIC_KEY=" .env 2>/dev/null | cut -d'=' -f2)
-        local reality_short_id=$(grep "^REALITY_SHORT_ID=" .env 2>/dev/null | cut -d'=' -f2)
-        local reality_sni=$(grep "^REALITY_SNI=" .env 2>/dev/null | cut -d'=' -f2)
-        local reality_fingerprint=$(grep "^REALITY_FINGERPRINT=" .env 2>/dev/null | cut -d'=' -f2)
-        
-        # Выводим только заполненные параметры
-        [ -n "$xui_version" ] && echo -e "  XUI_VERSION: ${xui_version}"
-        [ -n "$xui_url" ] && echo -e "  XUI_URL: ${xui_url}"
-        [ -n "$xui_username" ] && echo -e "  XUI_USERNAME: ${xui_username}"
-        [ -n "$xui_api_token" ] && echo -e "  XUI_API_TOKEN: ${xui_api_token:0:20}..." # Показываем только первые 20 символов
-        [ -n "$inbound_id" ] && echo -e "  INBOUND_ID: ${inbound_id}"
-        [ -n "$transport" ] && echo -e "  TRANSPORT: ${transport}"
-        [ -n "$security" ] && echo -e "  SECURITY: ${security}"
-        [ -n "$reality_public_key" ] && echo -e "  REALITY_PUBLIC_KEY: ${reality_public_key:0:30}..."
-        [ -n "$reality_short_id" ] && echo -e "  REALITY_SHORT_ID: ${reality_short_id}"
-        [ -n "$reality_sni" ] && echo -e "  REALITY_SNI: ${reality_sni}"
-        [ -n "$reality_fingerprint" ] && echo -e "  REALITY_FINGERPRINT: ${reality_fingerprint}"
+        # Извлекаем все параметры из секции "# Dynamic parameters"
+        local in_dynamic_section=false
+        while IFS= read -r line; do
+            # Начало секции Dynamic parameters
+            if [[ "$line" =~ ^#.*Dynamic\ parameters ]]; then
+                in_dynamic_section=true
+                continue
+            fi
+            
+            # Конец секции (следующий комментарий или пустая строка после параметров)
+            if [ "$in_dynamic_section" = true ] && [[ "$line" =~ ^# ]] && [[ ! "$line" =~ ^#.*Dynamic\ parameters ]]; then
+                break
+            fi
+            
+            # Выводим параметры из секции
+            if [ "$in_dynamic_section" = true ] && [[ "$line" =~ ^[A-Z_]+= ]]; then
+                local param_name=$(echo "$line" | cut -d'=' -f1)
+                local param_value=$(echo "$line" | cut -d'=' -f2-)
+                [ -n "$param_value" ] && echo -e "  ${param_name}: ${param_value}"
+            fi
+        done < .env
     fi
     
     echo -e "\n${BLUE}========================================${NC}"
