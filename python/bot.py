@@ -273,15 +273,12 @@ async def process_new_comment(message: Message, state: FSMContext):
         # Удаляем сообщение о создании
         await bot.delete_message(message.chat.id, status_msg.message_id)
         
-        # Первое сообщение - только ссылка
-        await message.answer(
-            f"<code>{vless_link}</code>",
-            parse_mode="HTML"
-        )
-        
-        # Второе сообщение - информация с кнопками
+        # Отправляем информацию с кнопками
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="📱 Показать QR", callback_data=f"showqr_{result['uuid']}")],
+            [
+                InlineKeyboardButton(text="🔑 Показать ключ", callback_data=f"showlink_{result['uuid']}"),
+                InlineKeyboardButton(text="📱 Показать QR", callback_data=f"showqr_{result['uuid']}")
+            ],
             [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")]
         ])
         
@@ -401,15 +398,12 @@ async def process_tempkey_comment(message: Message, state: FSMContext):
         # Удаляем сообщение о создании
         await bot.delete_message(message.chat.id, status_msg.message_id)
         
-        # Первое сообщение - только ссылка
-        await message.answer(
-            f"<code>{vless_link}</code>",
-            parse_mode="HTML"
-        )
-        
-        # Второе сообщение - информация с кнопками
+        # Отправляем информацию с кнопками
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="📱 Показать QR", callback_data=f"showqr_{result['uuid']}")],
+            [
+                InlineKeyboardButton(text="🔑 Показать ключ", callback_data=f"showlink_{result['uuid']}"),
+                InlineKeyboardButton(text="📱 Показать QR", callback_data=f"showqr_{result['uuid']}")
+            ],
             [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")]
         ])
         
@@ -585,159 +579,6 @@ async def cmd_list_users(message: Message):
     await message.answer(text, parse_mode="HTML", reply_markup=keyboard)
 
 
-@dp.message(Command("blockuser"))
-async def cmd_block_user(message: Message):
-    if not is_admin(message.from_user.id):
-        await message.answer("⛔ Отказано в доступе.")
-        return
-
-    users = config.users_db.list_users()
-    if not users:
-        await message.answer("📭 Список пользователей пуст.")
-        return
-
-    buttons = []
-    for user_id, username, _ in users:
-        if config.users_db.is_blocked_by_admin(user_id):
-            continue
-        if username:
-            button_text = f"@{username}"
-        else:
-            try:
-                chat = await bot.get_chat(user_id)
-                button_text = f"@{chat.username}" if chat.username else str(user_id)
-            except:
-                button_text = str(user_id)
-        buttons.append([InlineKeyboardButton(text=f"🔒 {button_text}", callback_data=f"block_{user_id}")])
-
-    if not buttons:
-        await message.answer("📭 Нет активных пользователей для блокировки.")
-        return
-
-    keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
-    await message.answer("👥 Выберите пользователя для блокировки:", reply_markup=keyboard)
-
-
-@dp.message(Command("unblockuser"))
-async def cmd_unblock_user(message: Message):
-    if not is_admin(message.from_user.id):
-        await message.answer("⛔ Отказано в доступе.")
-        return
-
-    # Получаем всех заблокированных пользователей
-    with sqlite3.connect(config.users_db.db_path) as conn:
-        cursor = conn.execute("SELECT user_id FROM blocked_users")
-        blocked_ids = [row[0] for row in cursor.fetchall()]
-
-    if not blocked_ids:
-        await message.answer("📭 Нет заблокированных пользователей.")
-        return
-
-    buttons = []
-    for user_id in blocked_ids:
-        try:
-            chat = await bot.get_chat(user_id)
-            button_text = f"@{chat.username}" if chat.username else str(user_id)
-        except:
-            button_text = str(user_id)
-        buttons.append([InlineKeyboardButton(text=f"🔓 {button_text}", callback_data=f"unblock_{user_id}")])
-
-    keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
-    await message.answer("👥 Выберите пользователя для разблокировки:", reply_markup=keyboard)
-
-
-@dp.callback_query(lambda c: c.data and c.data.startswith('block_'))
-async def process_block_user(callback_query: types.CallbackQuery):
-    if not is_admin(callback_query.from_user.id):
-        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
-        return
-
-    user_id = int(callback_query.data.split('_')[1])
-
-    if config.users_db.block_user(user_id, callback_query.from_user.id):
-        await callback_query.message.edit_text(f"✅ Пользователь заблокирован.")
-        try:
-            await bot.send_message(user_id, "⛔ Вы заблокированы администратором.")
-        except:
-            pass
-    else:
-        await callback_query.message.edit_text("❌ Ошибка при блокировке!")
-    await callback_query.answer()
-
-
-@dp.callback_query(lambda c: c.data and c.data.startswith('unblock_'))
-async def process_unblock_user(callback_query: types.CallbackQuery):
-    if not is_admin(callback_query.from_user.id):
-        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
-        return
-
-    user_id = int(callback_query.data.split('_')[1])
-
-    if config.users_db.unblock_user(user_id):
-        await callback_query.message.edit_text(f"✅ Пользователь разблокирован.")
-        try:
-            await bot.send_message(user_id, "✅ Вы разблокированы администратором.")
-        except:
-            pass
-    else:
-        await callback_query.message.edit_text("❌ Ошибка при разблокировке!")
-    await callback_query.answer()
-
-
-@dp.message(Command("removeuser"))
-async def cmd_remove_user(message: Message):
-    if not is_admin(message.from_user.id):
-        await message.answer("⛔ Отказано в доступе.")
-        return
-
-    users = config.users_db.list_users()
-    if not users:
-        await message.answer("📭 Список пользователей пуст.")
-        return
-
-    buttons = []
-    for user_id, username, _ in users:
-        if username:
-            button_text = f"@{username}"
-        else:
-            try:
-                chat = await bot.get_chat(user_id)
-                button_text = f"@{chat.username}" if chat.username else str(user_id)
-            except:
-                button_text = str(user_id)
-        buttons.append([InlineKeyboardButton(text=button_text, callback_data=f"remove_{user_id}")])
-
-    keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
-    await message.answer("👥 Выберите пользователя для удаления:", reply_markup=keyboard)
-
-
-@dp.callback_query(lambda c: c.data and c.data.startswith('remove_'))
-async def process_remove_user(callback_query: types.CallbackQuery):
-    if not is_admin(callback_query.from_user.id):
-        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
-        return
-
-    user_id = int(callback_query.data.split('_')[1])
-
-    if user_id == config.users_db.get_main_admin():
-        await callback_query.answer("❌ Нельзя удалить главного администратора!", show_alert=True)
-        return
-
-    try:
-        chat = await bot.get_chat(user_id)
-        user_name = f"@{chat.username}" if chat.username else str(user_id)
-    except:
-        user_name = str(user_id)
-
-    if config.users_db.remove_user(user_id):
-        await callback_query.message.edit_text(f"✅ Пользователь {user_name} удален.")
-        try:
-            await bot.send_message(user_id, "⛔ Ваш доступ отозван администратором.")
-        except:
-            pass
-    else:
-        await callback_query.message.edit_text("❌ Ошибка при удалении!")
-    await callback_query.answer()
 
 
 # Кеш для списка клиентов
@@ -952,23 +793,15 @@ async def show_client_key(callback_query: types.CallbackQuery):
             await callback_query.answer("❌ Ошибка получения ссылки!", show_alert=True)
             return
         
-        await callback_query.answer("✅ Ключ отправлен")
+        await callback_query.answer()
         
-        # Первое сообщение - только ссылка
-        await callback_query.message.answer(
-            f"<code>{vless_link}</code>",
-            parse_mode="HTML"
-        )
-        
-        # Второе сообщение - информация с кнопками
+        # Редактируем текущее сообщение - показываем только ссылку
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="📱 Показать QR", callback_data=f"showqr_{client_uuid}")],
-            [InlineKeyboardButton(text="🔙 Назад к списку", callback_data="back_to_allclients")]
+            [InlineKeyboardButton(text="🔙 Назад", callback_data=f"allclient_{client_uuid}")]
         ])
         
-        await callback_query.message.answer(
-            f"🔑 <b>Ключ:</b> {client['email']}\n"
-            f"📝 Комментарий: {client['comment'] if client['comment'] else 'Без комментария'}",
+        await callback_query.message.edit_text(
+            f"<code>{vless_link}</code>",
             parse_mode="HTML",
             reply_markup=keyboard
         )
@@ -1029,6 +862,105 @@ async def disable_client(callback_query: types.CallbackQuery):
         logger.error(f"Ошибка выключения клиента: {e}")
         await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
 
+
+@dp.callback_query(lambda c: c.data and c.data.startswith('showlink_'))
+async def show_link(callback_query: types.CallbackQuery):
+    """Показать VLESS ссылку"""
+    client_uuid = callback_query.data.split('_', 1)[1]
+    
+    try:
+        # Получаем детали клиента
+        client = await xui_client.get_client_details(client_uuid)
+        
+        if not client:
+            await callback_query.answer("❌ Ключ не найден!", show_alert=True)
+            return
+        
+        # Генерируем VLESS ссылку
+        vless_link = await get_client_link(xui_client, client['email'], client_uuid, config.vpn, config.xui.inbound_id)
+        if not vless_link:
+            await callback_query.answer("❌ Ошибка получения ссылки!", show_alert=True)
+            return
+        
+        await callback_query.answer()
+        
+        # Редактируем текущее сообщение - показываем только ссылку
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Назад", callback_data=f"backtoinfo_{client_uuid}")]
+        ])
+        
+        await callback_query.message.edit_text(
+            f"<code>{vless_link}</code>",
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
+        
+    except Exception as e:
+        logger.error(f"Ошибка показа ссылки: {e}")
+        await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
+
+@dp.callback_query(lambda c: c.data and c.data.startswith('backtoinfo_'))
+async def back_to_info(callback_query: types.CallbackQuery):
+    """Вернуться к информации о ключе после просмотра ссылки"""
+    client_uuid = callback_query.data.split('_', 1)[1]
+    
+    try:
+        # Получаем детали клиента
+        client = await xui_client.get_client_details(client_uuid)
+        
+        if not client:
+            await callback_query.answer("❌ Ключ не найден!", show_alert=True)
+            return
+        
+        # Определяем тип ключа по сроку действия
+        expiry_time = client.get('expiryTime', 0)
+        comment = client.get('comment', '')
+        
+        # Проверяем, временный ли это ключ
+        if 'Временный' in comment:
+            # Извлекаем длительность из комментария
+            if '1 час' in comment:
+                key_type = "⏰ <b>Временный ключ на 1 час</b>"
+            elif '1 день' in comment:
+                key_type = "⏰ <b>Временный ключ на 1 день</b>"
+            elif '3 дня' in comment:
+                key_type = "⏰ <b>Временный ключ на 3 дня</b>"
+            elif '7 дней' in comment:
+                key_type = "⏰ <b>Временный ключ на 7 дней</b>"
+            elif '30 дней' in comment:
+                key_type = "⏰ <b>Временный ключ на 30 дней</b>"
+            else:
+                key_type = "⏰ <b>Временный ключ</b>"
+        else:
+            key_type = "🔑 <b>Бессрочный ключ</b>"
+        
+        # Убираем префикс "Временный (...)" из комментария для отображения
+        display_comment = comment.replace('Временный (1 час)', '').replace('Временный (1 день)', '').replace('Временный (3 дня)', '').replace('Временный (7 дней)', '').replace('Временный (30 дней)', '').strip()
+        if display_comment.startswith('(') and display_comment.endswith(')'):
+            display_comment = display_comment[1:-1]
+        
+        # Создаем кнопки
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="🔑 Показать ключ", callback_data=f"showlink_{client_uuid}"),
+                InlineKeyboardButton(text="📱 Показать QR", callback_data=f"showqr_{client_uuid}")
+            ],
+            [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")]
+        ])
+        
+        await callback_query.answer()
+        
+        # Редактируем сообщение
+        await callback_query.message.edit_text(
+            f"{key_type}\n\n"
+            f"📝 Комментарий: {display_comment if display_comment else comment}",
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
+        
+    except Exception as e:
+        logger.error(f"Ошибка возврата к информации: {e}")
+        await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
 
 @dp.callback_query(lambda c: c.data and c.data.startswith('showqr_'))
 async def show_qr_code(callback_query: types.CallbackQuery):
@@ -1223,11 +1155,9 @@ async def cmd_help(message: Message):
 /myclients - Мои ключи
 /allclients - Все ключи
 /users - Список пользователей
-/blockuser - Заблокировать пользователя
-/unblockuser - Разблокировать пользователя
-/removeuser - Удалить пользователя
 /help - Помощь
 
+<i>Управление пользователями доступно через меню "Пользователи"</i>
 <i>Пользователи сами отправляют запрос на доступ через /start</i>
 """
     else:
@@ -1976,63 +1906,238 @@ async def callback_cmd_allclients(callback_query: types.CallbackQuery):
 
 @dp.callback_query(lambda c: c.data == "action_block")
 async def action_block_user(callback_query: types.CallbackQuery):
-    """Вызвать команду /blockuser"""
+    """Показать список пользователей для блокировки"""
     if not is_admin(callback_query.from_user.id):
         await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
         return
     
     await callback_query.answer()
     
-    # Создаем фейковое сообщение для вызова команды
-    from aiogram.types import User, Chat
-    fake_message = types.Message(
-        message_id=callback_query.message.message_id,
-        date=callback_query.message.date,
-        chat=callback_query.message.chat,
-        from_user=callback_query.from_user
-    )
-    
-    await cmd_block_user(fake_message)
+    try:
+        users = config.users_db.list_users()
+        
+        if not users:
+            await callback_query.answer("Нет пользователей для блокировки", show_alert=True)
+            return
+        
+        # Фильтруем только активных пользователей
+        active_users = [(uid, uname, added) for uid, uname, added in users if not config.users_db.is_blocked_by_admin(uid)]
+        
+        if not active_users:
+            await callback_query.answer("Все пользователи уже заблокированы", show_alert=True)
+            return
+        
+        # Создаем кнопки для каждого пользователя
+        buttons = []
+        for user_id, username, _ in active_users:
+            try:
+                chat = await bot.get_chat(user_id)
+                user_name = f"@{chat.username}" if chat.username else f"ID: {user_id}"
+            except:
+                user_name = username if username else f"ID: {user_id}"
+            
+            buttons.append([InlineKeyboardButton(text=f"🔒 {user_name}", callback_data=f"doblock_{user_id}")])
+        
+        buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="show_users")])
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+        
+        await callback_query.message.edit_text(
+            "🔒 <b>Выберите пользователя для блокировки:</b>",
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
+        
+    except Exception as e:
+        logger.error(f"Ошибка показа списка для блокировки: {e}")
+        await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
 
 
 @dp.callback_query(lambda c: c.data == "action_unblock")
 async def action_unblock_user(callback_query: types.CallbackQuery):
-    """Вызвать команду /unblockuser"""
+    """Показать список заблокированных пользователей для разблокировки"""
     if not is_admin(callback_query.from_user.id):
         await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
         return
     
     await callback_query.answer()
     
-    from aiogram.types import User, Chat
-    fake_message = types.Message(
-        message_id=callback_query.message.message_id,
-        date=callback_query.message.date,
-        chat=callback_query.message.chat,
-        from_user=callback_query.from_user
-    )
-    
-    await cmd_unblock_user(fake_message)
+    try:
+        # Получаем всех заблокированных пользователей
+        with sqlite3.connect(config.users_db.db_path) as conn:
+            cursor = conn.execute("SELECT user_id FROM blocked_users")
+            blocked_ids = [row[0] for row in cursor.fetchall()]
+        
+        if not blocked_ids:
+            await callback_query.answer("Нет заблокированных пользователей", show_alert=True)
+            return
+        
+        # Создаем кнопки для каждого заблокированного пользователя
+        buttons = []
+        for user_id in blocked_ids:
+            try:
+                chat = await bot.get_chat(user_id)
+                user_name = f"@{chat.username}" if chat.username else f"ID: {user_id}"
+            except:
+                user_name = f"ID: {user_id}"
+            
+            buttons.append([InlineKeyboardButton(text=f"🔓 {user_name}", callback_data=f"dounblock_{user_id}")])
+        
+        buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="show_users")])
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+        
+        await callback_query.message.edit_text(
+            "🔓 <b>Выберите пользователя для разблокировки:</b>",
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
+        
+    except Exception as e:
+        logger.error(f"Ошибка показа списка для разблокировки: {e}")
+        await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
 
 
 @dp.callback_query(lambda c: c.data == "action_remove")
 async def action_remove_user(callback_query: types.CallbackQuery):
-    """Вызвать команду /removeuser"""
+    """Показать список пользователей для удаления"""
     if not is_admin(callback_query.from_user.id):
         await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
         return
     
     await callback_query.answer()
     
-    from aiogram.types import User, Chat
-    fake_message = types.Message(
-        message_id=callback_query.message.message_id,
-        date=callback_query.message.date,
-        chat=callback_query.message.chat,
-        from_user=callback_query.from_user
-    )
+    try:
+        users = config.users_db.list_users()
+        
+        if not users:
+            await callback_query.answer("Нет пользователей для удаления", show_alert=True)
+            return
+        
+        # Создаем кнопки для каждого пользователя
+        buttons = []
+        for user_id, username, _ in users:
+            # Пропускаем главного администратора
+            if user_id == config.users_db.get_main_admin():
+                continue
+            
+            try:
+                chat = await bot.get_chat(user_id)
+                user_name = f"@{chat.username}" if chat.username else f"ID: {user_id}"
+            except:
+                user_name = username if username else f"ID: {user_id}"
+            
+            buttons.append([InlineKeyboardButton(text=f"🗑 {user_name}", callback_data=f"doremove_{user_id}")])
+        
+        if not buttons:
+            await callback_query.answer("Нет пользователей для удаления", show_alert=True)
+            return
+        
+        buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="show_users")])
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+        
+        await callback_query.message.edit_text(
+            "🗑 <b>Выберите пользователя для удаления:</b>",
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
+        
+    except Exception as e:
+        logger.error(f"Ошибка показа списка для удаления: {e}")
+        await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
+
+
+@dp.callback_query(lambda c: c.data and c.data.startswith('doblock_'))
+async def process_doblock_user(callback_query: types.CallbackQuery):
+    """Заблокировать пользователя и вернуться в меню пользователей"""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
+        return
     
-    await cmd_remove_user(fake_message)
+    user_id = int(callback_query.data.split('_')[1])
+    
+    try:
+        if config.users_db.block_user(user_id, callback_query.from_user.id):
+            await callback_query.answer("✅ Пользователь заблокирован")
+            try:
+                await bot.send_message(user_id, "⛔ Вы заблокированы администратором.")
+            except:
+                pass
+        else:
+            await callback_query.answer("❌ Ошибка при блокировке!", show_alert=True)
+            return
+        
+        # Возвращаемся в меню пользователей
+        callback_query.data = "show_users"
+        await show_users_list(callback_query)
+        
+    except Exception as e:
+        logger.error(f"Ошибка блокировки пользователя: {e}")
+        await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
+
+
+@dp.callback_query(lambda c: c.data and c.data.startswith('dounblock_'))
+async def process_dounblock_user(callback_query: types.CallbackQuery):
+    """Разблокировать пользователя и вернуться в меню пользователей"""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
+        return
+    
+    user_id = int(callback_query.data.split('_')[1])
+    
+    try:
+        if config.users_db.unblock_user(user_id):
+            await callback_query.answer("✅ Пользователь разблокирован")
+            try:
+                await bot.send_message(user_id, "✅ Вы разблокированы администратором.")
+            except:
+                pass
+        else:
+            await callback_query.answer("❌ Ошибка при разблокировке!", show_alert=True)
+            return
+        
+        # Возвращаемся в меню пользователей
+        callback_query.data = "show_users"
+        await show_users_list(callback_query)
+        
+    except Exception as e:
+        logger.error(f"Ошибка разблокировки пользователя: {e}")
+        await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
+
+
+@dp.callback_query(lambda c: c.data and c.data.startswith('doremove_'))
+async def process_doremove_user(callback_query: types.CallbackQuery):
+    """Удалить пользователя и вернуться в меню пользователей"""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
+        return
+    
+    user_id = int(callback_query.data.split('_')[1])
+    
+    # Проверка на удаление главного администратора
+    if user_id == config.users_db.get_main_admin():
+        await callback_query.answer("❌ Нельзя удалить главного администратора!", show_alert=True)
+        return
+    
+    try:
+        if config.users_db.remove_user(user_id):
+            await callback_query.answer("✅ Пользователь удален")
+            try:
+                await bot.send_message(user_id, "⛔ Ваш доступ отозван администратором.")
+            except:
+                pass
+        else:
+            await callback_query.answer("❌ Ошибка при удалении!", show_alert=True)
+            return
+        
+        # Возвращаемся в меню пользователей
+        callback_query.data = "show_users"
+        await show_users_list(callback_query)
+        
+    except Exception as e:
+        logger.error(f"Ошибка удаления пользователя: {e}")
+        await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
 
 
 async def main():
