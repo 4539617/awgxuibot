@@ -995,7 +995,7 @@ google.com
         statsMap.set(container.version, container);
       });
 
-      let statsMessage = '📊 *Статистика AWG серверов*\n\n';
+      let statsMessage = '📊 *Серверы*\n\n';
       
       // Показываем статус для обеих версий
       const versions = ['v1', 'v2'];
@@ -1385,8 +1385,8 @@ google.com
         const keyboard = {
           inline_keyboard: [
             [
-              { text: '📋 Клиенты V1', callback_data: 'awg_clients_v1' },
-              { text: '📋 Клиенты V2', callback_data: 'awg_clients_v2' }
+              { text: '📋 AWG V1', callback_data: 'awg_clients_v1' },
+              { text: '📋 AWG V2', callback_data: 'awg_clients_v2' }
             ]
           ]
         };
