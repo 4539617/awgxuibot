@@ -776,8 +776,11 @@ async def show_all_client_details(callback_query: types.CallbackQuery):
         # Создаем кнопки управления
         buttons = []
         
-        # Кнопка "Показать ключ"
-        buttons.append([InlineKeyboardButton(text="🔑 Показать ключ", callback_data=f"showkey_{client_uuid}")])
+        # Кнопки "Показать ключ" и "Показать QR" в одной строке
+        buttons.append([
+            InlineKeyboardButton(text="🔑 Показать ключ", callback_data=f"showkey_{client_uuid}"),
+            InlineKeyboardButton(text="📱 Показать QR", callback_data=f"showqr_{client_uuid}")
+        ])
         
         # Кнопки включить/выключить в зависимости от статуса
         if client['enable']:
@@ -1018,14 +1021,14 @@ async def show_qr_code(callback_query: types.CallbackQuery):
         qr_img.save(buffer,format="PNG")
         buffer.seek(0)
         
-        # Кнопка "В главное меню"
+        # Кнопка "Назад" - возвращает в предыдущее окно
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")]
+            [InlineKeyboardButton(text="🔙 Назад", callback_data=f"backtoinfo_{client_uuid}")]
         ])
         
         await callback_query.answer()
         
-        # Редактируем сообщение, заменяя текст на QR-код
+        # Удаляем текущее сообщение и отправляем QR-код
         try:
             await callback_query.message.delete()
         except:
@@ -2092,7 +2095,7 @@ async def action_remove_user(callback_query: types.CallbackQuery):
 
 
 @dp.callback_query(lambda c: c.data and c.data.startswith('doblock_'))
-async def process_doblock_user(callback_query: types.CallbackQuery):
+async def process_doblock_user(callback_query: types.CallbackQuery, state: FSMContext):
     """Заблокировать пользователя и вернуться в меню пользователей"""
     if not is_admin(callback_query.from_user.id):
         await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
@@ -2113,7 +2116,7 @@ async def process_doblock_user(callback_query: types.CallbackQuery):
         
         # Возвращаемся в меню пользователей
         callback_query.data = "show_users"
-        await show_users_list(callback_query)
+        await show_users_list(callback_query, state)
         
     except Exception as e:
         logger.error(f"Ошибка блокировки пользователя: {e}")
@@ -2121,7 +2124,7 @@ async def process_doblock_user(callback_query: types.CallbackQuery):
 
 
 @dp.callback_query(lambda c: c.data and c.data.startswith('dounblock_'))
-async def process_dounblock_user(callback_query: types.CallbackQuery):
+async def process_dounblock_user(callback_query: types.CallbackQuery, state: FSMContext):
     """Разблокировать пользователя и вернуться в меню пользователей"""
     if not is_admin(callback_query.from_user.id):
         await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
@@ -2142,7 +2145,7 @@ async def process_dounblock_user(callback_query: types.CallbackQuery):
         
         # Возвращаемся в меню пользователей
         callback_query.data = "show_users"
-        await show_users_list(callback_query)
+        await show_users_list(callback_query, state)
         
     except Exception as e:
         logger.error(f"Ошибка разблокировки пользователя: {e}")
@@ -2150,7 +2153,7 @@ async def process_dounblock_user(callback_query: types.CallbackQuery):
 
 
 @dp.callback_query(lambda c: c.data and c.data.startswith('doremove_'))
-async def process_doremove_user(callback_query: types.CallbackQuery):
+async def process_doremove_user(callback_query: types.CallbackQuery, state: FSMContext):
     """Удалить пользователя и вернуться в меню пользователей"""
     if not is_admin(callback_query.from_user.id):
         await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
@@ -2176,7 +2179,7 @@ async def process_doremove_user(callback_query: types.CallbackQuery):
         
         # Возвращаемся в меню пользователей
         callback_query.data = "show_users"
-        await show_users_list(callback_query)
+        await show_users_list(callback_query, state)
         
     except Exception as e:
         logger.error(f"Ошибка удаления пользователя: {e}")
