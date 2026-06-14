@@ -4308,14 +4308,14 @@ generate_awg_config() {
     fi
 }
 
-# Функция создания глобальной команды awgxui
+# Функция создания глобальной команды
 create_global_command() {
     echo -e "\n${BLUE}========================================${NC}"
     echo -e "${BLUE}   Создание глобальной команды${NC}"
     echo -e "${BLUE}========================================${NC}\n"
     
     local script_path="/opt/awgxuibot/install.sh"
-    local command_name="awgxui"
+    local command_name="poxui"
     local bin_path="/usr/local/bin/$command_name"
     
     # Проверка существования скрипта
@@ -4333,7 +4333,6 @@ create_global_command() {
     if ln -sf "$script_path" "$bin_path"; then
         echo -e "${GREEN}✅ Глобальная команда создана!${NC}"
         echo -e "\n${GREEN}Теперь вы можете запустить скрипт из любой директории командой:${NC}"
-        echo -e "${BLUE}awgxui${NC}"
     else
         echo -e "${RED}❌ Ошибка создания символической ссылки${NC}"
         return 1
@@ -4375,7 +4374,7 @@ show_menu() {
     echo -e "${BLUE}---${NC}"
     echo -e "${YELLOW}Системные утилиты:${NC}"
     echo -e "${GREEN}19)${NC} Анализ диска и памяти"
-    echo -e "${GREEN}20)${NC} Создать глобальную команду 'awgxui'"
+    echo -e "${GREEN}20)${NC} Создать глобальную команду 'poxui'"
     echo -e "${BLUE}---${NC}"
     echo -e "${RED}99)${NC} Удалить ВСЁ (AWG + Боты + 3x-ui)"
     echo -e "${GREEN}0)${NC} Выход"
