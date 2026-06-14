@@ -1624,12 +1624,18 @@ async def back_to_start_menu(callback_query: types.CallbackQuery):
     
     if is_admin(user_id):
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="➕ Создать ключ", callback_data="cmd_new")],
-            [InlineKeyboardButton(text="⏱ Временный ключ", callback_data="cmd_tempkey")],
-            [InlineKeyboardButton(text="🔑 Мои ключи", callback_data="cmd_myclients")],
-            [InlineKeyboardButton(text="📋 Все ключи", callback_data="cmd_allclients")],
-            [InlineKeyboardButton(text="📊 Состояние сервера", callback_data="server_status")],
-            [InlineKeyboardButton(text="👥 Пользователи", callback_data="show_users")]
+            [
+                InlineKeyboardButton(text="➕ Создать ключ", callback_data="cmd_new"),
+                InlineKeyboardButton(text="⏱ Временный ключ", callback_data="cmd_tempkey")
+            ],
+            [
+                InlineKeyboardButton(text="🔑 Мои ключи", callback_data="cmd_myclients"),
+                InlineKeyboardButton(text="📋 Все ключи", callback_data="cmd_allclients")
+            ],
+            [
+                InlineKeyboardButton(text="📊 Состояние сервера", callback_data="server_status"),
+                InlineKeyboardButton(text="👥 Пользователи", callback_data="show_users")
+            ]
         ])
         
         text = (
@@ -1659,9 +1665,13 @@ async def back_to_start_menu(callback_query: types.CallbackQuery):
             )
     else:
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="➕ Создать ключ", callback_data="cmd_new")],
-            [InlineKeyboardButton(text="⏱ Временный ключ", callback_data="cmd_tempkey")],
-            [InlineKeyboardButton(text="🔑 Мои ключи", callback_data="cmd_myclients")]
+            [
+                InlineKeyboardButton(text="➕ Создать ключ", callback_data="cmd_new"),
+                InlineKeyboardButton(text="⏱ Временный ключ", callback_data="cmd_tempkey")
+            ],
+            [
+                InlineKeyboardButton(text="🔑 Мои ключи", callback_data="cmd_myclients")
+            ]
         ])
         
         text = (
@@ -1778,7 +1788,26 @@ async def callback_cmd_myclients(callback_query: types.CallbackQuery):
     
     # Вызываем функционал команды /myclients
     try:
-        clients = config.users_db.get_user_clients(user_id)
+        username = callback_query.from_user.username
+        if not username:
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+            ])
+            try:
+                await callback_query.message.edit_text(
+                    "❌ У вас не установлен username в Telegram.\n\nУстановите username в настройках Telegram для использования бота.",
+                    reply_markup=keyboard
+                )
+            except:
+                await bot.send_message(
+                    callback_query.message.chat.id,
+                    "❌ У вас не установлен username в Telegram.\n\nУстановите username в настройках Telegram для использования бота.",
+                    reply_markup=keyboard
+                )
+            return
+        
+        # Получаем ключи пользователя из X-UI по username
+        clients = await xui_client.get_user_clients_by_username(username)
         
         if not clients:
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -1786,51 +1815,44 @@ async def callback_cmd_myclients(callback_query: types.CallbackQuery):
             ])
             try:
                 await callback_query.message.edit_text(
-                    "У вас пока нет ключей.",
+                    "📭 У вас пока нет ключей.\n\nИспользуйте /new для создания.",
                     reply_markup=keyboard
                 )
             except:
                 await bot.send_message(
                     callback_query.message.chat.id,
-                    "У вас пока нет ключей.",
+                    "📭 У вас пока нет ключей.\n\nИспользуйте /new для создания.",
                     reply_markup=keyboard
                 )
             return
         
-        # Получаем информацию о клиентах из X-UI
-        all_clients = await xui_client.get_all_clients()
+        # Подсчитываем статистику
+        active_count = sum(1 for c in clients if c['status'] == 'active')
+        inactive_count = sum(1 for c in clients if c['status'] == 'inactive')
+        expired_count = sum(1 for c in clients if c['status'] == 'expired')
         
         buttons = []
         for client in clients:
-            client_id, client_email, client_uuid, comment, created_at = client
+            email = client['email']
+            comment = client['comment']
+            status = client['status']
             
-            # Ищем клиента в X-UI
-            xui_client_info = next((c for c in all_clients if c['uuid'] == client_uuid), None)
-            
-            if xui_client_info:
-                status = "✅" if xui_client_info['enable'] else "❌"
-                expiry_time = xui_client_info.get('expiryTime', 0)
-                
-                if expiry_time > 0:
-                    expiry_date = datetime.fromtimestamp(expiry_time / 1000)
-                    now = datetime.now()
-                    
-                    if expiry_date < now:
-                        icon = "⏰"
-                        display_text = f"{comment or client_email} (Истек)"
-                    else:
-                        days_left = (expiry_date - now).days
-                        icon = status
-                        display_text = f"{comment or client_email} ({days_left}д)"
-                else:
-                    icon = status
-                    display_text = f"{comment or client_email}"
+            # Формируем текст кнопки
+            if comment:
+                display_text = f"{comment[:25]}"
             else:
-                icon = "❓"
-                display_text = f"{comment or client_email} (Не найден)"
+                display_text = f"{email[:25]}"
+            
+            # Добавляем иконку статуса
+            if status == 'active':
+                icon = "✅"
+            elif status == 'inactive':
+                icon = "⏸️"
+            else:  # expired
+                icon = "⏰"
             
             buttons.append([
-                InlineKeyboardButton(text=f"{icon} {display_text}", callback_data=f"myclient_{client_uuid}")
+                InlineKeyboardButton(text=f"{icon} {display_text}", callback_data=f"myclient_{client['uuid']}")
             ])
         
         # Добавляем кнопку "Назад"
@@ -1840,10 +1862,11 @@ async def callback_cmd_myclients(callback_query: types.CallbackQuery):
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
         
-        text = (
-            f"🔑 <b>Ваши ключи ({len(clients)}):</b>\n\n"
-            f"Нажмите на ключ для просмотра деталей."
-        )
+        text = f"📋 <b>Ваши ключи ({len(clients)})</b>\n\n"
+        text += f"✅ Активных: {active_count}\n"
+        text += f"⏸️ Неактивных: {inactive_count}\n"
+        text += f"⏰ Просроченных: {expired_count}\n\n"
+        text += "Выберите ключ для просмотра:"
         
         try:
             await callback_query.message.edit_text(
