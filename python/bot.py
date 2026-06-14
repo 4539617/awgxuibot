@@ -981,28 +981,13 @@ async def back_to_info(callback_query: types.CallbackQuery):
         
         await callback_query.answer()
         
-        # Проверяем, является ли сообщение фото (после показа QR-кода)
-        if callback_query.message.photo:
-            # Если это фото, удаляем его и отправляем новое текстовое сообщение
-            try:
-                await callback_query.message.delete()
-            except:
-                pass
-            
-            await callback_query.message.answer(
-                f"{key_type}\n\n"
-                f"📝 Комментарий: {display_comment if display_comment else comment}",
-                parse_mode="HTML",
-                reply_markup=keyboard
-            )
-        else:
-            # Если это текстовое сообщение, просто редактируем его
-            await callback_query.message.edit_text(
-                f"{key_type}\n\n"
-                f"📝 Комментарий: {display_comment if display_comment else comment}",
-                parse_mode="HTML",
-                reply_markup=keyboard
-            )
+        # Редактируем сообщение (теперь это всегда текстовое сообщение)
+        await callback_query.message.edit_text(
+            f"{key_type}\n\n"
+            f"📝 Комментарий: {display_comment if display_comment else comment}",
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
         
     except Exception as e:
         logger.error(f"Ошибка возврата к информации: {e}")
@@ -1033,27 +1018,16 @@ async def show_qr_code(callback_query: types.CallbackQuery):
         qr.make()
         qr_img = qr.make_image(fill_color="black", back_color="white")
         buffer = BytesIO()
-        qr_img.save(buffer,format="PNG")
+        qr_img.save(buffer, format="PNG")
         buffer.seek(0)
-        
-        # Кнопка "Назад" - возвращает в предыдущее окно
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 Назад", callback_data=f"backtoinfo_{client_uuid}")]
-        ])
         
         await callback_query.answer()
         
-        # Удаляем текущее сообщение и отправляем QR-код
-        try:
-            await callback_query.message.delete()
-        except:
-            pass
-        
+        # Отправляем QR-код как отдельное сообщение (не удаляя предыдущее)
         await callback_query.message.answer_photo(
             photo=types.BufferedInputFile(buffer.getvalue(), filename="vless.png"),
             caption=f"📱 <b>QR-код для подключения</b>",
-            parse_mode="HTML",
-            reply_markup=keyboard
+            parse_mode="HTML"
         )
         
     except Exception as e:
