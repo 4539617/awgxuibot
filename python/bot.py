@@ -497,12 +497,6 @@ async def show_my_client_details(callback_query: types.CallbackQuery):
     comment = client['comment']
     status = client['status']
 
-    # Генерируем VLESS ссылку
-    vless_link = await get_client_link(xui_client, email, client_uuid, config.vpn, config.xui.inbound_id)
-    if not vless_link:
-        await callback_query.answer("❌ Ошибка получения ссылки", show_alert=True)
-        return
-
     # Определяем статус с иконкой
     if status == 'active':
         status_text = "✅ Активен"
@@ -513,25 +507,59 @@ async def show_my_client_details(callback_query: types.CallbackQuery):
     
     await callback_query.answer()
     
-    # Первое сообщение - только ссылка
-    await callback_query.message.answer(
-        f"<code>{vless_link}</code>",
-        parse_mode="HTML"
-    )
-    
-    # Второе сообщение - информация с кнопками
+    # Редактируем текущее сообщение - показываем информацию с кнопками
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📱 Показать QR", callback_data=f"showqr_{client_uuid}")],
-        [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")]
+        [
+            InlineKeyboardButton(text="🔑 Показать ключ", callback_data=f"showmykey_{client_uuid}"),
+            InlineKeyboardButton(text="� Показать QR", callback_data=f"showqr_{client_uuid}")
+        ],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="cmd_myclients")]
     ])
     
-    await callback_query.message.answer(
+    await callback_query.message.edit_text(
         f"🔑 <b>Информация о ключе</b>\n\n"
         f"Статус: {status_text}\n"
         f"📝 Комментарий: {comment if comment else 'Без комментария'}",
         parse_mode="HTML",
         reply_markup=keyboard
     )
+
+
+@dp.callback_query(lambda c: c.data and c.data.startswith('showmykey_'))
+async def show_my_key_link(callback_query: types.CallbackQuery):
+    """Показать VLESS ссылку для ключа из Мои ключи"""
+    client_uuid = callback_query.data.split('_', 1)[1]
+    
+    try:
+        # Получаем детали клиента
+        client = await xui_client.get_client_details(client_uuid)
+        
+        if not client:
+            await callback_query.answer("❌ Ключ не найден!", show_alert=True)
+            return
+        
+        # Генерируем VLESS ссылку
+        vless_link = await get_client_link(xui_client, client['email'], client_uuid, config.vpn, config.xui.inbound_id)
+        if not vless_link:
+            await callback_query.answer("❌ Ошибка получения ссылки!", show_alert=True)
+            return
+        
+        await callback_query.answer()
+        
+        # Редактируем текущее сообщение - показываем только ссылку
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Назад", callback_data=f"myclient_{client_uuid}")]
+        ])
+        
+        await callback_query.message.edit_text(
+            f"<code>{vless_link}</code>",
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
+        
+    except Exception as e:
+        logger.error(f"Ошибка показа ключа: {e}")
+        await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
 
 
 @dp.message(Command("users"))
@@ -1434,11 +1462,14 @@ async def handle_unknown(message: Message):
 
 
 @dp.callback_query(lambda c: c.data == "server_status")
-async def show_server_status(callback_query: types.CallbackQuery):
+async def show_server_status(callback_query: types.CallbackQuery, state: FSMContext):
     """Показать состояние сервера (только для администратора)"""
     if not is_admin(callback_query.from_user.id):
         await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
         return
+    
+    # Очищаем состояние при открытии нового окна
+    await state.clear()
     
     await callback_query.answer("⏳ Получаю данные...")
     
@@ -1540,11 +1571,14 @@ async def show_server_status(callback_query: types.CallbackQuery):
         await callback_query.message.answer(f"❌ Ошибка: {str(e)}")
 
 @dp.callback_query(lambda c: c.data == "show_users")
-async def show_users_list(callback_query: types.CallbackQuery):
+async def show_users_list(callback_query: types.CallbackQuery, state: FSMContext):
     """Показать список пользователей (только для администратора)"""
     if not is_admin(callback_query.from_user.id):
         await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
         return
+    
+    # Очищаем состояние при открытии нового окна
+    await state.clear()
     
     await callback_query.answer("⏳ Обновляю список...")
     
@@ -1610,11 +1644,14 @@ async def show_users_list(callback_query: types.CallbackQuery):
         await callback_query.message.answer(f"❌ Ошибка: {str(e)}")
 
 @dp.callback_query(lambda c: c.data == "back_to_start")
-async def back_to_start_menu(callback_query: types.CallbackQuery):
+async def back_to_start_menu(callback_query: types.CallbackQuery, state: FSMContext):
     """Вернуться в главное меню /start"""
     user_id = callback_query.from_user.id
     username = callback_query.from_user.username
     first_name = callback_query.from_user.first_name
+    
+    # Очищаем состояние при возврате в главное меню
+    await state.clear()
     
     await callback_query.answer()
     
@@ -1762,9 +1799,12 @@ async def callback_cmd_tempkey(callback_query: types.CallbackQuery, state: FSMCo
     await state.set_state(TempKeyState.waiting_for_comment)
 
 @dp.callback_query(lambda c: c.data == "cmd_myclients")
-async def callback_cmd_myclients(callback_query: types.CallbackQuery):
+async def callback_cmd_myclients(callback_query: types.CallbackQuery, state: FSMContext):
     """Обработчик кнопки 'Мои ключи'"""
     user_id = callback_query.from_user.id
+    
+    # Очищаем состояние при открытии нового окна
+    await state.clear()
     
     # Проверка доступа
     if not is_allowed(user_id):
@@ -1891,9 +1931,12 @@ async def callback_cmd_myclients(callback_query: types.CallbackQuery):
             )
 
 @dp.callback_query(lambda c: c.data == "cmd_allclients")
-async def callback_cmd_allclients(callback_query: types.CallbackQuery):
+async def callback_cmd_allclients(callback_query: types.CallbackQuery, state: FSMContext):
     """Обработчик кнопки 'Все ключи' (только для админа)"""
     user_id = callback_query.from_user.id
+    
+    # Очищаем состояние при открытии нового окна
+    await state.clear()
     
     # Проверка прав администратора
     if not is_admin(user_id):
