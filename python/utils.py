@@ -434,13 +434,20 @@ class XUIClient:
         
         try:
             logger.info(f"Создание клиента v3: email={email}, inbound={self.config.xui.inbound_id}")
+            logger.debug(f"Request URL: {endpoint}")
+            logger.debug(f"Request headers: {headers}")
+            logger.debug(f"Request data: {json.dumps(data, indent=2)}")
+            
             async with self.session.post(endpoint, json=data, headers=headers) as resp:
                 response_text = await resp.text()
+                logger.debug(f"Response status: {resp.status}")
+                logger.debug(f"Response text: {response_text}")
                 
                 if resp.status == 200:
                     try:
-                        result = await resp.json() if response_text else {}
-                    except:
+                        result = json.loads(response_text) if response_text else {}
+                    except json.JSONDecodeError as je:
+                        logger.error(f"Ошибка парсинга JSON: {je}")
                         result = {}
                     
                     if result.get('success'):
@@ -454,10 +461,15 @@ class XUIClient:
                         logger.error(f"API вернул success=false: {error_msg}")
                         return {"success": False, "error": error_msg}
                 
-                logger.error(f"Ошибка v3 API: {resp.status} - {response_text}")
+                # Для 400 ошибки выводим полную информацию
+                logger.error(f"Ошибка v3 API создания клиента:")
+                logger.error(f"  Status: {resp.status}")
+                logger.error(f"  Response: {response_text}")
+                logger.error(f"  Request URL: {endpoint}")
+                logger.error(f"  Request data: {json.dumps(data, indent=2)}")
                 return {"success": False, "error": f"{resp.status}: {response_text}"}
         except Exception as e:
-            logger.error(f"Ошибка создания клиента v3: {e}")
+            logger.error(f"Ошибка создания клиента v3: {e}", exc_info=True)
             return {"success": False, "error": str(e)}
 
     async def _get_client_details_v3(self, email: str) -> dict:
