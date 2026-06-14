@@ -3574,37 +3574,28 @@ install_3xui_v3() {
         REALITY_SHORT_ID=$(get_env_value "REALITY_SHORT_ID")
         
         if [ -z "$REALITY_PRIVATE_KEY" ] || [ -z "$REALITY_PUBLIC_KEY" ]; then
-            echo -e "${YELLOW}⚠ Генерация Reality ключей...${NC}"
+            echo -e "${YELLOW}⚠ Генерация Reality ключей через API...${NC}"
             
-            # Пробуем разные пути к xray
-            XRAY_PATHS=(
-                "/usr/local/x-ui/bin/xray-linux-amd64"
-                "/usr/local/bin/xray"
-                "/usr/bin/xray"
-                "$(which xray 2>/dev/null)"
-            )
+            # Используем API v3 для генерации Reality ключей
+            REALITY_RESPONSE=$(curl -s -k -X GET \
+                -H "Authorization: Bearer $XUI_API_TOKEN" \
+                "${XUI_URL}/${XUI_WEB_BASE_PATH}/panel/api/server/getNewX25519Cert")
             
-            XRAY_FOUND=false
-            for XRAY_PATH in "${XRAY_PATHS[@]}"; do
-                if [ -n "$XRAY_PATH" ] && [ -f "$XRAY_PATH" ]; then
-                    echo -e "${BLUE}Используется xray: $XRAY_PATH${NC}"
-                    REALITY_KEYS=$($XRAY_PATH x25519 2>/dev/null)
-                    REALITY_PRIVATE_KEY=$(echo "$REALITY_KEYS" | grep "Private key:" | awk '{print $3}')
-                    REALITY_PUBLIC_KEY=$(echo "$REALITY_KEYS" | grep "Public key:" | awk '{print $3}')
-                    
-                    if [ -n "$REALITY_PRIVATE_KEY" ] && [ -n "$REALITY_PUBLIC_KEY" ]; then
-                        update_env_value "REALITY_PRIVATE_KEY" "$REALITY_PRIVATE_KEY"
-                        update_env_value "REALITY_PUBLIC_KEY" "$REALITY_PUBLIC_KEY"
-                        echo -e "${GREEN}✓ Reality ключи успешно сгенерированы${NC}"
-                        XRAY_FOUND=true
-                        break
-                    fi
+            if echo "$REALITY_RESPONSE" | grep -q '"success":true'; then
+                REALITY_PRIVATE_KEY=$(echo "$REALITY_RESPONSE" | grep -o '"privateKey":"[^"]*"' | cut -d'"' -f4)
+                REALITY_PUBLIC_KEY=$(echo "$REALITY_RESPONSE" | grep -o '"publicKey":"[^"]*"' | cut -d'"' -f4)
+                
+                if [ -n "$REALITY_PRIVATE_KEY" ] && [ -n "$REALITY_PUBLIC_KEY" ]; then
+                    update_env_value "REALITY_PRIVATE_KEY" "$REALITY_PRIVATE_KEY"
+                    update_env_value "REALITY_PUBLIC_KEY" "$REALITY_PUBLIC_KEY"
+                    echo -e "${GREEN}✓ Reality ключи успешно сгенерированы через API${NC}"
+                else
+                    echo -e "${RED}✗ Не удалось извлечь ключи из ответа API${NC}"
+                    echo -e "${YELLOW}Попробуйте сгенерировать ключи вручную через панель${NC}"
                 fi
-            done
-            
-            if [ "$XRAY_FOUND" = false ]; then
-                echo -e "${RED}✗ Xray не найден ни по одному из путей${NC}"
-                echo -e "${YELLOW}Попробуйте сгенерировать ключи вручную: xray x25519${NC}"
+            else
+                echo -e "${RED}✗ Ошибка при генерации ключей через API${NC}"
+                echo -e "${YELLOW}Попробуйте сгенерировать ключи вручную через панель${NC}"
             fi
             
             # Генерация Short ID
