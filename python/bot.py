@@ -167,18 +167,19 @@ async def cmd_start(message: Message, state: FSMContext):
     if is_allowed(user_id):
         if is_admin(user_id):
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="📊 Состояние сервера", callback_data="server_status")]
+                [InlineKeyboardButton(text="➕ Создать ключ", callback_data="cmd_new")],
+                [InlineKeyboardButton(text="⏱ Временный ключ", callback_data="cmd_tempkey")],
+                [InlineKeyboardButton(text="🔑 Мои ключи", callback_data="cmd_myclients")],
+                [InlineKeyboardButton(text="📋 Все ключи", callback_data="cmd_allclients")],
+                [InlineKeyboardButton(text="� Состояние сервера", callback_data="server_status")],
+                [InlineKeyboardButton(text="👥 Пользователи", callback_data="show_users")]
             ])
             await message.answer(
                 f"👑 Администратор\n {username or first_name}\n\n"
                 f"🔐 <b>Настройки подключения:</b>\n"
                 f"• Transport: <code>{config.vpn.transport}</code>\n"
                 f"• Security: <code>{config.vpn.security}</code>\n\n"
-                f"Команды:\n"
-                f"/new - Создать ключ\n"
-                f"/tempkey - Временный ключ\n"
-                f"/myclients - Мои ключи\n"
-                f"/allclients - Все ключи\n"
+                f"Дополнительные команды:\n"
                 f"/users - Список пользователей\n"
                 f"/blockuser - Заблокировать пользователя\n"
                 f"/unblockuser - Разблокировать пользователя\n"
@@ -188,13 +189,16 @@ async def cmd_start(message: Message, state: FSMContext):
                 parse_mode="HTML"
             )
         else:
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="➕ Создать ключ", callback_data="cmd_new")],
+                [InlineKeyboardButton(text="⏱ Временный ключ", callback_data="cmd_tempkey")],
+                [InlineKeyboardButton(text="🔑 Мои ключи", callback_data="cmd_myclients")]
+            ])
             await message.answer(
                 f"👤 Пользователь\n {username or first_name}\n\n"
-                f"Команды:\n"
-                f"/new - Создать ключ\n"
-                f"/tempkey - Временный ключ\n"
-                f"/myclients - Мои ключи\n"
+                f"Дополнительные команды:\n"
                 f"/help - Помощь",
+                reply_markup=keyboard,
                 parse_mode="HTML"
             )
     else:
@@ -562,7 +566,16 @@ async def cmd_list_users(message: Message):
     else:
         text += "Нет добавленных пользователей."
 
-    await message.answer(text, parse_mode="HTML")
+    # Добавляем кнопки действий и навигации
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔄 Обновить", callback_data="show_users")],
+        [InlineKeyboardButton(text="🔒 Заблокировать", callback_data="action_block")],
+        [InlineKeyboardButton(text="🔓 Разблокировать", callback_data="action_unblock")],
+        [InlineKeyboardButton(text="🗑 Удалить", callback_data="action_remove")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+    ])
+
+    await message.answer(text, parse_mode="HTML", reply_markup=keyboard)
 
 
 @dp.message(Command("blockuser"))
@@ -1503,9 +1516,10 @@ async def show_server_status(callback_query: types.CallbackQuery):
         
         message += f"🔌 <b>TCP соединений:</b> {tcp_count}"
         
-        # Добавляем кнопку "Обновить"
+        # Добавляем кнопки "Обновить" и "Назад"
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔄 Обновить", callback_data="server_status")]
+            [InlineKeyboardButton(text="🔄 Обновить", callback_data="server_status")],
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
         ])
         
         # Если это обновление существующего сообщения, редактируем его
@@ -1529,9 +1543,201 @@ async def show_server_status(callback_query: types.CallbackQuery):
         logger.error(f"Ошибка получения статуса сервера: {e}")
         await callback_query.message.answer(f"❌ Ошибка: {str(e)}")
 
+@dp.callback_query(lambda c: c.data == "show_users")
+async def show_users_list(callback_query: types.CallbackQuery):
+    """Показать список пользователей (только для администратора)"""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
+        return
+    
+    await callback_query.answer("⏳ Обновляю список...")
+    
+    try:
+        users = config.users_db.list_users()
+        main_admin = config.users_db.get_main_admin()
+
+        try:
+            admin_chat = await bot.get_chat(main_admin)
+            admin_name = f"@{admin_chat.username}" if admin_chat.username else str(main_admin)
+        except:
+            admin_name = str(main_admin)
+
+        text = f"👑 <b>Администратор:</b> {admin_name}\n\n"
+
+        if users:
+            text += "<b>📋 Пользователи:</b>\n"
+            for user_id, username, added_at in users:
+                blocked_status = "🔒 Заблокирован" if config.users_db.is_blocked_by_admin(user_id) else "✅ Активен"
+                if username:
+                    text += f"• @{username} (ID: {user_id}) - {blocked_status} - добавлен {added_at[:10]}\n"
+                else:
+                    try:
+                        chat = await bot.get_chat(user_id)
+                        user_name = f"@{chat.username}" if chat.username else str(user_id)
+                        text += f"• {user_name} - {blocked_status} - добавлен {added_at[:10]}\n"
+                    except:
+                        text += f"• ID: {user_id} - {blocked_status} - добавлен {added_at[:10]}\n"
+        else:
+            text += "Нет добавленных пользователей."
+
+        # Добавляем кнопки действий и навигации
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔄 Обновить", callback_data="show_users")],
+            [InlineKeyboardButton(text="🔒 Заблокировать", callback_data="action_block")],
+            [InlineKeyboardButton(text="🔓 Разблокировать", callback_data="action_unblock")],
+            [InlineKeyboardButton(text="🗑 Удалить", callback_data="action_remove")],
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+        ])
+
+        # Пытаемся отредактировать существующее сообщение
+        try:
+            await callback_query.message.edit_text(
+                text,
+                parse_mode="HTML",
+                reply_markup=keyboard
+            )
+        except:
+            # Если не удалось отредактировать, отправляем новое
+            await callback_query.message.answer(
+                text,
+                parse_mode="HTML",
+                reply_markup=keyboard
+            )
+        
+    except Exception as e:
+        logger.error(f"Ошибка получения списка пользователей: {e}")
+        await callback_query.message.answer(f"❌ Ошибка: {str(e)}")
+
+@dp.callback_query(lambda c: c.data == "back_to_start")
+async def back_to_start_menu(callback_query: types.CallbackQuery):
+    """Вернуться в главное меню /start"""
+    user_id = callback_query.from_user.id
+    username = callback_query.from_user.username
+    first_name = callback_query.from_user.first_name
+    
+    await callback_query.answer()
+    
+    # Проверяем права доступа
+    if not is_allowed(user_id):
+        await callback_query.message.edit_text("⛔ Отказано в доступе.")
+        return
+    
+    if is_admin(user_id):
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="➕ Создать ключ", callback_data="cmd_new")],
+            [InlineKeyboardButton(text="⏱ Временный ключ", callback_data="cmd_tempkey")],
+            [InlineKeyboardButton(text="🔑 Мои ключи", callback_data="cmd_myclients")],
+            [InlineKeyboardButton(text="📋 Все ключи", callback_data="cmd_allclients")],
+            [InlineKeyboardButton(text="📊 Состояние сервера", callback_data="server_status")],
+            [InlineKeyboardButton(text="👥 Пользователи", callback_data="show_users")]
+        ])
+        
+        text = (
+            f"👑 Администратор\n {username or first_name}\n\n"
+            f"🔐 <b>Настройки подключения:</b>\n"
+            f"• Transport: <code>{config.vpn.transport}</code>\n"
+            f"• Security: <code>{config.vpn.security}</code>\n\n"
+            f"Дополнительные команды:\n"
+            f"/users - Список пользователей\n"
+            f"/blockuser - Заблокировать пользователя\n"
+            f"/unblockuser - Разблокировать пользователя\n"
+            f"/removeuser - Удалить пользователя\n"
+            f"/help - Помощь"
+        )
+        
+        try:
+            await callback_query.message.edit_text(
+                text,
+                parse_mode="HTML",
+                reply_markup=keyboard
+            )
+        except:
+            await callback_query.message.answer(
+                text,
+                parse_mode="HTML",
+                reply_markup=keyboard
+            )
+    else:
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="➕ Создать ключ", callback_data="cmd_new")],
+            [InlineKeyboardButton(text="⏱ Временный ключ", callback_data="cmd_tempkey")],
+            [InlineKeyboardButton(text="🔑 Мои ключи", callback_data="cmd_myclients")]
+        ])
+        
+        text = (
+            f"👤 Пользователь\n {username or first_name}\n\n"
+            f"Дополнительные команды:\n"
+            f"/help - Помощь"
+        )
+        
+        try:
+            await callback_query.message.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
+        except:
+            await callback_query.message.answer(text, parse_mode="HTML", reply_markup=keyboard)
+
+@dp.callback_query(lambda c: c.data == "action_block")
+async def action_block_user(callback_query: types.CallbackQuery):
+    """Вызвать команду /blockuser"""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
+        return
+    
+    await callback_query.answer()
+    
+    # Создаем фейковое сообщение для вызова команды
+    from aiogram.types import User, Chat
+    fake_message = types.Message(
+        message_id=callback_query.message.message_id,
+        date=callback_query.message.date,
+        chat=callback_query.message.chat,
+        from_user=callback_query.from_user
+    )
+    
+    await cmd_block_user(fake_message)
+
+
+@dp.callback_query(lambda c: c.data == "action_unblock")
+async def action_unblock_user(callback_query: types.CallbackQuery):
+    """Вызвать команду /unblockuser"""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
+        return
+    
+    await callback_query.answer()
+    
+    from aiogram.types import User, Chat
+    fake_message = types.Message(
+        message_id=callback_query.message.message_id,
+        date=callback_query.message.date,
+        chat=callback_query.message.chat,
+        from_user=callback_query.from_user
+    )
+    
+    await cmd_unblock_user(fake_message)
+
+
+@dp.callback_query(lambda c: c.data == "action_remove")
+async def action_remove_user(callback_query: types.CallbackQuery):
+    """Вызвать команду /removeuser"""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
+        return
+    
+    await callback_query.answer()
+    
+    from aiogram.types import User, Chat
+    fake_message = types.Message(
+        message_id=callback_query.message.message_id,
+        date=callback_query.message.date,
+        chat=callback_query.message.chat,
+        from_user=callback_query.from_user
+    )
+    
+    await cmd_remove_user(fake_message)
+
 
 async def main():
-    logger.info("🚀 Запуск бота...")
+    logger.info("� Запуск бота...")
     logger.info(f"👑 Администратор: {config.users_db.get_main_admin()}")
 
     if await xui_client.login():
