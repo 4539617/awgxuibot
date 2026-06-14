@@ -3585,14 +3585,25 @@ install_3xui_v3() {
                 API_URL="${XUI_URL}/${WEB_PATH}/panel/api/server/getNewX25519Cert"
             fi
             echo -e "${BLUE}ℹ️  API URL: ${API_URL}${NC}"
+            echo -e "${BLUE}ℹ️  API Token: ${XUI_API_TOKEN:0:20}...${NC}"
             
-            # Используем API v3 для генерации Reality ключей
+            # Используем API v3 для генерации Reality ключей с таймаутом
+            echo -e "${BLUE}ℹ️  Отправка запроса к API...${NC}"
             REALITY_RESPONSE=$(curl -s -k -X GET \
+                --max-time 10 \
+                --connect-timeout 5 \
                 -H "Authorization: Bearer $XUI_API_TOKEN" \
-                "${API_URL}")
+                "${API_URL}" 2>&1)
+            
+            CURL_EXIT_CODE=$?
             
             # Выводим ответ для диагностики
-            echo -e "${BLUE}ℹ️  API Response: ${REALITY_RESPONSE}${NC}"
+            if [ $CURL_EXIT_CODE -eq 0 ]; then
+                echo -e "${BLUE}ℹ️  API Response: ${REALITY_RESPONSE}${NC}"
+            else
+                echo -e "${RED}✗ Curl завершился с ошибкой (код: $CURL_EXIT_CODE)${NC}"
+                echo -e "${YELLOW}ℹ️  Ответ: ${REALITY_RESPONSE}${NC}"
+            fi
             
             if echo "$REALITY_RESPONSE" | grep -q '"success":true'; then
                 REALITY_PRIVATE_KEY=$(echo "$REALITY_RESPONSE" | grep -o '"privateKey":"[^"]*"' | cut -d'"' -f4)
