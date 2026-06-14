@@ -1674,6 +1674,217 @@ async def back_to_start_menu(callback_query: types.CallbackQuery):
             await callback_query.message.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
         except:
             await callback_query.message.answer(text, parse_mode="HTML", reply_markup=keyboard)
+@dp.callback_query(lambda c: c.data == "cmd_new")
+async def callback_cmd_new(callback_query: types.CallbackQuery, state: FSMContext):
+    """Обработчик кнопки 'Создать ключ'"""
+    user_id = callback_query.from_user.id
+    
+    # Проверка доступа
+    if not is_allowed(user_id):
+        await callback_query.answer("⛔ Доступ запрещен", show_alert=True)
+        return
+    
+    if is_blocked_by_admin(user_id):
+        await callback_query.answer("⛔ Вы заблокированы администратором", show_alert=True)
+        return
+    
+    await callback_query.answer()
+    
+    # Отправляем сообщение как при команде /new
+    await callback_query.message.answer(
+        "📖 Вернуться в главное меню /start \n\n"
+        "⚠️ Одно устройство - один ключ.\n\n"
+        " \n\n"
+        "📝 Введите комментарий к подключению:\n\n",
+        parse_mode="HTML"
+    )
+    await state.set_state(NewClientState.waiting_for_comment)
+
+@dp.callback_query(lambda c: c.data == "cmd_tempkey")
+async def callback_cmd_tempkey(callback_query: types.CallbackQuery, state: FSMContext):
+    """Обработчик кнопки 'Временный ключ'"""
+    user_id = callback_query.from_user.id
+    
+    # Проверка доступа
+    if not is_allowed(user_id):
+        await callback_query.answer("⛔ Доступ запрещен", show_alert=True)
+        return
+    
+    if is_blocked_by_admin(user_id):
+        await callback_query.answer("⛔ Вы заблокированы администратором", show_alert=True)
+        return
+    
+    await callback_query.answer()
+    
+    # Отправляем сообщение с выбором времени
+    await callback_query.message.answer(
+        "📖 Вернуться в главное меню /start \n\n"
+        "⚠️ Одно устройство - один ключ.\n\n"
+        " \n\n"
+        "📝 Введите комментарий к подключению:\n\n",
+        parse_mode="HTML"
+    )
+    await state.set_state(TempKeyState.waiting_for_comment)
+
+@dp.callback_query(lambda c: c.data == "cmd_myclients")
+async def callback_cmd_myclients(callback_query: types.CallbackQuery):
+    """Обработчик кнопки 'Мои ключи'"""
+    user_id = callback_query.from_user.id
+    
+    # Проверка доступа
+    if not is_allowed(user_id):
+        await callback_query.answer("⛔ Доступ запрещен", show_alert=True)
+        return
+    
+    if is_blocked_by_admin(user_id):
+        await callback_query.answer("⛔ Вы заблокированы администратором", show_alert=True)
+        return
+    
+    await callback_query.answer()
+    
+    # Вызываем функционал команды /myclients
+    try:
+        clients = config.users_db.get_user_clients(user_id)
+        
+        if not clients:
+            await callback_query.message.answer("У вас пока нет ключей.")
+            return
+        
+        # Получаем информацию о клиентах из X-UI
+        all_clients = await xui_client.get_all_clients()
+        
+        buttons = []
+        for client in clients:
+            client_id, client_email, client_uuid, comment, created_at = client
+            
+            # Ищем клиента в X-UI
+            xui_client_info = next((c for c in all_clients if c['uuid'] == client_uuid), None)
+            
+            if xui_client_info:
+                status = "✅" if xui_client_info['enable'] else "❌"
+                expiry_time = xui_client_info.get('expiryTime', 0)
+                
+                if expiry_time > 0:
+                    expiry_date = datetime.fromtimestamp(expiry_time / 1000)
+                    now = datetime.now()
+                    
+                    if expiry_date < now:
+                        icon = "⏰"
+                        display_text = f"{comment or client_email} (Истек)"
+                    else:
+                        days_left = (expiry_date - now).days
+                        icon = status
+                        display_text = f"{comment or client_email} ({days_left}д)"
+                else:
+                    icon = status
+                    display_text = f"{comment or client_email}"
+            else:
+                icon = "❓"
+                display_text = f"{comment or client_email} (Не найден)"
+            
+            buttons.append([
+                InlineKeyboardButton(text=f"{icon} {display_text}", callback_data=f"myclient_{client_uuid}")
+            ])
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+        
+        await callback_query.message.answer(
+            f"🔑 <b>Ваши ключи ({len(clients)}):</b>\n\n"
+            f"Нажмите на ключ для просмотра деталей.",
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
+        
+    except Exception as e:
+        logger.error(f"Ошибка получения списка клиентов: {e}")
+        await callback_query.message.answer(f"❌ Ошибка: {str(e)}")
+
+@dp.callback_query(lambda c: c.data == "cmd_allclients")
+async def callback_cmd_allclients(callback_query: types.CallbackQuery):
+    """Обработчик кнопки 'Все ключи' (только для админа)"""
+    user_id = callback_query.from_user.id
+    
+    # Проверка прав администратора
+    if not is_admin(user_id):
+        await callback_query.answer("⛔ Доступ запрещен. Только для администратора.", show_alert=True)
+        return
+    
+    await callback_query.answer()
+    
+    # Вызываем функционал команды /allclients
+    try:
+        all_clients = await xui_client.get_all_clients()
+        
+        if not all_clients:
+            await callback_query.message.answer("Нет клиентов в системе.")
+            return
+        
+        # Группируем клиентов по статусу
+        active_clients = []
+        expired_clients = []
+        disabled_clients = []
+        
+        for client in all_clients:
+            expiry_time = client.get('expiryTime', 0)
+            
+            if not client['enable']:
+                disabled_clients.append(client)
+            elif expiry_time > 0:
+                expiry_date = datetime.fromtimestamp(expiry_time / 1000)
+                if expiry_date < datetime.now():
+                    expired_clients.append(client)
+                else:
+                    active_clients.append(client)
+            else:
+                active_clients.append(client)
+        
+        # Создаем кнопки
+        buttons = []
+        
+        # Активные клиенты
+        for client in active_clients[:20]:  # Ограничиваем до 20 для избежания переполнения
+            email = client['email']
+            expiry_time = client.get('expiryTime', 0)
+            
+            if expiry_time > 0:
+                expiry_date = datetime.fromtimestamp(expiry_time / 1000)
+                days_left = (expiry_date - datetime.now()).days
+                button_text = f"✅ {email} ({days_left}д)"
+            else:
+                button_text = f"✅ {email}"
+            
+            buttons.append([
+                InlineKeyboardButton(text=button_text, callback_data=f"allclient_{client['uuid']}")
+            ])
+        
+        # Добавляем кнопку очистки просроченных, если они есть
+        expired_count = len(expired_clients)
+        if expired_count > 0:
+            buttons.append([
+                InlineKeyboardButton(text=f"🧹 Очистить просроченные ({expired_count})", callback_data="cleanup_expired")
+            ])
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+        
+        text = (
+            f"📋 <b>Все ключи в системе:</b>\n\n"
+            f"✅ Активных: {len(active_clients)}\n"
+            f"⏰ Просроченных: {len(expired_clients)}\n"
+            f"❌ Отключенных: {len(disabled_clients)}\n"
+            f"📊 Всего: {len(all_clients)}\n\n"
+            f"Нажмите на ключ для просмотра деталей."
+        )
+        
+        await callback_query.message.answer(
+            text,
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
+        
+    except Exception as e:
+        logger.error(f"Ошибка получения списка всех клиентов: {e}")
+        await callback_query.message.answer(f"❌ Ошибка: {str(e)}")
+
 
 @dp.callback_query(lambda c: c.data == "action_block")
 async def action_block_user(callback_query: types.CallbackQuery):
