@@ -2909,11 +2909,11 @@ post_install_menu() {
         echo -e "${BLUE}   Создать подключение?${NC}"
         echo -e "${BLUE}========================================${NC}"
         echo -e "${GREEN}Enter${NC} - Да, создать подключение"
-        echo -e "${GREEN}n${NC}     - Нет, вернуться в главное меню"
+        echo -e "${GREEN}0${NC}     - Нет, вернуться в главное меню"
         echo -e "${BLUE}========================================${NC}"
         read -p "Ваш выбор: " create_inbound_choice
         
-        if [[ "$create_inbound_choice" =~ ^[Nn]$ ]]; then
+        if [[ "$create_inbound_choice" == "0" ]]; then
             echo -e "${YELLOW}Возврат в главное меню...${NC}"
             return
         fi
@@ -3651,9 +3651,39 @@ install_3xui_v3() {
                 fi
             fi
             
-            # Метод 2: Через локальный xray (FALLBACK)
+            # Метод 2: Установка и использование xray (FALLBACK)
             if [ -z "$REALITY_PRIVATE_KEY" ] || [ -z "$REALITY_PUBLIC_KEY" ]; then
-                echo -e "${BLUE}ℹ️  Попытка генерации через локальный xray...${NC}"
+                echo -e "${BLUE}ℹ️  Попытка генерации через xray...${NC}"
+                
+                # Установка xray если не установлен
+                if ! command -v xray &> /dev/null; then
+                    echo -e "${YELLOW}📦 Установка xray...${NC}"
+                    bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install > /dev/null 2>&1
+                fi
+                
+                # Генерация ключей через xray
+                if command -v xray &> /dev/null; then
+                    REALITY_KEYS=$(xray x25519 2>/dev/null)
+                    REALITY_PRIVATE_KEY=$(echo "$REALITY_KEYS" | grep -E "(Private key:|PrivateKey:)" | awk '{print $NF}')
+                    REALITY_PUBLIC_KEY=$(echo "$REALITY_KEYS" | grep -E "(Public key:|Password \(PublicKey\):)" | awk '{print $NF}')
+                    
+                    if [ -n "$REALITY_PRIVATE_KEY" ] && [ -n "$REALITY_PUBLIC_KEY" ]; then
+                        update_env_value "REALITY_PRIVATE_KEY" "$REALITY_PRIVATE_KEY"
+                        update_env_value "REALITY_PUBLIC_KEY" "$REALITY_PUBLIC_KEY"
+                        echo -e "${GREEN}✓ Reality ключи успешно сгенерированы через xray${NC}"
+                        echo -e "${BLUE}  Private Key: ${REALITY_PRIVATE_KEY:0:20}...${NC}"
+                        echo -e "${BLUE}  Public Key:  ${REALITY_PUBLIC_KEY:0:20}...${NC}"
+                    else
+                        echo -e "${YELLOW}⚠️  Не удалось извлечь ключи из вывода xray${NC}"
+                    fi
+                else
+                    echo -e "${YELLOW}⚠️  Не удалось установить xray${NC}"
+                fi
+            fi
+            
+            # Метод 3: Поиск в стандартных путях (дополнительный fallback)
+            if [ -z "$REALITY_PRIVATE_KEY" ] || [ -z "$REALITY_PUBLIC_KEY" ]; then
+                echo -e "${BLUE}ℹ️  Поиск xray в стандартных путях...${NC}"
                 
                 XRAY_FOUND=false
                 XRAY_PATHS=(
