@@ -1054,6 +1054,31 @@ class XUIClient:
         except Exception as e:
             logger.error(f"Ошибка обновления статуса клиента: {e}")
             return False
+    async def get_server_status(self) -> dict:
+        """Получение статуса сервера (CPU, RAM, Disk, Network, Xray)"""
+        if not self.session:
+            await self.login()
+        
+        endpoint = f"{self.config.xui.url}/panel/api/server/status"
+        headers = await self._get_headers()
+        
+        try:
+            async with self.session.get(endpoint, headers=headers) as resp:
+                if resp.status == 200:
+                    result = await resp.json()
+                    if result.get('success'):
+                        return result.get('obj', {})
+                    else:
+                        logger.error(f"API вернул success=false: {result}")
+                        return {}
+                else:
+                    text = await resp.text()
+                    logger.error(f"Ошибка получения статуса сервера: {resp.status} - {text}")
+                    return {}
+        except Exception as e:
+            logger.error(f"Ошибка получения статуса сервера: {e}")
+            return {}
+
 
 
 async def get_client_link(xui_client, email: str, client_uuid: str, vpn_config, inbound_id: int) -> Optional[str]:
