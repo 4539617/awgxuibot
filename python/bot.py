@@ -273,29 +273,21 @@ async def process_new_comment(message: Message, state: FSMContext):
         # Удаляем сообщение о создании
         await bot.delete_message(message.chat.id, status_msg.message_id)
         
-        # Сначала отправляем только ссылку
+        # Первое сообщение - только ссылка
         await message.answer(
             f"<code>{vless_link}</code>",
             parse_mode="HTML"
         )
         
-        # Затем отправляем QR-код с информацией
-        qr = qrcode.QRCode(box_size=10, border=2)
-        qr.add_data(vless_link)
-        qr.make()
-        qr_img = qr.make_image(fill_color="black", back_color="white")
-        buffer = BytesIO()
-        qr_img.save(buffer, format="PNG")
-        buffer.seek(0)
-        
-        # Добавляем кнопку "В главное меню"
+        # Второе сообщение - информация с кнопками
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📱 Показать QR", callback_data=f"showqr_{result['uuid']}")],
             [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")]
         ])
         
-        await message.answer_photo(
-            photo=types.BufferedInputFile(buffer.getvalue(), filename="vless.png"),
-            caption=f"🔑 <b>Ваш ключ создан!</b>\n\n📝 Комментарий: {comment}",
+        await message.answer(
+            f"🔑 <b>Бессрочный ключ</b>\n\n"
+            f"📝 Комментарий: {comment}",
             parse_mode="HTML",
             reply_markup=keyboard
         )
@@ -409,29 +401,21 @@ async def process_tempkey_comment(message: Message, state: FSMContext):
         # Удаляем сообщение о создании
         await bot.delete_message(message.chat.id, status_msg.message_id)
         
-        # Сначала отправляем только ссылку
+        # Первое сообщение - только ссылка
         await message.answer(
             f"<code>{vless_link}</code>",
             parse_mode="HTML"
         )
         
-        # Затем отправляем QR-код с информацией
-        qr = qrcode.QRCode(box_size=10, border=2)
-        qr.add_data(vless_link)
-        qr.make()
-        qr_img = qr.make_image(fill_color="black", back_color="white")
-        buffer = BytesIO()
-        qr_img.save(buffer, format="PNG")
-        buffer.seek(0)
-        
-        # Добавляем кнопку "В главное меню"
+        # Второе сообщение - информация с кнопками
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📱 Показать QR", callback_data=f"showqr_{result['uuid']}")],
             [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")]
         ])
         
-        await message.answer_photo(
-            photo=types.BufferedInputFile(buffer.getvalue(), filename="vless.png"),
-            caption=f"⏰ <b>Временный ключ на {duration_text} создан!</b>\n\n📝 Комментарий: {comment}",
+        await message.answer(
+            f"⏰ <b>Временный ключ на {duration_text}</b>\n\n"
+            f"📝 Комментарий: {comment}",
             parse_mode="HTML",
             reply_markup=keyboard
         )
@@ -535,29 +519,22 @@ async def show_my_client_details(callback_query: types.CallbackQuery):
     
     await callback_query.answer()
     
-    # Сначала отправляем только ссылку
+    # Первое сообщение - только ссылка
     await callback_query.message.answer(
         f"<code>{vless_link}</code>",
         parse_mode="HTML"
     )
     
-    # Затем отправляем QR-код с информацией
-    qr = qrcode.QRCode(box_size=10, border=2)
-    qr.add_data(vless_link)
-    qr.make()
-    qr_img = qr.make_image(fill_color="black", back_color="white")
-    buffer = BytesIO()
-    qr_img.save(buffer, format="PNG")
-    buffer.seek(0)
-    
-    # Добавляем кнопку "В главное меню"
+    # Второе сообщение - информация с кнопками
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📱 Показать QR", callback_data=f"showqr_{client_uuid}")],
         [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")]
     ])
     
-    await callback_query.message.answer_photo(
-        photo=types.BufferedInputFile(buffer.getvalue(), filename="vless.png"),
-        caption=f"🔑 <b>Информация о ключе</b>\n\nСтатус: {status_text}\n📝 Комментарий: {comment if comment else 'Без комментария'}",
+    await callback_query.message.answer(
+        f"🔑 <b>Информация о ключе</b>\n\n"
+        f"Статус: {status_text}\n"
+        f"📝 Комментарий: {comment if comment else 'Без комментария'}",
         parse_mode="HTML",
         reply_markup=keyboard
     )
@@ -972,29 +949,21 @@ async def show_client_key(callback_query: types.CallbackQuery):
         
         await callback_query.answer("✅ Ключ отправлен")
         
-        # Сначала отправляем только ссылку
+        # Первое сообщение - только ссылка
         await callback_query.message.answer(
             f"<code>{vless_link}</code>",
             parse_mode="HTML"
         )
         
-        # Затем отправляем QR-код с информацией
-        qr = qrcode.QRCode(box_size=10, border=2)
-        qr.add_data(vless_link)
-        qr.make()
-        qr_img = qr.make_image(fill_color="black", back_color="white")
-        buffer = BytesIO()
-        qr_img.save(buffer, format="PNG")
-        buffer.seek(0)
-        
-        # Добавляем кнопку "Назад к списку"
+        # Второе сообщение - информация с кнопками
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📱 Показать QR", callback_data=f"showqr_{client_uuid}")],
             [InlineKeyboardButton(text="🔙 Назад к списку", callback_data="back_to_allclients")]
         ])
         
-        await callback_query.message.answer_photo(
-            photo=types.BufferedInputFile(buffer.getvalue(), filename="vless.png"),
-            caption=f"🔑 <b>Ключ:</b> {client['email']}\n📝 Комментарий: {client['comment'] if client['comment'] else 'Без комментария'}",
+        await callback_query.message.answer(
+            f"🔑 <b>Ключ:</b> {client['email']}\n"
+            f"📝 Комментарий: {client['comment'] if client['comment'] else 'Без комментария'}",
             parse_mode="HTML",
             reply_markup=keyboard
         )
@@ -1053,6 +1022,59 @@ async def disable_client(callback_query: types.CallbackQuery):
         
     except Exception as e:
         logger.error(f"Ошибка выключения клиента: {e}")
+        await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
+
+
+@dp.callback_query(lambda c: c.data and c.data.startswith('showqr_'))
+async def show_qr_code(callback_query: types.CallbackQuery):
+    """Показать QR-код для ключа"""
+    client_uuid = callback_query.data.split('_', 1)[1]
+    
+    try:
+        # Получаем детали клиента
+        client = await xui_client.get_client_details(client_uuid)
+        
+        if not client:
+            await callback_query.answer("❌ Ключ не найден!", show_alert=True)
+            return
+        
+        # Генерируем VLESS ссылку
+        vless_link = await get_client_link(xui_client, client['email'], client_uuid, config.vpn, config.xui.inbound_id)
+        if not vless_link:
+            await callback_query.answer("❌ Ошибка получения ссылки!", show_alert=True)
+            return
+        
+        # Генерируем QR-код
+        qr = qrcode.QRCode(box_size=10, border=2)
+        qr.add_data(vless_link)
+        qr.make()
+        qr_img = qr.make_image(fill_color="black", back_color="white")
+        buffer = BytesIO()
+        qr_img.save(buffer,format="PNG")
+        buffer.seek(0)
+        
+        # Кнопка "В главное меню"
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")]
+        ])
+        
+        await callback_query.answer()
+        
+        # Редактируем сообщение, заменяя текст на QR-код
+        try:
+            await callback_query.message.delete()
+        except:
+            pass
+        
+        await callback_query.message.answer_photo(
+            photo=types.BufferedInputFile(buffer.getvalue(), filename="vless.png"),
+            caption=f"📱 <b>QR-код для подключения</b>",
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
+        
+    except Exception as e:
+        logger.error(f"Ошибка показа QR-кода: {e}")
         await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
 
 
@@ -1392,31 +1414,24 @@ async def process_temp_key_request(callback_query: types.CallbackQuery):
 
         # Отправляем ключ пользователю
         try:
-            # Сначала отправляем только ссылку
+            # Первое сообщение - только ссылка
             await bot.send_message(
                 user_id,
                 f"<code>{vless_link}</code>",
                 parse_mode="HTML"
             )
             
-            # Затем отправляем QR-код с информацией
-            qr = qrcode.QRCode(box_size=10, border=2)
-            qr.add_data(vless_link)
-            qr.make()
-            qr_img = qr.make_image(fill_color="black", back_color="white")
-            buffer = BytesIO()
-            qr_img.save(buffer, format="PNG")
-            buffer.seek(0)
-            
-            # Добавляем кнопку "В главное меню"
+            # Второе сообщение - информация с кнопками
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="📱 Показать QR", callback_data=f"showqr_{result['uuid']}")],
                 [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")]
             ])
             
-            await bot.send_photo(
+            await bot.send_message(
                 user_id,
-                photo=types.BufferedInputFile(buffer.getvalue(), filename="vless.png"),
-                caption=f"🎁 <b>Временный ключ на {duration_text}</b>\n\n⏰ Ключ действителен: {duration_text}\n⚠️ После истечения срока ключ будет деактивирован",
+                f"🎁 <b>Временный ключ на {duration_text}</b>\n\n"
+                f"⏰ Ключ действителен: {duration_text}\n"
+                f"⚠️ После истечения срока ключ будет деактивирован",
                 parse_mode="HTML",
                 reply_markup=keyboard
             )
@@ -1945,120 +1960,8 @@ async def callback_cmd_allclients(callback_query: types.CallbackQuery):
         await callback_query.answer("⛔ Доступ запрещен. Только для администратора.", show_alert=True)
         return
     
-    await callback_query.answer()
-    
-    # Вызываем функционал команды /allclients
-    try:
-        all_clients = await xui_client.get_all_clients()
-        
-        if not all_clients:
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
-            ])
-            try:
-                await callback_query.message.edit_text(
-                    "Нет клиентов в системе.",
-                    reply_markup=keyboard
-                )
-            except:
-                await bot.send_message(
-                    callback_query.message.chat.id,
-                    "Нет клиентов в системе.",
-                    reply_markup=keyboard
-                )
-            return
-        
-        # Группируем клиентов по статусу
-        active_clients = []
-        expired_clients = []
-        disabled_clients = []
-        
-        for client in all_clients:
-            expiry_time = client.get('expiryTime', 0)
-            
-            if not client['enable']:
-                disabled_clients.append(client)
-            elif expiry_time > 0:
-                expiry_date = datetime.fromtimestamp(expiry_time / 1000)
-                if expiry_date < datetime.now():
-                    expired_clients.append(client)
-                else:
-                    active_clients.append(client)
-            else:
-                active_clients.append(client)
-        
-        # Создаем кнопки
-        buttons = []
-        
-        # Активные клиенты
-        for client in active_clients[:20]:  # Ограничиваем до 20 для избежания переполнения
-            email = client['email']
-            expiry_time = client.get('expiryTime', 0)
-            
-            if expiry_time > 0:
-                expiry_date = datetime.fromtimestamp(expiry_time / 1000)
-                days_left = (expiry_date - datetime.now()).days
-                button_text = f"✅ {email} ({days_left}д)"
-            else:
-                button_text = f"✅ {email}"
-            
-            buttons.append([
-                InlineKeyboardButton(text=button_text, callback_data=f"allclient_{client['uuid']}")
-            ])
-        
-        # Добавляем кнопку очистки просроченных, если они есть
-        expired_count = len(expired_clients)
-        if expired_count > 0:
-            buttons.append([
-                InlineKeyboardButton(text=f"🧹 Очистить просроченные ({expired_count})", callback_data="cleanup_expired")
-            ])
-        
-        # Добавляем кнопку "Назад"
-        buttons.append([
-            InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")
-        ])
-        
-        keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
-        
-        text = (
-            f"📋 <b>Все ключи в системе:</b>\n\n"
-            f"✅ Активных: {len(active_clients)}\n"
-            f"⏰ Просроченных: {len(expired_clients)}\n"
-            f"❌ Отключенных: {len(disabled_clients)}\n"
-            f"📊 Всего: {len(all_clients)}\n\n"
-            f"Нажмите на ключ для просмотра деталей."
-        )
-        
-        try:
-            await callback_query.message.edit_text(
-                text,
-                reply_markup=keyboard,
-                parse_mode="HTML"
-            )
-        except:
-            await bot.send_message(
-                callback_query.message.chat.id,
-                text,
-                reply_markup=keyboard,
-                parse_mode="HTML"
-            )
-        
-    except Exception as e:
-        logger.error(f"Ошибка получения списка всех клиентов: {e}")
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
-        ])
-        try:
-            await callback_query.message.edit_text(
-                f"❌ Ошибка: {str(e)}",
-                reply_markup=keyboard
-            )
-        except:
-            await bot.send_message(
-                callback_query.message.chat.id,
-                f"❌ Ошибка: {str(e)}",
-                reply_markup=keyboard
-            )
+    # Перенаправляем на back_to_allclients для единого отображения
+    await back_to_allclients(callback_query)
 
 
 @dp.callback_query(lambda c: c.data == "action_block")
