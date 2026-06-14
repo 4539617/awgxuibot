@@ -1678,7 +1678,6 @@ async def back_to_start_menu(callback_query: types.CallbackQuery):
 async def callback_cmd_new(callback_query: types.CallbackQuery, state: FSMContext):
     """Обработчик кнопки 'Создать ключ'"""
     user_id = callback_query.from_user.id
-    chat_id = callback_query.message.chat.id
     
     # Проверка доступа
     if not is_allowed(user_id):
@@ -1691,22 +1690,37 @@ async def callback_cmd_new(callback_query: types.CallbackQuery, state: FSMContex
     
     await callback_query.answer()
     
-    # Отправляем сообщение как при команде /new
-    await bot.send_message(
-        chat_id,
-        "📖 Вернуться в главное меню /start \n\n"
-        "⚠️ Одно устройство - один ключ.\n\n"
-        " \n\n"
-        "📝 Введите комментарий к подключению:\n\n",
-        parse_mode="HTML"
-    )
+    # Редактируем текущее сообщение
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+    ])
+    
+    try:
+        await callback_query.message.edit_text(
+            "📖 Вернуться в главное меню /start \n\n"
+            "⚠️ Одно устройство - один ключ.\n\n"
+            " \n\n"
+            "📝 Введите комментарий к подключению:\n\n",
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
+    except:
+        await bot.send_message(
+            callback_query.message.chat.id,
+            "📖 Вернуться в главное меню /start \n\n"
+            "⚠️ Одно устройство - один ключ.\n\n"
+            " \n\n"
+            "📝 Введите комментарий к подключению:\n\n",
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
+    
     await state.set_state(NewClientState.waiting_for_comment)
 
 @dp.callback_query(lambda c: c.data == "cmd_tempkey")
 async def callback_cmd_tempkey(callback_query: types.CallbackQuery, state: FSMContext):
     """Обработчик кнопки 'Временный ключ'"""
     user_id = callback_query.from_user.id
-    chat_id = callback_query.message.chat.id
     
     # Проверка доступа
     if not is_allowed(user_id):
@@ -1719,22 +1733,37 @@ async def callback_cmd_tempkey(callback_query: types.CallbackQuery, state: FSMCo
     
     await callback_query.answer()
     
-    # Отправляем сообщение с выбором времени
-    await bot.send_message(
-        chat_id,
-        "📖 Вернуться в главное меню /start \n\n"
-        "⚠️ Одно устройство - один ключ.\n\n"
-        " \n\n"
-        "📝 Введите комментарий к подключению:\n\n",
-        parse_mode="HTML"
-    )
+    # Редактируем текущее сообщение
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+    ])
+    
+    try:
+        await callback_query.message.edit_text(
+            "📖 Вернуться в главное меню /start \n\n"
+            "⚠️ Одно устройство - один ключ.\n\n"
+            " \n\n"
+            "📝 Введите комментарий к подключению:\n\n",
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
+    except:
+        await bot.send_message(
+            callback_query.message.chat.id,
+            "📖 Вернуться в главное меню /start \n\n"
+            "⚠️ Одно устройство - один ключ.\n\n"
+            " \n\n"
+            "📝 Введите комментарий к подключению:\n\n",
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
+    
     await state.set_state(TempKeyState.waiting_for_comment)
 
 @dp.callback_query(lambda c: c.data == "cmd_myclients")
 async def callback_cmd_myclients(callback_query: types.CallbackQuery):
     """Обработчик кнопки 'Мои ключи'"""
     user_id = callback_query.from_user.id
-    chat_id = callback_query.message.chat.id
     
     # Проверка доступа
     if not is_allowed(user_id):
@@ -1752,7 +1781,20 @@ async def callback_cmd_myclients(callback_query: types.CallbackQuery):
         clients = config.users_db.get_user_clients(user_id)
         
         if not clients:
-            await bot.send_message(chat_id, "У вас пока нет ключей.")
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+            ])
+            try:
+                await callback_query.message.edit_text(
+                    "У вас пока нет ключей.",
+                    reply_markup=keyboard
+                )
+            except:
+                await bot.send_message(
+                    callback_query.message.chat.id,
+                    "У вас пока нет ключей.",
+                    reply_markup=keyboard
+                )
             return
         
         # Получаем информацию о клиентах из X-UI
@@ -1791,25 +1833,53 @@ async def callback_cmd_myclients(callback_query: types.CallbackQuery):
                 InlineKeyboardButton(text=f"{icon} {display_text}", callback_data=f"myclient_{client_uuid}")
             ])
         
+        # Добавляем кнопку "Назад"
+        buttons.append([
+            InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")
+        ])
+        
         keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
         
-        await bot.send_message(
-            chat_id,
+        text = (
             f"🔑 <b>Ваши ключи ({len(clients)}):</b>\n\n"
-            f"Нажмите на ключ для просмотра деталей.",
-            reply_markup=keyboard,
-            parse_mode="HTML"
+            f"Нажмите на ключ для просмотра деталей."
         )
+        
+        try:
+            await callback_query.message.edit_text(
+                text,
+                reply_markup=keyboard,
+                parse_mode="HTML"
+            )
+        except:
+            await bot.send_message(
+                callback_query.message.chat.id,
+                text,
+                reply_markup=keyboard,
+                parse_mode="HTML"
+            )
         
     except Exception as e:
         logger.error(f"Ошибка получения списка клиентов: {e}")
-        await bot.send_message(chat_id, f"❌ Ошибка: {str(e)}")
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+        ])
+        try:
+            await callback_query.message.edit_text(
+                f"❌ Ошибка: {str(e)}",
+                reply_markup=keyboard
+            )
+        except:
+            await bot.send_message(
+                callback_query.message.chat.id,
+                f"❌ Ошибка: {str(e)}",
+                reply_markup=keyboard
+            )
 
 @dp.callback_query(lambda c: c.data == "cmd_allclients")
 async def callback_cmd_allclients(callback_query: types.CallbackQuery):
     """Обработчик кнопки 'Все ключи' (только для админа)"""
     user_id = callback_query.from_user.id
-    chat_id = callback_query.message.chat.id
     
     # Проверка прав администратора
     if not is_admin(user_id):
@@ -1823,7 +1893,20 @@ async def callback_cmd_allclients(callback_query: types.CallbackQuery):
         all_clients = await xui_client.get_all_clients()
         
         if not all_clients:
-            await bot.send_message(chat_id, "Нет клиентов в системе.")
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+            ])
+            try:
+                await callback_query.message.edit_text(
+                    "Нет клиентов в системе.",
+                    reply_markup=keyboard
+                )
+            except:
+                await bot.send_message(
+                    callback_query.message.chat.id,
+                    "Нет клиентов в системе.",
+                    reply_markup=keyboard
+                )
             return
         
         # Группируем клиентов по статусу
@@ -1871,6 +1954,11 @@ async def callback_cmd_allclients(callback_query: types.CallbackQuery):
                 InlineKeyboardButton(text=f"🧹 Очистить просроченные ({expired_count})", callback_data="cleanup_expired")
             ])
         
+        # Добавляем кнопку "Назад"
+        buttons.append([
+            InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")
+        ])
+        
         keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
         
         text = (
@@ -1882,16 +1970,36 @@ async def callback_cmd_allclients(callback_query: types.CallbackQuery):
             f"Нажмите на ключ для просмотра деталей."
         )
         
-        await bot.send_message(
-            chat_id,
-            text,
-            reply_markup=keyboard,
-            parse_mode="HTML"
-        )
+        try:
+            await callback_query.message.edit_text(
+                text,
+                reply_markup=keyboard,
+                parse_mode="HTML"
+            )
+        except:
+            await bot.send_message(
+                callback_query.message.chat.id,
+                text,
+                reply_markup=keyboard,
+                parse_mode="HTML"
+            )
         
     except Exception as e:
         logger.error(f"Ошибка получения списка всех клиентов: {e}")
-        await bot.send_message(chat_id, f"❌ Ошибка: {str(e)}")
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+        ])
+        try:
+            await callback_query.message.edit_text(
+                f"❌ Ошибка: {str(e)}",
+                reply_markup=keyboard
+            )
+        except:
+            await bot.send_message(
+                callback_query.message.chat.id,
+                f"❌ Ошибка: {str(e)}",
+                reply_markup=keyboard
+            )
 
 
 @dp.callback_query(lambda c: c.data == "action_block")
