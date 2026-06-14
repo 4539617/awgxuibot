@@ -3491,8 +3491,8 @@ install_3xui_v3() {
     # Автоматически отвечаем на вопросы установщика:
     # 1 - выбор SQLite
     # 4 - пропуск SSL (Skip SSL)
-    # Используем несколько echo для надежности
-    { echo "1"; sleep 1; echo "4"; sleep 1; } | bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh) 2>&1 | tee "$INSTALL_OUTPUT"
+    # Добавляем больше пустых строк для обработки всех возможных вопросов
+    printf '1\n4\n\n\n\n\n\n\n\n\n\n' | bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh) 2>&1 | tee "$INSTALL_OUTPUT"
     
     # Проверка успешности установки
     if systemctl is-active --quiet x-ui; then
