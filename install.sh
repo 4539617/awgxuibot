@@ -3576,10 +3576,23 @@ install_3xui_v3() {
         if [ -z "$REALITY_PRIVATE_KEY" ] || [ -z "$REALITY_PUBLIC_KEY" ]; then
             echo -e "${YELLOW}⚠ Генерация Reality ключей через API...${NC}"
             
+            # Формируем правильный URL для API запроса
+            # Убираем leading slash из XUI_WEB_BASE_PATH если он есть
+            WEB_PATH="${XUI_WEB_BASE_PATH#/}"
+            if [ -z "$WEB_PATH" ] || [ "$WEB_PATH" = "/" ]; then
+                API_URL="${XUI_URL}/panel/api/server/getNewX25519Cert"
+            else
+                API_URL="${XUI_URL}/${WEB_PATH}/panel/api/server/getNewX25519Cert"
+            fi
+            echo -e "${BLUE}ℹ️  API URL: ${API_URL}${NC}"
+            
             # Используем API v3 для генерации Reality ключей
             REALITY_RESPONSE=$(curl -s -k -X GET \
                 -H "Authorization: Bearer $XUI_API_TOKEN" \
-                "${XUI_URL}/${XUI_WEB_BASE_PATH}/panel/api/server/getNewX25519Cert")
+                "${API_URL}")
+            
+            # Выводим ответ для диагностики
+            echo -e "${BLUE}ℹ️  API Response: ${REALITY_RESPONSE}${NC}"
             
             if echo "$REALITY_RESPONSE" | grep -q '"success":true'; then
                 REALITY_PRIVATE_KEY=$(echo "$REALITY_RESPONSE" | grep -o '"privateKey":"[^"]*"' | cut -d'"' -f4)
@@ -3589,18 +3602,55 @@ install_3xui_v3() {
                     update_env_value "REALITY_PRIVATE_KEY" "$REALITY_PRIVATE_KEY"
                     update_env_value "REALITY_PUBLIC_KEY" "$REALITY_PUBLIC_KEY"
                     echo -e "${GREEN}✓ Reality ключи успешно сгенерированы через API${NC}"
+                    echo -e "${BLUE}  Private Key: ${REALITY_PRIVATE_KEY:0:20}...${NC}"
+                    echo -e "${BLUE}  Public Key:  ${REALITY_PUBLIC_KEY:0:20}...${NC}"
                 else
                     echo -e "${RED}✗ Не удалось извлечь ключи из ответа API${NC}"
-                    echo -e "${YELLOW}Попробуйте сгенерировать ключи вручную через панель${NC}"
+                    echo -e "${YELLOW}ℹ️  Попытка генерации через локальный xray...${NC}"
+                    
+                    # Fallback: пробуем через локальный xray
+                    if command -v xray &> /dev/null; then
+                        REALITY_KEYS=$(xray x25519 2>/dev/null)
+                        REALITY_PRIVATE_KEY=$(echo "$REALITY_KEYS" | grep "Private key:" | awk '{print $3}')
+                        REALITY_PUBLIC_KEY=$(echo "$REALITY_KEYS" | grep "Public key:" | awk '{print $3}')
+                        
+                        if [ -n "$REALITY_PRIVATE_KEY" ] && [ -n "$REALITY_PUBLIC_KEY" ]; then
+                            update_env_value "REALITY_PRIVATE_KEY" "$REALITY_PRIVATE_KEY"
+                            update_env_value "REALITY_PUBLIC_KEY" "$REALITY_PUBLIC_KEY"
+                            echo -e "${GREEN}✓ Reality ключи сгенерированы через локальный xray${NC}"
+                        else
+                            echo -e "${YELLOW}⚠️  Не удалось сгенерировать ключи. Сгенерируйте вручную через панель${NC}"
+                        fi
+                    else
+                        echo -e "${YELLOW}⚠️  Xray не найден. Сгенерируйте ключи вручную через панель${NC}"
+                    fi
                 fi
             else
                 echo -e "${RED}✗ Ошибка при генерации ключей через API${NC}"
-                echo -e "${YELLOW}Попробуйте сгенерировать ключи вручную через панель${NC}"
+                echo -e "${YELLOW}ℹ️  Попытка генерации через локальный xray...${NC}"
+                
+                # Fallback: пробуем через локальный xray
+                if command -v xray &> /dev/null; then
+                    REALITY_KEYS=$(xray x25519 2>/dev/null)
+                    REALITY_PRIVATE_KEY=$(echo "$REALITY_KEYS" | grep "Private key:" | awk '{print $3}')
+                    REALITY_PUBLIC_KEY=$(echo "$REALITY_KEYS" | grep "Public key:" | awk '{print $3}')
+                    
+                    if [ -n "$REALITY_PRIVATE_KEY" ] && [ -n "$REALITY_PUBLIC_KEY" ]; then
+                        update_env_value "REALITY_PRIVATE_KEY" "$REALITY_PRIVATE_KEY"
+                        update_env_value "REALITY_PUBLIC_KEY" "$REALITY_PUBLIC_KEY"
+                        echo -e "${GREEN}✓ Reality ключи сгенерированы через локальный xray${NC}"
+                    else
+                        echo -e "${YELLOW}⚠️  Не удалось сгенерировать ключи. Сгенерируйте вручную через панель${NC}"
+                    fi
+                else
+                    echo -e "${YELLOW}⚠️  Xray не найден. Сгенерируйте ключи вручную через панель${NC}"
+                fi
             fi
             
             # Генерация Short ID
             REALITY_SHORT_ID=$(openssl rand -hex 8)
             update_env_value "REALITY_SHORT_ID" "$REALITY_SHORT_ID"
+            echo -e "${GREEN}✓ Reality Short ID сгенерирован: ${REALITY_SHORT_ID}${NC}"
         fi
         
         # Вывод учетных данных
