@@ -495,48 +495,75 @@ class XUIClient:
             if not await self.login():
                 return []
         
-        endpoint = f"{self.config.xui.url}/panel/api/clients/list"
+        # Используем paginated endpoint с большим pageSize для получения всех клиентов
+        endpoint = f"{self.config.xui.url}/panel/api/clients/list/paged"
         headers = await self._get_headers()
         
+        # Параметры для получения всех клиентов (максимум 200 за раз по документации)
+        params = {
+            'page': 1,
+            'pageSize': 200
+        }
+        
+        all_clients = []
+        
         try:
-            async with self.session.get(endpoint, headers=headers) as resp:
-                if resp.status == 200:
-                    result = await resp.json()
-                    if result.get('success'):
-                        clients = result.get('obj', [])
-                        current_time = int(time.time() * 1000)
-                        
-                        # Преобразуем в формат v2 для совместимости
-                        formatted_clients = []
-                        for client in clients:
-                            expiry_time = client.get('expiryTime', 0)
-                            enable = client.get('enable', True)
+            # Получаем клиентов постранично
+            while True:
+                async with self.session.get(endpoint, headers=headers, params=params) as resp:
+                    if resp.status == 200:
+                        result = await resp.json()
+                        if result.get('success'):
+                            obj = result.get('obj', {})
+                            clients = obj.get('items', [])
+                            total = obj.get('total', 0)
                             
-                            # Определяем статус
-                            if expiry_time > 0 and expiry_time < current_time:
-                                status = 'expired'
-                            elif not enable:
-                                status = 'inactive'
-                            else:
-                                status = 'active'
+                            if not clients:
+                                break
                             
-                            traffic = client.get('traffic', {})
-                            formatted_clients.append({
-                                'uuid': client.get('uuid', ''),
-                                'email': client.get('email', ''),
-                                'comment': client.get('comment', ''),
-                                'enable': enable,
-                                'expiryTime': expiry_time,
-                                'totalGB': client.get('totalGB', 0),
-                                'status': status,
-                                'up': traffic.get('up', 0),
-                                'down': traffic.get('down', 0)
-                            })
-                        
-                        return formatted_clients
-                
-                logger.error(f"Ошибка получения клиентов v3: {resp.status}")
-                return []
+                            current_time = int(time.time() * 1000)
+                            
+                            # Преобразуем в формат v2 для совместимости
+                            for client in clients:
+                                expiry_time = client.get('expiryTime', 0)
+                                enable = client.get('enable', True)
+                                
+                                # Определяем статус
+                                if expiry_time > 0 and expiry_time < current_time:
+                                    status = 'expired'
+                                elif not enable:
+                                    status = 'inactive'
+                                else:
+                                    status = 'active'
+                                
+                                traffic = client.get('traffic', {})
+                                all_clients.append({
+                                    'uuid': client.get('uuid', ''),
+                                    'email': client.get('email', ''),
+                                    'comment': client.get('comment', ''),
+                                    'enable': enable,
+                                    'expiryTime': expiry_time,
+                                    'totalGB': client.get('totalGB', 0),
+                                    'status': status,
+                                    'up': traffic.get('up', 0),
+                                    'down': traffic.get('down', 0)
+                                })
+                            
+                            # Проверяем, есть ли еще страницы
+                            if len(all_clients) >= total:
+                                break
+                            
+                            params['page'] += 1
+                        else:
+                            logger.error(f"API вернул success=false: {result}")
+                            break
+                    else:
+                        text = await resp.text()
+                        logger.error(f"Ошибка получения клиентов v3: {resp.status} - {text}")
+                        break
+            
+            return all_clients
+            
         except Exception as e:
             logger.error(f"Ошибка получения клиентов v3: {e}")
             return []
