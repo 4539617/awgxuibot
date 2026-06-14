@@ -683,7 +683,7 @@ google.com
       await this.bot.deleteMessage(chatId, processingMsg.message_id);
 
       // Build message
-      let message = `📋 *Клиенты ${version.toUpperCase()}*\n\n`;
+      let message = `📋 *AWG ${version.toUpperCase()}*\n\n`;
       
       if (clients.length === 0) {
         message += 'Нет клиентов\n\n';
@@ -1385,8 +1385,8 @@ google.com
         const keyboard = {
           inline_keyboard: [
             [
-              { text: '📋 AWG V1', callback_data: 'awg_clients_v1' },
-              { text: '📋 AWG V2', callback_data: 'awg_clients_v2' }
+              { text: '📋 Клиенты V1', callback_data: 'awg_clients_v1' },
+              { text: '📋 Клиенты V2', callback_data: 'awg_clients_v2' }
             ]
           ]
         };
