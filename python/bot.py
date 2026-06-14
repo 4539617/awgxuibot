@@ -184,13 +184,7 @@ async def cmd_start(message: Message, state: FSMContext):
                 f"👑 Администратор\n {username or first_name}\n\n"
                 f"🔐 <b>Настройки подключения:</b>\n"
                 f"• Transport: <code>{config.vpn.transport}</code>\n"
-                f"• Security: <code>{config.vpn.security}</code>\n\n"
-                f"Дополнительные команды:\n"
-                f"/users - Список пользователей\n"
-                f"/blockuser - Заблокировать пользователя\n"
-                f"/unblockuser - Разблокировать пользователя\n"
-                f"/removeuser - Удалить пользователя\n"
-                f"/help - Помощь",
+                f"• Security: <code>{config.vpn.security}</code>",
                 reply_markup=keyboard,
                 parse_mode="HTML"
             )
@@ -205,9 +199,7 @@ async def cmd_start(message: Message, state: FSMContext):
                 ]
             ])
             await message.answer(
-                f"👤 Пользователь\n {username or first_name}\n\n"
-                f"Дополнительные команды:\n"
-                f"/help - Помощь",
+                f"👤 Пользователь\n {username or first_name}",
                 reply_markup=keyboard,
                 parse_mode="HTML"
             )
@@ -281,16 +273,14 @@ async def process_new_comment(message: Message, state: FSMContext):
         # Удаляем сообщение о создании
         await bot.delete_message(message.chat.id, status_msg.message_id)
         
-        # Сначала отправляем ссылку
+        # Сначала отправляем только ссылку
         await message.answer(
-            f"🔑 <b>Ваш ключ создан!</b>\n\n"
-            f"📝 Комментарий: {comment}\n\n"
             f"<code>{vless_link}</code>",
             parse_mode="HTML"
         )
         
-        # Затем отправляем QR-код маленьким (box_size=2 для ~1см)
-        qr = qrcode.QRCode(box_size=2, border=2)
+        # Затем отправляем QR-код с информацией
+        qr = qrcode.QRCode(box_size=10, border=2)
         qr.add_data(vless_link)
         qr.make()
         qr_img = qr.make_image(fill_color="black", back_color="white")
@@ -305,7 +295,7 @@ async def process_new_comment(message: Message, state: FSMContext):
         
         await message.answer_photo(
             photo=types.BufferedInputFile(buffer.getvalue(), filename="vless.png"),
-            caption=f"📱 QR-код для подключения\n(Нажмите для увеличения)",
+            caption=f"🔑 <b>Ваш ключ создан!</b>\n\n📝 Комментарий: {comment}",
             parse_mode="HTML",
             reply_markup=keyboard
         )
@@ -419,16 +409,14 @@ async def process_tempkey_comment(message: Message, state: FSMContext):
         # Удаляем сообщение о создании
         await bot.delete_message(message.chat.id, status_msg.message_id)
         
-        # Сначала отправляем ссылку
+        # Сначала отправляем только ссылку
         await message.answer(
-            f"⏰ <b>Временный ключ на {duration_text} создан!</b>\n\n"
-            f"📝 Комментарий: {comment}\n\n"
             f"<code>{vless_link}</code>",
             parse_mode="HTML"
         )
         
-        # Затем отправляем QR-код маленьким
-        qr = qrcode.QRCode(box_size=2, border=2)
+        # Затем отправляем QR-код с информацией
+        qr = qrcode.QRCode(box_size=10, border=2)
         qr.add_data(vless_link)
         qr.make()
         qr_img = qr.make_image(fill_color="black", back_color="white")
@@ -443,7 +431,7 @@ async def process_tempkey_comment(message: Message, state: FSMContext):
         
         await message.answer_photo(
             photo=types.BufferedInputFile(buffer.getvalue(), filename="vless.png"),
-            caption=f"📱 QR-код для подключения\n(Нажмите для увеличения)",
+            caption=f"⏰ <b>Временный ключ на {duration_text} создан!</b>\n\n📝 Комментарий: {comment}",
             parse_mode="HTML",
             reply_markup=keyboard
         )
@@ -547,17 +535,14 @@ async def show_my_client_details(callback_query: types.CallbackQuery):
     
     await callback_query.answer()
     
-    # Сначала отправляем ссылку
+    # Сначала отправляем только ссылку
     await callback_query.message.answer(
-        f"🔑 <b>Информация о ключе</b>\n\n"
-        f"Статус: {status_text}\n"
-        f"📝 Комментарий: {comment if comment else 'Без комментария'}\n\n"
         f"<code>{vless_link}</code>",
         parse_mode="HTML"
     )
     
-    # Затем отправляем QR-код маленьким
-    qr = qrcode.QRCode(box_size=2, border=2)
+    # Затем отправляем QR-код с информацией
+    qr = qrcode.QRCode(box_size=10, border=2)
     qr.add_data(vless_link)
     qr.make()
     qr_img = qr.make_image(fill_color="black", back_color="white")
@@ -572,7 +557,7 @@ async def show_my_client_details(callback_query: types.CallbackQuery):
     
     await callback_query.message.answer_photo(
         photo=types.BufferedInputFile(buffer.getvalue(), filename="vless.png"),
-        caption=f"📱 QR-код для подключения\n(Нажмите для увеличения)",
+        caption=f"🔑 <b>Информация о ключе</b>\n\nСтатус: {status_text}\n📝 Комментарий: {comment if comment else 'Без комментария'}",
         parse_mode="HTML",
         reply_markup=keyboard
     )
@@ -987,16 +972,14 @@ async def show_client_key(callback_query: types.CallbackQuery):
         
         await callback_query.answer("✅ Ключ отправлен")
         
-        # Сначала отправляем ссылку
+        # Сначала отправляем только ссылку
         await callback_query.message.answer(
-            f"🔑 <b>Ключ:</b> {client['email']}\n"
-            f"📝 Комментарий: {client['comment'] if client['comment'] else 'Без комментария'}\n\n"
             f"<code>{vless_link}</code>",
             parse_mode="HTML"
         )
         
-        # Затем отправляем QR-код маленьким
-        qr = qrcode.QRCode(box_size=2, border=2)
+        # Затем отправляем QR-код с информацией
+        qr = qrcode.QRCode(box_size=10, border=2)
         qr.add_data(vless_link)
         qr.make()
         qr_img = qr.make_image(fill_color="black", back_color="white")
@@ -1011,7 +994,7 @@ async def show_client_key(callback_query: types.CallbackQuery):
         
         await callback_query.message.answer_photo(
             photo=types.BufferedInputFile(buffer.getvalue(), filename="vless.png"),
-            caption=f"📱 QR-код для подключения\n(Нажмите для увеличения)",
+            caption=f"🔑 <b>Ключ:</b> {client['email']}\n📝 Комментарий: {client['comment'] if client['comment'] else 'Без комментария'}",
             parse_mode="HTML",
             reply_markup=keyboard
         )
@@ -1409,18 +1392,15 @@ async def process_temp_key_request(callback_query: types.CallbackQuery):
 
         # Отправляем ключ пользователю
         try:
-            # Сначала отправляем ссылку
+            # Сначала отправляем только ссылку
             await bot.send_message(
                 user_id,
-                f"🎁 <b>Временный ключ на {duration_text}</b>\n\n"
-                f"⏰ Ключ действителен: {duration_text}\n"
-                f"⚠️ После истечения срока ключ будет деактивирован\n\n"
                 f"<code>{vless_link}</code>",
                 parse_mode="HTML"
             )
             
-            # Затем отправляем QR-код маленьким
-            qr = qrcode.QRCode(box_size=2, border=2)
+            # Затем отправляем QR-код с информацией
+            qr = qrcode.QRCode(box_size=10, border=2)
             qr.add_data(vless_link)
             qr.make()
             qr_img = qr.make_image(fill_color="black", back_color="white")
@@ -1436,7 +1416,7 @@ async def process_temp_key_request(callback_query: types.CallbackQuery):
             await bot.send_photo(
                 user_id,
                 photo=types.BufferedInputFile(buffer.getvalue(), filename="vless.png"),
-                caption=f"📱 QR-код для подключения\n(Нажмите для увеличения)",
+                caption=f"🎁 <b>Временный ключ на {duration_text}</b>\n\n⏰ Ключ действителен: {duration_text}\n⚠️ После истечения срока ключ будет деактивирован",
                 parse_mode="HTML",
                 reply_markup=keyboard
             )
@@ -1703,13 +1683,7 @@ async def back_to_start_menu(callback_query: types.CallbackQuery):
             f"👑 Администратор\n {username or first_name}\n\n"
             f"🔐 <b>Настройки подключения:</b>\n"
             f"• Transport: <code>{config.vpn.transport}</code>\n"
-            f"• Security: <code>{config.vpn.security}</code>\n\n"
-            f"Дополнительные команды:\n"
-            f"/users - Список пользователей\n"
-            f"/blockuser - Заблокировать пользователя\n"
-            f"/unblockuser - Разблокировать пользователя\n"
-            f"/removeuser - Удалить пользователя\n"
-            f"/help - Помощь"
+            f"• Security: <code>{config.vpn.security}</code>"
         )
         
         try:
@@ -1735,11 +1709,7 @@ async def back_to_start_menu(callback_query: types.CallbackQuery):
             ]
         ])
         
-        text = (
-            f"👤 Пользователь\n {username or first_name}\n\n"
-            f"Дополнительные команды:\n"
-            f"/help - Помощь"
-        )
+        text = f"👤 Пользователь\n {username or first_name}"
         
         try:
             await callback_query.message.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
