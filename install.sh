@@ -1501,8 +1501,24 @@ rebuild_xuibot() {
     
     sleep 5
     echo -e "${GREEN}✅ Контейнер XUIBOT перезапущен!${NC}"
-    echo -e "\n${YELLOW}📋 Логи (последние 15 строк):${NC}"
-    docker logs --tail=15 xuibot
+    echo -e "\n${YELLOW}📋 Логи (последние 50 строк):${NC}"
+    docker logs --tail=50 xuibot
+    
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}💡 Полезные команды:${NC}"
+    echo -e "${BLUE}  Логи: docker logs -f xuibot${NC}"
+    echo -e "${BLUE}  Статус: docker ps${NC}"
+    echo -e "${BLUE}  Перезапуск: docker compose -f docker-compose.xuibot.yml restart${NC}"
+    echo -e "${BLUE}  Остановка: docker compose -f docker-compose.xuibot.yml down${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+    
+    # Спрашиваем, хочет ли пользователь следить за логами в реальном времени
+    echo -e "${YELLOW}Показать логи в реальном времени? (Enter - Да, 0 - Нет):${NC} "
+    read -r follow_logs
+    if [ "$follow_logs" != "0" ]; then
+        echo -e "\n${GREEN}📊 Логи в реальном времени (Ctrl+C для выхода):${NC}\n"
+        docker logs -f xuibot
+    fi
 }
 
 # Функция перезапуска контейнера AWGBOT с rebuild
@@ -1522,8 +1538,24 @@ rebuild_awgbot() {
     
     sleep 5
     echo -e "${GREEN}✅ Контейнер AWGBOT перезапущен!${NC}"
-    echo -e "\n${YELLOW}📋 Логи (последние 15 строк):${NC}"
-    docker logs --tail=15 awgbot
+    echo -e "\n${YELLOW}📋 Логи (последние 50 строк):${NC}"
+    docker logs --tail=50 awgbot
+    
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}💡 Полезные команды:${NC}"
+    echo -e "${BLUE}  Логи: docker logs -f awgbot${NC}"
+    echo -e "${BLUE}  Статус: docker ps${NC}"
+    echo -e "${BLUE}  Перезапуск: docker compose -f docker-compose.awgbot.yml restart${NC}"
+    echo -e "${BLUE}  Остановка: docker compose -f docker-compose.awgbot.yml down${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+    
+    # Спрашиваем, хочет ли пользователь следить за логами в реальном времени
+    echo -e "${YELLOW}Показать логи в реальном времени? (Enter - Да, 0 - Нет):${NC} "
+    read -r follow_logs
+    if [ "$follow_logs" != "0" ]; then
+        echo -e "\n${GREEN}📊 Логи в реальном времени (Ctrl+C для выхода):${NC}\n"
+        docker logs -f awgbot
+    fi
 }
 
 # Функция синхронизации репозитория
