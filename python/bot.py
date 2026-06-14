@@ -987,9 +987,9 @@ async def show_client_key(callback_query: types.CallbackQuery):
         qr_img.save(buffer, format="PNG")
         buffer.seek(0)
         
-        # Добавляем кнопку "В главное меню"
+        # Добавляем кнопку "Назад к списку"
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")]
+            [InlineKeyboardButton(text="🔙 Назад к списку", callback_data="back_to_allclients")]
         ])
         
         await callback_query.message.answer_photo(
@@ -1622,28 +1622,33 @@ async def show_users_list(callback_query: types.CallbackQuery):
             text += "Нет добавленных пользователей."
 
         # Добавляем кнопки действий и навигации
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔄 Обновить", callback_data="show_users")],
-            [InlineKeyboardButton(text="🔒 Заблокировать", callback_data="action_block")],
-            [InlineKeyboardButton(text="🔓 Разблокировать", callback_data="action_unblock")],
-            [InlineKeyboardButton(text="🗑 Удалить", callback_data="action_remove")],
-            [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
-        ])
+        buttons = [
+            [InlineKeyboardButton(text="🔄 Обновить", callback_data="show_users")]
+        ]
+        
+        # Показываем кнопки действий только если есть пользователи
+        if users:
+            buttons.extend([
+                [InlineKeyboardButton(text="🔒 Заблокировать", callback_data="action_block")],
+                [InlineKeyboardButton(text="🔓 Разблокировать", callback_data="action_unblock")],
+                [InlineKeyboardButton(text="🗑 Удалить", callback_data="action_remove")]
+            ])
+        
+        buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")])
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
 
-        # Пытаемся отредактировать существующее сообщение
+        # Редактируем существующее сообщение
         try:
             await callback_query.message.edit_text(
                 text,
                 parse_mode="HTML",
                 reply_markup=keyboard
             )
-        except:
-            # Если не удалось отредактировать, отправляем новое
-            await callback_query.message.answer(
-                text,
-                parse_mode="HTML",
-                reply_markup=keyboard
-            )
+        except Exception as e:
+            # Логируем ошибку, но не создаем новое сообщение
+            logger.error(f"Не удалось отредактировать сообщение: {e}")
+            await callback_query.answer("❌ Не удалось обновить", show_alert=True)
         
     except Exception as e:
         logger.error(f"Ошибка получения списка пользователей: {e}")
