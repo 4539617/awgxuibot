@@ -3651,7 +3651,8 @@ install_3xui_v3() {
         # Определение версии
         XUI_VERSION=$(x-ui version 2>/dev/null | grep -oP '\d+\.\d+\.\d+' | head -1)
         if [ -z "$XUI_VERSION" ]; then
-            XUI_VERSION="latest"
+            # Если версия не определена, это v3 (latest)
+            XUI_VERSION="3.0.0"
         fi
         
         # Получение IP сервера
@@ -3678,7 +3679,7 @@ install_3xui_v3() {
         update_env_value "XUI_USERNAME" "$XUI_USERNAME"
         update_env_value "XUI_PASSWORD" "$XUI_PASSWORD"
         update_env_value "XUI_API_TOKEN" "$XUI_API_TOKEN"
-        update_env_value "XUI_INBOUND_ID" "1"
+        update_env_value "INBOUND_ID" "1"
         update_env_value "XUI_DB_PATH" "/etc/x-ui/x-ui.db"
         
         # Генерация Reality ключей если их нет
@@ -3780,7 +3781,7 @@ install_3xui_v3() {
         echo -e "\n${GREEN}═══════════════════════════════════════════${NC}"
         echo -e "${GREEN}     Панель 3x-ui v3.x успешно установлена!${NC}"
         echo -e "${GREEN}═══════════════════════════════════════════${NC}"
-        echo -e "${BLUE}⚠ URL панели:       ${YELLOW}${XUI_URL}/${XUI_WEB_BASE_PATH}${NC}"
+        echo -e "${BLUE}⚠ URL панели:       ${YELLOW}${XUI_URL}${NC}"
         echo -e "${BLUE}⚠ Имя пользователя: ${YELLOW}${XUI_USERNAME}${NC}"
         echo -e "${BLUE}⚠ Пароль:           ${YELLOW}${XUI_PASSWORD}${NC}"
         echo -e "${BLUE}⚠ API Token:        ${YELLOW}${XUI_API_TOKEN}${NC}"
