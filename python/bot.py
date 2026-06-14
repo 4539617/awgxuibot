@@ -167,12 +167,18 @@ async def cmd_start(message: Message, state: FSMContext):
     if is_allowed(user_id):
         if is_admin(user_id):
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="➕ Создать ключ", callback_data="cmd_new")],
-                [InlineKeyboardButton(text="⏱ Временный ключ", callback_data="cmd_tempkey")],
-                [InlineKeyboardButton(text="🔑 Мои ключи", callback_data="cmd_myclients")],
-                [InlineKeyboardButton(text="📋 Все ключи", callback_data="cmd_allclients")],
-                [InlineKeyboardButton(text="� Состояние сервера", callback_data="server_status")],
-                [InlineKeyboardButton(text="👥 Пользователи", callback_data="show_users")]
+                [
+                    InlineKeyboardButton(text="➕ Создать ключ", callback_data="cmd_new"),
+                    InlineKeyboardButton(text="⏱ Временный ключ", callback_data="cmd_tempkey")
+                ],
+                [
+                    InlineKeyboardButton(text="🔑 Мои ключи", callback_data="cmd_myclients"),
+                    InlineKeyboardButton(text="📋 Все ключи", callback_data="cmd_allclients")
+                ],
+                [
+                    InlineKeyboardButton(text="📊 Состояние сервера", callback_data="server_status"),
+                    InlineKeyboardButton(text="👥 Пользователи", callback_data="show_users")
+                ]
             ])
             await message.answer(
                 f"👑 Администратор\n {username or first_name}\n\n"
@@ -190,9 +196,13 @@ async def cmd_start(message: Message, state: FSMContext):
             )
         else:
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="➕ Создать ключ", callback_data="cmd_new")],
-                [InlineKeyboardButton(text="⏱ Временный ключ", callback_data="cmd_tempkey")],
-                [InlineKeyboardButton(text="🔑 Мои ключи", callback_data="cmd_myclients")]
+                [
+                    InlineKeyboardButton(text="➕ Создать ключ", callback_data="cmd_new"),
+                    InlineKeyboardButton(text="⏱ Временный ключ", callback_data="cmd_tempkey")
+                ],
+                [
+                    InlineKeyboardButton(text="🔑 Мои ключи", callback_data="cmd_myclients")
+                ]
             ])
             await message.answer(
                 f"👤 Пользователь\n {username or first_name}\n\n"
@@ -268,23 +278,36 @@ async def process_new_comment(message: Message, state: FSMContext):
             await state.clear()
             return
 
-        qr = qrcode.QRCode(box_size=8, border=2)
+        # Удаляем сообщение о создании
+        await bot.delete_message(message.chat.id, status_msg.message_id)
+        
+        # Сначала отправляем ссылку
+        await message.answer(
+            f"🔑 <b>Ваш ключ создан!</b>\n\n"
+            f"📝 Комментарий: {comment}\n\n"
+            f"<code>{vless_link}</code>",
+            parse_mode="HTML"
+        )
+        
+        # Затем отправляем QR-код маленьким (box_size=2 для ~1см)
+        qr = qrcode.QRCode(box_size=2, border=2)
         qr.add_data(vless_link)
         qr.make()
         qr_img = qr.make_image(fill_color="black", back_color="white")
         buffer = BytesIO()
         qr_img.save(buffer, format="PNG")
         buffer.seek(0)
-
-        await bot.delete_message(message.chat.id, status_msg.message_id)
+        
+        # Добавляем кнопку "В главное меню"
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")]
+        ])
+        
         await message.answer_photo(
             photo=types.BufferedInputFile(buffer.getvalue(), filename="vless.png"),
-            caption=f"\n\n📝 {comment}",
-            parse_mode="HTML"
-        )
-        await message.answer(
-            f"<code>{vless_link}</code>",
-            parse_mode="HTML"
+            caption=f"📱 QR-код для подключения\n(Нажмите для увеличения)",
+            parse_mode="HTML",
+            reply_markup=keyboard
         )
     else:
         await status_msg.edit_text(f"❌ Ошибка: {result.get('error')}")
@@ -393,23 +416,36 @@ async def process_tempkey_comment(message: Message, state: FSMContext):
             await status_msg.edit_text(f"❌ Ошибка получения ссылки")
             return
 
-        qr = qrcode.QRCode(box_size=8, border=2)
+        # Удаляем сообщение о создании
+        await bot.delete_message(message.chat.id, status_msg.message_id)
+        
+        # Сначала отправляем ссылку
+        await message.answer(
+            f"⏰ <b>Временный ключ на {duration_text} создан!</b>\n\n"
+            f"📝 Комментарий: {comment}\n\n"
+            f"<code>{vless_link}</code>",
+            parse_mode="HTML"
+        )
+        
+        # Затем отправляем QR-код маленьким
+        qr = qrcode.QRCode(box_size=2, border=2)
         qr.add_data(vless_link)
         qr.make()
         qr_img = qr.make_image(fill_color="black", back_color="white")
         buffer = BytesIO()
         qr_img.save(buffer, format="PNG")
         buffer.seek(0)
-
-        await bot.delete_message(message.chat.id, status_msg.message_id)
+        
+        # Добавляем кнопку "В главное меню"
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")]
+        ])
+        
         await message.answer_photo(
             photo=types.BufferedInputFile(buffer.getvalue(), filename="vless.png"),
-            caption=f"⏰ <b>Временный ключ на {duration_text}</b>\n\n📝 {comment}",
-            parse_mode="HTML"
-        )
-        await message.answer(
-            f"<code>{vless_link}</code>",
-            parse_mode="HTML"
+            caption=f"📱 QR-код для подключения\n(Нажмите для увеличения)",
+            parse_mode="HTML",
+            reply_markup=keyboard
         )
     else:
         await status_msg.edit_text(f"❌ Ошибка: {result.get('error')}")
@@ -501,15 +537,6 @@ async def show_my_client_details(callback_query: types.CallbackQuery):
         await callback_query.answer("❌ Ошибка получения ссылки", show_alert=True)
         return
 
-    # Генерируем QR-код
-    qr = qrcode.QRCode(box_size=8, border=2)
-    qr.add_data(vless_link)
-    qr.make()
-    qr_img = qr.make_image(fill_color="black", back_color="white")
-    buffer = BytesIO()
-    qr_img.save(buffer, format="PNG")
-    buffer.seek(0)
-
     # Определяем статус с иконкой
     if status == 'active':
         status_text = "✅ Активен"
@@ -517,20 +544,38 @@ async def show_my_client_details(callback_query: types.CallbackQuery):
         status_text = "⏸️ Неактивен (выключен)"
     else:  # expired
         status_text = "⏰ Просрочен"
-
-    # Отправляем QR-код
-    await callback_query.message.answer_photo(
-        photo=types.BufferedInputFile(buffer.getvalue(), filename="vless.png"),
-        caption=f"{status_text}\n📝 <b>{comment if comment else 'Без комментария'}</b>",
-        parse_mode="HTML"
-    )
     
-    # Отправляем текст ключа
+    await callback_query.answer()
+    
+    # Сначала отправляем ссылку
     await callback_query.message.answer(
+        f"🔑 <b>Информация о ключе</b>\n\n"
+        f"Статус: {status_text}\n"
+        f"📝 Комментарий: {comment if comment else 'Без комментария'}\n\n"
         f"<code>{vless_link}</code>",
         parse_mode="HTML"
     )
-    await callback_query.answer()
+    
+    # Затем отправляем QR-код маленьким
+    qr = qrcode.QRCode(box_size=2, border=2)
+    qr.add_data(vless_link)
+    qr.make()
+    qr_img = qr.make_image(fill_color="black", back_color="white")
+    buffer = BytesIO()
+    qr_img.save(buffer, format="PNG")
+    buffer.seek(0)
+    
+    # Добавляем кнопку "В главное меню"
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")]
+    ])
+    
+    await callback_query.message.answer_photo(
+        photo=types.BufferedInputFile(buffer.getvalue(), filename="vless.png"),
+        caption=f"📱 QR-код для подключения\n(Нажмите для увеличения)",
+        parse_mode="HTML",
+        reply_markup=keyboard
+    )
 
 
 @dp.message(Command("users"))
@@ -940,8 +985,18 @@ async def show_client_key(callback_query: types.CallbackQuery):
             await callback_query.answer("❌ Ошибка получения ссылки!", show_alert=True)
             return
         
-        # Генерируем QR-код
-        qr = qrcode.QRCode(box_size=8, border=2)
+        await callback_query.answer("✅ Ключ отправлен")
+        
+        # Сначала отправляем ссылку
+        await callback_query.message.answer(
+            f"🔑 <b>Ключ:</b> {client['email']}\n"
+            f"📝 Комментарий: {client['comment'] if client['comment'] else 'Без комментария'}\n\n"
+            f"<code>{vless_link}</code>",
+            parse_mode="HTML"
+        )
+        
+        # Затем отправляем QR-код маленьким
+        qr = qrcode.QRCode(box_size=2, border=2)
         qr.add_data(vless_link)
         qr.make()
         qr_img = qr.make_image(fill_color="black", back_color="white")
@@ -949,20 +1004,17 @@ async def show_client_key(callback_query: types.CallbackQuery):
         qr_img.save(buffer, format="PNG")
         buffer.seek(0)
         
-        # Отправляем QR-код
+        # Добавляем кнопку "В главное меню"
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")]
+        ])
+        
         await callback_query.message.answer_photo(
             photo=types.BufferedInputFile(buffer.getvalue(), filename="vless.png"),
-            caption=f"🔑 <b>Ключ:</b> {client['email']}\n📝 {client['comment'] if client['comment'] else 'Без комментария'}",
-            parse_mode="HTML"
+            caption=f"📱 QR-код для подключения\n(Нажмите для увеличения)",
+            parse_mode="HTML",
+            reply_markup=keyboard
         )
-        
-        # Отправляем текст ключа
-        await callback_query.message.answer(
-            f"<code>{vless_link}</code>",
-            parse_mode="HTML"
-        )
-        
-        await callback_query.answer("✅ Ключ отправлен")
         
     except Exception as e:
         logger.error(f"Ошибка показа ключа: {e}")
@@ -1355,29 +1407,38 @@ async def process_temp_key_request(callback_query: types.CallbackQuery):
             await callback_query.message.edit_text(f"❌ Ошибка получения ссылки")
             return
 
-        # Генерируем QR-код
-        qr = qrcode.QRCode(box_size=8, border=2)
-        qr.add_data(vless_link)
-        qr.make()
-        qr_img = qr.make_image(fill_color="black", back_color="white")
-        buffer = BytesIO()
-        qr_img.save(buffer, format="PNG")
-        buffer.seek(0)
-
         # Отправляем ключ пользователю
         try:
+            # Сначала отправляем ссылку
+            await bot.send_message(
+                user_id,
+                f"🎁 <b>Временный ключ на {duration_text}</b>\n\n"
+                f"⏰ Ключ действителен: {duration_text}\n"
+                f"⚠️ После истечения срока ключ будет деактивирован\n\n"
+                f"<code>{vless_link}</code>",
+                parse_mode="HTML"
+            )
+            
+            # Затем отправляем QR-код маленьким
+            qr = qrcode.QRCode(box_size=2, border=2)
+            qr.add_data(vless_link)
+            qr.make()
+            qr_img = qr.make_image(fill_color="black", back_color="white")
+            buffer = BytesIO()
+            qr_img.save(buffer, format="PNG")
+            buffer.seek(0)
+            
+            # Добавляем кнопку "В главное меню"
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")]
+            ])
+            
             await bot.send_photo(
                 user_id,
                 photo=types.BufferedInputFile(buffer.getvalue(), filename="vless.png"),
-                caption=f"🎁 <b>Временный ключ на {duration_text}</b>\n\n"
-                        f"⏰ Ключ действителен: {duration_text}\n"
-                        f"⚠️ После истечения срока ключ будет деактивирован",
-                parse_mode="HTML"
-            )
-            await bot.send_message(
-                user_id,
-                f"<code>{vless_link}</code>",
-                parse_mode="HTML"
+                caption=f"📱 QR-код для подключения\n(Нажмите для увеличения)",
+                parse_mode="HTML",
+                reply_markup=keyboard
             )
 
             # Уведомляем администратора об успехе
