@@ -4308,38 +4308,6 @@ generate_awg_config() {
     fi
 }
 
-# Функция создания глобальной команды
-create_global_command() {
-    echo -e "\n${BLUE}========================================${NC}"
-    echo -e "${BLUE}   Создание глобальной команды${NC}"
-    echo -e "${BLUE}========================================${NC}\n"
-    
-    local script_path="/opt/awgxuibot/install.sh"
-    local command_name="poxui"
-    local bin_path="/usr/local/bin/$command_name"
-    
-    # Проверка существования скрипта
-    if [ ! -f "$script_path" ]; then
-        echo -e "${RED}❌ Скрипт не найден: $script_path${NC}"
-        return 1
-    fi
-    
-    # Устанавливаем права на выполнение для самого скрипта
-    echo -e "${YELLOW}🔧 Установка прав на выполнение...${NC}"
-    chmod +x "$script_path"
-    
-    # Создание символической ссылки
-    echo -e "${YELLOW}🔗 Создание символической ссылки...${NC}"
-    if ln -sf "$script_path" "$bin_path"; then
-        echo -e "${GREEN}✅ Глобальная команда создана!${NC}"
-        echo -e "\n${GREEN}Теперь вы можете запустить скрипт из любой директории командой:${NC}"
-    else
-        echo -e "${RED}❌ Ошибка создания символической ссылки${NC}"
-        return 1
-    fi
-}
-
-
 # Главное меню
 show_menu() {
     echo -e "\n${BLUE}========================================${NC}"
@@ -4374,7 +4342,6 @@ show_menu() {
     echo -e "${BLUE}---${NC}"
     echo -e "${YELLOW}Системные утилиты:${NC}"
     echo -e "${GREEN}19)${NC} Анализ диска и памяти"
-    echo -e "${GREEN}20)${NC} Создать глобальную команду 'poxui'"
     echo -e "${BLUE}---${NC}"
     echo -e "${RED}99)${NC} Удалить ВСЁ (AWG + Боты + 3x-ui)"
     echo -e "${GREEN}0)${NC} Выход"
@@ -4603,9 +4570,6 @@ while true; do
             else
                 echo -e "${RED}❌ Файл disk_analyzer.sh не найден!${NC}"
             fi
-            ;;
-        20)
-            create_global_command
             ;;
         99)
             sync_repository
