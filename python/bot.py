@@ -1012,8 +1012,8 @@ async def show_qr_code(callback_query: types.CallbackQuery):
             await callback_query.answer("❌ Ошибка получения ссылки!", show_alert=True)
             return
         
-        # Генерируем QR-код
-        qr = qrcode.QRCode(box_size=10, border=2)
+        # Генерируем QR-код (уменьшенный размер)
+        qr = qrcode.QRCode(box_size=5, border=2)
         qr.add_data(vless_link)
         qr.make()
         qr_img = qr.make_image(fill_color="black", back_color="white")
@@ -1023,10 +1023,19 @@ async def show_qr_code(callback_query: types.CallbackQuery):
         
         await callback_query.answer()
         
+        # Формируем информативный caption с VLESS-ссылкой и комментарием
+        comment = client.get('comment', 'Не указан')
+        caption = f"""📱 <b>QR-код для подключения</b>
+
+🔑 <b>VLESS-ссылка:</b>
+<code>{vless_link}</code>
+
+💬 <b>Комментарий:</b> {comment}"""
+        
         # Отправляем QR-код как отдельное сообщение (не удаляя предыдущее)
         await callback_query.message.answer_photo(
             photo=types.BufferedInputFile(buffer.getvalue(), filename="vless.png"),
-            caption=f"📱 <b>QR-код для подключения</b>",
+            caption=caption,
             parse_mode="HTML"
         )
         
