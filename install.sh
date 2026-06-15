@@ -1537,25 +1537,15 @@ rebuild_xuibot() {
     $DOCKER_COMPOSE_CMD -f docker-compose.xuibot.yml up -d
     
     sleep 5
-    echo -e "${GREEN}✅ Контейнер XUIBOT перезапущен!${NC}"
-    echo -e "\n${YELLOW}📋 Логи (последние 50 строк):${NC}"
-    docker logs --tail=50 xuibot
+    echo -e "\n${GREEN}✅ XUI Бот пересобран!${NC}"
+    echo -e "${GREEN}📊 Статус:${NC}"
+    docker ps --filter name=xuibot
     
-    echo -e "\n${BLUE}========================================${NC}"
-    echo -e "${BLUE}💡 Полезные команды:${NC}"
-    echo -e "${BLUE}  Логи: docker logs -f xuibot${NC}"
-    echo -e "${BLUE}  Статус: docker ps${NC}"
-    echo -e "${BLUE}  Перезапуск: docker compose -f docker-compose.xuibot.yml restart${NC}"
-    echo -e "${BLUE}  Остановка: docker compose -f docker-compose.xuibot.yml down${NC}"
-    echo -e "${BLUE}========================================${NC}\n"
+    echo -e "\n${GREEN}📋 Логи XUI бота (последние 50 строк):${NC}"
+    docker logs --tail 50 xuibot
     
-    # Спрашиваем, хочет ли пользователь следить за логами в реальном времени
-    echo -e "${YELLOW}Показать логи в реальном времени? (Enter - Да, 0 - Нет):${NC} "
-    read -r follow_logs
-    if [ "$follow_logs" != "0" ]; then
-        echo -e "\n${GREEN}📊 Логи в реальном времени (Ctrl+C для выхода):${NC}\n"
-        docker logs -f xuibot
-    fi
+    echo -e "\n${YELLOW}Для просмотра в реальном времени:${NC}"
+    echo -e "${YELLOW}docker logs -f xuibot${NC}"
 }
 
 # Функция перезапуска контейнера AWGBOT с rebuild
