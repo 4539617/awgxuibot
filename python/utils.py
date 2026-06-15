@@ -1315,7 +1315,7 @@ async def detect_xui_version_from_url(xui_url: str) -> str:
     """
     Определение версии 3x-ui по структуре URL
     v3.x использует /panel в URL, v2.x - нет
-    Возвращает "3.0.0" для v3.x или "2.9.4" для v2.x или None
+    Возвращает "3.x" для v3.x или "2.x" для v2.x или None
     """
     import aiohttp
     
@@ -1330,10 +1330,10 @@ async def detect_xui_version_from_url(xui_url: str) -> str:
             ) as resp:
                 if resp.status in [200, 302, 301]:
                     logger.info("✅ Определена версия v3.x по структуре URL (/panel доступен)")
-                    return "3.0.0"
+                    return "3.x"
                 elif resp.status == 404:
                     logger.info("✅ Определена версия v2.x по структуре URL (/panel не найден)")
-                    return "2.9.4"
+                    return "2.x"
     except Exception as e:
         logger.debug(f"Не удалось определить версию через URL: {e}")
     
@@ -1399,8 +1399,8 @@ async def update_env_file(key: str, value: str, env_path: str = ".env") -> bool:
     
     # Проверяем существование файла
     if not actual_path:
-        logger.warning(f"⚠️ Файл .env не найден ни в одном из путей: {possible_paths}")
-        logger.info(f"ℹ️ Версия {key}={value} будет использоваться только в текущей сессии")
+        logger.info(f"ℹ️ Файл .env не доступен в контейнере (это нормально для Docker)")
+        logger.info(f"✅ Версия {key}={value} успешно применена в текущей сессии")
         return False
     
     env_path = actual_path

@@ -2436,21 +2436,16 @@ async def main():
         # Определяем реальную версию панели
         detected_version = await detect_xui_version(config.xui.url, current_version)
         
-        # Если версия отличается от текущей, обновляем .env
-        if detected_version != current_version and detected_version != "latest":
-            logger.info(f"🔄 Обнаружена версия панели: {detected_version}")
-            logger.info(f"📝 Обновление версии в .env файле...")
-            
-            # Обновляем .env файл
-            if await update_env_file("XUI_VERSION", detected_version):
-                logger.info(f"✅ Версия успешно обновлена в .env: {detected_version}")
-                # Обновляем версию в памяти для текущей сессии
-                config.xui.version = detected_version
-                logger.info(f"✅ Версия обновлена в конфиге: {config.xui.version}")
-            else:
-                logger.warning("⚠️ Не удалось обновить .env файл")
-        else:
-            logger.info(f"✅ Версия панели актуальна: {current_version}")
+        # ВСЕГДА обновляем версию в .env и конфиге
+        logger.info(f"🔄 Определена версия панели: {detected_version}")
+        logger.info(f"📝 Сохранение версии в .env файл...")
+        
+        # Обновляем .env файл (если доступен)
+        await update_env_file("XUI_VERSION", detected_version)
+        
+        # Обновляем версию в памяти для текущей сессии
+        config.xui.version = detected_version
+        logger.info(f"✅ Версия установлена в конфиге: {config.xui.version}")
     except Exception as e:
         logger.error(f"❌ Ошибка определения версии панели: {e}")
         logger.info("ℹ️ Продолжаем работу с текущей версией из конфига")
