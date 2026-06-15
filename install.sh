@@ -90,9 +90,22 @@ install_docker() {
         rm get-docker.sh
         systemctl enable docker
         systemctl start docker
-        echo -e "${GREEN}✅ Docker установлен${NC}"
+        echo -e "${GREEN}✅ Docker установлен и добавлен в автозагрузку${NC}"
     else
         echo -e "${GREEN}✅ Docker уже установлен${NC}"
+        
+        # Проверяем и включаем автозагрузку если не включена
+        if ! systemctl is-enabled docker &>/dev/null; then
+            echo -e "${YELLOW}🔄 Включение Docker в автозагрузку...${NC}"
+            systemctl enable docker
+            echo -e "${GREEN}✅ Docker добавлен в автозагрузку${NC}"
+        fi
+        
+        # Проверяем запущен ли Docker
+        if ! systemctl is-active --quiet docker; then
+            echo -e "${YELLOW}🚀 Запуск Docker...${NC}"
+            systemctl start docker
+        fi
     fi
     
     # Проверка и обновление Docker Compose
@@ -256,8 +269,10 @@ update_env_value() {
         # Обновляем существующее значение
         sed -i "s|^${key}=.*|${key}=${value}|" .env
     else
-        # Добавляем новое значение
-        echo "${key}=${value}" >> .env
+        # Убеждаемся, что файл заканчивается переносом строки
+        [ -n "$(tail -c1 .env)" ] && echo "" >> .env
+        # Добавляем новое значение без лишнего переноса
+        printf "%s=%s\n" "${key}" "${value}" >> .env
     fi
     
     # Если обновляется XUI_URL, автоматически обновляем SERVER_ADDRESS и TLS_SNI
@@ -871,6 +886,37 @@ install_xuibot() {
         update_env_value "ADMIN_IDS" "$admin_ids"
     fi
     
+    # Определяем и сохраняем версию панели
+    echo -e "${YELLOW}🔍 Определение версии панели...${NC}"
+    XUI_VERSION=""
+    
+    # Способ 1: Из исполняемого файла x-ui
+    if [ -f "/usr/local/x-ui/x-ui" ]; then
+        XUI_VERSION=$(/usr/local/x-ui/x-ui -v 2>/dev/null | grep -oP '\d+\.\d+\.\d+' | head -1)
+        if [ -n "$XUI_VERSION" ]; then
+            echo -e "${GREEN}✅ Версия панели определена: ${XUI_VERSION}${NC}"
+        fi
+    fi
+    
+    # Способ 2: Из бинарного файла в bin/
+    if [ -z "$XUI_VERSION" ] && [ -f "/usr/local/x-ui/bin/x-ui" ]; then
+        XUI_VERSION=$(/usr/local/x-ui/bin/x-ui -v 2>/dev/null | grep -oP '\d+\.\d+\.\d+' | head -1)
+        if [ -n "$XUI_VERSION" ]; then
+            echo -e "${GREEN}✅ Версия панели определена: ${XUI_VERSION}${NC}"
+        fi
+    fi
+    
+    # Сохраняем в .env
+    if [ -n "$XUI_VERSION" ]; then
+        echo -e "${YELLOW}📝 Сохранение версии в .env...${NC}"
+        update_env_value "XUI_VERSION" "${XUI_VERSION}"
+        echo -e "${GREEN}✅ XUI_VERSION обновлён: ${XUI_VERSION}${NC}"
+    else
+        echo -e "${YELLOW}⚠️  Не удалось определить версию панели${NC}"
+        echo -e "${BLUE}ℹ️  Будет использоваться значение из .env или 'latest'${NC}"
+    fi
+    echo ""
+    
     # Остановка старых контейнеров
     echo -e "\n${YELLOW}🛑 Остановка старых контейнеров...${NC}"
     docker stop xuibot 2>/dev/null || true
@@ -899,6 +945,15 @@ install_xuibot() {
     
     if [[ "$XUI_STATUS" == *"Up"* ]]; then
         echo -e "${GREEN}📊 Статус: ✓ Работает${NC}"
+        
+        # Обновляем политику перезапуска на always
+        docker update --restart=always xuibot >/dev/null 2>&1
+        
+        # Проверка автозагрузки
+        local restart_policy=$(docker inspect xuibot --format='{{.HostConfig.RestartPolicy.Name}}' 2>/dev/null)
+        if [ "$restart_policy" = "always" ]; then
+            echo -e "${GREEN}🔄 Автозагрузка: ✓ Включена (бот будет автоматически запускаться при перезагрузке сервера)${NC}"
+        fi
     else
         echo -e "${RED}📊 Статус: ✗ Не запущен ($XUI_STATUS)${NC}"
     fi
@@ -1023,6 +1078,37 @@ update_xuibot() {
     extract_inbound_params
     echo ""
     
+    # Определяем и сохраняем версию панели
+    echo -e "${YELLOW}🔍 Определение версии панели...${NC}"
+    XUI_VERSION=""
+    
+    # Способ 1: Из исполняемого файла x-ui (основной метод)
+    if [ -f "/usr/local/x-ui/x-ui" ]; then
+        XUI_VERSION=$(/usr/local/x-ui/x-ui -v 2>/dev/null | grep -oP '\d+\.\d+\.\d+' | head -1)
+        if [ -n "$XUI_VERSION" ]; then
+            echo -e "${GREEN}✅ Версия панели определена: ${XUI_VERSION}${NC}"
+        fi
+    fi
+    
+    # Способ 2: Из бинарного файла в bin/
+    if [ -z "$XUI_VERSION" ] && [ -f "/usr/local/x-ui/bin/x-ui" ]; then
+        XUI_VERSION=$(/usr/local/x-ui/bin/x-ui -v 2>/dev/null | grep -oP '\d+\.\d+\.\d+' | head -1)
+        if [ -n "$XUI_VERSION" ]; then
+            echo -e "${GREEN}✅ Версия панели определена: ${XUI_VERSION}${NC}"
+        fi
+    fi
+    
+    # Если версия определена, сохраняем в .env
+    if [ -n "$XUI_VERSION" ]; then
+        echo -e "${YELLOW}📝 Сохранение версии в .env...${NC}"
+        update_env_value "XUI_VERSION" "${XUI_VERSION}"
+        echo -e "${GREEN}✅ XUI_VERSION обновлён: ${XUI_VERSION}${NC}"
+    else
+        echo -e "${YELLOW}⚠️  Не удалось определить версию панели${NC}"
+        echo -e "${BLUE}ℹ️  Будет использоваться значение из .env или 'latest'${NC}"
+    fi
+    echo ""
+    
     # Остановка контейнера
     echo -e "${YELLOW}🛑 Остановка контейнера...${NC}"
     docker stop xuibot 2>/dev/null || true
@@ -1040,6 +1126,12 @@ update_xuibot() {
     echo -e "\n${GREEN}✅ XUI Бот обновлен!${NC}"
     echo -e "${GREEN}📊 Статус:${NC}"
     docker ps --filter name=xuibot
+    
+    echo -e "\n${GREEN}📋 Логи XUI бота (последние 50 строк):${NC}"
+    docker logs --tail 50 xuibot
+    
+    echo -e "\n${YELLOW}Для просмотра в реальном времени:${NC}"
+    echo -e "${YELLOW}docker logs -f xuibot${NC}"
 }
 
 # Функция удаления XUI бота
@@ -1201,6 +1293,15 @@ install_awgbot() {
     
     if [[ "$AWG_STATUS" == *"Up"* ]]; then
         echo -e "${GREEN}📊 Статус: ✓ Работает${NC}"
+        
+        # Обновляем политику перезапуска на always
+        docker update --restart=always awgbot >/dev/null 2>&1
+        
+        # Проверка автозагрузки
+        local restart_policy=$(docker inspect awgbot --format='{{.HostConfig.RestartPolicy.Name}}' 2>/dev/null)
+        if [ "$restart_policy" = "always" ]; then
+            echo -e "${GREEN}🔄 Автозагрузка: ✓ Включена (бот будет автоматически запускаться при перезагрузке сервера)${NC}"
+        fi
     else
         echo -e "${RED}📊 Статус: ✗ Не запущен ($AWG_STATUS)${NC}"
     fi
@@ -1276,8 +1377,6 @@ update_awgbot() {
     else
         echo -e "${YELLOW}⚠️  Параметр ALLOW_USER_DNS_QUERIES не найден${NC}"
         echo -e "${YELLOW}🔧 Добавляем с значением по умолчанию: true${NC}"
-        echo "" >> .env
-        echo "# Разрешить обычным пользователям делать DNS запросы" >> .env
         echo "ALLOW_USER_DNS_QUERIES=true" >> .env
         echo -e "${GREEN}✅ Параметр ALLOW_USER_DNS_QUERIES добавлен: true${NC}"
     fi
@@ -1448,44 +1547,6 @@ remove_awg_version() {
     echo -e "${GREEN}✅ AWG $version удален!${NC}"
 }
 
-# Функция перезапуска XUIBOT
-restart_xuibot() {
-    echo -e "\n${BLUE}========================================${NC}"
-    echo -e "${BLUE}   Перезапуск XUIBOT${NC}"
-    echo -e "${BLUE}========================================${NC}\n"
-    
-    if ! docker ps --filter name=xuibot --format "{{.Names}}" | grep -q xuibot; then
-        echo -e "${RED}❌ Контейнер xuibot не запущен${NC}"
-        return
-    fi
-    
-    echo -e "${YELLOW}🔄 Перезапуск xuibot...${NC}"
-    docker restart xuibot
-    
-    sleep 3
-    echo -e "${GREEN}✅ XUIBOT перезапущен!${NC}"
-    docker logs --tail=10 xuibot
-}
-
-# Функция перезапуска AWGBOT
-restart_awgbot() {
-    echo -e "\n${BLUE}========================================${NC}"
-    echo -e "${BLUE}   Перезапуск AWGBOT${NC}"
-    echo -e "${BLUE}========================================${NC}\n"
-    
-    if ! docker ps --filter name=awgbot --format "{{.Names}}" | grep -q awgbot; then
-        echo -e "${RED}❌ Контейнер awgbot не запущен${NC}"
-        return
-    fi
-    
-    echo -e "${YELLOW}🔄 Перезапуск awgbot...${NC}"
-    docker restart awgbot
-    
-    sleep 3
-    echo -e "${GREEN}✅ AWGBOT перезапущен!${NC}"
-    docker logs --tail=10 awgbot
-}
-
 # Функция перезапуска контейнера XUIBOT с rebuild
 rebuild_xuibot() {
     echo -e "\n${BLUE}========================================${NC}"
@@ -1506,25 +1567,15 @@ rebuild_xuibot() {
     $DOCKER_COMPOSE_CMD -f docker-compose.xuibot.yml up -d
     
     sleep 5
-    echo -e "${GREEN}✅ Контейнер XUIBOT перезапущен!${NC}"
-    echo -e "\n${YELLOW}📋 Логи (последние 50 строк):${NC}"
-    docker logs --tail=50 xuibot
+    echo -e "\n${GREEN}✅ XUI Бот пересобран!${NC}"
+    echo -e "${GREEN}📊 Статус:${NC}"
+    docker ps --filter name=xuibot
     
-    echo -e "\n${BLUE}========================================${NC}"
-    echo -e "${BLUE}💡 Полезные команды:${NC}"
-    echo -e "${BLUE}  Логи: docker logs -f xuibot${NC}"
-    echo -e "${BLUE}  Статус: docker ps${NC}"
-    echo -e "${BLUE}  Перезапуск: docker compose -f docker-compose.xuibot.yml restart${NC}"
-    echo -e "${BLUE}  Остановка: docker compose -f docker-compose.xuibot.yml down${NC}"
-    echo -e "${BLUE}========================================${NC}\n"
+    echo -e "\n${GREEN}📋 Логи XUI бота (последние 50 строк):${NC}"
+    docker logs --tail 50 xuibot
     
-    # Спрашиваем, хочет ли пользователь следить за логами в реальном времени
-    echo -e "${YELLOW}Показать логи в реальном времени? (Enter - Да, 0 - Нет):${NC} "
-    read -r follow_logs
-    if [ "$follow_logs" != "0" ]; then
-        echo -e "\n${GREEN}📊 Логи в реальном времени (Ctrl+C для выхода):${NC}\n"
-        docker logs -f xuibot
-    fi
+    echo -e "\n${YELLOW}Для просмотра в реальном времени:${NC}"
+    echo -e "${YELLOW}docker logs -f xuibot${NC}"
 }
 
 # Функция перезапуска контейнера AWGBOT с rebuild
@@ -1543,25 +1594,15 @@ rebuild_awgbot() {
     $DOCKER_COMPOSE_CMD -f docker-compose.awgbot.yml up -d
     
     sleep 5
-    echo -e "${GREEN}✅ Контейнер AWGBOT перезапущен!${NC}"
-    echo -e "\n${YELLOW}📋 Логи (последние 50 строк):${NC}"
-    docker logs --tail=50 awgbot
+    echo -e "\n${GREEN}✅ AWG Бот пересобран!${NC}"
+    echo -e "${GREEN}📊 Статус:${NC}"
+    docker ps --filter name=awgbot
     
-    echo -e "\n${BLUE}========================================${NC}"
-    echo -e "${BLUE}💡 Полезные команды:${NC}"
-    echo -e "${BLUE}  Логи: docker logs -f awgbot${NC}"
-    echo -e "${BLUE}  Статус: docker ps${NC}"
-    echo -e "${BLUE}  Перезапуск: docker compose -f docker-compose.awgbot.yml restart${NC}"
-    echo -e "${BLUE}  Остановка: docker compose -f docker-compose.awgbot.yml down${NC}"
-    echo -e "${BLUE}========================================${NC}\n"
+    echo -e "\n${GREEN}📋 Логи AWG бота (последние 50 строк):${NC}"
+    docker logs --tail 50 awgbot
     
-    # Спрашиваем, хочет ли пользователь следить за логами в реальном времени
-    echo -e "${YELLOW}Показать логи в реальном времени? (Enter - Да, 0 - Нет):${NC} "
-    read -r follow_logs
-    if [ "$follow_logs" != "0" ]; then
-        echo -e "\n${GREEN}📊 Логи в реальном времени (Ctrl+C для выхода):${NC}\n"
-        docker logs -f awgbot
-    fi
+    echo -e "\n${YELLOW}Для просмотра в реальном времени:${NC}"
+    echo -e "${YELLOW}docker logs -f awgbot${NC}"
 }
 
 # Функция синхронизации репозитория
@@ -1774,6 +1815,16 @@ show_status() {
         fi
         echo -e "  XUI Bot: ${GREEN}✅ Запущен${NC}"
         echo -e "  Пользователей: ${user_count}"
+        
+        # Проверка автозагрузки
+        local xui_restart_policy=$(docker inspect xuibot --format='{{.HostConfig.RestartPolicy.Name}}' 2>/dev/null)
+        if [ "$xui_restart_policy" = "always" ]; then
+            echo -e "  Автозагрузка: ${GREEN}✅ Включена${NC} (always - всегда перезапускается)"
+        elif [ "$xui_restart_policy" = "unless-stopped" ]; then
+            echo -e "  Автозагрузка: ${GREEN}✅ Включена${NC} (unless-stopped - кроме ручной остановки)"
+        else
+            echo -e "  Автозагрузка: ${RED}❌ Отключена${NC} (${xui_restart_policy})"
+        fi
     else
         echo -e "  XUI Bot: ${RED}❌ Не установлен${NC}"
     fi
@@ -1791,6 +1842,16 @@ show_status() {
             echo -e "  Ссылка: https://t.me/${awg_bot_username}"
         fi
         echo -e "  AWG Bot: ${GREEN}✅ Запущен${NC}"
+        
+        # Проверка автозагрузки
+        local awg_restart_policy=$(docker inspect awgbot --format='{{.HostConfig.RestartPolicy.Name}}' 2>/dev/null)
+        if [ "$awg_restart_policy" = "always" ]; then
+            echo -e "  Автозагрузка: ${GREEN}✅ Включена${NC} (always - всегда перезапускается)"
+        elif [ "$awg_restart_policy" = "unless-stopped" ]; then
+            echo -e "  Автозагрузка: ${GREEN}✅ Включена${NC} (unless-stopped - кроме ручной остановки)"
+        else
+            echo -e "  Автозагрузка: ${RED}❌ Отключена${NC} (${awg_restart_policy})"
+        fi
     else
         echo -e "  AWG Bot: ${RED}❌ Не установлен${NC}"
     fi
@@ -1822,6 +1883,19 @@ show_status() {
                 [ -n "$param_value" ] && echo -e "  ${param_name}: ${param_value}"
             fi
         done < .env
+    fi
+    
+    # ============================================
+    # SYSTEM AUTOSTART
+    # ============================================
+    echo -e "\n${YELLOW}${BOLD}SYSTEM AUTOSTART:${NC}"
+    
+    # Проверка Docker в автозагрузке
+    if systemctl is-enabled docker &>/dev/null; then
+        echo -e "  Docker: ${GREEN}✅ Включен в автозагрузку${NC}"
+    else
+        echo -e "  Docker: ${RED}❌ Не включен в автозагрузку${NC}"
+        echo -e "  ${YELLOW}Для включения выполните: systemctl enable docker${NC}"
     fi
     
     echo -e "\n${BLUE}========================================${NC}"
@@ -4529,19 +4603,17 @@ show_menu() {
     echo -e "${YELLOW}XUIBOT:${NC}"
     echo -e "${GREEN}9)${NC} Установка XUIBOT"
     echo -e "${GREEN}10)${NC} Логи XUIBOT"
-    echo -e "${GREEN}11)${NC} Перезапуск XUIBOT"
-    echo -e "${GREEN}12)${NC} Пересборка XUIBOT"
-    echo -e "${GREEN}13)${NC} Удаление XUIBOT"
+    echo -e "${GREEN}11)${NC} Пересборка XUIBOT"
+    echo -e "${GREEN}12)${NC} Удаление XUIBOT"
     echo -e "${BLUE}---${NC}"
     echo -e "${YELLOW}AWGBOT:${NC}"
-    echo -e "${GREEN}14)${NC} Установка AWGBOT"
-    echo -e "${GREEN}15)${NC} Логи AWGBOT"
-    echo -e "${GREEN}16)${NC} Перезапуск AWGBOT"
-    echo -e "${GREEN}17)${NC} Пересборка AWGBOT"
-    echo -e "${GREEN}18)${NC} Удаление AWGBOT"
+    echo -e "${GREEN}13)${NC} Установка AWGBOT"
+    echo -e "${GREEN}14)${NC} Логи AWGBOT"
+    echo -e "${GREEN}15)${NC} Пересборка AWGBOT"
+    echo -e "${GREEN}16)${NC} Удаление AWGBOT"
     echo -e "${BLUE}---${NC}"
     echo -e "${YELLOW}Системные утилиты:${NC}"
-    echo -e "${GREEN}19)${NC} Анализ диска и памяти"
+    echo -e "${GREEN}17)${NC} Анализ диска и памяти"
     echo -e "${BLUE}---${NC}"
     echo -e "${RED}99)${NC} Удалить ВСЁ (AWG + Боты + 3x-ui)"
     echo -e "${GREEN}0)${NC} Выход"
@@ -4677,7 +4749,7 @@ while true; do
                     continue
                 fi
             fi
-            restart_xuibot
+            update_xuibot
             ;;
         12)
             sync_repository
@@ -4688,7 +4760,7 @@ while true; do
                     continue
                 fi
             fi
-            update_xuibot
+            remove_xuibot
             ;;
         13)
             sync_repository
@@ -4699,7 +4771,7 @@ while true; do
                     continue
                 fi
             fi
-            remove_xuibot
+            install_awgbot
             ;;
         14)
             sync_repository
@@ -4710,7 +4782,7 @@ while true; do
                     continue
                 fi
             fi
-            install_awgbot
+            show_awgbot_logs
             ;;
         15)
             sync_repository
@@ -4721,7 +4793,7 @@ while true; do
                     continue
                 fi
             fi
-            show_awgbot_logs
+            update_awgbot
             ;;
         16)
             sync_repository
@@ -4732,31 +4804,9 @@ while true; do
                     continue
                 fi
             fi
-            restart_awgbot
-            ;;
-        17)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            update_awgbot
-            ;;
-        18)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
             remove_awgbot
             ;;
-        19)
+        17)
             sync_repository
             if [ $? -ne 0 ]; then
                 read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice

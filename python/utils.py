@@ -1077,6 +1077,26 @@ class XUIClient:
                     return {}
         except Exception as e:
             logger.error(f"Ошибка получения статуса сервера: {e}")
+    
+    async def download_backup(self):
+        """Скачать бэкап базы данных"""
+        if not self.session:
+            await self.login()
+        
+        endpoint = f"{self.config.xui.url}/panel/api/server/getDb"
+        headers = await self._get_headers()
+        
+        try:
+            async with self.session.get(endpoint, headers=headers) as resp:
+                if resp.status == 200:
+                    return await resp.read()
+                else:
+                    text = await resp.text()
+                    logger.error(f"Ошибка скачивания бэкапа: {resp.status} - {text}")
+                    return None
+        except Exception as e:
+            logger.error(f"Ошибка при скачивании бэкапа: {e}")
+            return None
             return {}
 
 
@@ -1259,3 +1279,160 @@ def setup_logging(logging_config):
             print(f"📝 Логи сохраняются в: {log_path}")
         except Exception as e:
             print(f"Ошибка создания лог-файла: {e}")
+
+
+async def detect_xui_version_from_binary() -> str:
+    """
+    Определение версии 3x-ui через исполняемый файл на сервере
+    Возвращает версию в формате "3.3.1" или "2.8.11" или None
+    """
+    import subprocess
+    import re
+    
+    try:
+        # Пробуем основной путь (работает для v2 и v3)
+        result = subprocess.run(
+            ['/usr/local/x-ui/x-ui', '-v'],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            stderr=subprocess.DEVNULL
+        )
+        
+        # Извлекаем версию из вывода
+        match = re.search(r'(\d+\.\d+\.\d+)', result.stdout)
+        if match:
+            version = match.group(1)
+            logger.info(f"✅ Версия панели определена через бинарный файл: {version}")
+            return version
+    except Exception as e:
+        logger.debug(f"Не удалось определить версию через /usr/local/x-ui/x-ui: {e}")
+    
+    return None
+
+
+async def detect_xui_version_from_url(xui_url: str) -> str:
+    """
+    Определение версии 3x-ui по структуре URL
+    v3.x использует /panel в URL, v2.x - нет
+    Возвращает "3.x" для v3.x или "2.x" для v2.x или None
+    """
+    import aiohttp
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            # Проверяем наличие /panel (характерно для v3)
+            async with session.get(
+                f"{xui_url}/panel",
+                timeout=aiohttp.ClientTimeout(total=10),
+                allow_redirects=False,
+                ssl=False
+            ) as resp:
+                if resp.status in [200, 302, 301]:
+                    logger.info("✅ Определена версия v3.x по структуре URL (/panel доступен)")
+                    return "3.x"
+                elif resp.status == 404:
+                    logger.info("✅ Определена версия v2.x по структуре URL (/panel не найден)")
+                    return "2.x"
+    except Exception as e:
+        logger.debug(f"Не удалось определить версию через URL: {e}")
+    
+    return None
+
+
+async def detect_xui_version(xui_url: str, current_version: str = "latest") -> str:
+    """
+    Определение версии 3x-ui панели несколькими методами
+    Возвращает версию в формате "3.3.1" или "2.8.11" или текущую версию
+    
+    Приоритет методов:
+    1. Через исполняемый файл на сервере (самый точный)
+    2. Через структуру URL (определяет v2 vs v3)
+    3. Текущая версия из конфига (fallback)
+    """
+    
+    logger.info("🔍 Определение версии 3x-ui панели...")
+    
+    # Метод 1: Через исполняемый файл (самый точный)
+    version = await detect_xui_version_from_binary()
+    if version:
+        return version
+    
+    # Метод 2: Через структуру URL (определяет v2 vs v3)
+    version = await detect_xui_version_from_url(xui_url)
+    if version:
+        return version
+    
+    # Fallback: используем текущую версию
+    logger.warning(f"⚠️ Не удалось определить версию панели, используется текущая: {current_version}")
+    return current_version
+
+
+async def update_env_file(key: str, value: str, env_path: str = ".env") -> bool:
+    """
+    Обновление значения в .env файле
+    
+    Args:
+        key: Ключ параметра (например, "XUI_VERSION")
+        value: Новое значение
+        env_path: Путь к .env файлу
+    
+    Returns:
+        True если успешно обновлено, False в случае ошибки
+    """
+    import os
+    
+    # Пробуем разные пути к .env файлу
+    possible_paths = [
+        env_path,  # Текущая директория
+        "/app/.env",  # Docker контейнер
+        "/opt/awgxuibot/.env",  # Хост система
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"),  # Относительно скрипта
+    ]
+    
+    actual_path = None
+    for path in possible_paths:
+        if os.path.exists(path):
+            actual_path = path
+            logger.debug(f"Найден .env файл: {path}")
+            break
+    
+    # Проверяем существование файла
+    if not actual_path:
+        logger.info(f"ℹ️ Файл .env не доступен в контейнере (это нормально для Docker)")
+        logger.info(f"✅ Версия {key}={value} успешно применена в текущей сессии")
+        return False
+    
+    env_path = actual_path
+    
+    try:
+        # Читаем файл
+        with open(env_path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+        
+        # Ищем и обновляем строку
+        updated = False
+        for i, line in enumerate(lines):
+            if line.strip().startswith(f"{key}="):
+                old_value = line.strip().split('=', 1)[1] if '=' in line else ''
+                lines[i] = f"{key}={value}\n"
+                updated = True
+                logger.info(f"📝 Обновлено: {key}={old_value} → {value}")
+                break
+        
+        # Если не нашли, добавляем в конец
+        if not updated:
+            lines.append(f"\n# Автоматически определенная версия панели\n")
+            lines.append(f"{key}={value}\n")
+            logger.info(f"➕ Добавлено: {key}={value}")
+        
+        # Записываем обратно
+        with open(env_path, 'w', encoding='utf-8') as f:
+            f.writelines(lines)
+        
+        logger.info(f"✅ Файл {env_path} успешно обновлен")
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка обновления {env_path}: {e}")
+        return False

@@ -5,7 +5,7 @@ services:
       context: .
       target: awgbot
     container_name: awgbot
-    restart: unless-stopped
+    restart: always
     privileged: true
     env_file:
       - .env

@@ -169,7 +169,7 @@ class LoggingConfig:
 
 
 class UserDatabase:
-    def __init__(self, db_path: str = "bot_users.db"):
+    def __init__(self, db_path: str = "/app/data/bot_users.db"):
         self.db_path = db_path
         self._init_db()
 
@@ -199,6 +199,17 @@ class UserDatabase:
                     key TEXT PRIMARY KEY,
                     value TEXT
                 )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS notification_settings (
+                    setting_name TEXT PRIMARY KEY,
+                    enabled INTEGER DEFAULT 0
+                )
+            """)
+            # Инициализируем настройки уведомлений по умолчанию
+            conn.execute("""
+                INSERT OR IGNORE INTO notification_settings (setting_name, enabled)
+                VALUES ('cpu_alert', 0), ('disk_alert', 0), ('ram_alert', 0)
             """)
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS blocked_users (
@@ -341,6 +352,35 @@ class UserDatabase:
         except Exception as e:
             print(f"Ошибка разблокировки: {e}")
             return False
+    
+    def get_notification_setting(self, setting_name: str) -> bool:
+        """Получить настройку уведомления"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                "SELECT enabled FROM notification_settings WHERE setting_name = ?",
+                (setting_name,)
+            )
+            result = cursor.fetchone()
+            return bool(result[0]) if result else False
+    
+    def set_notification_setting(self, setting_name: str, enabled: bool) -> bool:
+        """Установить настройку уведомления"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute(
+                    "INSERT OR REPLACE INTO notification_settings (setting_name, enabled) VALUES (?, ?)",
+                    (setting_name, 1 if enabled else 0)
+                )
+            return True
+        except Exception as e:
+            print(f"Ошибка сохранения настройки уведомления: {e}")
+            return False
+    
+    def get_all_notification_settings(self) -> dict:
+        """Получить все настройки уведомлений"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute("SELECT setting_name, enabled FROM notification_settings")
+            return {row[0]: bool(row[1]) for row in cursor.fetchall()}
 
     def is_blocked_by_admin(self, user_id: int) -> bool:
         with sqlite3.connect(self.db_path) as conn:

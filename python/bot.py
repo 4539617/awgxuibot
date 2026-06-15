@@ -111,47 +111,28 @@ async def cmd_start(message: Message, state: FSMContext):
             config.users_db.add_user(user_id, username, admin_id)
             logger.info(f"✅ Автодобавлен пользователь {username} (ID: {user_id}) с активными ключами")
             
-            # Уведомляем администратора
-            if was_user_before:
-                # Возвращение пользователя
-                try:
-                    await bot.send_message(
-                        admin_id,
-                        f"🔄 <b>Возвращение пользователя!</b>\n\n"
-                        f"👤 Пользователь: @{username}\n"
-                        f"📝 Имя: {first_name}\n"
-                        f"🆔 ID: <code>{user_id}</code>\n\n"
-                        f"У пользователя обнаружены активные ключи.\n"
-                        f"Доступ восстановлен автоматически.",
-                        parse_mode="HTML"
-                    )
-                except Exception as e:
-                    logger.error(f"Ошибка отправки уведомления админу: {e}")
-            else:
-                # Новый пользователь с ключами
-                try:
-                    await bot.send_message(
-                        admin_id,
-                        f"🆕 <b>Автодобавление пользователя!</b>\n\n"
-                        f"👤 Пользователь: @{username}\n"
-                        f"📝 Имя: {first_name}\n"
-                        f"🆔 ID: <code>{user_id}</code>\n\n"
-                        f"У пользователя обнаружены активные ключи в системе.\n"
-                        f"Доступ предоставлен автоматически.",
-                        parse_mode="HTML"
-                    )
-                except Exception as e:
-                    logger.error(f"Ошибка отправки уведомления админу: {e}")
+            # Уведомления администратору отключены
+            # Пользователь добавлен автоматически при наличии активных ключей
             
-            # Показываем меню пользователя
+            # Показываем меню пользователя с кнопками
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [
+                    InlineKeyboardButton(text="➕ Создать ключ", callback_data="cmd_new"),
+                    InlineKeyboardButton(text="⏱ Временный ключ", callback_data="cmd_tempkey")
+                ],
+                [
+                    InlineKeyboardButton(text="🔑 Мои ключи", callback_data="cmd_myclients")
+                ]
+            ])
             await message.answer(
                 f"👤 Добро пожаловать, {first_name}!\n\n"
-                f"У вас обнаружены активные ключи.\n"
+                f"✅ <b>У вас обнаружены активные ключи.</b>\n"
                 f"Доступ предоставлен автоматически.\n\n"
-                f"Команды:\n"
-                f"/new - Создать ключ\n"
-                f"/myclients - Мои ключи\n"
-                f"/help - Помощь",
+                f"🔐 <b>Настройки подключения:</b>\n"
+                f"• Transport: <code>{config.vpn.transport}</code>\n"
+                f"• Security: <code>{config.vpn.security}</code>\n\n"
+                f"📱 Выберите действие:",
+                reply_markup=keyboard,
                 parse_mode="HTML"
             )
             return
@@ -199,7 +180,11 @@ async def cmd_start(message: Message, state: FSMContext):
                 ]
             ])
             await message.answer(
-                f"👤 Пользователь\n {username or first_name}",
+                f"👤 <b>Пользователь:</b> {username or first_name}\n\n"
+                f"🔐 <b>Настройки подключения:</b>\n"
+                f"• Transport: <code>{config.vpn.transport}</code>\n"
+                f"• Security: <code>{config.vpn.security}</code>\n\n"
+                f"📱 Выберите действие:",
                 reply_markup=keyboard,
                 parse_mode="HTML"
             )
@@ -226,9 +211,6 @@ async def cmd_new(message: Message, state: FSMContext):
         return
 
     await message.answer(
-        "📖 Вернуться в главное меню /start \n\n"
-        "⚠️ Одно устройство - один ключ.\n\n"
-        " \n\n"
         "📝 Введите комментарий к подключению:\n\n",
         parse_mode="HTML"
     )
@@ -511,7 +493,7 @@ async def show_my_client_details(callback_query: types.CallbackQuery):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text="🔑 Показать ключ", callback_data=f"showmykey_{client_uuid}"),
-            InlineKeyboardButton(text="� Показать QR", callback_data=f"showqr_{client_uuid}")
+            InlineKeyboardButton(text="📱 Показать QR", callback_data=f"showqr_{client_uuid}")
         ],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="cmd_myclients")]
     ])
@@ -665,9 +647,10 @@ async def cmd_all_clients(message: Message):
         
         text += "<b>Выберите ключ:</b>"
         
-        # Создаем кнопки для каждого клиента
+        # Создаем кнопки для каждого клиента в два ряда
         buttons = []
-        for client in clients_to_show:
+        row = []
+        for i, client in enumerate(clients_to_show):
             email = client['email']
             comment = client['comment']
             
@@ -675,15 +658,15 @@ async def cmd_all_clients(message: Message):
             client_traffic = client.get('up', 0) + client.get('down', 0)
             traffic_mb = client_traffic / (1024**2)  # Переводим в MB
             
-            # Формируем текст кнопки
+            # Формируем текст кнопки (короче для двух колонок)
             if comment:
-                button_text = f"{email[:15]} - {comment[:15]}"
+                button_text = f"{email[:10]}-{comment[:10]}"
             else:
-                button_text = email[:30]
+                button_text = email[:20]
             
             # Добавляем расход трафика
             if traffic_mb >= 1:
-                button_text += f" ({traffic_mb:.0f} MB)"
+                button_text += f" ({traffic_mb:.0f}MB)"
             
             # Добавляем иконку статуса
             if client['status'] == 'active':
@@ -693,9 +676,16 @@ async def cmd_all_clients(message: Message):
             else:  # expired
                 button_text = f"⏰ {button_text}"
             
-            buttons.append([
-                InlineKeyboardButton(text=button_text, callback_data=f"allclient_{client['uuid']}")
-            ])
+            row.append(InlineKeyboardButton(text=button_text, callback_data=f"allclient_{client['uuid']}"))
+            
+            # Добавляем ряд после каждых двух кнопок
+            if len(row) == 2:
+                buttons.append(row)
+                row = []
+        
+        # Добавляем последний ряд если он не пустой
+        if row:
+            buttons.append(row)
         
         # Добавляем кнопку очистки если есть просроченные ключи
         if expired_count > 0:
@@ -1012,8 +1002,8 @@ async def show_qr_code(callback_query: types.CallbackQuery):
             await callback_query.answer("❌ Ошибка получения ссылки!", show_alert=True)
             return
         
-        # Генерируем QR-код
-        qr = qrcode.QRCode(box_size=10, border=2)
+        # Генерируем QR-код (уменьшенный размер)
+        qr = qrcode.QRCode(box_size=5, border=2)
         qr.add_data(vless_link)
         qr.make()
         qr_img = qr.make_image(fill_color="black", back_color="white")
@@ -1023,11 +1013,26 @@ async def show_qr_code(callback_query: types.CallbackQuery):
         
         await callback_query.answer()
         
+        # Формируем информативный caption с VLESS-ссылкой и комментарием
+        comment = client.get('comment', 'Не указан')
+        caption = f"""📱 <b>QR-код для подключения</b>
+
+🔑 <b>VLESS-ссылка:</b>
+<code>{vless_link}</code>
+
+💬 <b>Комментарий:</b> {comment}"""
+        
+        # Добавляем кнопку "В главное меню"
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")]
+        ])
+        
         # Отправляем QR-код как отдельное сообщение (не удаляя предыдущее)
         await callback_query.message.answer_photo(
             photo=types.BufferedInputFile(buffer.getvalue(), filename="vless.png"),
-            caption=f"📱 <b>QR-код для подключения</b>",
-            parse_mode="HTML"
+            caption=caption,
+            parse_mode="HTML",
+            reply_markup=keyboard
         )
         
     except Exception as e:
@@ -1107,9 +1112,10 @@ async def back_to_allclients(callback_query: types.CallbackQuery):
         
         text += "<b>Выберите ключ:</b>"
         
-        # Создаем кнопки для каждого клиента
+        # Создаем кнопки для каждого клиента в два ряда
         buttons = []
-        for client in clients_to_show:
+        row = []
+        for i, client in enumerate(clients_to_show):
             email = client['email']
             comment = client['comment']
             
@@ -1117,15 +1123,15 @@ async def back_to_allclients(callback_query: types.CallbackQuery):
             client_traffic = client.get('up', 0) + client.get('down', 0)
             traffic_mb = client_traffic / (1024**2)  # Переводим в MB
             
-            # Формируем текст кнопки
+            # Формируем текст кнопки (короче для двух колонок)
             if comment:
-                button_text = f"{email[:15]} - {comment[:15]}"
+                button_text = f"{email[:10]}-{comment[:10]}"
             else:
-                button_text = email[:30]
+                button_text = email[:20]
             
             # Добавляем расход трафика
             if traffic_mb >= 1:
-                button_text += f" ({traffic_mb:.0f} MB)"
+                button_text += f" ({traffic_mb:.0f}MB)"
             
             # Добавляем иконку статуса
             if client['status'] == 'active':
@@ -1135,9 +1141,16 @@ async def back_to_allclients(callback_query: types.CallbackQuery):
             else:  # expired
                 button_text = f"⏰ {button_text}"
             
-            buttons.append([
-                InlineKeyboardButton(text=button_text, callback_data=f"allclient_{client['uuid']}")
-            ])
+            row.append(InlineKeyboardButton(text=button_text, callback_data=f"allclient_{client['uuid']}"))
+            
+            # Добавляем ряд после каждых двух кнопок
+            if len(row) == 2:
+                buttons.append(row)
+                row = []
+        
+        # Добавляем последний ряд если он не пустой
+        if row:
+            buttons.append(row)
         
         # Добавляем кнопку очистки если есть просроченные ключи
         if expired_count > 0:
@@ -1535,10 +1548,19 @@ async def show_server_status(callback_query: types.CallbackQuery, state: FSMCont
         
         message += f"🔌 <b>TCP соединений:</b> {tcp_count}"
         
-        # Добавляем кнопки "Обновить" и "Назад"
+        # Добавляем кнопки в два ряда
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔄 Обновить", callback_data="server_status")],
-            [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+            [
+                InlineKeyboardButton(text="🔄 Обновить", callback_data="server_status"),
+                InlineKeyboardButton(text="💾 Бэкап", callback_data="create_backup")
+            ],
+            [
+                InlineKeyboardButton(text="🔔 Уведомления", callback_data="notification_settings"),
+                InlineKeyboardButton(text="📥 JSON конфиг", callback_data="export_json_config")
+            ],
+            [
+                InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")
+            ]
         ])
         
         # Если это обновление существующего сообщения, редактируем его
@@ -1561,6 +1583,239 @@ async def show_server_status(callback_query: types.CallbackQuery, state: FSMCont
     except Exception as e:
         logger.error(f"Ошибка получения статуса сервера: {e}")
         await callback_query.message.answer(f"❌ Ошибка: {str(e)}")
+
+
+@dp.callback_query(lambda c: c.data == "export_json_config")
+async def export_json_config(callback_query: types.CallbackQuery, state: FSMContext):
+    """Экспорт JSON конфигурации подключения"""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
+        return
+    
+    await callback_query.answer("⏳ Формирую JSON конфиг...")
+    
+    try:
+        import json
+        
+        # Формируем JSON конфигурацию с настройками подключения
+        json_config = {
+            "version": "1.0",
+            "server": {
+                "address": config.vpn.server_address,
+                "port": config.vpn.server_port
+            },
+            "connection": {
+                "transport": config.vpn.transport,
+                "security": config.vpn.security
+            }
+        }
+        
+        # Добавляем специфичные настройки в зависимости от типа безопасности
+        if config.vpn.security == "reality":
+            json_config["reality"] = {
+                "public_key": config.vpn.reality_public_key,
+                "short_id": config.vpn.reality_short_id,
+                "sni": config.vpn.reality_sni,
+                "fingerprint": config.vpn.reality_fingerprint
+            }
+        elif config.vpn.security == "tls":
+            json_config["tls"] = {
+                "sni": config.vpn.tls_sni,
+                "fingerprint": config.vpn.tls_fingerprint,
+                "alpn": config.vpn.tls_alpn
+            }
+        
+        # Добавляем настройки X-UI
+        json_config["xui"] = {
+            "url": config.xui.url,
+            "inbound_id": config.xui.inbound_id,
+            "version": config.xui.version
+        }
+        
+        # Конвертируем в красивый JSON
+        json_str = json.dumps(json_config, indent=2, ensure_ascii=False)
+        
+        # Отправляем как документ
+        json_bytes = BytesIO(json_str.encode('utf-8'))
+        
+        await callback_query.message.answer_document(
+            document=types.BufferedInputFile(json_bytes.getvalue(), filename="connection_config.json"),
+            caption="📥 <b>JSON конфигурация подключения</b>\n\n"
+                    "Этот файл содержит настройки сервера и параметры подключения.",
+            parse_mode="HTML"
+        )
+        
+    except Exception as e:
+        logger.error(f"Ошибка экспорта JSON конфига: {e}")
+        await callback_query.message.answer(f"❌ Ошибка: {str(e)}")
+
+
+@dp.callback_query(lambda c: c.data == "create_backup")
+async def create_backup(callback_query: types.CallbackQuery, state: FSMContext):
+    """Создать бэкап базы данных"""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
+        return
+    
+    await callback_query.answer("⏳ Создаю бэкап...")
+    
+    try:
+        # Скачиваем бэкап
+        backup_data = await xui_client.download_backup()
+        
+        if not backup_data:
+            await callback_query.message.answer("❌ Не удалось создать бэкап")
+            return
+        
+        # Создаем файл для отправки
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"x-ui_backup_{timestamp}.db"
+        
+        # Отправляем файл пользователю
+        backup_file = types.BufferedInputFile(backup_data, filename=filename)
+        await callback_query.message.answer_document(
+            backup_file,
+            caption=f"✅ Бэкап базы данных создан\n📅 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        )
+        
+        logger.info(f"Бэкап создан администратором {callback_query.from_user.id}")
+        
+    except Exception as e:
+        logger.error(f"Ошибка создания бэкапа: {e}")
+        await callback_query.message.answer(f"❌ Ошибка: {str(e)}")
+
+
+@dp.callback_query(lambda c: c.data == "notification_settings")
+async def show_notification_settings(callback_query: types.CallbackQuery, state: FSMContext):
+    """Показать настройки уведомлений"""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
+        return
+    
+    await callback_query.answer()
+    
+    # Получаем текущие настройки
+    settings = config.users_db.get_all_notification_settings()
+    cpu_alert = settings.get('cpu_alert', False)
+    ram_alert = settings.get('ram_alert', False)
+    disk_alert = settings.get('disk_alert', False)
+    
+    # Формируем сообщение
+    message = "🔔 <b>Настройки уведомлений</b>\n\n"
+    message += f"💻 Загрузка CPU {'✅' if cpu_alert else '❌'}\n"
+    message += f"   └ Уведомление при загрузке > 95%\n\n"
+    message += f"🧠 Загрузка RAM {'✅' if ram_alert else '❌'}\n"
+    message += f"   └ Уведомление при загрузке > 95%\n\n"
+    message += f"💿 Заполнение диска {'✅' if disk_alert else '❌'}\n"
+    message += f"   └ Уведомление при заполнении > 95%\n\n"
+    message += "Нажмите на переключатель для изменения настройки"
+    
+    # Создаем клавиатуру с переключателями
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text=f"💻 CPU {'✅ Вкл' if cpu_alert else '❌ Выкл'}",
+            callback_data="toggle_cpu_alert"
+        )],
+        [InlineKeyboardButton(
+            text=f"🧠 RAM {'✅ Вкл' if ram_alert else '❌ Выкл'}",
+            callback_data="toggle_ram_alert"
+        )],
+        [InlineKeyboardButton(
+            text=f"💿 Диск {'✅ Вкл' if disk_alert else '❌ Выкл'}",
+            callback_data="toggle_disk_alert"
+        )],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_server_status")]
+    ])
+    
+    try:
+        await callback_query.message.edit_text(
+            message,
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
+    except:
+        await callback_query.message.answer(
+            message,
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
+
+
+@dp.callback_query(lambda c: c.data == "toggle_cpu_alert")
+async def toggle_cpu_alert(callback_query: types.CallbackQuery, state: FSMContext):
+    """Переключить уведомление о загрузке CPU"""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
+        return
+    
+    # Получаем текущее состояние и переключаем
+    current = config.users_db.get_notification_setting('cpu_alert')
+    new_state = not current
+    config.users_db.set_notification_setting('cpu_alert', new_state)
+    
+    await callback_query.answer(
+        f"✅ Уведомления о CPU {'включены' if new_state else 'выключены'}",
+        show_alert=True
+    )
+    
+    # Обновляем окно настроек
+    await show_notification_settings(callback_query, state)
+
+
+@dp.callback_query(lambda c: c.data == "toggle_ram_alert")
+async def toggle_ram_alert(callback_query: types.CallbackQuery, state: FSMContext):
+    """Переключить уведомление о загрузке RAM"""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
+        return
+    
+    # Получаем текущее состояние и переключаем
+    current = config.users_db.get_notification_setting('ram_alert')
+    new_state = not current
+    config.users_db.set_notification_setting('ram_alert', new_state)
+    
+    await callback_query.answer(
+        f"✅ Уведомления о RAM {'включены' if new_state else 'выключены'}",
+        show_alert=True
+    )
+    
+    # Обновляем окно настроек
+    await show_notification_settings(callback_query, state)
+
+
+@dp.callback_query(lambda c: c.data == "toggle_disk_alert")
+async def toggle_disk_alert(callback_query: types.CallbackQuery, state: FSMContext):
+    """Переключить уведомление о заполнении диска"""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
+        return
+    
+    # Получаем текущее состояние и переключаем
+    current = config.users_db.get_notification_setting('disk_alert')
+    new_state = not current
+    config.users_db.set_notification_setting('disk_alert', new_state)
+    
+    await callback_query.answer(
+        f"✅ Уведомления о диске {'включены' if new_state else 'выключены'}",
+        show_alert=True
+    )
+    
+    # Обновляем окно настроек
+    await show_notification_settings(callback_query, state)
+
+
+@dp.callback_query(lambda c: c.data == "back_to_server_status")
+async def back_to_server_status(callback_query: types.CallbackQuery, state: FSMContext):
+    """Вернуться к окну состояния сервера"""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
+        return
+    
+    await callback_query.answer()
+    # Вызываем функцию показа статуса сервера
+    await show_server_status(callback_query, state)
+
 
 @dp.callback_query(lambda c: c.data == "show_users")
 async def show_users_list(callback_query: types.CallbackQuery, state: FSMContext):
@@ -1698,7 +1953,13 @@ async def back_to_start_menu(callback_query: types.CallbackQuery, state: FSMCont
             ]
         ])
         
-        text = f"👤 Пользователь\n {username or first_name}"
+        text = (
+            f"👤 <b>Пользователь:</b> {username or first_name}\n\n"
+            f"🔐 <b>Настройки подключения:</b>\n"
+            f"• Transport: <code>{config.vpn.transport}</code>\n"
+            f"• Security: <code>{config.vpn.security}</code>\n\n"
+            f"📱 Выберите действие:"
+        )
         
         try:
             await callback_query.message.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
@@ -1727,9 +1988,6 @@ async def callback_cmd_new(callback_query: types.CallbackQuery, state: FSMContex
     
     try:
         await callback_query.message.edit_text(
-            "📖 Вернуться в главное меню /start \n\n"
-            "⚠️ Одно устройство - один ключ.\n\n"
-            " \n\n"
             "📝 Введите комментарий к подключению:\n\n",
             parse_mode="HTML",
             reply_markup=keyboard
@@ -1737,9 +1995,6 @@ async def callback_cmd_new(callback_query: types.CallbackQuery, state: FSMContex
     except:
         await bot.send_message(
             callback_query.message.chat.id,
-            "📖 Вернуться в главное меню /start \n\n"
-            "⚠️ Одно устройство - один ключ.\n\n"
-            " \n\n"
             "📝 Введите комментарий к подключению:\n\n",
             parse_mode="HTML",
             reply_markup=keyboard
@@ -1770,9 +2025,6 @@ async def callback_cmd_tempkey(callback_query: types.CallbackQuery, state: FSMCo
     
     try:
         await callback_query.message.edit_text(
-            "📖 Вернуться в главное меню /start \n\n"
-            "⚠️ Одно устройство - один ключ.\n\n"
-            " \n\n"
             "📝 Введите комментарий к подключению:\n\n",
             parse_mode="HTML",
             reply_markup=keyboard
@@ -1780,9 +2032,6 @@ async def callback_cmd_tempkey(callback_query: types.CallbackQuery, state: FSMCo
     except:
         await bot.send_message(
             callback_query.message.chat.id,
-            "📖 Вернуться в главное меню /start \n\n"
-            "⚠️ Одно устройство - один ключ.\n\n"
-            " \n\n"
             "📝 Введите комментарий к подключению:\n\n",
             parse_mode="HTML",
             reply_markup=keyboard
@@ -2176,8 +2425,11 @@ async def process_doremove_user(callback_query: types.CallbackQuery, state: FSMC
 
 
 async def main():
-    logger.info("� Запуск бота...")
+    logger.info("🚀 Запуск бота...")
     logger.info(f"👑 Администратор: {config.users_db.get_main_admin()}")
+
+    # Версия определяется в install.sh и читается из .env
+    logger.info(f"📋 Версия панели: {config.xui.version}")
 
     if await xui_client.login():
         logger.info("✅ Подключение к X-UI установлено")
