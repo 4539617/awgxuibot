@@ -1382,10 +1382,28 @@ async def update_env_file(key: str, value: str, env_path: str = ".env") -> bool:
     """
     import os
     
+    # Пробуем разные пути к .env файлу
+    possible_paths = [
+        env_path,  # Текущая директория
+        "/app/.env",  # Docker контейнер
+        "/opt/awgxuibot/.env",  # Хост система
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"),  # Относительно скрипта
+    ]
+    
+    actual_path = None
+    for path in possible_paths:
+        if os.path.exists(path):
+            actual_path = path
+            logger.debug(f"Найден .env файл: {path}")
+            break
+    
     # Проверяем существование файла
-    if not os.path.exists(env_path):
-        logger.error(f"❌ Файл {env_path} не найден")
+    if not actual_path:
+        logger.warning(f"⚠️ Файл .env не найден ни в одном из путей: {possible_paths}")
+        logger.info(f"ℹ️ Версия {key}={value} будет использоваться только в текущей сессии")
         return False
+    
+    env_path = actual_path
     
     try:
         # Читаем файл
