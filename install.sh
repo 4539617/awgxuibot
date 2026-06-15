@@ -90,9 +90,22 @@ install_docker() {
         rm get-docker.sh
         systemctl enable docker
         systemctl start docker
-        echo -e "${GREEN}✅ Docker установлен${NC}"
+        echo -e "${GREEN}✅ Docker установлен и добавлен в автозагрузку${NC}"
     else
         echo -e "${GREEN}✅ Docker уже установлен${NC}"
+        
+        # Проверяем и включаем автозагрузку если не включена
+        if ! systemctl is-enabled docker &>/dev/null; then
+            echo -e "${YELLOW}🔄 Включение Docker в автозагрузку...${NC}"
+            systemctl enable docker
+            echo -e "${GREEN}✅ Docker добавлен в автозагрузку${NC}"
+        fi
+        
+        # Проверяем запущен ли Docker
+        if ! systemctl is-active --quiet docker; then
+            echo -e "${YELLOW}🚀 Запуск Docker...${NC}"
+            systemctl start docker
+        fi
     fi
     
     # Проверка и обновление Docker Compose
@@ -899,6 +912,12 @@ install_xuibot() {
     
     if [[ "$XUI_STATUS" == *"Up"* ]]; then
         echo -e "${GREEN}📊 Статус: ✓ Работает${NC}"
+        
+        # Проверка автозагрузки
+        local restart_policy=$(docker inspect xuibot --format='{{.HostConfig.RestartPolicy.Name}}' 2>/dev/null)
+        if [ "$restart_policy" = "always" ]; then
+            echo -e "${GREEN}🔄 Автозагрузка: ✓ Включена (бот будет автоматически запускаться при перезагрузке сервера)${NC}"
+        fi
     else
         echo -e "${RED}📊 Статус: ✗ Не запущен ($XUI_STATUS)${NC}"
     fi
@@ -1201,6 +1220,12 @@ install_awgbot() {
     
     if [[ "$AWG_STATUS" == *"Up"* ]]; then
         echo -e "${GREEN}📊 Статус: ✓ Работает${NC}"
+        
+        # Проверка автозагрузки
+        local restart_policy=$(docker inspect awgbot --format='{{.HostConfig.RestartPolicy.Name}}' 2>/dev/null)
+        if [ "$restart_policy" = "always" ]; then
+            echo -e "${GREEN}🔄 Автозагрузка: ✓ Включена (бот будет автоматически запускаться при перезагрузке сервера)${NC}"
+        fi
     else
         echo -e "${RED}📊 Статус: ✗ Не запущен ($AWG_STATUS)${NC}"
     fi
@@ -1774,6 +1799,14 @@ show_status() {
         fi
         echo -e "  XUI Bot: ${GREEN}✅ Запущен${NC}"
         echo -e "  Пользователей: ${user_count}"
+        
+        # Проверка автозагрузки
+        local xui_restart_policy=$(docker inspect xuibot --format='{{.HostConfig.RestartPolicy.Name}}' 2>/dev/null)
+        if [ "$xui_restart_policy" = "always" ] || [ "$xui_restart_policy" = "unless-stopped" ]; then
+            echo -e "  Автозагрузка: ${GREEN}✅ Включена${NC} (${xui_restart_policy})"
+        else
+            echo -e "  Автозагрузка: ${RED}❌ Отключена${NC}"
+        fi
     else
         echo -e "  XUI Bot: ${RED}❌ Не установлен${NC}"
     fi
@@ -1791,6 +1824,14 @@ show_status() {
             echo -e "  Ссылка: https://t.me/${awg_bot_username}"
         fi
         echo -e "  AWG Bot: ${GREEN}✅ Запущен${NC}"
+        
+        # Проверка автозагрузки
+        local awg_restart_policy=$(docker inspect awgbot --format='{{.HostConfig.RestartPolicy.Name}}' 2>/dev/null)
+        if [ "$awg_restart_policy" = "always" ] || [ "$awg_restart_policy" = "unless-stopped" ]; then
+            echo -e "  Автозагрузка: ${GREEN}✅ Включена${NC} (${awg_restart_policy})"
+        else
+            echo -e "  Автозагрузка: ${RED}❌ Отключена${NC}"
+        fi
     else
         echo -e "  AWG Bot: ${RED}❌ Не установлен${NC}"
     fi
@@ -1822,6 +1863,19 @@ show_status() {
                 [ -n "$param_value" ] && echo -e "  ${param_name}: ${param_value}"
             fi
         done < .env
+    fi
+    
+    # ============================================
+    # SYSTEM AUTOSTART
+    # ============================================
+    echo -e "\n${YELLOW}${BOLD}SYSTEM AUTOSTART:${NC}"
+    
+    # Проверка Docker в автозагрузке
+    if systemctl is-enabled docker &>/dev/null; then
+        echo -e "  Docker: ${GREEN}✅ Включен в автозагрузку${NC}"
+    else
+        echo -e "  Docker: ${RED}❌ Не включен в автозагрузку${NC}"
+        echo -e "  ${YELLOW}Для включения выполните: systemctl enable docker${NC}"
     fi
     
     echo -e "\n${BLUE}========================================${NC}"
