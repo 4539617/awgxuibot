@@ -1375,8 +1375,6 @@ update_awgbot() {
     else
         echo -e "${YELLOW}⚠️  Параметр ALLOW_USER_DNS_QUERIES не найден${NC}"
         echo -e "${YELLOW}🔧 Добавляем с значением по умолчанию: true${NC}"
-        echo "" >> .env
-        echo "# Разрешить обычным пользователям делать DNS запросы" >> .env
         echo "ALLOW_USER_DNS_QUERIES=true" >> .env
         echo -e "${GREEN}✅ Параметр ALLOW_USER_DNS_QUERIES добавлен: true${NC}"
     fi
