@@ -2425,7 +2425,7 @@ async def process_doremove_user(callback_query: types.CallbackQuery, state: FSMC
 
 
 async def main():
-    logger.info("� Запуск бота...")
+    logger.info("🚀 Запуск бота...")
     logger.info(f"👑 Администратор: {config.users_db.get_main_admin()}")
 
     # Версия определяется в install.sh и читается из .env
