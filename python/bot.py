@@ -1678,12 +1678,6 @@ async def export_json_config(callback_query: types.CallbackQuery, state: FSMCont
         logger.error(f"Ошибка экспорта JSON конфига: {e}")
         await callback_query.message.answer(f"❌ Ошибка: {str(e)}")
 
-            )
-        
-    except Exception as e:
-        logger.error(f"Ошибка получения статуса сервера: {e}")
-        await callback_query.message.answer(f"❌ Ошибка: {str(e)}")
-
 
 @dp.callback_query(lambda c: c.data == "create_backup")
 async def create_backup(callback_query: types.CallbackQuery, state: FSMContext):
