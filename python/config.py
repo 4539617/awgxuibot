@@ -209,7 +209,7 @@ class UserDatabase:
             # Инициализируем настройки уведомлений по умолчанию
             conn.execute("""
                 INSERT OR IGNORE INTO notification_settings (setting_name, enabled)
-                VALUES ('cpu_alert', 0), ('disk_alert', 0)
+                VALUES ('cpu_alert', 0), ('disk_alert', 0), ('ram_alert', 0)
             """)
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS blocked_users (

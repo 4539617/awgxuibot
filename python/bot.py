@@ -669,9 +669,10 @@ async def cmd_all_clients(message: Message):
         
         text += "<b>Выберите ключ:</b>"
         
-        # Создаем кнопки для каждого клиента
+        # Создаем кнопки для каждого клиента в два ряда
         buttons = []
-        for client in clients_to_show:
+        row = []
+        for i, client in enumerate(clients_to_show):
             email = client['email']
             comment = client['comment']
             
@@ -679,15 +680,15 @@ async def cmd_all_clients(message: Message):
             client_traffic = client.get('up', 0) + client.get('down', 0)
             traffic_mb = client_traffic / (1024**2)  # Переводим в MB
             
-            # Формируем текст кнопки
+            # Формируем текст кнопки (короче для двух колонок)
             if comment:
-                button_text = f"{email[:15]} - {comment[:15]}"
+                button_text = f"{email[:10]}-{comment[:10]}"
             else:
-                button_text = email[:30]
+                button_text = email[:20]
             
             # Добавляем расход трафика
             if traffic_mb >= 1:
-                button_text += f" ({traffic_mb:.0f} MB)"
+                button_text += f" ({traffic_mb:.0f}MB)"
             
             # Добавляем иконку статуса
             if client['status'] == 'active':
@@ -697,9 +698,16 @@ async def cmd_all_clients(message: Message):
             else:  # expired
                 button_text = f"⏰ {button_text}"
             
-            buttons.append([
-                InlineKeyboardButton(text=button_text, callback_data=f"allclient_{client['uuid']}")
-            ])
+            row.append(InlineKeyboardButton(text=button_text, callback_data=f"allclient_{client['uuid']}"))
+            
+            # Добавляем ряд после каждых двух кнопок
+            if len(row) == 2:
+                buttons.append(row)
+                row = []
+        
+        # Добавляем последний ряд если он не пустой
+        if row:
+            buttons.append(row)
         
         # Добавляем кнопку очистки если есть просроченные ключи
         if expired_count > 0:
@@ -1126,9 +1134,10 @@ async def back_to_allclients(callback_query: types.CallbackQuery):
         
         text += "<b>Выберите ключ:</b>"
         
-        # Создаем кнопки для каждого клиента
+        # Создаем кнопки для каждого клиента в два ряда
         buttons = []
-        for client in clients_to_show:
+        row = []
+        for i, client in enumerate(clients_to_show):
             email = client['email']
             comment = client['comment']
             
@@ -1136,15 +1145,15 @@ async def back_to_allclients(callback_query: types.CallbackQuery):
             client_traffic = client.get('up', 0) + client.get('down', 0)
             traffic_mb = client_traffic / (1024**2)  # Переводим в MB
             
-            # Формируем текст кнопки
+            # Формируем текст кнопки (короче для двух колонок)
             if comment:
-                button_text = f"{email[:15]} - {comment[:15]}"
+                button_text = f"{email[:10]}-{comment[:10]}"
             else:
-                button_text = email[:30]
+                button_text = email[:20]
             
             # Добавляем расход трафика
             if traffic_mb >= 1:
-                button_text += f" ({traffic_mb:.0f} MB)"
+                button_text += f" ({traffic_mb:.0f}MB)"
             
             # Добавляем иконку статуса
             if client['status'] == 'active':
@@ -1154,9 +1163,16 @@ async def back_to_allclients(callback_query: types.CallbackQuery):
             else:  # expired
                 button_text = f"⏰ {button_text}"
             
-            buttons.append([
-                InlineKeyboardButton(text=button_text, callback_data=f"allclient_{client['uuid']}")
-            ])
+            row.append(InlineKeyboardButton(text=button_text, callback_data=f"allclient_{client['uuid']}"))
+            
+            # Добавляем ряд после каждых двух кнопок
+            if len(row) == 2:
+                buttons.append(row)
+                row = []
+        
+        # Добавляем последний ряд если он не пустой
+        if row:
+            buttons.append(row)
         
         # Добавляем кнопку очистки если есть просроченные ключи
         if expired_count > 0:
@@ -1559,7 +1575,7 @@ async def show_server_status(callback_query: types.CallbackQuery, state: FSMCont
             [InlineKeyboardButton(text="🔄 Обновить", callback_data="server_status")],
             [InlineKeyboardButton(text="💾 Сделать бэкап", callback_data="create_backup")],
             [InlineKeyboardButton(text="🔔 Уведомления", callback_data="notification_settings")],
-            [InlineKeyboardButton(text="� Назад", callback_data="back_to_start")]
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
         ])
         
         # Если это обновление существующего сообщения, редактируем его
@@ -1632,11 +1648,14 @@ async def show_notification_settings(callback_query: types.CallbackQuery, state:
     # Получаем текущие настройки
     settings = config.users_db.get_all_notification_settings()
     cpu_alert = settings.get('cpu_alert', False)
+    ram_alert = settings.get('ram_alert', False)
     disk_alert = settings.get('disk_alert', False)
     
     # Формируем сообщение
     message = "🔔 <b>Настройки уведомлений</b>\n\n"
     message += f"💻 Загрузка CPU {'✅' if cpu_alert else '❌'}\n"
+    message += f"   └ Уведомление при загрузке > 95%\n\n"
+    message += f"🧠 Загрузка RAM {'✅' if ram_alert else '❌'}\n"
     message += f"   └ Уведомление при загрузке > 95%\n\n"
     message += f"💿 Заполнение диска {'✅' if disk_alert else '❌'}\n"
     message += f"   └ Уведомление при заполнении > 95%\n\n"
@@ -1647,6 +1666,10 @@ async def show_notification_settings(callback_query: types.CallbackQuery, state:
         [InlineKeyboardButton(
             text=f"💻 CPU {'✅ Вкл' if cpu_alert else '❌ Выкл'}",
             callback_data="toggle_cpu_alert"
+        )],
+        [InlineKeyboardButton(
+            text=f"🧠 RAM {'✅ Вкл' if ram_alert else '❌ Выкл'}",
+            callback_data="toggle_ram_alert"
         )],
         [InlineKeyboardButton(
             text=f"💿 Диск {'✅ Вкл' if disk_alert else '❌ Выкл'}",
@@ -1681,6 +1704,27 @@ async def toggle_cpu_alert(callback_query: types.CallbackQuery, state: FSMContex
     new_state = not current
     config.users_db.set_notification_setting('cpu_alert', new_state)
     
+
+
+@dp.callback_query(lambda c: c.data == "toggle_ram_alert")
+async def toggle_ram_alert(callback_query: types.CallbackQuery, state: FSMContext):
+    """Переключить уведомление о загрузке RAM"""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
+        return
+    
+    # Получаем текущее состояние и переключаем
+    current = config.users_db.get_notification_setting('ram_alert')
+    new_state = not current
+    config.users_db.set_notification_setting('ram_alert', new_state)
+    
+    await callback_query.answer(
+        f"✅ Уведомления о RAM {'включены' if new_state else 'выключены'}",
+        show_alert=True
+    )
+    
+    # Обновляем окно настроек
+    await show_notification_settings(callback_query, state)
     await callback_query.answer(
         f"✅ Уведомления о CPU {'включены' if new_state else 'выключены'}",
         show_alert=True
