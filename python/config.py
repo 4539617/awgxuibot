@@ -169,7 +169,7 @@ class LoggingConfig:
 
 
 class UserDatabase:
-    def __init__(self, db_path: str = "bot_users.db"):
+    def __init__(self, db_path: str = "/app/data/bot_users.db"):
         self.db_path = db_path
         self._init_db()
 
