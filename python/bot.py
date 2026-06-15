@@ -13,7 +13,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 import sqlite3
 from config import config
-from utils import XUIClient, generate_vless_link, get_client_link, setup_logging
+from utils import XUIClient, generate_vless_link, get_client_link, setup_logging, detect_xui_version, update_env_file
 
 setup_logging(config.logging)
 logger = logging.getLogger(__name__)
@@ -2427,6 +2427,33 @@ async def process_doremove_user(callback_query: types.CallbackQuery, state: FSMC
 async def main():
     logger.info("� Запуск бота...")
     logger.info(f"👑 Администратор: {config.users_db.get_main_admin()}")
+
+    # Определяем и сохраняем версию панели ПЕРЕД запуском бота
+    try:
+        current_version = config.xui.version
+        logger.info(f"📋 Текущая версия в конфиге: {current_version}")
+        
+        # Определяем реальную версию панели
+        detected_version = await detect_xui_version(config.xui.url, current_version)
+        
+        # Если версия отличается от текущей, обновляем .env
+        if detected_version != current_version and detected_version != "latest":
+            logger.info(f"🔄 Обнаружена версия панели: {detected_version}")
+            logger.info(f"📝 Обновление версии в .env файле...")
+            
+            # Обновляем .env файл
+            if await update_env_file("XUI_VERSION", detected_version):
+                logger.info(f"✅ Версия успешно обновлена в .env: {detected_version}")
+                # Обновляем версию в памяти для текущей сессии
+                config.xui.version = detected_version
+                logger.info(f"✅ Версия обновлена в конфиге: {config.xui.version}")
+            else:
+                logger.warning("⚠️ Не удалось обновить .env файл")
+        else:
+            logger.info(f"✅ Версия панели актуальна: {current_version}")
+    except Exception as e:
+        logger.error(f"❌ Ошибка определения версии панели: {e}")
+        logger.info("ℹ️ Продолжаем работу с текущей версией из конфига")
 
     if await xui_client.login():
         logger.info("✅ Подключение к X-UI установлено")
