@@ -1485,44 +1485,6 @@ remove_awg_version() {
     echo -e "${GREEN}✅ AWG $version удален!${NC}"
 }
 
-# Функция перезапуска XUIBOT
-restart_xuibot() {
-    echo -e "\n${BLUE}========================================${NC}"
-    echo -e "${BLUE}   Перезапуск XUIBOT${NC}"
-    echo -e "${BLUE}========================================${NC}\n"
-    
-    if ! docker ps --filter name=xuibot --format "{{.Names}}" | grep -q xuibot; then
-        echo -e "${RED}❌ Контейнер xuibot не запущен${NC}"
-        return
-    fi
-    
-    echo -e "${YELLOW}🔄 Перезапуск xuibot...${NC}"
-    docker restart xuibot
-    
-    sleep 3
-    echo -e "${GREEN}✅ XUIBOT перезапущен!${NC}"
-    docker logs --tail=10 xuibot
-}
-
-# Функция перезапуска AWGBOT
-restart_awgbot() {
-    echo -e "\n${BLUE}========================================${NC}"
-    echo -e "${BLUE}   Перезапуск AWGBOT${NC}"
-    echo -e "${BLUE}========================================${NC}\n"
-    
-    if ! docker ps --filter name=awgbot --format "{{.Names}}" | grep -q awgbot; then
-        echo -e "${RED}❌ Контейнер awgbot не запущен${NC}"
-        return
-    fi
-    
-    echo -e "${YELLOW}🔄 Перезапуск awgbot...${NC}"
-    docker restart awgbot
-    
-    sleep 3
-    echo -e "${GREEN}✅ AWGBOT перезапущен!${NC}"
-    docker logs --tail=10 awgbot
-}
-
 # Функция перезапуска контейнера XUIBOT с rebuild
 rebuild_xuibot() {
     echo -e "\n${BLUE}========================================${NC}"
@@ -1570,25 +1532,15 @@ rebuild_awgbot() {
     $DOCKER_COMPOSE_CMD -f docker-compose.awgbot.yml up -d
     
     sleep 5
-    echo -e "${GREEN}✅ Контейнер AWGBOT перезапущен!${NC}"
-    echo -e "\n${YELLOW}📋 Логи (последние 50 строк):${NC}"
-    docker logs --tail=50 awgbot
+    echo -e "\n${GREEN}✅ AWG Бот пересобран!${NC}"
+    echo -e "${GREEN}📊 Статус:${NC}"
+    docker ps --filter name=awgbot
     
-    echo -e "\n${BLUE}========================================${NC}"
-    echo -e "${BLUE}💡 Полезные команды:${NC}"
-    echo -e "${BLUE}  Логи: docker logs -f awgbot${NC}"
-    echo -e "${BLUE}  Статус: docker ps${NC}"
-    echo -e "${BLUE}  Перезапуск: docker compose -f docker-compose.awgbot.yml restart${NC}"
-    echo -e "${BLUE}  Остановка: docker compose -f docker-compose.awgbot.yml down${NC}"
-    echo -e "${BLUE}========================================${NC}\n"
+    echo -e "\n${GREEN}📋 Логи AWG бота (последние 50 строк):${NC}"
+    docker logs --tail 50 awgbot
     
-    # Спрашиваем, хочет ли пользователь следить за логами в реальном времени
-    echo -e "${YELLOW}Показать логи в реальном времени? (Enter - Да, 0 - Нет):${NC} "
-    read -r follow_logs
-    if [ "$follow_logs" != "0" ]; then
-        echo -e "\n${GREEN}📊 Логи в реальном времени (Ctrl+C для выхода):${NC}\n"
-        docker logs -f awgbot
-    fi
+    echo -e "\n${YELLOW}Для просмотра в реальном времени:${NC}"
+    echo -e "${YELLOW}docker logs -f awgbot${NC}"
 }
 
 # Функция синхронизации репозитория
@@ -4589,19 +4541,17 @@ show_menu() {
     echo -e "${YELLOW}XUIBOT:${NC}"
     echo -e "${GREEN}9)${NC} Установка XUIBOT"
     echo -e "${GREEN}10)${NC} Логи XUIBOT"
-    echo -e "${GREEN}11)${NC} Перезапуск XUIBOT"
-    echo -e "${GREEN}12)${NC} Пересборка XUIBOT"
-    echo -e "${GREEN}13)${NC} Удаление XUIBOT"
+    echo -e "${GREEN}11)${NC} Пересборка XUIBOT"
+    echo -e "${GREEN}12)${NC} Удаление XUIBOT"
     echo -e "${BLUE}---${NC}"
     echo -e "${YELLOW}AWGBOT:${NC}"
-    echo -e "${GREEN}14)${NC} Установка AWGBOT"
-    echo -e "${GREEN}15)${NC} Логи AWGBOT"
-    echo -e "${GREEN}16)${NC} Перезапуск AWGBOT"
-    echo -e "${GREEN}17)${NC} Пересборка AWGBOT"
-    echo -e "${GREEN}18)${NC} Удаление AWGBOT"
+    echo -e "${GREEN}13)${NC} Установка AWGBOT"
+    echo -e "${GREEN}14)${NC} Логи AWGBOT"
+    echo -e "${GREEN}15)${NC} Пересборка AWGBOT"
+    echo -e "${GREEN}16)${NC} Удаление AWGBOT"
     echo -e "${BLUE}---${NC}"
     echo -e "${YELLOW}Системные утилиты:${NC}"
-    echo -e "${GREEN}19)${NC} Анализ диска и памяти"
+    echo -e "${GREEN}17)${NC} Анализ диска и памяти"
     echo -e "${BLUE}---${NC}"
     echo -e "${RED}99)${NC} Удалить ВСЁ (AWG + Боты + 3x-ui)"
     echo -e "${GREEN}0)${NC} Выход"
@@ -4737,7 +4687,7 @@ while true; do
                     continue
                 fi
             fi
-            restart_xuibot
+            update_xuibot
             ;;
         12)
             sync_repository
@@ -4748,7 +4698,7 @@ while true; do
                     continue
                 fi
             fi
-            update_xuibot
+            remove_xuibot
             ;;
         13)
             sync_repository
@@ -4759,7 +4709,7 @@ while true; do
                     continue
                 fi
             fi
-            remove_xuibot
+            install_awgbot
             ;;
         14)
             sync_repository
@@ -4770,7 +4720,7 @@ while true; do
                     continue
                 fi
             fi
-            install_awgbot
+            show_awgbot_logs
             ;;
         15)
             sync_repository
@@ -4781,7 +4731,7 @@ while true; do
                     continue
                 fi
             fi
-            show_awgbot_logs
+            update_awgbot
             ;;
         16)
             sync_repository
@@ -4792,31 +4742,9 @@ while true; do
                     continue
                 fi
             fi
-            restart_awgbot
-            ;;
-        17)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            update_awgbot
-            ;;
-        18)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
             remove_awgbot
             ;;
-        19)
+        17)
             sync_repository
             if [ $? -ne 0 ]; then
                 read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
