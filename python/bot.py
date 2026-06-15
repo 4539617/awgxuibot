@@ -199,7 +199,11 @@ async def cmd_start(message: Message, state: FSMContext):
                 ]
             ])
             await message.answer(
-                f"👤 Пользователь\n {username or first_name}",
+                f"👤 <b>Пользователь:</b> {username or first_name}\n\n"
+                f"🔐 <b>Настройки подключения:</b>\n"
+                f"• Transport: <code>{config.vpn.transport}</code>\n"
+                f"• Security: <code>{config.vpn.security}</code>\n\n"
+                f"📱 Выберите действие:",
                 reply_markup=keyboard,
                 parse_mode="HTML"
             )
@@ -1032,11 +1036,17 @@ async def show_qr_code(callback_query: types.CallbackQuery):
 
 💬 <b>Комментарий:</b> {comment}"""
         
+        # Добавляем кнопку "В главное меню"
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")]
+        ])
+        
         # Отправляем QR-код как отдельное сообщение (не удаляя предыдущее)
         await callback_query.message.answer_photo(
             photo=types.BufferedInputFile(buffer.getvalue(), filename="vless.png"),
             caption=caption,
-            parse_mode="HTML"
+            parse_mode="HTML",
+            reply_markup=keyboard
         )
         
     except Exception as e:
@@ -1707,7 +1717,13 @@ async def back_to_start_menu(callback_query: types.CallbackQuery, state: FSMCont
             ]
         ])
         
-        text = f"👤 Пользователь\n {username or first_name}"
+        text = (
+            f"👤 <b>Пользователь:</b> {username or first_name}\n\n"
+            f"🔐 <b>Настройки подключения:</b>\n"
+            f"• Transport: <code>{config.vpn.transport}</code>\n"
+            f"• Security: <code>{config.vpn.security}</code>\n\n"
+            f"📱 Выберите действие:"
+        )
         
         try:
             await callback_query.message.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
