@@ -240,9 +240,6 @@ async def cmd_new(message: Message, state: FSMContext):
         return
 
     await message.answer(
-        "📖 Вернуться в главное меню /start \n\n"
-        "⚠️ Одно устройство - один ключ.\n\n"
-        " \n\n"
         "📝 Введите комментарий к подключению:\n\n",
         parse_mode="HTML"
     )
@@ -525,7 +522,7 @@ async def show_my_client_details(callback_query: types.CallbackQuery):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text="🔑 Показать ключ", callback_data=f"showmykey_{client_uuid}"),
-            InlineKeyboardButton(text="� Показать QR", callback_data=f"showqr_{client_uuid}")
+            InlineKeyboardButton(text="📱 Показать QR", callback_data=f"showqr_{client_uuid}")
         ],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="cmd_myclients")]
     ])
@@ -1948,9 +1945,6 @@ async def callback_cmd_new(callback_query: types.CallbackQuery, state: FSMContex
     
     try:
         await callback_query.message.edit_text(
-            "📖 Вернуться в главное меню /start \n\n"
-            "⚠️ Одно устройство - один ключ.\n\n"
-            " \n\n"
             "📝 Введите комментарий к подключению:\n\n",
             parse_mode="HTML",
             reply_markup=keyboard
@@ -1958,9 +1952,6 @@ async def callback_cmd_new(callback_query: types.CallbackQuery, state: FSMContex
     except:
         await bot.send_message(
             callback_query.message.chat.id,
-            "📖 Вернуться в главное меню /start \n\n"
-            "⚠️ Одно устройство - один ключ.\n\n"
-            " \n\n"
             "📝 Введите комментарий к подключению:\n\n",
             parse_mode="HTML",
             reply_markup=keyboard
@@ -1991,9 +1982,6 @@ async def callback_cmd_tempkey(callback_query: types.CallbackQuery, state: FSMCo
     
     try:
         await callback_query.message.edit_text(
-            "📖 Вернуться в главное меню /start \n\n"
-            "⚠️ Одно устройство - один ключ.\n\n"
-            " \n\n"
             "📝 Введите комментарий к подключению:\n\n",
             parse_mode="HTML",
             reply_markup=keyboard
@@ -2001,9 +1989,6 @@ async def callback_cmd_tempkey(callback_query: types.CallbackQuery, state: FSMCo
     except:
         await bot.send_message(
             callback_query.message.chat.id,
-            "📖 Вернуться в главное меню /start \n\n"
-            "⚠️ Одно устройство - один ключ.\n\n"
-            " \n\n"
             "📝 Введите комментарий к подключению:\n\n",
             parse_mode="HTML",
             reply_markup=keyboard
