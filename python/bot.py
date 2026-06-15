@@ -1577,12 +1577,19 @@ async def show_server_status(callback_query: types.CallbackQuery, state: FSMCont
         
         message += f"🔌 <b>TCP соединений:</b> {tcp_count}"
         
-        # Добавляем кнопки "Обновить", "Бэкап", "Уведомления" и "Назад"
+        # Добавляем кнопки в два ряда
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔄 Обновить", callback_data="server_status")],
-            [InlineKeyboardButton(text="💾 Сделать бэкап", callback_data="create_backup")],
-            [InlineKeyboardButton(text="🔔 Уведомления", callback_data="notification_settings")],
-            [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+            [
+                InlineKeyboardButton(text="🔄 Обновить", callback_data="server_status"),
+                InlineKeyboardButton(text="💾 Бэкап", callback_data="create_backup")
+            ],
+            [
+                InlineKeyboardButton(text="🔔 Уведомления", callback_data="notification_settings"),
+                InlineKeyboardButton(text="📥 JSON конфиг", callback_data="export_json_config")
+            ],
+            [
+                InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")
+            ]
         ])
         
         # Если это обновление существующего сообщения, редактируем его
@@ -1600,6 +1607,77 @@ async def show_server_status(callback_query: types.CallbackQuery, state: FSMCont
                 message,
                 parse_mode="HTML",
                 reply_markup=keyboard
+            )
+        
+    except Exception as e:
+        logger.error(f"Ошибка получения статуса сервера: {e}")
+        await callback_query.message.answer(f"❌ Ошибка: {str(e)}")
+
+
+@dp.callback_query(lambda c: c.data == "export_json_config")
+async def export_json_config(callback_query: types.CallbackQuery, state: FSMContext):
+    """Экспорт JSON конфигурации подключения"""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
+        return
+    
+    await callback_query.answer("⏳ Формирую JSON конфиг...")
+    
+    try:
+        import json
+        
+        # Формируем JSON конфигурацию с настройками подключения
+        json_config = {
+            "version": "1.0",
+            "server": {
+                "address": config.vpn.server_address,
+                "port": config.vpn.server_port
+            },
+            "connection": {
+                "transport": config.vpn.transport,
+                "security": config.vpn.security
+            }
+        }
+        
+        # Добавляем специфичные настройки в зависимости от типа безопасности
+        if config.vpn.security == "reality":
+            json_config["reality"] = {
+                "public_key": config.vpn.reality_public_key,
+                "short_id": config.vpn.reality_short_id,
+                "sni": config.vpn.reality_sni,
+                "fingerprint": config.vpn.reality_fingerprint
+            }
+        elif config.vpn.security == "tls":
+            json_config["tls"] = {
+                "sni": config.vpn.tls_sni,
+                "fingerprint": config.vpn.tls_fingerprint,
+                "alpn": config.vpn.tls_alpn
+            }
+        
+        # Добавляем настройки X-UI
+        json_config["xui"] = {
+            "url": config.xui.url,
+            "inbound_id": config.xui.inbound_id,
+            "version": config.xui.version
+        }
+        
+        # Конвертируем в красивый JSON
+        json_str = json.dumps(json_config, indent=2, ensure_ascii=False)
+        
+        # Отправляем как документ
+        json_bytes = BytesIO(json_str.encode('utf-8'))
+        
+        await callback_query.message.answer_document(
+            document=types.BufferedInputFile(json_bytes.getvalue(), filename="connection_config.json"),
+            caption="📥 <b>JSON конфигурация подключения</b>\n\n"
+                    "Этот файл содержит настройки сервера и параметры подключения.",
+            parse_mode="HTML"
+        )
+        
+    except Exception as e:
+        logger.error(f"Ошибка экспорта JSON конфига: {e}")
+        await callback_query.message.answer(f"❌ Ошибка: {str(e)}")
+
             )
         
     except Exception as e:
