@@ -1,0 +1,24 @@
+{
+  "name": "netcrazybot",
+  "version": "1.0.0",
+  "description": "Telegram bot for generating routing files based on domain DNS resolution",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "keywords": [
+    "telegram",
+    "bot",
+    "routing",
+    "dns",
+    "keenetic"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "node-telegram-bot-api": "^0.66.0",
+    "dotenv": "^16.4.5"
+  }
+}

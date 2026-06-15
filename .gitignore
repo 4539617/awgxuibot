@@ -3,7 +3,6 @@
 *.env
 .env.local
 .env.*.local
-.env.example
 
 # SSH Keys (CRITICAL: Never commit private keys!)
 id_rsa
@@ -23,6 +22,32 @@ node_modules/
 npm-debug.log
 yarn-error.log
 package-lock.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+venv/
+ENV/
+env/
 
 # IDE
 .vscode/
@@ -47,4 +72,17 @@ temp/
 # Output files
 output/
 
-# Made with Bob
+# Data directories
+data/
+*.sqlite
+*.sqlite3
+
+# Backup files
+*.bak
+*.backup
+*~
+
+# Docker volumes
+volumes/
+
+294/

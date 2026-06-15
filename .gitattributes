@@ -1,0 +1,32 @@
+# Prevent accidental commit of sensitive files
+.env filter=git-crypt diff=git-crypt
+*.env filter=git-crypt diff=git-crypt
+*.key filter=git-crypt diff=git-crypt
+*.pem filter=git-crypt diff=git-crypt
+id_rsa filter=git-crypt diff=git-crypt
+id_ed25519 filter=git-crypt diff=git-crypt
+id_ecdsa filter=git-crypt diff=git-crypt
+
+# Line endings
+* text=auto
+*.sh text eol=lf
+*.js text eol=lf
+*.py text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.md text eol=lf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.tar.gz binary
+*.db binary
+*.sqlite binary
+*.sqlite3 binary
+

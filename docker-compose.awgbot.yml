@@ -1,0 +1,26 @@
+services:
+  # AWGBot - AmneziaWG Management
+  awgbot:
+    build:
+      context: .
+      target: awgbot
+    container_name: awgbot
+    restart: unless-stopped
+    privileged: true
+    env_file:
+      - .env
+    volumes:
+      - ./logs:/app/logs
+      - ./output:/app/output
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /opt/amnezia:/opt/amnezia
+      - ./users.db:/app/users.db:ro
+      - ./settings.db:/app/settings.db:ro
+    environment:
+      - NODE_ENV=production
+      - TELEGRAM_BOT_TOKEN=${AWG_BOT_TOKEN}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
