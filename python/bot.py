@@ -1554,10 +1554,12 @@ async def show_server_status(callback_query: types.CallbackQuery, state: FSMCont
         
         message += f"🔌 <b>TCP соединений:</b> {tcp_count}"
         
-        # Добавляем кнопки "Обновить" и "Назад"
+        # Добавляем кнопки "Обновить", "Бэкап", "Уведомления" и "Назад"
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔄 Обновить", callback_data="server_status")],
-            [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+            [InlineKeyboardButton(text="💾 Сделать бэкап", callback_data="create_backup")],
+            [InlineKeyboardButton(text="🔔 Уведомления", callback_data="notification_settings")],
+            [InlineKeyboardButton(text="� Назад", callback_data="back_to_start")]
         ])
         
         # Если это обновление существующего сообщения, редактируем его
@@ -1580,6 +1582,146 @@ async def show_server_status(callback_query: types.CallbackQuery, state: FSMCont
     except Exception as e:
         logger.error(f"Ошибка получения статуса сервера: {e}")
         await callback_query.message.answer(f"❌ Ошибка: {str(e)}")
+
+
+@dp.callback_query(lambda c: c.data == "create_backup")
+async def create_backup(callback_query: types.CallbackQuery, state: FSMContext):
+    """Создать бэкап базы данных"""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
+        return
+    
+    await callback_query.answer("⏳ Создаю бэкап...")
+    
+    try:
+        # Скачиваем бэкап
+        backup_data = await xui_client.download_backup()
+        
+        if not backup_data:
+            await callback_query.message.answer("❌ Не удалось создать бэкап")
+            return
+        
+        # Создаем файл для отправки
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"x-ui_backup_{timestamp}.db"
+        
+        # Отправляем файл пользователю
+        backup_file = types.BufferedInputFile(backup_data, filename=filename)
+        await callback_query.message.answer_document(
+            backup_file,
+            caption=f"✅ Бэкап базы данных создан\n📅 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        )
+        
+        logger.info(f"Бэкап создан администратором {callback_query.from_user.id}")
+        
+    except Exception as e:
+        logger.error(f"Ошибка создания бэкапа: {e}")
+        await callback_query.message.answer(f"❌ Ошибка: {str(e)}")
+
+
+@dp.callback_query(lambda c: c.data == "notification_settings")
+async def show_notification_settings(callback_query: types.CallbackQuery, state: FSMContext):
+    """Показать настройки уведомлений"""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
+        return
+    
+    await callback_query.answer()
+    
+    # Получаем текущие настройки
+    settings = config.users_db.get_all_notification_settings()
+    cpu_alert = settings.get('cpu_alert', False)
+    disk_alert = settings.get('disk_alert', False)
+    
+    # Формируем сообщение
+    message = "🔔 <b>Настройки уведомлений</b>\n\n"
+    message += f"💻 Загрузка CPU {'✅' if cpu_alert else '❌'}\n"
+    message += f"   └ Уведомление при загрузке > 95%\n\n"
+    message += f"💿 Заполнение диска {'✅' if disk_alert else '❌'}\n"
+    message += f"   └ Уведомление при заполнении > 95%\n\n"
+    message += "Нажмите на переключатель для изменения настройки"
+    
+    # Создаем клавиатуру с переключателями
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text=f"💻 CPU {'✅ Вкл' if cpu_alert else '❌ Выкл'}",
+            callback_data="toggle_cpu_alert"
+        )],
+        [InlineKeyboardButton(
+            text=f"💿 Диск {'✅ Вкл' if disk_alert else '❌ Выкл'}",
+            callback_data="toggle_disk_alert"
+        )],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_server_status")]
+    ])
+    
+    try:
+        await callback_query.message.edit_text(
+            message,
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
+    except:
+        await callback_query.message.answer(
+            message,
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
+
+
+@dp.callback_query(lambda c: c.data == "toggle_cpu_alert")
+async def toggle_cpu_alert(callback_query: types.CallbackQuery, state: FSMContext):
+    """Переключить уведомление о загрузке CPU"""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
+        return
+    
+    # Получаем текущее состояние и переключаем
+    current = config.users_db.get_notification_setting('cpu_alert')
+    new_state = not current
+    config.users_db.set_notification_setting('cpu_alert', new_state)
+    
+    await callback_query.answer(
+        f"✅ Уведомления о CPU {'включены' if new_state else 'выключены'}",
+        show_alert=True
+    )
+    
+    # Обновляем окно настроек
+    await show_notification_settings(callback_query, state)
+
+
+@dp.callback_query(lambda c: c.data == "toggle_disk_alert")
+async def toggle_disk_alert(callback_query: types.CallbackQuery, state: FSMContext):
+    """Переключить уведомление о заполнении диска"""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
+        return
+    
+    # Получаем текущее состояние и переключаем
+    current = config.users_db.get_notification_setting('disk_alert')
+    new_state = not current
+    config.users_db.set_notification_setting('disk_alert', new_state)
+    
+    await callback_query.answer(
+        f"✅ Уведомления о диске {'включены' if new_state else 'выключены'}",
+        show_alert=True
+    )
+    
+    # Обновляем окно настроек
+    await show_notification_settings(callback_query, state)
+
+
+@dp.callback_query(lambda c: c.data == "back_to_server_status")
+async def back_to_server_status(callback_query: types.CallbackQuery, state: FSMContext):
+    """Вернуться к окну состояния сервера"""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
+        return
+    
+    await callback_query.answer()
+    # Вызываем функцию показа статуса сервера
+    await show_server_status(callback_query, state)
+
 
 @dp.callback_query(lambda c: c.data == "show_users")
 async def show_users_list(callback_query: types.CallbackQuery, state: FSMContext):

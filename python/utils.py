@@ -1077,6 +1077,26 @@ class XUIClient:
                     return {}
         except Exception as e:
             logger.error(f"Ошибка получения статуса сервера: {e}")
+    
+    async def download_backup(self):
+        """Скачать бэкап базы данных"""
+        if not self.session:
+            await self.login()
+        
+        endpoint = f"{self.config.xui.url}/panel/api/server/getDb"
+        headers = await self._get_headers()
+        
+        try:
+            async with self.session.get(endpoint, headers=headers) as resp:
+                if resp.status == 200:
+                    return await resp.read()
+                else:
+                    text = await resp.text()
+                    logger.error(f"Ошибка скачивания бэкапа: {resp.status} - {text}")
+                    return None
+        except Exception as e:
+            logger.error(f"Ошибка при скачивании бэкапа: {e}")
+            return None
             return {}
 
 

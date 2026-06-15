@@ -913,6 +913,9 @@ install_xuibot() {
     if [[ "$XUI_STATUS" == *"Up"* ]]; then
         echo -e "${GREEN}📊 Статус: ✓ Работает${NC}"
         
+        # Обновляем политику перезапуска на always
+        docker update --restart=always xuibot >/dev/null 2>&1
+        
         # Проверка автозагрузки
         local restart_policy=$(docker inspect xuibot --format='{{.HostConfig.RestartPolicy.Name}}' 2>/dev/null)
         if [ "$restart_policy" = "always" ]; then
@@ -1220,6 +1223,9 @@ install_awgbot() {
     
     if [[ "$AWG_STATUS" == *"Up"* ]]; then
         echo -e "${GREEN}📊 Статус: ✓ Работает${NC}"
+        
+        # Обновляем политику перезапуска на always
+        docker update --restart=always awgbot >/dev/null 2>&1
         
         # Проверка автозагрузки
         local restart_policy=$(docker inspect awgbot --format='{{.HostConfig.RestartPolicy.Name}}' 2>/dev/null)
@@ -1802,10 +1808,12 @@ show_status() {
         
         # Проверка автозагрузки
         local xui_restart_policy=$(docker inspect xuibot --format='{{.HostConfig.RestartPolicy.Name}}' 2>/dev/null)
-        if [ "$xui_restart_policy" = "always" ] || [ "$xui_restart_policy" = "unless-stopped" ]; then
-            echo -e "  Автозагрузка: ${GREEN}✅ Включена${NC} (${xui_restart_policy})"
+        if [ "$xui_restart_policy" = "always" ]; then
+            echo -e "  Автозагрузка: ${GREEN}✅ Включена${NC} (always - всегда перезапускается)"
+        elif [ "$xui_restart_policy" = "unless-stopped" ]; then
+            echo -e "  Автозагрузка: ${GREEN}✅ Включена${NC} (unless-stopped - кроме ручной остановки)"
         else
-            echo -e "  Автозагрузка: ${RED}❌ Отключена${NC}"
+            echo -e "  Автозагрузка: ${RED}❌ Отключена${NC} (${xui_restart_policy})"
         fi
     else
         echo -e "  XUI Bot: ${RED}❌ Не установлен${NC}"
@@ -1827,10 +1835,12 @@ show_status() {
         
         # Проверка автозагрузки
         local awg_restart_policy=$(docker inspect awgbot --format='{{.HostConfig.RestartPolicy.Name}}' 2>/dev/null)
-        if [ "$awg_restart_policy" = "always" ] || [ "$awg_restart_policy" = "unless-stopped" ]; then
-            echo -e "  Автозагрузка: ${GREEN}✅ Включена${NC} (${awg_restart_policy})"
+        if [ "$awg_restart_policy" = "always" ]; then
+            echo -e "  Автозагрузка: ${GREEN}✅ Включена${NC} (always - всегда перезапускается)"
+        elif [ "$awg_restart_policy" = "unless-stopped" ]; then
+            echo -e "  Автозагрузка: ${GREEN}✅ Включена${NC} (unless-stopped - кроме ручной остановки)"
         else
-            echo -e "  Автозагрузка: ${RED}❌ Отключена${NC}"
+            echo -e "  Автозагрузка: ${RED}❌ Отключена${NC} (${awg_restart_policy})"
         fi
     else
         echo -e "  AWG Bot: ${RED}❌ Не установлен${NC}"
