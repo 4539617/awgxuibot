@@ -13,7 +13,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 import sqlite3
 from config import config
-from utils import XUIClient, generate_vless_link, get_client_link, setup_logging
+from utils import XUIClient, generate_vless_link, get_client_link, setup_logging, detect_xui_version, update_env_file
 
 setup_logging(config.logging)
 logger = logging.getLogger(__name__)
@@ -2428,8 +2428,26 @@ async def main():
     logger.info("� Запуск бота...")
     logger.info(f"👑 Администратор: {config.users_db.get_main_admin()}")
 
-    # Логируем версию панели из конфига (определяется в install.sh)
-    logger.info(f"📋 Версия панели: {config.xui.version}")
+    # Определяем и сохраняем версию панели при КАЖДОМ запуске
+    try:
+        current_version = config.xui.version
+        logger.info(f"📋 Текущая версия в .env: {current_version}")
+        
+        # Определяем реальную версию панели
+        detected_version = await detect_xui_version(config.xui.url, current_version)
+        logger.info(f"🔍 Определена версия панели: {detected_version}")
+        
+        # Если версия отличается - обновляем .env
+        if detected_version != current_version:
+            logger.info(f"📝 Обновление версии в .env: {current_version} → {detected_version}")
+            await update_env_file("XUI_VERSION", detected_version)
+            config.xui.version = detected_version
+            logger.info(f"✅ Версия обновлена в .env и конфиге: {detected_version}")
+        else:
+            logger.info(f"✅ Версия актуальна: {detected_version}")
+    except Exception as e:
+        logger.error(f"❌ Ошибка определения версии панели: {e}")
+        logger.info(f"ℹ️ Продолжаем работу с версией из .env: {config.xui.version}")
 
     if await xui_client.login():
         logger.info("✅ Подключение к X-UI установлено")
