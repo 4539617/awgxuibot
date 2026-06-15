@@ -111,37 +111,8 @@ async def cmd_start(message: Message, state: FSMContext):
             config.users_db.add_user(user_id, username, admin_id)
             logger.info(f"✅ Автодобавлен пользователь {username} (ID: {user_id}) с активными ключами")
             
-            # Уведомляем администратора
-            if was_user_before:
-                # Возвращение пользователя
-                try:
-                    await bot.send_message(
-                        admin_id,
-                        f"🔄 <b>Возвращение пользователя!</b>\n\n"
-                        f"👤 Пользователь: @{username}\n"
-                        f"📝 Имя: {first_name}\n"
-                        f"🆔 ID: <code>{user_id}</code>\n\n"
-                        f"У пользователя обнаружены активные ключи.\n"
-                        f"Доступ восстановлен автоматически.",
-                        parse_mode="HTML"
-                    )
-                except Exception as e:
-                    logger.error(f"Ошибка отправки уведомления админу: {e}")
-            else:
-                # Новый пользователь с ключами
-                try:
-                    await bot.send_message(
-                        admin_id,
-                        f"🆕 <b>Автодобавление пользователя!</b>\n\n"
-                        f"👤 Пользователь: @{username}\n"
-                        f"📝 Имя: {first_name}\n"
-                        f"🆔 ID: <code>{user_id}</code>\n\n"
-                        f"У пользователя обнаружены активные ключи в системе.\n"
-                        f"Доступ предоставлен автоматически.",
-                        parse_mode="HTML"
-                    )
-                except Exception as e:
-                    logger.error(f"Ошибка отправки уведомления админу: {e}")
+            # Уведомления администратору отключены
+            # Пользователь добавлен автоматически при наличии активных ключей
             
             # Показываем меню пользователя с кнопками
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
