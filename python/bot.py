@@ -143,15 +143,25 @@ async def cmd_start(message: Message, state: FSMContext):
                 except Exception as e:
                     logger.error(f"Ошибка отправки уведомления админу: {e}")
             
-            # Показываем меню пользователя
+            # Показываем меню пользователя с кнопками
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [
+                    InlineKeyboardButton(text="➕ Создать ключ", callback_data="cmd_new"),
+                    InlineKeyboardButton(text="⏱ Временный ключ", callback_data="cmd_tempkey")
+                ],
+                [
+                    InlineKeyboardButton(text="🔑 Мои ключи", callback_data="cmd_myclients")
+                ]
+            ])
             await message.answer(
                 f"👤 Добро пожаловать, {first_name}!\n\n"
-                f"У вас обнаружены активные ключи.\n"
+                f"✅ <b>У вас обнаружены активные ключи.</b>\n"
                 f"Доступ предоставлен автоматически.\n\n"
-                f"Команды:\n"
-                f"/new - Создать ключ\n"
-                f"/myclients - Мои ключи\n"
-                f"/help - Помощь",
+                f"🔐 <b>Настройки подключения:</b>\n"
+                f"• Transport: <code>{config.vpn.transport}</code>\n"
+                f"• Security: <code>{config.vpn.security}</code>\n\n"
+                f"📱 Выберите действие:",
+                reply_markup=keyboard,
                 parse_mode="HTML"
             )
             return
