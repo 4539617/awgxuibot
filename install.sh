@@ -203,8 +203,6 @@ create_env_if_not_exists() {
         
         cat > .env << EOF
 # Server Configuration
-SERVER_ADDRESS=${SERVER_IP}
-SERVER_IP=${SERVER_IP}
 SERVER_PORT=443
 
 # 3x-ui Panel Configuration
@@ -255,6 +253,8 @@ SECURITY=reality
 TLS_SNI=
 INBOUND_ID=1
 ALLOW_USER_DNS_QUERIES=true
+SERVER_ADDRESS=${SERVER_IP}
+SERVER_IP=${SERVER_IP}
 
 EOF
         echo -e "${GREEN}✅ .env файл создан с дефолтными значениями${NC}"
