@@ -1062,6 +1062,12 @@ update_xuibot() {
     echo -e "\n${GREEN}✅ XUI Бот обновлен!${NC}"
     echo -e "${GREEN}📊 Статус:${NC}"
     docker ps --filter name=xuibot
+    
+    echo -e "\n${GREEN}📋 Логи XUI бота (последние 50 строк):${NC}"
+    docker logs --tail 50 xuibot
+    
+    echo -e "\n${YELLOW}Для просмотра в реальном времени:${NC}"
+    echo -e "${YELLOW}docker logs -f xuibot${NC}"
 }
 
 # Функция удаления XUI бота
