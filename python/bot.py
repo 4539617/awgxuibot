@@ -1711,6 +1711,13 @@ async def toggle_cpu_alert(callback_query: types.CallbackQuery, state: FSMContex
     new_state = not current
     config.users_db.set_notification_setting('cpu_alert', new_state)
     
+    await callback_query.answer(
+        f"✅ Уведомления о CPU {'включены' if new_state else 'выключены'}",
+        show_alert=True
+    )
+    
+    # Обновляем окно настроек
+    await show_notification_settings(callback_query, state)
 
 
 @dp.callback_query(lambda c: c.data == "toggle_ram_alert")
@@ -1727,13 +1734,6 @@ async def toggle_ram_alert(callback_query: types.CallbackQuery, state: FSMContex
     
     await callback_query.answer(
         f"✅ Уведомления о RAM {'включены' if new_state else 'выключены'}",
-        show_alert=True
-    )
-    
-    # Обновляем окно настроек
-    await show_notification_settings(callback_query, state)
-    await callback_query.answer(
-        f"✅ Уведомления о CPU {'включены' if new_state else 'выключены'}",
         show_alert=True
     )
     
