@@ -884,6 +884,37 @@ install_xuibot() {
         update_env_value "ADMIN_IDS" "$admin_ids"
     fi
     
+    # Определяем и сохраняем версию панели
+    echo -e "${YELLOW}🔍 Определение версии панели...${NC}"
+    XUI_VERSION=""
+    
+    # Способ 1: Из исполняемого файла x-ui
+    if [ -f "/usr/local/x-ui/x-ui" ]; then
+        XUI_VERSION=$(/usr/local/x-ui/x-ui -v 2>/dev/null | grep -oP '\d+\.\d+\.\d+' | head -1)
+        if [ -n "$XUI_VERSION" ]; then
+            echo -e "${GREEN}✅ Версия панели определена: ${XUI_VERSION}${NC}"
+        fi
+    fi
+    
+    # Способ 2: Из бинарного файла в bin/
+    if [ -z "$XUI_VERSION" ] && [ -f "/usr/local/x-ui/bin/x-ui" ]; then
+        XUI_VERSION=$(/usr/local/x-ui/bin/x-ui -v 2>/dev/null | grep -oP '\d+\.\d+\.\d+' | head -1)
+        if [ -n "$XUI_VERSION" ]; then
+            echo -e "${GREEN}✅ Версия панели определена: ${XUI_VERSION}${NC}"
+        fi
+    fi
+    
+    # Сохраняем в .env
+    if [ -n "$XUI_VERSION" ]; then
+        echo -e "${YELLOW}📝 Сохранение версии в .env...${NC}"
+        update_env_value "XUI_VERSION" "${XUI_VERSION}"
+        echo -e "${GREEN}✅ XUI_VERSION обновлён: ${XUI_VERSION}${NC}"
+    else
+        echo -e "${YELLOW}⚠️  Не удалось определить версию панели${NC}"
+        echo -e "${BLUE}ℹ️  Будет использоваться значение из .env или 'latest'${NC}"
+    fi
+    echo ""
+    
     # Остановка старых контейнеров
     echo -e "\n${YELLOW}🛑 Остановка старых контейнеров...${NC}"
     docker stop xuibot 2>/dev/null || true
@@ -1043,6 +1074,37 @@ update_xuibot() {
     # Извлекаем параметры из панели (TLS_FINGERPRINT, TLS_ALPN и т.д.)
     echo ""
     extract_inbound_params
+    echo ""
+    
+    # Определяем и сохраняем версию панели
+    echo -e "${YELLOW}🔍 Определение версии панели...${NC}"
+    XUI_VERSION=""
+    
+    # Способ 1: Из исполняемого файла x-ui (основной метод)
+    if [ -f "/usr/local/x-ui/x-ui" ]; then
+        XUI_VERSION=$(/usr/local/x-ui/x-ui -v 2>/dev/null | grep -oP '\d+\.\d+\.\d+' | head -1)
+        if [ -n "$XUI_VERSION" ]; then
+            echo -e "${GREEN}✅ Версия панели определена: ${XUI_VERSION}${NC}"
+        fi
+    fi
+    
+    # Способ 2: Из бинарного файла в bin/
+    if [ -z "$XUI_VERSION" ] && [ -f "/usr/local/x-ui/bin/x-ui" ]; then
+        XUI_VERSION=$(/usr/local/x-ui/bin/x-ui -v 2>/dev/null | grep -oP '\d+\.\d+\.\d+' | head -1)
+        if [ -n "$XUI_VERSION" ]; then
+            echo -e "${GREEN}✅ Версия панели определена: ${XUI_VERSION}${NC}"
+        fi
+    fi
+    
+    # Если версия определена, сохраняем в .env
+    if [ -n "$XUI_VERSION" ]; then
+        echo -e "${YELLOW}📝 Сохранение версии в .env...${NC}"
+        update_env_value "XUI_VERSION" "${XUI_VERSION}"
+        echo -e "${GREEN}✅ XUI_VERSION обновлён: ${XUI_VERSION}${NC}"
+    else
+        echo -e "${YELLOW}⚠️  Не удалось определить версию панели${NC}"
+        echo -e "${BLUE}ℹ️  Будет использоваться значение из .env или 'latest'${NC}"
+    fi
     echo ""
     
     # Остановка контейнера
