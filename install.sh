@@ -203,8 +203,6 @@ create_env_if_not_exists() {
         
         cat > .env << EOF
 # Server Configuration
-SERVER_ADDRESS=${SERVER_IP}
-SERVER_IP=${SERVER_IP}
 SERVER_PORT=443
 
 # 3x-ui Panel Configuration
@@ -244,6 +242,7 @@ XUI_URL=
 XUI_USERNAME=
 XUI_PASSWORD=
 XUI_DB_PATH=/etc/x-ui/x-ui.db
+XUI_VERSION=
 REALITY_PUBLIC_KEY=
 REALITY_PRIVATE_KEY=
 REALITY_SHORT_ID=
@@ -254,6 +253,8 @@ SECURITY=reality
 TLS_SNI=
 INBOUND_ID=1
 ALLOW_USER_DNS_QUERIES=true
+SERVER_ADDRESS=${SERVER_IP}
+SERVER_IP=${SERVER_IP}
 
 EOF
         echo -e "${GREEN}✅ .env файл создан с дефолтными значениями${NC}"
@@ -707,6 +708,95 @@ remove_bot() {
 # XUI Bot Functions (отдельные функции для XUI бота)
 # ============================================
 
+# Функция проверки и создания инбаунда при необходимости
+check_and_create_inbound_if_needed() {
+    echo -e "${YELLOW}🔍 Проверка наличия инбаундов в панели...${NC}"
+    
+    # Проверка наличия базы данных
+    if [ ! -f "/etc/x-ui/x-ui.db" ]; then
+        echo -e "${RED}❌ База данных 3x-ui не найдена!${NC}"
+        return 1
+    fi
+    
+    # Получаем количество инбаундов
+    local INBOUND_COUNT=$(sqlite3 /etc/x-ui/x-ui.db "SELECT COUNT(*) FROM inbounds;" 2>/dev/null)
+    
+    if [ -z "$INBOUND_COUNT" ] || [ "$INBOUND_COUNT" -eq 0 ]; then
+        echo -e "${YELLOW}⚠️  В панели 3x-ui не найдено ни одного инбаунда!${NC}"
+        echo -e "${BLUE}Для работы бота необходимо создать хотя бы один инбаунд.${NC}"
+        
+        # Предлагаем создать инбаунд
+        while true; do
+            echo -e "\n${BLUE}========================================${NC}"
+            echo -e "${BLUE}   Создать подключение?${NC}"
+            echo -e "${BLUE}========================================${NC}"
+            echo -e "${GREEN}Enter${NC} - Да, создать подключение"
+            echo -e "${GREEN}0${NC}     - Нет, вернуться в главное меню"
+            echo -e "${BLUE}========================================${NC}"
+            read -p "Ваш выбор: " create_inbound_choice
+            
+            if [[ "$create_inbound_choice" == "0" ]]; then
+                echo -e "${YELLOW}Возврат в главное меню...${NC}"
+                return 1
+            fi
+            
+            # Меню выбора типа подключения
+            while true; do
+                echo -e "\n${BLUE}========================================${NC}"
+                echo -e "${BLUE}   Выберите тип подключения${NC}"
+                echo -e "${BLUE}========================================${NC}"
+                echo -e "${GREEN}1${NC} - XHTTP Reality (рекомендуется)"
+                echo -e "${GREEN}2${NC} - TCP Reality"
+                echo -e "${GREEN}3${NC} - TCP TLS"
+                echo -e "${GREEN}0${NC} - Вернуться в главное меню"
+                echo -e "${BLUE}========================================${NC}"
+                read -p "Ваш выбор: " inbound_type
+                
+                if [[ "$inbound_type" == "0" ]]; then
+                    echo -e "${YELLOW}Возврат в главное меню...${NC}"
+                    return 1
+                fi
+                
+                case $inbound_type in
+                    1)
+                        if create_xhttp_reality_inbound; then
+                            echo -e "${GREEN}✅ Инбаунд успешно создан!${NC}"
+                            return 0
+                        else
+                            echo -e "${RED}❌ Не удалось создать инбаунд${NC}"
+                            return 1
+                        fi
+                        ;;
+                    2)
+                        if create_tcp_reality_inbound; then
+                            echo -e "${GREEN}✅ Инбаунд успешно создан!${NC}"
+                            return 0
+                        else
+                            echo -e "${RED}❌ Не удалось создать инбаунд${NC}"
+                            return 1
+                        fi
+                        ;;
+                    3)
+                        if create_tcp_tls_inbound; then
+                            echo -e "${GREEN}✅ Инбаунд успешно создан!${NC}"
+                            return 0
+                        else
+                            echo -e "${RED}❌ Не удалось создать инбаунд${NC}"
+                            return 1
+                        fi
+                        ;;
+                    *)
+                        echo -e "${RED}Неверный выбор. Попробуйте снова.${NC}"
+                        ;;
+                esac
+            done
+        done
+    else
+        echo -e "${GREEN}✅ Найдено инбаундов: ${INBOUND_COUNT}${NC}"
+        return 0
+    fi
+}
+
 # Функция установки XUI бота
 install_xuibot() {
     echo -e "\n${BLUE}========================================${NC}"
@@ -727,6 +817,13 @@ install_xuibot() {
     if [ ! -f "/etc/x-ui/x-ui.db" ]; then
         echo -e "${RED}❌ База данных 3x-ui не найдена!${NC}"
         echo -e "${YELLOW}Сначала установите 3x-ui Panel (пункт 9)${NC}"
+        echo -e "\n${CYAN}Нажмите Enter для возврата в главное меню...${NC}"
+        read
+        return
+    fi
+    
+    # Проверка наличия инбаундов и создание при необходимости
+    if ! check_and_create_inbound_if_needed; then
         echo -e "\n${CYAN}Нажмите Enter для возврата в главное меню...${NC}"
         read
         return
@@ -1072,6 +1169,13 @@ update_xuibot() {
         echo -e "${RED}❌ XUI_URL не найден в .env${NC}"
     fi
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
+    
+    # Проверка наличия инбаундов и создание при необходимости
+    if ! check_and_create_inbound_if_needed; then
+        echo -e "\n${CYAN}Нажмите Enter для возврата в главное меню...${NC}"
+        read
+        return
+    fi
     
     # Извлекаем параметры из панели (TLS_FINGERPRINT, TLS_ALPN и т.д.)
     echo ""
@@ -3452,16 +3556,14 @@ install_3xui_v294() {
                 # Удаляем пути к сертификатам из базы данных
                 sqlite3 /etc/x-ui/x-ui.db "DELETE FROM settings WHERE key IN ('webCertFile', 'webKeyFile');" 2>/dev/null
                 
-                # Сбрасываем webBasePath на корень для упрощения доступа
-                echo -e "${YELLOW}ℹ️  Сброс webBasePath на корневой путь для упрощения доступа...${NC}"
-                sqlite3 /etc/x-ui/x-ui.db "UPDATE settings SET value='/' WHERE key='webBasePath';" 2>/dev/null
+                # НЕ сбрасываем webBasePath - оставляем как есть
+                # WebBasePath будет работать и с HTTP
                 
                 # Запускаем панель
                 systemctl start x-ui 2>/dev/null || true
                 sleep 2
                 
                 echo -e "${GREEN}✅ Панель настроена для работы по HTTP${NC}"
-                echo -e "${GREEN}✅ webBasePath сброшен на корневой путь (/)${NC}"
             fi
         fi
         
@@ -3487,20 +3589,14 @@ install_3xui_v294() {
         if [ -z "$XUI_PORT" ] || [ -z "$XUI_PATH" ]; then
             sleep 2
             
-            # Если SSL не удалось настроить, принудительно устанавливаем путь в корень
-            if [ "$SSL_SETUP_FAILED" = true ]; then
-                XUI_PATH="/"
-                echo -e "${YELLOW}ℹ️  Используется корневой путь (/) для HTTP режима${NC}"
-            fi
-            
             XUI_SETTINGS=$(echo "n" | timeout 5 x-ui settings 2>/dev/null || echo "")
             
             if [ -n "$XUI_SETTINGS" ]; then
                 if [ -z "$XUI_PORT" ]; then
                     XUI_PORT=$(echo "$XUI_SETTINGS" | grep "port:" | awk '{print $2}')
                 fi
-                # Получаем путь только если SSL настроен успешно
-                if [ -z "$XUI_PATH" ] && [ "$SSL_SETUP_FAILED" = false ]; then
+                # Получаем путь независимо от SSL статуса
+                if [ -z "$XUI_PATH" ]; then
                     XUI_PATH=$(echo "$XUI_SETTINGS" | grep "webBasePath:" | awk '{print $2}' | sed 's/\/$//')
                     # Добавляем leading slash если нужно
                     if [ -n "$XUI_PATH" ] && [[ "$XUI_PATH" != /* ]] && [ "$XUI_PATH" != "/" ]; then
@@ -3523,8 +3619,6 @@ install_3xui_v294() {
         PROTOCOL="https"
         if [ "$SSL_SETUP_FAILED" = true ]; then
             PROTOCOL="http"
-            # Для HTTP режима всегда используем корневой путь
-            XUI_PATH="/"
         fi
         
         if [ -z "$XUI_PATH" ] || [ "$XUI_PATH" = "/" ]; then
@@ -3534,8 +3628,7 @@ install_3xui_v294() {
             if [[ "$XUI_PATH" != /* ]]; then
                 XUI_PATH="/${XUI_PATH}"
             fi
-            # Для HTTPS с webBasePath используем путь как есть (с trailing slash если он есть)
-            # Для HTTP режима путь уже установлен в "/" выше
+            # Используем webBasePath независимо от протокола (HTTP или HTTPS)
             XUI_URL="${PROTOCOL}://${SERVER_IP}:${XUI_PORT}${XUI_PATH}"
         fi
         
@@ -3546,6 +3639,7 @@ install_3xui_v294() {
         echo -e "${BLUE}👤 Логин:      ${YELLOW}${XUI_USERNAME}${NC}"
         echo -e "${BLUE}🔑 Пароль:     ${YELLOW}${XUI_PASSWORD}${NC}"
         echo -e "${BLUE}🔌 Порт:       ${YELLOW}${XUI_PORT}${NC}"
+        echo -e "${BLUE}📂 WebBasePath:${YELLOW}${XUI_PATH}${NC}"
         
         if [ "$SSL_SETUP_FAILED" = true ]; then
             echo -e "\n${YELLOW}⚠️  Панель работает по HTTP (без SSL)${NC}"

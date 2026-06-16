@@ -35,45 +35,15 @@ export class RouteBot {
 
   setupHandlers() {
     // Start command
-    this.bot.onText(/\/start/, (msg) => {
+    this.bot.onText(/\/start/, async (msg) => {
       const chatId = msg.chat.id;
       const userId = msg.from.id;
+      
       logger.info(`/start command received from chat ${chatId}, user ${userId}`);
-      
-      // Only admins can use the bot
-      if (!this.isAdmin(userId)) {
-        // Check anti-flood for non-admins
-        const limitCheck = this.antiFlood.checkLimit(userId);
-        if (!limitCheck.allowed) {
-          logger.warn(`Anti-flood triggered for non-admin user ${userId}, remaining time: ${limitCheck.remainingTime}s`);
-        }
-        logger.warn(`Non-admin user ${userId} tried to use /start`);
-        return; // Silently ignore for non-admins
-      }
-      
-      let welcomeMessage = `
-🚀 *Отправьте*
-\`\`\`
-rutube.ru
-ozon.ru
-google.com
-\`\`\`
-/start - Начало работы
-/admin - Панель администратора`;
-      
-      this.bot.sendMessage(chatId, welcomeMessage, { parse_mode: 'Markdown' });
-    });
-
-    // Admin command - show admin menu (only for admins)
-    this.bot.onText(/\/admin/, async (msg) => {
-      const chatId = msg.chat.id;
-      const userId = msg.from.id;
-      
-      logger.info(`/admin command received from chat ${chatId}`);
       
       // Check if user is admin
       if (!this.isAdmin(userId)) {
-        logger.warn(`Unauthorized /admin command from user ${userId}`);
+        logger.warn(`Unauthorized /start command from user ${userId}`);
         return; // Silently ignore for non-admins
       }
       
@@ -101,23 +71,24 @@ google.com
       );
     });
 
+
     // Handle callback queries for Admin, AWG and Install
     this.bot.on('callback_query', async (query) => {
       const chatId = query.message.chat.id;
       const userId = query.from.id;
       const data = query.data;
 
-      // Admin menu callbacks
-      if (data.startsWith('admin_')) {
+      // Start menu callbacks
+      if (data.startsWith('start_')) {
         await this.bot.answerCallbackQuery(query.id);
         
         // Verify admin access
         if (!this.isAdmin(userId)) {
-          logger.warn(`Unauthorized admin callback from user ${userId}`);
+          logger.warn(`Unauthorized start menu callback from user ${userId}`);
           return;
         }
         
-        if (data === 'admin_menu') {
+        if (data === 'start_menu') {
           // Получаем статистику
           let statsMessage = '';
           try {
@@ -270,7 +241,7 @@ google.com
       // Skip commands
       if (msg.text && msg.text.startsWith('/')) {
         // Show start message for unknown commands
-        if (!msg.text.match(/^\/(start|help|admin|awgstats)$/)) {
+        if (!msg.text.match(/^\/(start|help|awgstats)$/)) {
           const chatId = msg.chat.id;
           const userId = msg.from.id;
           
@@ -708,7 +679,7 @@ google.com
             { text: '🔢 Сформировать по номеру', callback_data: `awg_gen_by_number_${version}` }
           ],
           [
-            { text: '🔙 Назад', callback_data: 'admin_menu' }
+            { text: '🔙 Назад', callback_data: 'start_menu' }
           ]
         ]
       };
@@ -791,7 +762,7 @@ google.com
         await this.bot.sendMessage(
           chatId,
           `❌ Некорректная метка. Используйте только буквы, цифры, дефис и подчеркивание.\n\n` +
-          `Попробуйте снова через /admin → Конфигурации`
+          `Попробуйте снова через /start → Конфигурации`
         );
         return;
       }
@@ -800,7 +771,7 @@ google.com
         await this.bot.sendMessage(
           chatId,
           `❌ Метка слишком длинная (максимум 20 символов).\n\n` +
-          `Попробуйте снова через /admin → Конфигурации`
+          `Попробуйте снова через /start → Конфигурации`
         );
         return;
       }
@@ -832,7 +803,7 @@ google.com
         await this.bot.sendMessage(
           chatId,
           `❌ Некорректный номер. Введите число от 1 до 254.\n\n` +
-          `Попробуйте снова через /admin → Конфигурации`
+          `Попробуйте снова через /start → Конфигурации`
         );
         return;
       }
@@ -843,7 +814,7 @@ google.com
           chatId,
           `❌ IP адрес 10.8.1.1 зарезервирован для сервера.\n\n` +
           `Используйте номера от 2 до 254.\n` +
-          `Попробуйте снова через /admin → Конфигурации`
+          `Попробуйте снова через /start → Конфигурации`
         );
         return;
       }
@@ -1263,7 +1234,7 @@ google.com
         `Возможные причины:\n` +
         `• Оригинальный файл конфигурации был удалён\n` +
         `• Клиент был удалён с сервера\n\n` +
-        `Попробуйте создать новую конфигурацию через /admin → Конфигурации`
+        `Попробуйте создать новую конфигурацию через /start → Конфигурации`
       );
     }
   }
