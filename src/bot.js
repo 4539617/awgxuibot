@@ -666,7 +666,8 @@ export class RouteBot {
     try {
       logger.info(`Showing client selection menu for ${version} in chat ${chatId}`);
       
-      const processingMsg = await this.bot.sendMessage(chatId, '⏳ Загружаю список клиентов...');
+      // Показываем индикатор загрузки в текущем сообщении
+      await this.sendOrEditMessage(chatId, '⏳ Загружаю список клиентов...', { parse_mode: 'Markdown' });
 
       // Initialize AWG manager if needed
       if (!this.awgManager.initialized) {
@@ -677,8 +678,7 @@ export class RouteBot {
       const container = this.awgManager.availableContainers.find(c => c.version === version);
       
       if (!container) {
-        await this.bot.deleteMessage(chatId, processingMsg.message_id);
-        this.bot.sendMessage(
+        await this.sendOrEditMessage(
           chatId,
           `❌ Контейнер версии ${version} не найден`,
           { parse_mode: 'Markdown' }
@@ -688,8 +688,6 @@ export class RouteBot {
 
       // Get clients with status
       const clients = await this.awgManager.getClientsWithStatus(container.name, version);
-
-      await this.bot.deleteMessage(chatId, processingMsg.message_id);
 
       // Build message
       let message = `📋 *AWG ${version.toUpperCase()}*\n\n`;
@@ -1064,7 +1062,8 @@ export class RouteBot {
     try {
       logger.info(`Showing ${version} clients list for chat ${chatId}`);
 
-      const processingMsg = await this.bot.sendMessage(chatId, '⏳ Получаю список клиентов...');
+      // Показываем индикатор загрузки в текущем сообщении
+      await this.sendOrEditMessage(chatId, '⏳ Получаю список клиентов...', { parse_mode: 'Markdown' });
 
       // Initialize AWG manager if needed
       if (!this.awgManager.initialized) {
@@ -1075,8 +1074,7 @@ export class RouteBot {
       const container = this.awgManager.availableContainers.find(c => c.version === version);
       
       if (!container) {
-        await this.bot.deleteMessage(chatId, processingMsg.message_id);
-        this.bot.sendMessage(
+        await this.sendOrEditMessage(
           chatId,
           `📋 *Подробнее Клиенты ${version.toUpperCase()}*\n\n❌ Контейнер версии ${version} не найден`,
           { parse_mode: 'Markdown' }
@@ -1089,10 +1087,8 @@ export class RouteBot {
       // Получаем статистику клиентов (последнее соединение, трафик)
       const clientsStats = await this.getClientsStats(container.name, version);
 
-      await this.bot.deleteMessage(chatId, processingMsg.message_id);
-
       if (clients.length === 0) {
-        this.bot.sendMessage(
+        await this.sendOrEditMessage(
           chatId,
           `📋 *Подробнее Клиенты ${version.toUpperCase()}*\n\n📦 Контейнер: \`${container.name}\`\n\nНет активных клиентов`,
           { parse_mode: 'Markdown' }
