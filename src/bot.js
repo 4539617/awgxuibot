@@ -49,28 +49,8 @@ export class RouteBot {
         return; // Silently ignore for non-admins
       }
       
-      // Получаем статистику
-      let statsMessage = '';
-      try {
-        statsMessage = await this.showAwgStats(chatId);
-      } catch (error) {
-        statsMessage = '❌ Ошибка при получении статистики\n\n';
-      }
-      
-      const keyboard = {
-        inline_keyboard: [
-          [
-            { text: 'V1', callback_data: 'awg_select_v1' },
-            { text: 'V2', callback_data: 'awg_select_v2' }
-          ]
-        ]
-      };
-
-      this.bot.sendMessage(
-        chatId,
-        `🔐 *Панель администратора*\n\n${statsMessage}Выберите действие:`,
-        { parse_mode: 'Markdown', reply_markup: keyboard }
-      );
+      // Показываем главное меню
+      await this.showMainMenu(chatId);
     });
 
 
@@ -91,28 +71,8 @@ export class RouteBot {
         }
         
         if (data === 'start_menu') {
-          // Получаем статистику
-          let statsMessage = '';
-          try {
-            statsMessage = await this.showAwgStats(chatId);
-          } catch (error) {
-            statsMessage = '❌ Ошибка при получении статистики\n\n';
-          }
-          
-          const keyboard = {
-            inline_keyboard: [
-              [
-                { text: 'V1', callback_data: 'awg_select_v1' },
-                { text: 'V2', callback_data: 'awg_select_v2' }
-              ]
-            ]
-          };
-          
-          await this.sendOrEditMessage(
-            chatId,
-            `🔐 *Панель администратора*\n\n${statsMessage}Выберите действие:`,
-            { parse_mode: 'Markdown', reply_markup: keyboard }
-          );
+          // Показываем главное меню
+          await this.showMainMenu(chatId);
         }
       }
       // AWG config generation callbacks
@@ -999,13 +959,9 @@ export class RouteBot {
 
   async showAwgStats(chatId) {
     try {
-      logger.info(`Showing stats for chat ${chatId}`);
-
-      const processingMsg = await this.bot.sendMessage(chatId, '⏳ Получаю статистику...');
+      logger.info(`Getting stats for chat ${chatId}`);
 
       const stats = await this.awgManager.getStats();
-
-      await this.bot.deleteMessage(chatId, processingMsg.message_id);
 
       // Создаем карту найденных контейнеров по версиям
       const statsMap = new Map();
@@ -1053,8 +1009,40 @@ export class RouteBot {
       return statsMessage;
 
     } catch (error) {
-      logger.error(`Error showing stats for chat ${chatId}:`, error);
+      logger.error(`Error getting stats for chat ${chatId}:`, error);
       throw error;
+    }
+  }
+
+  async showMainMenu(chatId) {
+    try {
+      logger.info(`Showing main menu for chat ${chatId}`);
+      
+      // Получаем статистику
+      let statsMessage = '';
+      try {
+        statsMessage = await this.showAwgStats(chatId);
+      } catch (error) {
+        statsMessage = '❌ Ошибка при получении статистики\n\n';
+      }
+      
+      const keyboard = {
+        inline_keyboard: [
+          [
+            { text: 'V1', callback_data: 'awg_select_v1' },
+            { text: 'V2', callback_data: 'awg_select_v2' }
+          ]
+        ]
+      };
+      
+      await this.sendOrEditMessage(
+        chatId,
+        `🔐 *Панель администратора*\n\n${statsMessage}Выберите действие:`,
+        { parse_mode: 'Markdown', reply_markup: keyboard }
+      );
+    } catch (error) {
+      logger.error(`Error showing main menu for chat ${chatId}:`, error);
+      this.bot.sendMessage(chatId, `❌ Ошибка: ${error.message}`);
     }
   }
 
