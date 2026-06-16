@@ -679,7 +679,8 @@ export class RouteBot {
             { text: '🔢 Сформировать по номеру', callback_data: `awg_gen_by_number_${version}` }
           ],
           [
-            { text: '🔙 Назад', callback_data: 'start_menu' }
+            { text: '🔄 Обновить', callback_data: `awg_select_${version}` },
+            { text: '� Назад', callback_data: 'start_menu' }
           ]
         ]
       };
@@ -878,9 +879,6 @@ export class RouteBot {
       await this.bot.sendDocument(chatId, result.filepath);
       logger.info(`Sent ${version} config to chat ${chatId}: ${result.filename}`);
 
-      // Show client selection menu again
-      await this.showClientSelectionMenu(chatId, version);
-
     } catch (error) {
       logger.error(`Error generating ${version} config for chat ${chatId}:`, error);
       this.bot.sendMessage(
@@ -924,20 +922,7 @@ export class RouteBot {
 
       // Send config file
       await this.bot.sendDocument(chatId, result.filepath);
-      
-      // Send info message
-      let infoMessage = `✅ Конфигурация для \`${result.ip}\` `;
-      if (result.isNew) {
-        infoMessage += `создана`;
-      } else {
-        infoMessage += `восстановлена (IP уже существовал)`;
-      }
-      
-      this.bot.sendMessage(chatId, infoMessage, { parse_mode: 'Markdown' });
       logger.info(`Sent ${version} config to chat ${chatId}: ${result.filename}`);
-
-      // Show client selection menu again
-      await this.showClientSelectionMenu(chatId, version);
 
     } catch (error) {
       logger.error(`Error generating ${version} config by number for chat ${chatId}:`, error);
@@ -1062,13 +1047,13 @@ export class RouteBot {
       
       clients.forEach((ip, index) => {
         const stats = clientsStats[ip] || {};
-        const lastSeen = stats.lastHandshake || 'никогда';
+        const lastSeen = stats.lastHandshake || '❌';
         const transfer = stats.transfer || 'нет данных';
         
         clientsMessage += `${index + 1}. \`${ip}\`\n`;
-        clientsMessage += `   └ 🕐 Последнее соединение: ${lastSeen}\n`;
+        clientsMessage += `   └ 🕐 ${lastSeen}\n`;
         if (transfer !== 'нет данных') {
-          clientsMessage += `   └ 📊 Трафик: ${transfer}\n`;
+          clientsMessage += `   └ 📊 ${transfer}\n`;
         }
         clientsMessage += `\n`;
         
@@ -1079,14 +1064,15 @@ export class RouteBot {
             callback_data: `resend_${version}_${ip}`
           },
           {
-            text: `🗑️ Удалить ${ip}`,
+            text: `🗑️ ${ip}`,
             callback_data: `delete_${version}_${ip}`
           }
         ]);
       });
 
-      // Добавляем кнопку "Назад"
+      // Добавляем кнопки "Обновить" и "Назад"
       keyboard.inline_keyboard.push([
+        { text: '🔄 Обновить', callback_data: `awg_clients_${version}` },
         { text: '🔙 Назад', callback_data: `awg_select_${version}` }
       ]);
 
@@ -1216,15 +1202,6 @@ export class RouteBot {
       // Send config file
       await this.bot.sendDocument(chatId, result.filepath);
       logger.info(`Resent config to chat ${chatId}: ${result.filename}`);
-      
-      this.bot.sendMessage(
-        chatId,
-        `✅ Конфигурация для \`${ip}\` отправлена повторно`,
-        { parse_mode: 'Markdown' }
-      );
-      
-      // Show client selection menu again
-      await this.showClientSelectionMenu(chatId, version);
       
     } catch (error) {
       logger.error(`Error resending config for ${ip}:`, error);
