@@ -659,9 +659,14 @@ export class RouteBot {
       if (clients.length === 0) {
         message += 'Нет клиентов\n\n';
       } else {
-        clients.forEach((client, index) => {
-          const status = client.active ? '✅ активен' : '❌ неактивен';
-          message += `${index + 1}. \`${client.ip}\` - ${status}\n`;
+        clients.forEach((client) => {
+          if (client.active) {
+            // Для активных показываем время последнего соединения
+            message += `\`${client.ip}\` - ✅ ${client.lastHandshake || 'активен'}\n`;
+          } else {
+            // Для неактивных просто крестик
+            message += `\`${client.ip}\` - ❌\n`;
+          }
         });
         message += '\n';
       }
@@ -680,7 +685,7 @@ export class RouteBot {
           ],
           [
             { text: '🔄 Обновить', callback_data: `awg_select_${version}` },
-            { text: '� Назад', callback_data: 'start_menu' }
+            { text: '🔙 Назад', callback_data: 'start_menu' }
           ]
         ]
       };
@@ -1050,12 +1055,17 @@ export class RouteBot {
         const lastSeen = stats.lastHandshake || '❌';
         const transfer = stats.transfer || 'нет данных';
         
-        clientsMessage += `${index + 1}. \`${ip}\`\n`;
-        clientsMessage += `   └ 🕐 ${lastSeen}\n`;
-        if (transfer !== 'нет данных') {
-          clientsMessage += `   └ 📊 ${transfer}\n`;
+        // Если клиент неактивен - показываем только IP и крестик
+        if (lastSeen === '❌') {
+          clientsMessage += `\`${ip}\` ❌\n`;
+        } else {
+          // Если активен - показываем IP и детали
+          clientsMessage += `\`${ip}\`\n`;
+          clientsMessage += `   └ 🕐 ${lastSeen}\n`;
+          if (transfer !== 'нет данных') {
+            clientsMessage += `   └ 📊 ${transfer}\n`;
+          }
         }
-        clientsMessage += `\n`;
         
         // Добавляем кнопки для каждого IP
         keyboard.inline_keyboard.push([
