@@ -108,7 +108,7 @@ export class RouteBot {
             ]
           };
           
-          this.bot.sendMessage(
+          await this.sendOrEditMessage(
             chatId,
             `🔐 *Панель администратора*\n\n${statsMessage}Выберите действие:`,
             { parse_mode: 'Markdown', reply_markup: keyboard }
