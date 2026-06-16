@@ -708,6 +708,95 @@ remove_bot() {
 # XUI Bot Functions (отдельные функции для XUI бота)
 # ============================================
 
+# Функция проверки и создания инбаунда при необходимости
+check_and_create_inbound_if_needed() {
+    echo -e "${YELLOW}🔍 Проверка наличия инбаундов в панели...${NC}"
+    
+    # Проверка наличия базы данных
+    if [ ! -f "/etc/x-ui/x-ui.db" ]; then
+        echo -e "${RED}❌ База данных 3x-ui не найдена!${NC}"
+        return 1
+    fi
+    
+    # Получаем количество инбаундов
+    local INBOUND_COUNT=$(sqlite3 /etc/x-ui/x-ui.db "SELECT COUNT(*) FROM inbounds;" 2>/dev/null)
+    
+    if [ -z "$INBOUND_COUNT" ] || [ "$INBOUND_COUNT" -eq 0 ]; then
+        echo -e "${YELLOW}⚠️  В панели 3x-ui не найдено ни одного инбаунда!${NC}"
+        echo -e "${BLUE}Для работы бота необходимо создать хотя бы один инбаунд.${NC}"
+        
+        # Предлагаем создать инбаунд
+        while true; do
+            echo -e "\n${BLUE}========================================${NC}"
+            echo -e "${BLUE}   Создать подключение?${NC}"
+            echo -e "${BLUE}========================================${NC}"
+            echo -e "${GREEN}Enter${NC} - Да, создать подключение"
+            echo -e "${GREEN}0${NC}     - Нет, вернуться в главное меню"
+            echo -e "${BLUE}========================================${NC}"
+            read -p "Ваш выбор: " create_inbound_choice
+            
+            if [[ "$create_inbound_choice" == "0" ]]; then
+                echo -e "${YELLOW}Возврат в главное меню...${NC}"
+                return 1
+            fi
+            
+            # Меню выбора типа подключения
+            while true; do
+                echo -e "\n${BLUE}========================================${NC}"
+                echo -e "${BLUE}   Выберите тип подключения${NC}"
+                echo -e "${BLUE}========================================${NC}"
+                echo -e "${GREEN}1${NC} - XHTTP Reality (рекомендуется)"
+                echo -e "${GREEN}2${NC} - TCP Reality"
+                echo -e "${GREEN}3${NC} - TCP TLS"
+                echo -e "${GREEN}0${NC} - Вернуться в главное меню"
+                echo -e "${BLUE}========================================${NC}"
+                read -p "Ваш выбор: " inbound_type
+                
+                if [[ "$inbound_type" == "0" ]]; then
+                    echo -e "${YELLOW}Возврат в главное меню...${NC}"
+                    return 1
+                fi
+                
+                case $inbound_type in
+                    1)
+                        if create_xhttp_reality_inbound; then
+                            echo -e "${GREEN}✅ Инбаунд успешно создан!${NC}"
+                            return 0
+                        else
+                            echo -e "${RED}❌ Не удалось создать инбаунд${NC}"
+                            return 1
+                        fi
+                        ;;
+                    2)
+                        if create_tcp_reality_inbound; then
+                            echo -e "${GREEN}✅ Инбаунд успешно создан!${NC}"
+                            return 0
+                        else
+                            echo -e "${RED}❌ Не удалось создать инбаунд${NC}"
+                            return 1
+                        fi
+                        ;;
+                    3)
+                        if create_tcp_tls_inbound; then
+                            echo -e "${GREEN}✅ Инбаунд успешно создан!${NC}"
+                            return 0
+                        else
+                            echo -e "${RED}❌ Не удалось создать инбаунд${NC}"
+                            return 1
+                        fi
+                        ;;
+                    *)
+                        echo -e "${RED}Неверный выбор. Попробуйте снова.${NC}"
+                        ;;
+                esac
+            done
+        done
+    else
+        echo -e "${GREEN}✅ Найдено инбаундов: ${INBOUND_COUNT}${NC}"
+        return 0
+    fi
+}
+
 # Функция установки XUI бота
 install_xuibot() {
     echo -e "\n${BLUE}========================================${NC}"
@@ -728,6 +817,13 @@ install_xuibot() {
     if [ ! -f "/etc/x-ui/x-ui.db" ]; then
         echo -e "${RED}❌ База данных 3x-ui не найдена!${NC}"
         echo -e "${YELLOW}Сначала установите 3x-ui Panel (пункт 9)${NC}"
+        echo -e "\n${CYAN}Нажмите Enter для возврата в главное меню...${NC}"
+        read
+        return
+    fi
+    
+    # Проверка наличия инбаундов и создание при необходимости
+    if ! check_and_create_inbound_if_needed; then
         echo -e "\n${CYAN}Нажмите Enter для возврата в главное меню...${NC}"
         read
         return
@@ -1073,6 +1169,13 @@ update_xuibot() {
         echo -e "${RED}❌ XUI_URL не найден в .env${NC}"
     fi
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
+    
+    # Проверка наличия инбаундов и создание при необходимости
+    if ! check_and_create_inbound_if_needed; then
+        echo -e "\n${CYAN}Нажмите Enter для возврата в главное меню...${NC}"
+        read
+        return
+    fi
     
     # Извлекаем параметры из панели (TLS_FINGERPRINT, TLS_ALPN и т.д.)
     echo ""
