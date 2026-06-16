@@ -3556,16 +3556,14 @@ install_3xui_v294() {
                 # Удаляем пути к сертификатам из базы данных
                 sqlite3 /etc/x-ui/x-ui.db "DELETE FROM settings WHERE key IN ('webCertFile', 'webKeyFile');" 2>/dev/null
                 
-                # Сбрасываем webBasePath на корень для упрощения доступа
-                echo -e "${YELLOW}ℹ️  Сброс webBasePath на корневой путь для упрощения доступа...${NC}"
-                sqlite3 /etc/x-ui/x-ui.db "UPDATE settings SET value='/' WHERE key='webBasePath';" 2>/dev/null
+                # НЕ сбрасываем webBasePath - оставляем как есть
+                # WebBasePath будет работать и с HTTP
                 
                 # Запускаем панель
                 systemctl start x-ui 2>/dev/null || true
                 sleep 2
                 
                 echo -e "${GREEN}✅ Панель настроена для работы по HTTP${NC}"
-                echo -e "${GREEN}✅ webBasePath сброшен на корневой путь (/)${NC}"
             fi
         fi
         
@@ -3591,20 +3589,14 @@ install_3xui_v294() {
         if [ -z "$XUI_PORT" ] || [ -z "$XUI_PATH" ]; then
             sleep 2
             
-            # Если SSL не удалось настроить, принудительно устанавливаем путь в корень
-            if [ "$SSL_SETUP_FAILED" = true ]; then
-                XUI_PATH="/"
-                echo -e "${YELLOW}ℹ️  Используется корневой путь (/) для HTTP режима${NC}"
-            fi
-            
             XUI_SETTINGS=$(echo "n" | timeout 5 x-ui settings 2>/dev/null || echo "")
             
             if [ -n "$XUI_SETTINGS" ]; then
                 if [ -z "$XUI_PORT" ]; then
                     XUI_PORT=$(echo "$XUI_SETTINGS" | grep "port:" | awk '{print $2}')
                 fi
-                # Получаем путь только если SSL настроен успешно
-                if [ -z "$XUI_PATH" ] && [ "$SSL_SETUP_FAILED" = false ]; then
+                # Получаем путь независимо от SSL статуса
+                if [ -z "$XUI_PATH" ]; then
                     XUI_PATH=$(echo "$XUI_SETTINGS" | grep "webBasePath:" | awk '{print $2}' | sed 's/\/$//')
                     # Добавляем leading slash если нужно
                     if [ -n "$XUI_PATH" ] && [[ "$XUI_PATH" != /* ]] && [ "$XUI_PATH" != "/" ]; then
@@ -3627,8 +3619,6 @@ install_3xui_v294() {
         PROTOCOL="https"
         if [ "$SSL_SETUP_FAILED" = true ]; then
             PROTOCOL="http"
-            # Для HTTP режима всегда используем корневой путь
-            XUI_PATH="/"
         fi
         
         if [ -z "$XUI_PATH" ] || [ "$XUI_PATH" = "/" ]; then
@@ -3638,8 +3628,7 @@ install_3xui_v294() {
             if [[ "$XUI_PATH" != /* ]]; then
                 XUI_PATH="/${XUI_PATH}"
             fi
-            # Для HTTPS с webBasePath используем путь как есть (с trailing slash если он есть)
-            # Для HTTP режима путь уже установлен в "/" выше
+            # Используем webBasePath независимо от протокола (HTTP или HTTPS)
             XUI_URL="${PROTOCOL}://${SERVER_IP}:${XUI_PORT}${XUI_PATH}"
         fi
         
@@ -3650,6 +3639,7 @@ install_3xui_v294() {
         echo -e "${BLUE}👤 Логин:      ${YELLOW}${XUI_USERNAME}${NC}"
         echo -e "${BLUE}🔑 Пароль:     ${YELLOW}${XUI_PASSWORD}${NC}"
         echo -e "${BLUE}🔌 Порт:       ${YELLOW}${XUI_PORT}${NC}"
+        echo -e "${BLUE}📂 WebBasePath:${YELLOW}${XUI_PATH}${NC}"
         
         if [ "$SSL_SETUP_FAILED" = true ]; then
             echo -e "\n${YELLOW}⚠️  Панель работает по HTTP (без SSL)${NC}"
