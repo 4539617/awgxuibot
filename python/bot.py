@@ -1053,12 +1053,19 @@ async def refresh_allclients(callback_query: types.CallbackQuery):
         if user_id in allclients_cache:
             del allclients_cache[user_id]
         
+        # Показываем уведомление об обновлении
+        await callback_query.answer("🔄 Обновление данных...", show_alert=False)
+        
         # Перенаправляем на back_to_allclients для отображения обновленных данных
         await back_to_allclients(callback_query)
         
     except Exception as e:
         logger.error(f"Ошибка обновления списка ключей: {e}")
-        await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
+        # Проверяем, не является ли ошибка "message is not modified"
+        if "message is not modified" in str(e):
+            await callback_query.answer("✅ Данные актуальны", show_alert=False)
+        else:
+            await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
 
 
 
@@ -2237,8 +2244,19 @@ async def refresh_myclients(callback_query: types.CallbackQuery, state: FSMConte
         await callback_query.answer("⛔ Вы заблокированы администратором", show_alert=True)
         return
     
-    # Перенаправляем на callback_cmd_myclients для отображения обновленных данных
-    await callback_cmd_myclients(callback_query, state)
+    try:
+        # Показываем уведомление об обновлении
+        await callback_query.answer("🔄 Обновление данных...", show_alert=False)
+        
+        # Перенаправляем на callback_cmd_myclients для отображения обновленных данных
+        await callback_cmd_myclients(callback_query, state)
+    except Exception as e:
+        # Проверяем, не является ли ошибка "message is not modified"
+        if "message is not modified" in str(e):
+            await callback_query.answer("✅ Данные актуальны", show_alert=False)
+        else:
+            logger.error(f"Ошибка обновления моих ключей: {e}")
+            await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
 
 
 @dp.callback_query(lambda c: c.data == "cmd_allclients")
