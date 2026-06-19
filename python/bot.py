@@ -1204,8 +1204,9 @@ async def back_to_allclients(callback_query: types.CallbackQuery):
                 InlineKeyboardButton(text=f"🧹 Очистить просроченные ({expired_count})", callback_data="cleanup_expired")
             ])
         
-        # Добавляем кнопку "Назад"
+        # Добавляем кнопки "Обновить" и "Назад"
         buttons.append([
+            InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_allclients"),
             InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")
         ])
         
@@ -2189,7 +2190,7 @@ async def callback_cmd_myclients(callback_query: types.CallbackQuery, state: FSM
         # Добавляем кнопки "Обновить" и "Назад"
         buttons.append([
             InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_myclients"),
-            InlineKeyboardButton(text="� Назад", callback_data="back_to_start")
+            InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")
         ])
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
