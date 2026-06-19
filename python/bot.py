@@ -2081,24 +2081,6 @@ async def callback_cmd_tempkey(callback_query: types.CallbackQuery, state: FSMCo
 @dp.callback_query(lambda c: c.data == "cmd_myclients")
 async def callback_cmd_myclients(callback_query: types.CallbackQuery, state: FSMContext):
     """Обработчик кнопки 'Мои ключи'"""
-@dp.callback_query(lambda c: c.data == "refresh_myclients")
-async def refresh_myclients(callback_query: types.CallbackQuery, state: FSMContext):
-    """Обновить список моих ключей"""
-    user_id = callback_query.from_user.id
-    
-    # Проверка доступа
-    if not is_allowed(user_id):
-        await callback_query.answer("⛔ Доступ запрещен", show_alert=True)
-        return
-    
-    if is_blocked_by_admin(user_id):
-        await callback_query.answer("⛔ Вы заблокированы администратором", show_alert=True)
-        return
-    
-    # Перенаправляем на callback_cmd_myclients для отображения обновленных данных
-    await callback_cmd_myclients(callback_query, state)
-
-
     user_id = callback_query.from_user.id
     
     # Очищаем состояние при открытии нового окна
@@ -2240,6 +2222,24 @@ async def refresh_myclients(callback_query: types.CallbackQuery, state: FSMConte
                 f"❌ Ошибка: {str(e)}",
                 reply_markup=keyboard
             )
+
+@dp.callback_query(lambda c: c.data == "refresh_myclients")
+async def refresh_myclients(callback_query: types.CallbackQuery, state: FSMContext):
+    """Обновить список моих ключей"""
+    user_id = callback_query.from_user.id
+    
+    # Проверка доступа
+    if not is_allowed(user_id):
+        await callback_query.answer("⛔ Доступ запрещен", show_alert=True)
+        return
+    
+    if is_blocked_by_admin(user_id):
+        await callback_query.answer("⛔ Вы заблокированы администратором", show_alert=True)
+        return
+    
+    # Перенаправляем на callback_cmd_myclients для отображения обновленных данных
+    await callback_cmd_myclients(callback_query, state)
+
 
 @dp.callback_query(lambda c: c.data == "cmd_allclients")
 async def callback_cmd_allclients(callback_query: types.CallbackQuery, state: FSMContext):
