@@ -1100,7 +1100,7 @@ async def back_to_allclients(callback_query: types.CallbackQuery):
         # Подсчитываем статистику
         if not all_clients:
             # Показываем полное окно даже если ключей нет
-            text = f"📊 <b>Статистика ключей</b>\n\n"
+            text = f"📋 <b>Все ключи</b>\n\n"
             text += f"🔑 Всего ключей: 0\n"
             text += f"✅ Активных: 0\n"
             text += f"⏸️ Неактивных: 0\n"
@@ -1144,7 +1144,7 @@ async def back_to_allclients(callback_query: types.CallbackQuery):
                 return f"{bytes_value / (1024**3):.2f} GB"
         
         # Обновляем текст статистики
-        text = f"📊 <b>Статистика ключей</b>\n\n"
+        text = f"📋 <b>Все ключи</b>\n\n"
         text += f"🔑 Всего ключей: {total_count}\n"
         text += f"✅ Активных: {active_count}\n"
         text += f"⏸️ Неактивных: {inactive_count}\n"
@@ -2130,7 +2130,7 @@ async def callback_cmd_myclients(callback_query: types.CallbackQuery, state: FSM
         # Подсчитываем статистику
         if not clients:
             # Показываем полное окно даже если ключей нет
-            text = f"📋 <b>Ваши ключи (0)</b>\n\n"
+            text = f"🔑 <b>Мои ключи (0)</b>\n\n"
             text += f"✅ Активных: 0\n"
             text += f"⏸️ Неактивных: 0\n"
             text += f"⏰ Просроченных: 0\n\n"
@@ -2186,14 +2186,15 @@ async def callback_cmd_myclients(callback_query: types.CallbackQuery, state: FSM
                 InlineKeyboardButton(text=f"{icon} {display_text}", callback_data=f"myclient_{client['uuid']}")
             ])
         
-        # Добавляем кнопку "Назад"
+        # Добавляем кнопки "Обновить" и "Назад"
         buttons.append([
-            InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")
+            InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_myclients"),
+            InlineKeyboardButton(text="� Назад", callback_data="back_to_start")
         ])
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
         
-        text = f"📋 <b>Ваши ключи ({len(clients)})</b>\n\n"
+        text = f"🔑 <b>Мои ключи ({len(clients)})</b>\n\n"
         text += f"✅ Активных: {active_count}\n"
         text += f"⏸️ Неактивных: {inactive_count}\n"
         text += f"⏰ Просроченных: {expired_count}\n\n"
@@ -2244,12 +2245,92 @@ async def refresh_myclients(callback_query: types.CallbackQuery, state: FSMConte
         await callback_query.answer("⛔ Вы заблокированы администратором", show_alert=True)
         return
     
+    # Очищаем состояние
+    await state.clear()
+    
     try:
-        # Показываем уведомление об обновлении
-        await callback_query.answer("🔄 Обновление данных...", show_alert=False)
+        username = callback_query.from_user.username
+        if not username:
+            await callback_query.answer("❌ У вас не установлен username", show_alert=True)
+            return
         
-        # Перенаправляем на callback_cmd_myclients для отображения обновленных данных
-        await callback_cmd_myclients(callback_query, state)
+        # Получаем ключи пользователя из X-UI по username
+        clients = await xui_client.get_user_clients_by_username(username)
+        
+        # Подсчитываем статистику
+        if not clients:
+            # Показываем полное окно даже если ключей нет
+            text = f"🔑 <b>Мои ключи (0)</b>\n\n"
+            text += f"✅ Активных: 0\n"
+            text += f"⏸️ Неактивных: 0\n"
+            text += f"⏰ Просроченных: 0\n\n"
+            text += "📭 <i>У вас пока нет ключей.</i>\n\n"
+            text += "Используйте /new для создания."
+            
+            # Добавляем кнопки "Обновить" и "Назад"
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_myclients")],
+                [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+            ])
+            
+            await callback_query.message.edit_text(
+                text,
+                reply_markup=keyboard,
+                parse_mode="HTML"
+            )
+            await callback_query.answer("✅ Обновлено", show_alert=False)
+            return
+        
+        # Подсчитываем статистику для существующих ключей
+        active_count = sum(1 for c in clients if c['status'] == 'active')
+        inactive_count = sum(1 for c in clients if c['status'] == 'inactive')
+        expired_count = sum(1 for c in clients if c['status'] == 'expired')
+        
+        buttons = []
+        for client in clients:
+            email = client['email']
+            comment = client['comment']
+            status = client['status']
+            
+            # Формируем текст кнопки
+            if comment:
+                display_text = f"{comment[:25]}"
+            else:
+                display_text = f"{email[:25]}"
+            
+            # Добавляем иконку статуса
+            if status == 'active':
+                icon = "✅"
+            elif status == 'inactive':
+                icon = "⏸️"
+            else:  # expired
+                icon = "⏰"
+            
+            buttons.append([
+                InlineKeyboardButton(text=f"{icon} {display_text}", callback_data=f"myclient_{client['uuid']}")
+            ])
+        
+        # Добавляем кнопки "Обновить" и "Назад"
+        buttons.append([
+            InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_myclients"),
+            InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")
+        ])
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+        
+        text = f"🔑 <b>Мои ключи ({len(clients)})</b>\n\n"
+        text += f"✅ Активных: {active_count}\n"
+        text += f"⏸️ Неактивных: {inactive_count}\n"
+        text += f"⏰ Просроченных: {expired_count}\n\n"
+        text += "Выберите ключ для просмотра:"
+        
+        await callback_query.message.edit_text(
+            text,
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
+        await callback_query.answer("✅ Обновлено", show_alert=False)
+        
     except Exception as e:
         # Проверяем, не является ли ошибка "message is not modified"
         if "message is not modified" in str(e):
