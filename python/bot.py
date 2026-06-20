@@ -157,7 +157,7 @@ async def cmd_start(message: Message, state: FSMContext):
                     InlineKeyboardButton(text="📋 Все ключи", callback_data="cmd_allclients")
                 ],
                 [
-                    InlineKeyboardButton(text="📊 Состояние сервера", callback_data="server_status"),
+                    InlineKeyboardButton(text="🖥️ Сервер", callback_data="server_status"),
                     InlineKeyboardButton(text="👥 Пользователи", callback_data="show_users")
                 ]
             ])
@@ -1039,6 +1039,35 @@ async def show_qr_code(callback_query: types.CallbackQuery):
         logger.error(f"Ошибка показа QR-кода: {e}")
         await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
 
+@dp.callback_query(lambda c: c.data == "refresh_allclients")
+async def refresh_allclients(callback_query: types.CallbackQuery):
+    """Обновить список всех ключей с очисткой кеша"""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
+        return
+    
+    try:
+        user_id = callback_query.from_user.id
+        
+        # Очищаем кеш для принудительного обновления
+        if user_id in allclients_cache:
+            del allclients_cache[user_id]
+        
+        # Показываем уведомление об обновлении
+        await callback_query.answer("🔄 Обновление данных...", show_alert=False)
+        
+        # Перенаправляем на back_to_allclients для отображения обновленных данных
+        await back_to_allclients(callback_query)
+        
+    except Exception as e:
+        logger.error(f"Ошибка обновления списка ключей: {e}")
+        # Проверяем, не является ли ошибка "message is not modified"
+        if "message is not modified" in str(e):
+            await callback_query.answer("✅ Данные актуальны", show_alert=False)
+        else:
+            await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
+
+
 
 @dp.callback_query(lambda c: c.data == "back_to_allclients")
 async def back_to_allclients(callback_query: types.CallbackQuery):
@@ -1068,12 +1097,29 @@ async def back_to_allclients(callback_query: types.CallbackQuery):
                 'data': all_clients
             }
         
+        # Подсчитываем статистику
         if not all_clients:
-            await callback_query.message.edit_text("📭 Нет ключей в системе.")
+            # Показываем полное окно даже если ключей нет
+            text = f"📋 <b>Все ключи</b>\n\n"
+            text += f"🔑 Всего ключей: 0\n"
+            text += f"✅ Активных: 0\n"
+            text += f"⏸️ Неактивных: 0\n"
+            text += f"⏰ Просроченных: 0\n"
+            text += f"📊 Расход трафика: 0 B\n\n"
+            text += "📭 <i>Нет ключей в системе</i>"
+            
+            # Добавляем кнопки "Обновить" и "Назад"
+            buttons = [
+                [InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_allclients")],
+                [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+            ]
+            keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+            
+            await callback_query.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
             await callback_query.answer()
             return
         
-        # Подсчитываем статистику
+        # Подсчитываем статистику для существующих ключей
         total_count = len(all_clients)
         active_count = sum(1 for c in all_clients if c['status'] == 'active')
         inactive_count = sum(1 for c in all_clients if c['status'] == 'inactive')
@@ -1098,7 +1144,7 @@ async def back_to_allclients(callback_query: types.CallbackQuery):
                 return f"{bytes_value / (1024**3):.2f} GB"
         
         # Обновляем текст статистики
-        text = f"📊 <b>Статистика ключей</b>\n\n"
+        text = f"📋 <b>Все ключи</b>\n\n"
         text += f"🔑 Всего ключей: {total_count}\n"
         text += f"✅ Активных: {active_count}\n"
         text += f"⏸️ Неактивных: {inactive_count}\n"
@@ -1158,8 +1204,9 @@ async def back_to_allclients(callback_query: types.CallbackQuery):
                 InlineKeyboardButton(text=f"🧹 Очистить просроченные ({expired_count})", callback_data="cleanup_expired")
             ])
         
-        # Добавляем кнопку "Назад"
+        # Добавляем кнопки "Обновить" и "Назад"
         buttons.append([
+            InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_allclients"),
             InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")
         ])
         
@@ -1527,7 +1574,7 @@ async def show_server_status(callback_query: types.CallbackQuery, state: FSMCont
         tcp_count = status.get('tcpCount', 0)
         
         # Формируем сообщение
-        message = "📊 <b>Состояние сервера</b>\n\n"
+        message = "🖥️ <b>Сервер</b>\n\n"
         
         message += f"💻 <b>CPU:</b> {cpu:.1f}%\n\n"
         
@@ -1918,7 +1965,7 @@ async def back_to_start_menu(callback_query: types.CallbackQuery, state: FSMCont
                 InlineKeyboardButton(text="📋 Все ключи", callback_data="cmd_allclients")
             ],
             [
-                InlineKeyboardButton(text="📊 Состояние сервера", callback_data="server_status"),
+                InlineKeyboardButton(text="🖥️ Сервер", callback_data="server_status"),
                 InlineKeyboardButton(text="👥 Пользователи", callback_data="show_users")
             ]
         ])
@@ -2081,24 +2128,37 @@ async def callback_cmd_myclients(callback_query: types.CallbackQuery, state: FSM
         # Получаем ключи пользователя из X-UI по username
         clients = await xui_client.get_user_clients_by_username(username)
         
+        # Подсчитываем статистику
         if not clients:
+            # Показываем полное окно даже если ключей нет
+            text = f"🔑 <b>Мои ключи (0)</b>\n\n"
+            text += f"✅ Активных: 0\n"
+            text += f"⏸️ Неактивных: 0\n"
+            text += f"⏰ Просроченных: 0\n\n"
+            text += "📭 <i>У вас пока нет ключей.</i>\n\n"
+            text += "Используйте /new для создания."
+            
+            # Добавляем кнопки "Обновить" и "Назад"
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_myclients")],
                 [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
             ])
             try:
                 await callback_query.message.edit_text(
-                    "📭 У вас пока нет ключей.\n\nИспользуйте /new для создания.",
-                    reply_markup=keyboard
+                    text,
+                    reply_markup=keyboard,
+                    parse_mode="HTML"
                 )
             except:
                 await bot.send_message(
                     callback_query.message.chat.id,
-                    "📭 У вас пока нет ключей.\n\nИспользуйте /new для создания.",
-                    reply_markup=keyboard
+                    text,
+                    reply_markup=keyboard,
+                    parse_mode="HTML"
                 )
             return
         
-        # Подсчитываем статистику
+        # Подсчитываем статистику для существующих ключей
         active_count = sum(1 for c in clients if c['status'] == 'active')
         inactive_count = sum(1 for c in clients if c['status'] == 'inactive')
         expired_count = sum(1 for c in clients if c['status'] == 'expired')
@@ -2127,14 +2187,15 @@ async def callback_cmd_myclients(callback_query: types.CallbackQuery, state: FSM
                 InlineKeyboardButton(text=f"{icon} {display_text}", callback_data=f"myclient_{client['uuid']}")
             ])
         
-        # Добавляем кнопку "Назад"
+        # Добавляем кнопки "Обновить" и "Назад"
         buttons.append([
+            InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_myclients"),
             InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")
         ])
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
         
-        text = f"📋 <b>Ваши ключи ({len(clients)})</b>\n\n"
+        text = f"🔑 <b>Мои ключи ({len(clients)})</b>\n\n"
         text += f"✅ Активных: {active_count}\n"
         text += f"⏸️ Неактивных: {inactive_count}\n"
         text += f"⏰ Просроченных: {expired_count}\n\n"
@@ -2170,6 +2231,115 @@ async def callback_cmd_myclients(callback_query: types.CallbackQuery, state: FSM
                 f"❌ Ошибка: {str(e)}",
                 reply_markup=keyboard
             )
+
+@dp.callback_query(lambda c: c.data == "refresh_myclients")
+async def refresh_myclients(callback_query: types.CallbackQuery, state: FSMContext):
+    """Обновить список моих ключей"""
+    user_id = callback_query.from_user.id
+    
+    # Проверка доступа
+    if not is_allowed(user_id):
+        await callback_query.answer("⛔ Доступ запрещен", show_alert=True)
+        return
+    
+    if is_blocked_by_admin(user_id):
+        await callback_query.answer("⛔ Вы заблокированы администратором", show_alert=True)
+        return
+    
+    # Очищаем состояние
+    await state.clear()
+    
+    try:
+        username = callback_query.from_user.username
+        if not username:
+            await callback_query.answer("❌ У вас не установлен username", show_alert=True)
+            return
+        
+        # Получаем ключи пользователя из X-UI по username
+        clients = await xui_client.get_user_clients_by_username(username)
+        
+        # Подсчитываем статистику
+        if not clients:
+            # Показываем полное окно даже если ключей нет
+            text = f"🔑 <b>Мои ключи (0)</b>\n\n"
+            text += f"✅ Активных: 0\n"
+            text += f"⏸️ Неактивных: 0\n"
+            text += f"⏰ Просроченных: 0\n\n"
+            text += "📭 <i>У вас пока нет ключей.</i>\n\n"
+            text += "Используйте /new для создания."
+            
+            # Добавляем кнопки "Обновить" и "Назад"
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_myclients")],
+                [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+            ])
+            
+            await callback_query.message.edit_text(
+                text,
+                reply_markup=keyboard,
+                parse_mode="HTML"
+            )
+            await callback_query.answer("✅ Обновлено", show_alert=False)
+            return
+        
+        # Подсчитываем статистику для существующих ключей
+        active_count = sum(1 for c in clients if c['status'] == 'active')
+        inactive_count = sum(1 for c in clients if c['status'] == 'inactive')
+        expired_count = sum(1 for c in clients if c['status'] == 'expired')
+        
+        buttons = []
+        for client in clients:
+            email = client['email']
+            comment = client['comment']
+            status = client['status']
+            
+            # Формируем текст кнопки
+            if comment:
+                display_text = f"{comment[:25]}"
+            else:
+                display_text = f"{email[:25]}"
+            
+            # Добавляем иконку статуса
+            if status == 'active':
+                icon = "✅"
+            elif status == 'inactive':
+                icon = "⏸️"
+            else:  # expired
+                icon = "⏰"
+            
+            buttons.append([
+                InlineKeyboardButton(text=f"{icon} {display_text}", callback_data=f"myclient_{client['uuid']}")
+            ])
+        
+        # Добавляем кнопки "Обновить" и "Назад"
+        buttons.append([
+            InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_myclients"),
+            InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")
+        ])
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+        
+        text = f"🔑 <b>Мои ключи ({len(clients)})</b>\n\n"
+        text += f"✅ Активных: {active_count}\n"
+        text += f"⏸️ Неактивных: {inactive_count}\n"
+        text += f"⏰ Просроченных: {expired_count}\n\n"
+        text += "Выберите ключ для просмотра:"
+        
+        await callback_query.message.edit_text(
+            text,
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
+        await callback_query.answer("✅ Обновлено", show_alert=False)
+        
+    except Exception as e:
+        # Проверяем, не является ли ошибка "message is not modified"
+        if "message is not modified" in str(e):
+            await callback_query.answer("✅ Данные актуальны", show_alert=False)
+        else:
+            logger.error(f"Ошибка обновления моих ключей: {e}")
+            await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
+
 
 @dp.callback_query(lambda c: c.data == "cmd_allclients")
 async def callback_cmd_allclients(callback_query: types.CallbackQuery, state: FSMContext):

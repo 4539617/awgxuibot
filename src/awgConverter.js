@@ -2,6 +2,11 @@ import fs from 'fs';
 import path from 'path';
 import { config } from './config.js';
 import { logger } from './logger.js';
+import {
+  detectAwgVersion,
+  validateAwgConfig,
+  convertHParameterV2toV1
+} from './awg/validator.js';
 
 /**
  * Parse AWG config file
@@ -46,40 +51,8 @@ export function parseAwgConfig(content) {
   return config;
 }
 
-/**
- * Detect AWG version based on H parameters
- * @param {Object} config - Parsed config
- * @returns {number} Version (1 or 2)
- */
-export function detectAwgVersion(config) {
-  const h1 = config.interface.H1;
-  
-  if (!h1) {
-    return 1; // Default to v1 if no H parameters
-  }
-  
-  // Version 2 uses ranges (e.g., "1726271876-1813116022")
-  if (h1.includes('-')) {
-    return 2;
-  }
-  
-  return 1;
-}
-
-/**
- * Convert H parameter from v2 range to v1 single value
- * @param {string} hValue - H parameter value (e.g., "1726271876-1813116022")
- * @returns {string} First value from range
- */
-export function convertHParameter(hValue) {
-  if (!hValue || !hValue.includes('-')) {
-    return hValue;
-  }
-  
-  // Extract first value from range
-  const firstValue = hValue.split('-')[0];
-  return firstValue;
-}
+// Используем функции из модуля validator
+// detectAwgVersion и convertHParameterV2toV1 импортированы выше
 
 /**
  * Convert S parameters from v2 to v1
@@ -112,21 +85,28 @@ export function convertAwgV2toV1(config) {
   
   // Convert H parameters (remove ranges, keep first value)
   if (v1Config.interface.H1) {
-    v1Config.interface.H1 = convertHParameter(v1Config.interface.H1);
+    v1Config.interface.H1 = convertHParameterV2toV1(v1Config.interface.H1);
   }
   if (v1Config.interface.H2) {
-    v1Config.interface.H2 = convertHParameter(v1Config.interface.H2);
+    v1Config.interface.H2 = convertHParameterV2toV1(v1Config.interface.H2);
   }
   if (v1Config.interface.H3) {
-    v1Config.interface.H3 = convertHParameter(v1Config.interface.H3);
+    v1Config.interface.H3 = convertHParameterV2toV1(v1Config.interface.H3);
   }
   if (v1Config.interface.H4) {
-    v1Config.interface.H4 = convertHParameter(v1Config.interface.H4);
+    v1Config.interface.H4 = convertHParameterV2toV1(v1Config.interface.H4);
   }
   
   // Remove S3 and S4 (not used in v1)
   delete v1Config.interface.S3;
   delete v1Config.interface.S4;
+  
+  // Remove I parameters (CPS concealment, not supported in v1)
+  delete v1Config.interface.I1;
+  delete v1Config.interface.I2;
+  delete v1Config.interface.I3;
+  delete v1Config.interface.I4;
+  delete v1Config.interface.I5;
   
   return v1Config;
 }
@@ -185,9 +165,16 @@ export async function processAwgConfig(filepath, originalFilename) {
   // Parse config
   const parsedConfig = parseAwgConfig(content);
   
-  // Detect version
-  const version = detectAwgVersion(parsedConfig);
-  logger.info(`Detected AWG version: ${version}`);
+  // Detect version and validate
+  const validation = validateAwgConfig(parsedConfig);
+  const version = validation.version;
+  
+  if (!validation.valid) {
+    logger.warn(`⚠️ Конфиг содержит ошибки валидации:`);
+    validation.errors.forEach(err => logger.warn(`   - ${err}`));
+  } else {
+    logger.info(`✅ AWG ${version} конфиг валиден`);
+  }
   
   let outputConfig = parsedConfig;
   let converted = false;

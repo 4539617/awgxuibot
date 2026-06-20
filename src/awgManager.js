@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { config } from './config.js';
 import { logger } from './logger.js';
+import { detectAwgVersion, validateAwgConfig } from './awg/validator.js';
 
 const execAsync = promisify(exec);
 
@@ -99,8 +100,14 @@ export class AWGManager {
     // Парсим конфиг
     const parsedConfig = this.parseAwgConfig(configContent);
     
-    // Определяем версию
-    const version = this.detectVersion(parsedConfig);
+    // Определяем версию и валидируем
+    const validation = validateAwgConfig(parsedConfig);
+    const version = validation.version;
+    
+    if (!validation.valid) {
+      logger.warn(`⚠️ Конфиг ${containerName} содержит ошибки валидации:`);
+      validation.errors.forEach(err => logger.warn(`   - ${err}`));
+    }
     
     // Получаем порт
     const portMatch = configContent.match(/ListenPort\s*=\s*(\d+)/);
@@ -148,6 +155,7 @@ export class AWGManager {
     }
 
     // КРИТИЧЕСКАЯ ПРОВЕРКА: Получаем актуальный PublicKey из запущенного интерфейса
+    // Основано на amneziawg-installer v5.16.1
     try {
       const interfaceName = configPath.includes('awg0') ? 'awg0' : 'wg0';
       const { stdout: wgShow } = await execAsync(
@@ -156,16 +164,19 @@ export class AWGManager {
       const actualPublicKey = wgShow.trim();
       
       if (actualPublicKey && actualPublicKey !== serverPublicKey) {
-        logger.warn(`⚠️  PublicKey mismatch detected for ${containerName}!`);
-        logger.warn(`   File key: ${serverPublicKey}`);
-        logger.warn(`   Actual key: ${actualPublicKey}`);
-        logger.info(`✅ Using actual key from running interface`);
+        logger.warn(`⚠️  PublicKey mismatch обнаружен для ${containerName}!`);
+        logger.warn(`   Ключ из файла: ${serverPublicKey}`);
+        logger.warn(`   Реальный ключ:  ${actualPublicKey}`);
+        logger.info(`✅ Используем реальный ключ из запущенного интерфейса`);
         serverPublicKey = actualPublicKey;
       } else if (actualPublicKey) {
-        logger.info(`✅ PublicKey verified: ${actualPublicKey}`);
+        logger.info(`✅ PublicKey проверен и совпадает: ${actualPublicKey.substring(0, 16)}...`);
+      } else {
+        logger.warn(`⚠️  Не удалось получить PublicKey из интерфейса, используем ключ из файла`);
       }
     } catch (error) {
-      logger.warn(`Could not verify PublicKey from interface, using file key: ${error.message}`);
+      logger.warn(`⚠️  Ошибка проверки PublicKey из интерфейса: ${error.message}`);
+      logger.warn(`   Используем ключ из файла (может быть устаревшим)`);
     }
 
     return {
@@ -225,19 +236,11 @@ export class AWGManager {
   }
 
   /**
-   * Определить версию AWG
+   * Определить версию AWG (используем функцию из validator)
+   * @deprecated Используйте detectAwgVersion из awg/validator.js
    */
   detectVersion(parsedConfig) {
-    // v2 имеет параметры S3, S4 или H-параметры с диапазонами
-    if (parsedConfig.interface.S3 || parsedConfig.interface.S4) {
-      return 'v2';
-    }
-    
-    if (parsedConfig.interface.H1 && parsedConfig.interface.H1.includes('-')) {
-      return 'v2';
-    }
-    
-    return 'v1';
+    return detectAwgVersion(parsedConfig);
   }
 
   /**
@@ -460,6 +463,7 @@ AllowedIPs = ${ip}/32
 
   /**
    * Создать клиентский конфиг
+   * Улучшенная версия с полной поддержкой AWG v2
    */
   createClientConfig(container, privateKey, ip) {
     const params = container.params;
@@ -469,38 +473,46 @@ DNS = 1.1.1.1, 1.0.0.1
 PrivateKey = ${privateKey}
 `;
 
-    // Добавляем параметры обфускации если есть
+    // Junk параметры (обязательны для обфускации)
     if (params.Jc) configContent += `Jc = ${params.Jc}\n`;
     if (params.Jmin) configContent += `Jmin = ${params.Jmin}\n`;
     if (params.Jmax) configContent += `Jmax = ${params.Jmax}\n`;
+    
+    // S параметры (padding)
     if (params.S1) configContent += `S1 = ${params.S1}\n`;
     if (params.S2) configContent += `S2 = ${params.S2}\n`;
     
-    // Для v1 добавляем только S1, S2 и фиксированные H
-    if (container.version === 'v1') {
-      if (params.H1) configContent += `H1 = ${params.H1}\n`;
-      if (params.H2) configContent += `H2 = ${params.H2}\n`;
-      if (params.H3) configContent += `H3 = ${params.H3}\n`;
-      if (params.H4) configContent += `H4 = ${params.H4}\n`;
-    }
-    // Для v2 добавляем S3, S4 и диапазоны H
-    else if (container.version === 'v2') {
+    // Версия-специфичные параметры
+    if (container.version === 'v2') {
+      // v2: S3, S4 (дополнительный padding)
       if (params.S3) configContent += `S3 = ${params.S3}\n`;
       if (params.S4) configContent += `S4 = ${params.S4}\n`;
+      
+      // v2: H-диапазоны (обязательны для v2)
       if (params.H1) configContent += `H1 = ${params.H1}\n`;
       if (params.H2) configContent += `H2 = ${params.H2}\n`;
       if (params.H3) configContent += `H3 = ${params.H3}\n`;
       if (params.H4) configContent += `H4 = ${params.H4}\n`;
       
-      // Добавляем I параметры для маскировки
-      // Если есть в серверном конфиге - используем их, иначе дефолтные
+      // v2: I параметры (CPS мимикрия DNS)
+      // Дефолтный I1 - имитация DNS-запроса к yandex.ru
       const defaultI1 = '<b 0x084481800001000300000000077469636b65747306776964676574096b696e6f706f69736b0272750000010001c00c0005000100000039001806776964676574077469636b6574730679616e646578c025c0390005000100000039002b1765787465726e616c2d7469636b6574732d776964676574066166697368610679616e646578036e657400c05d000100010000001c000457fafe25>';
       
-      configContent += `I1 = ${params.I1 || defaultI1}\n`;
-      configContent += `I2 = ${params.I2 || ''}\n`;
-      configContent += `I3 = ${params.I3 || ''}\n`;
-      configContent += `I4 = ${params.I4 || ''}\n`;
-      configContent += `I5 = ${params.I5 || ''}\n`;
+      // Проверка флага removeI1 (для Мегафона)
+      if (!params.removeI1) {
+        configContent += `I1 = ${params.I1 || defaultI1}\n`;
+      }
+      
+      if (params.I2) configContent += `I2 = ${params.I2}\n`;
+      if (params.I3) configContent += `I3 = ${params.I3}\n`;
+      if (params.I4) configContent += `I4 = ${params.I4}\n`;
+      if (params.I5) configContent += `I5 = ${params.I5}\n`;
+    } else {
+      // v1: только фиксированные H-значения (не диапазоны)
+      if (params.H1) configContent += `H1 = ${params.H1}\n`;
+      if (params.H2) configContent += `H2 = ${params.H2}\n`;
+      if (params.H3) configContent += `H3 = ${params.H3}\n`;
+      if (params.H4) configContent += `H4 = ${params.H4}\n`;
     }
 
     configContent += `

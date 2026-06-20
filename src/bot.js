@@ -29,6 +29,8 @@ export class RouteBot {
     this.awgManager = new AWGManager();
     // VPS label sessions storage
     this.vpsLabelSessions = new Map();
+    // Message ID storage for editing instead of sending new messages
+    this.lastMessageIds = new Map();
     this.setupHandlers();
     logger.info('RouteBot initialized');
   }
@@ -47,28 +49,8 @@ export class RouteBot {
         return; // Silently ignore for non-admins
       }
       
-      // Получаем статистику
-      let statsMessage = '';
-      try {
-        statsMessage = await this.showAwgStats(chatId);
-      } catch (error) {
-        statsMessage = '❌ Ошибка при получении статистики\n\n';
-      }
-      
-      const keyboard = {
-        inline_keyboard: [
-          [
-            { text: 'V1', callback_data: 'awg_select_v1' },
-            { text: 'V2', callback_data: 'awg_select_v2' }
-          ]
-        ]
-      };
-
-      this.bot.sendMessage(
-        chatId,
-        `🔐 *Панель администратора*\n\n${statsMessage}Выберите действие:`,
-        { parse_mode: 'Markdown', reply_markup: keyboard }
-      );
+      // Показываем главное меню
+      await this.showMainMenu(chatId);
     });
 
 
@@ -89,28 +71,8 @@ export class RouteBot {
         }
         
         if (data === 'start_menu') {
-          // Получаем статистику
-          let statsMessage = '';
-          try {
-            statsMessage = await this.showAwgStats(chatId);
-          } catch (error) {
-            statsMessage = '❌ Ошибка при получении статистики\n\n';
-          }
-          
-          const keyboard = {
-            inline_keyboard: [
-              [
-                { text: 'V1', callback_data: 'awg_select_v1' },
-                { text: 'V2', callback_data: 'awg_select_v2' }
-              ]
-            ]
-          };
-          
-          this.bot.sendMessage(
-            chatId,
-            `🔐 *Панель администратора*\n\n${statsMessage}Выберите действие:`,
-            { parse_mode: 'Markdown', reply_markup: keyboard }
-          );
+          // Показываем главное меню
+          await this.showMainMenu(chatId);
         }
       }
       // AWG config generation callbacks
@@ -121,6 +83,12 @@ export class RouteBot {
         if (!this.isAdmin(userId)) {
           logger.warn(`Unauthorized AWG callback from user ${userId}`);
           return;
+        }
+        
+        // Очищаем сессию при любом AWG callback (отмена ожидания ввода)
+        if (this.vpsLabelSessions.has(chatId)) {
+          this.vpsLabelSessions.delete(chatId);
+          logger.info(`Cleared VPS label session for chat ${chatId} due to new action`);
         }
         
         if (data.startsWith('awg_select_')) {
@@ -624,11 +592,42 @@ export class RouteBot {
       );
     }
   }
+
+  /**
+   * Отправить или отредактировать сообщение
+   * Использует editMessageText если есть сохраненный message_id, иначе sendMessage
+   */
+  async sendOrEditMessage(chatId, text, options = {}) {
+    const lastMessageId = this.lastMessageIds.get(chatId);
+    
+    try {
+      if (lastMessageId) {
+        // Пытаемся отредактировать существующее сообщение
+        const result = await this.bot.editMessageText(text, {
+          chat_id: chatId,
+          message_id: lastMessageId,
+          ...options
+        });
+        return { message_id: lastMessageId };
+      }
+    } catch (error) {
+      // Если не удалось отредактировать (сообщение слишком старое или удалено)
+      logger.warn(`Failed to edit message ${lastMessageId} for chat ${chatId}, sending new one`);
+      this.lastMessageIds.delete(chatId);
+    }
+    
+    // Отправляем новое сообщение
+    const result = await this.bot.sendMessage(chatId, text, options);
+    this.lastMessageIds.set(chatId, result.message_id);
+    return result;
+  }
+
   async showClientSelectionMenu(chatId, version) {
     try {
       logger.info(`Showing client selection menu for ${version} in chat ${chatId}`);
       
-      const processingMsg = await this.bot.sendMessage(chatId, '⏳ Загружаю список клиентов...');
+      // Показываем индикатор загрузки в текущем сообщении
+      await this.sendOrEditMessage(chatId, '⏳ Загружаю список клиентов...', { parse_mode: 'Markdown' });
 
       // Initialize AWG manager if needed
       if (!this.awgManager.initialized) {
@@ -639,8 +638,7 @@ export class RouteBot {
       const container = this.awgManager.availableContainers.find(c => c.version === version);
       
       if (!container) {
-        await this.bot.deleteMessage(chatId, processingMsg.message_id);
-        this.bot.sendMessage(
+        await this.sendOrEditMessage(
           chatId,
           `❌ Контейнер версии ${version} не найден`,
           { parse_mode: 'Markdown' }
@@ -651,17 +649,20 @@ export class RouteBot {
       // Get clients with status
       const clients = await this.awgManager.getClientsWithStatus(container.name, version);
 
-      await this.bot.deleteMessage(chatId, processingMsg.message_id);
-
       // Build message
       let message = `📋 *AWG ${version.toUpperCase()}*\n\n`;
       
       if (clients.length === 0) {
         message += 'Нет клиентов\n\n';
       } else {
-        clients.forEach((client, index) => {
-          const status = client.active ? '✅ активен' : '❌ неактивен';
-          message += `${index + 1}. \`${client.ip}\` - ${status}\n`;
+        clients.forEach((client) => {
+          if (client.active) {
+            // Для активных показываем время последнего соединения
+            message += `\`${client.ip}\` - ✅ ${client.lastHandshake || 'активен'}\n`;
+          } else {
+            // Для неактивных просто крестик
+            message += `\`${client.ip}\` - ❌\n`;
+          }
         });
         message += '\n';
       }
@@ -679,12 +680,13 @@ export class RouteBot {
             { text: '🔢 Сформировать по номеру', callback_data: `awg_gen_by_number_${version}` }
           ],
           [
+            { text: '🔄 Обновить', callback_data: `awg_select_${version}` },
             { text: '🔙 Назад', callback_data: 'start_menu' }
           ]
         ]
       };
 
-      this.bot.sendMessage(chatId, message, {
+      await this.sendOrEditMessage(chatId, message, {
         parse_mode: 'Markdown',
         reply_markup: keyboard
       });
@@ -706,13 +708,20 @@ export class RouteBot {
         mode: 'next'
       });
       
-      await this.bot.sendMessage(
+      await this.sendOrEditMessage(
         chatId,
         `📝 *Введите метку сервера*\n\n` +
         `Например: \`XYZ\`, \`SERVER1\`, \`VPS-NY\`\n\n` +
         `Эта метка будет добавлена к имени файла конфигурации.\n` +
         `Пример: \`XYZ_AWGv1_10_8_1_1.conf\``,
-        { parse_mode: 'Markdown' }
+        {
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [[
+              { text: '🔙 Назад', callback_data: `awg_select_${version}` }
+            ]]
+          }
+        }
       );
     } catch (error) {
       logger.error(`Error requesting VPS label for chat ${chatId}:`, error);
@@ -730,7 +739,7 @@ export class RouteBot {
         version: version
       });
       
-      await this.bot.sendMessage(
+      await this.sendOrEditMessage(
         chatId,
         `🔢 *Введите номер IP адреса*\n\n` +
         `Введите число от 2 до 254\n` +
@@ -738,7 +747,14 @@ export class RouteBot {
         `Например: \`8\` для IP \`10.8.1.8\`\n\n` +
         `Если клиент с этим IP уже существует - будет отправлена существующая конфигурация.\n` +
         `Если нет - будет создана новая.`,
-        { parse_mode: 'Markdown' }
+        {
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [[
+              { text: '🔙 Назад', callback_data: `awg_select_${version}` }
+            ]]
+          }
+        }
       );
     } catch (error) {
       logger.error(`Error requesting IP number for chat ${chatId}:`, error);
@@ -829,13 +845,20 @@ export class RouteBot {
         ipNumber: ipNumber
       });
       
-      await this.bot.sendMessage(
+      await this.sendOrEditMessage(
         chatId,
         `📝 *Введите метку сервера*\n\n` +
         `Например: \`VPS3\`, \`SERVER1\`\n\n` +
         `Эта метка будет добавлена к имени файла конфигурации для IP \`10.8.1.${ipNumber}\`\n` +
         `Пример: \`VPS3_AWGv${version === 'v1' ? '1' : '2'}_10_8_1_${ipNumber}.conf\``,
-        { parse_mode: 'Markdown' }
+        {
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [[
+              { text: '🔙 Назад', callback_data: `awg_select_${version}` }
+            ]]
+          }
+        }
       );
       
     } catch (error) {
@@ -877,9 +900,6 @@ export class RouteBot {
       // Send config file
       await this.bot.sendDocument(chatId, result.filepath);
       logger.info(`Sent ${version} config to chat ${chatId}: ${result.filename}`);
-
-      // Show client selection menu again
-      await this.showClientSelectionMenu(chatId, version);
 
     } catch (error) {
       logger.error(`Error generating ${version} config for chat ${chatId}:`, error);
@@ -924,20 +944,7 @@ export class RouteBot {
 
       // Send config file
       await this.bot.sendDocument(chatId, result.filepath);
-      
-      // Send info message
-      let infoMessage = `✅ Конфигурация для \`${result.ip}\` `;
-      if (result.isNew) {
-        infoMessage += `создана`;
-      } else {
-        infoMessage += `восстановлена (IP уже существовал)`;
-      }
-      
-      this.bot.sendMessage(chatId, infoMessage, { parse_mode: 'Markdown' });
       logger.info(`Sent ${version} config to chat ${chatId}: ${result.filename}`);
-
-      // Show client selection menu again
-      await this.showClientSelectionMenu(chatId, version);
 
     } catch (error) {
       logger.error(`Error generating ${version} config by number for chat ${chatId}:`, error);
@@ -952,13 +959,9 @@ export class RouteBot {
 
   async showAwgStats(chatId) {
     try {
-      logger.info(`Showing stats for chat ${chatId}`);
-
-      const processingMsg = await this.bot.sendMessage(chatId, '⏳ Получаю статистику...');
+      logger.info(`Getting stats for chat ${chatId}`);
 
       const stats = await this.awgManager.getStats();
-
-      await this.bot.deleteMessage(chatId, processingMsg.message_id);
 
       // Создаем карту найденных контейнеров по версиям
       const statsMap = new Map();
@@ -1006,8 +1009,40 @@ export class RouteBot {
       return statsMessage;
 
     } catch (error) {
-      logger.error(`Error showing stats for chat ${chatId}:`, error);
+      logger.error(`Error getting stats for chat ${chatId}:`, error);
       throw error;
+    }
+  }
+
+  async showMainMenu(chatId) {
+    try {
+      logger.info(`Showing main menu for chat ${chatId}`);
+      
+      // Получаем статистику
+      let statsMessage = '';
+      try {
+        statsMessage = await this.showAwgStats(chatId);
+      } catch (error) {
+        statsMessage = '❌ Ошибка при получении статистики\n\n';
+      }
+      
+      const keyboard = {
+        inline_keyboard: [
+          [
+            { text: 'V1', callback_data: 'awg_select_v1' },
+            { text: 'V2', callback_data: 'awg_select_v2' }
+          ]
+        ]
+      };
+      
+      await this.sendOrEditMessage(
+        chatId,
+        `🔐 *Панель администратора*\n\n${statsMessage}Выберите действие:`,
+        { parse_mode: 'Markdown', reply_markup: keyboard }
+      );
+    } catch (error) {
+      logger.error(`Error showing main menu for chat ${chatId}:`, error);
+      this.bot.sendMessage(chatId, `❌ Ошибка: ${error.message}`);
     }
   }
 
@@ -1015,7 +1050,8 @@ export class RouteBot {
     try {
       logger.info(`Showing ${version} clients list for chat ${chatId}`);
 
-      const processingMsg = await this.bot.sendMessage(chatId, '⏳ Получаю список клиентов...');
+      // Показываем индикатор загрузки в текущем сообщении
+      await this.sendOrEditMessage(chatId, '⏳ Получаю список клиентов...', { parse_mode: 'Markdown' });
 
       // Initialize AWG manager if needed
       if (!this.awgManager.initialized) {
@@ -1026,8 +1062,7 @@ export class RouteBot {
       const container = this.awgManager.availableContainers.find(c => c.version === version);
       
       if (!container) {
-        await this.bot.deleteMessage(chatId, processingMsg.message_id);
-        this.bot.sendMessage(
+        await this.sendOrEditMessage(
           chatId,
           `📋 *Подробнее Клиенты ${version.toUpperCase()}*\n\n❌ Контейнер версии ${version} не найден`,
           { parse_mode: 'Markdown' }
@@ -1040,10 +1075,8 @@ export class RouteBot {
       // Получаем статистику клиентов (последнее соединение, трафик)
       const clientsStats = await this.getClientsStats(container.name, version);
 
-      await this.bot.deleteMessage(chatId, processingMsg.message_id);
-
       if (clients.length === 0) {
-        this.bot.sendMessage(
+        await this.sendOrEditMessage(
           chatId,
           `📋 *Подробнее Клиенты ${version.toUpperCase()}*\n\n📦 Контейнер: \`${container.name}\`\n\nНет активных клиентов`,
           { parse_mode: 'Markdown' }
@@ -1062,15 +1095,20 @@ export class RouteBot {
       
       clients.forEach((ip, index) => {
         const stats = clientsStats[ip] || {};
-        const lastSeen = stats.lastHandshake || 'никогда';
+        const lastSeen = stats.lastHandshake || '❌';
         const transfer = stats.transfer || 'нет данных';
         
-        clientsMessage += `${index + 1}. \`${ip}\`\n`;
-        clientsMessage += `   └ 🕐 Последнее соединение: ${lastSeen}\n`;
-        if (transfer !== 'нет данных') {
-          clientsMessage += `   └ 📊 Трафик: ${transfer}\n`;
+        // Если клиент неактивен - показываем только IP и крестик
+        if (lastSeen === '❌') {
+          clientsMessage += `\`${ip}\` ❌\n`;
+        } else {
+          // Если активен - показываем IP и детали
+          clientsMessage += `\`${ip}\`\n`;
+          clientsMessage += `   └ 🕐 ${lastSeen}\n`;
+          if (transfer !== 'нет данных') {
+            clientsMessage += `   └ 📊 ${transfer}\n`;
+          }
         }
-        clientsMessage += `\n`;
         
         // Добавляем кнопки для каждого IP
         keyboard.inline_keyboard.push([
@@ -1079,18 +1117,19 @@ export class RouteBot {
             callback_data: `resend_${version}_${ip}`
           },
           {
-            text: `🗑️ Удалить ${ip}`,
+            text: `🗑️ ${ip}`,
             callback_data: `delete_${version}_${ip}`
           }
         ]);
       });
 
-      // Добавляем кнопку "Назад"
+      // Добавляем кнопки "Обновить" и "Назад"
       keyboard.inline_keyboard.push([
+        { text: '🔄 Обновить', callback_data: `awg_clients_${version}` },
         { text: '🔙 Назад', callback_data: `awg_select_${version}` }
       ]);
 
-      this.bot.sendMessage(chatId, clientsMessage, {
+      await this.sendOrEditMessage(chatId, clientsMessage, {
         parse_mode: 'Markdown',
         reply_markup: keyboard
       });
@@ -1217,15 +1256,6 @@ export class RouteBot {
       await this.bot.sendDocument(chatId, result.filepath);
       logger.info(`Resent config to chat ${chatId}: ${result.filename}`);
       
-      this.bot.sendMessage(
-        chatId,
-        `✅ Конфигурация для \`${ip}\` отправлена повторно`,
-        { parse_mode: 'Markdown' }
-      );
-      
-      // Show client selection menu again
-      await this.showClientSelectionMenu(chatId, version);
-      
     } catch (error) {
       logger.error(`Error resending config for ${ip}:`, error);
       this.bot.sendMessage(
@@ -1248,12 +1278,12 @@ export class RouteBot {
         inline_keyboard: [
           [
             { text: '✅ Да, удалить', callback_data: `confirm_delete_${version}_${ip}` },
-            { text: '❌ Отмена', callback_data: `awg_clients_${version}` }
+            { text: '🔙 Назад', callback_data: `awg_clients_${version}` }
           ]
         ]
       };
       
-      this.bot.sendMessage(
+      await this.sendOrEditMessage(
         chatId,
         `⚠️ *Подтверждение удаления*\n\n` +
         `Вы уверены что хотите удалить клиента \`${ip}\` из ${version.toUpperCase()}?\n\n` +
