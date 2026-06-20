@@ -159,6 +159,9 @@ async def cmd_start(message: Message, state: FSMContext):
                 [
                     InlineKeyboardButton(text="🖥️ Сервер", callback_data="server_status"),
                     InlineKeyboardButton(text="👥 Пользователи", callback_data="show_users")
+                ],
+                [
+                    InlineKeyboardButton(text="🔧 Панели", callback_data="show_panels")
                 ]
             ])
             await message.answer(
@@ -2796,17 +2799,73 @@ async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContex
         panel_manager = config.panel_manager
         current_panel_id = panel_manager.get_current_panel_id()
         
-        # Проверяем, не пытаемся ли подключиться к текущей панели
-        if panel_id == current_panel_id:
-            await callback_query.answer("ℹ️ Эта панель уже активна", show_alert=True)
-            return
-        
         panel_config = panel_manager.get_panel(panel_id)
         if not panel_config:
             await callback_query.answer("❌ Панель не найдена", show_alert=True)
             return
         
         alias = panel_config.get('alias', panel_id)
+        
+        # Если это текущая панель, просто показываем статистику
+        if panel_id == current_panel_id:
+            await callback_query.message.edit_text(
+                f"🔄 Получение статистики панели <b>{alias}</b>...",
+                parse_mode="HTML"
+            )
+            
+            try:
+                all_clients = await xui_client.get_all_clients()
+                
+                total_clients = len(all_clients)
+                active_clients = sum(1 for c in all_clients if c.get('enable', False))
+                inactive_clients = total_clients - active_clients
+                
+                # Подсчет трафика
+                total_traffic_up = sum(c.get('up', 0) for c in all_clients)
+                total_traffic_down = sum(c.get('down', 0) for c in all_clients)
+                total_traffic = total_traffic_up + total_traffic_down
+                
+                def format_bytes(bytes_val):
+                    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+                        if bytes_val < 1024.0:
+                            return f"{bytes_val:.2f} {unit}"
+                        bytes_val /= 1024.0
+                    return f"{bytes_val:.2f} PB"
+                
+                stats_text = (
+                    f"🟢 <b>Текущая панель: {alias}</b>\n\n"
+                    f"🔐 <b>Информация о панели:</b>\n"
+                    f"• URL: <code>{config.xui.url}</code>\n"
+                    f"• Версия: <code>{config.xui.version}</code>\n"
+                    f"• Inbound ID: <code>{config.xui.inbound_id}</code>\n\n"
+                    f"📊 <b>Статистика ключей:</b>\n"
+                    f"• Всего ключей: <b>{total_clients}</b>\n"
+                    f"• Активных: <b>{active_clients}</b> ✅\n"
+                    f"• Неактивных: <b>{inactive_clients}</b> ❌\n\n"
+                    f"📈 <b>Трафик:</b>\n"
+                    f"• Загружено: <code>{format_bytes(total_traffic_up)}</code>\n"
+                    f"• Скачано: <code>{format_bytes(total_traffic_down)}</code>\n"
+                    f"• Всего: <code>{format_bytes(total_traffic)}</code>"
+                )
+            except Exception as e:
+                logger.error(f"Ошибка получения статистики: {e}")
+                stats_text = (
+                    f"🟢 <b>Текущая панель: {alias}</b>\n\n"
+                    f"🔐 URL: <code>{config.xui.url}</code>\n"
+                    f"📋 Версия: <code>{config.xui.version}</code>\n"
+                    f"🆔 Inbound ID: <code>{config.xui.inbound_id}</code>\n\n"
+                    f"⚠️ Не удалось получить статистику ключей"
+                )
+            
+            await callback_query.message.edit_text(
+                stats_text,
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="◀️ К списку панелей", callback_data="show_panels")],
+                    [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_start")]
+                ])
+            )
+            return
         
         await callback_query.message.edit_text(
             f"🔄 Подключение к панели <b>{alias}</b>...\n\n"
