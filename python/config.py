@@ -402,20 +402,46 @@ class PanelManager:
     
     def _load_panels(self):
         """Загрузить конфигурацию панелей из YAML файла"""
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        logger.info(f"🔍 Попытка загрузки панелей из: {self.config_path.absolute()}")
+        
         if not self.config_path.exists():
-            # Если файл не существует, создаем пустую конфигурацию
+            logger.warning(f"⚠️ Файл {self.config_path} не найден")
             self.panels = {}
             self.current_panel_id = None
             return
         
         try:
+            logger.info(f"📂 Файл найден, размер: {self.config_path.stat().st_size} байт")
+            
             with open(self.config_path, 'r', encoding='utf-8') as f:
-                data = yaml.safe_load(f)
+                content = f.read()
+                logger.info(f"📄 Содержимое файла прочитано: {len(content)} символов")
+                
+                data = yaml.safe_load(content)
+                logger.info(f"✅ YAML распарсен: {data}")
+                
                 if data:
                     self.panels = data.get('panels', {})
                     self.current_panel_id = data.get('current_panel')
+                    logger.info(f"✅ Загружено панелей: {len(self.panels)}")
+                    logger.info(f"✅ Текущая панель: {self.current_panel_id}")
+                    
+                    for panel_id, panel_config in self.panels.items():
+                        logger.info(f"  📋 {panel_id}: {panel_config.get('alias', 'без имени')}")
+                else:
+                    logger.warning("⚠️ YAML файл пустой или содержит null")
+                    self.panels = {}
+                    self.current_panel_id = None
+                    
+        except yaml.YAMLError as e:
+            logger.error(f"❌ Ошибка парсинга YAML: {e}")
+            self.panels = {}
+            self.current_panel_id = None
         except Exception as e:
-            print(f"Ошибка загрузки panels.yaml: {e}")
+            logger.error(f"❌ Ошибка загрузки panels.yaml: {e}", exc_info=True)
             self.panels = {}
             self.current_panel_id = None
     

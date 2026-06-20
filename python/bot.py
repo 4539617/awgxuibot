@@ -2616,11 +2616,46 @@ async def show_panels_list(callback_query: types.CallbackQuery, state: FSMContex
         panels = panel_manager.get_all_panels()
         current_panel_id = panel_manager.get_current_panel_id()
         
+        # Диагностическая информация
+        logger.info(f"📊 Диагностика панелей:")
+        logger.info(f"  - Путь к файлу: {panel_manager.config_path.absolute()}")
+        logger.info(f"  - Файл существует: {panel_manager.config_path.exists()}")
+        logger.info(f"  - Количество панелей: {len(panels)}")
+        logger.info(f"  - Текущая панель: {current_panel_id}")
+        logger.info(f"  - Список панелей: {list(panels.keys())}")
+        
         if not panels:
-            await callback_query.message.edit_text(
+            # Дополнительная диагностика
+            import os
+            cwd = os.getcwd()
+            files_in_dir = os.listdir(cwd) if os.path.exists(cwd) else []
+            
+            diagnostic_text = (
                 "📋 <b>Управление панелями</b>\n\n"
                 "❌ Панели не настроены.\n\n"
-                "Создайте файл <code>panels.yaml</code> на основе <code>panels.yaml.example</code>",
+                f"🔍 <b>Диагностика:</b>\n"
+                f"• Рабочая директория: <code>{cwd}</code>\n"
+                f"• Ищем файл: <code>{panel_manager.config_path.name}</code>\n"
+                f"• Полный путь: <code>{panel_manager.config_path.absolute()}</code>\n"
+                f"• Файл существует: {'✅ Да' if panel_manager.config_path.exists() else '❌ Нет'}\n\n"
+            )
+            
+            if 'panels.yaml' in files_in_dir:
+                diagnostic_text += "✅ Файл <code>panels.yaml</code> найден в директории\n"
+                diagnostic_text += "⚠️ Возможно, ошибка в формате YAML или файл пустой\n\n"
+            else:
+                diagnostic_text += "❌ Файл <code>panels.yaml</code> не найден\n\n"
+            
+            diagnostic_text += (
+                "📝 <b>Решение:</b>\n"
+                "1. Скопируйте <code>panels.yaml.example</code> в <code>panels.yaml</code>\n"
+                "2. Настройте параметры панелей\n"
+                "3. Перезапустите бота\n\n"
+                f"💡 Файлы в директории: {len(files_in_dir)}"
+            )
+            
+            await callback_query.message.edit_text(
+                diagnostic_text,
                 parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_start")]
