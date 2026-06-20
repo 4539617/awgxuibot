@@ -2808,8 +2808,43 @@ async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContex
         
         alias = panel_config.get('alias', panel_id)
         
-        # Если это текущая панель, просто показываем статистику
+        # Если это текущая панель, проверяем подключение и показываем статистику
         if panel_id == current_panel_id:
+            await callback_query.message.edit_text(
+                f"🔄 Проверка подключения к панели <b>{alias}</b>...",
+                parse_mode="HTML"
+            )
+            
+            # Проверяем, что бот действительно подключен к этой панели
+            # Сравниваем URL из config с URL из panel_config
+            panel_url = panel_config.get('url', '')
+            current_url = config.xui.url
+            
+            if panel_url != current_url:
+                # URL не совпадают - нужно переподключиться
+                logger.warning(f"⚠️ URL не совпадают! Panel: {panel_url}, Current: {current_url}")
+                logger.info(f"🔄 Переподключение к панели {alias}...")
+                
+                # Создаем новый XUIConfig из панели
+                new_xui_config = panel_manager.create_xui_config_from_panel(panel_id)
+                if new_xui_config:
+                    config.xui = new_xui_config
+                    xui_client.update_xui_config(new_xui_config)
+                    
+                    # Переподключаемся
+                    if not await xui_client.login():
+                        await callback_query.message.edit_text(
+                            f"❌ <b>Ошибка переподключения к панели {alias}</b>\n\n"
+                            "Не удалось авторизоваться.",
+                            parse_mode="HTML",
+                            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                                [InlineKeyboardButton(text="◀️ Назад", callback_data="show_panels")]
+                            ])
+                        )
+                        return
+                    
+                    logger.info(f"✅ Переподключено к панели {alias}")
+            
             await callback_query.message.edit_text(
                 f"🔄 Получение статистики панели <b>{alias}</b>...",
                 parse_mode="HTML"
