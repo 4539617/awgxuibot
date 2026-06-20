@@ -2723,8 +2723,7 @@ async def refresh_panels_status(callback_query: types.CallbackQuery, state: FSMC
     """Обновить статусы всех панелей"""
     await callback_query.answer("🔄 Обновление статусов...")
     
-    # Просто перезагружаем список панелей
-    callback_query.data = "show_panels"
+    # Просто вызываем show_panels_list напрямую
     await show_panels_list(callback_query, state)
 
 
