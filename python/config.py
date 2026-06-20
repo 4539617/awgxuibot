@@ -4,6 +4,10 @@ from dotenv import load_dotenv
 from dataclasses import dataclass
 from typing import Optional, List
 import sqlite3
+import yaml
+import aiohttp
+import asyncio
+from pathlib import Path
 
 load_dotenv()
 
@@ -387,6 +391,199 @@ class UserDatabase:
             cursor = conn.execute("SELECT 1 FROM blocked_users WHERE user_id = ?", (user_id,))
             return cursor.fetchone() is not None
 
+class PanelManager:
+    """Менеджер для управления несколькими панелями 3x-ui"""
+    
+    def __init__(self, config_path: str = "panels.yaml"):
+        self.config_path = Path(config_path)
+        self.panels = {}
+        self.current_panel_id = None
+        self._load_panels()
+    
+    def _load_panels(self):
+        """Загрузить конфигурацию панелей из YAML файла"""
+        if not self.config_path.exists():
+            # Если файл не существует, создаем пустую конфигурацию
+            self.panels = {}
+            self.current_panel_id = None
+            return
+        
+        try:
+            with open(self.config_path, 'r', encoding='utf-8') as f:
+                data = yaml.safe_load(f)
+                if data:
+                    self.panels = data.get('panels', {})
+                    self.current_panel_id = data.get('current_panel')
+        except Exception as e:
+            print(f"Ошибка загрузки panels.yaml: {e}")
+            self.panels = {}
+            self.current_panel_id = None
+    
+    def _save_panels(self):
+        """Сохранить конфигурацию панелей в YAML файл"""
+        try:
+            data = {
+                'current_panel': self.current_panel_id,
+                'panels': self.panels
+            }
+            with open(self.config_path, 'w', encoding='utf-8') as f:
+                yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
+            return True
+        except Exception as e:
+            print(f"Ошибка сохранения panels.yaml: {e}")
+            return False
+    
+    def get_current_panel(self) -> Optional[dict]:
+        """Получить конфигурацию текущей активной панели"""
+        if self.current_panel_id and self.current_panel_id in self.panels:
+            return self.panels[self.current_panel_id]
+        return None
+    
+    def get_current_panel_id(self) -> Optional[str]:
+        """Получить ID текущей активной панели"""
+        return self.current_panel_id
+    
+    def get_all_panels(self) -> dict:
+        """Получить все панели"""
+        return self.panels
+    
+    def get_panel(self, panel_id: str) -> Optional[dict]:
+        """Получить конфигурацию конкретной панели"""
+        return self.panels.get(panel_id)
+    
+    def add_panel(self, panel_id: str, panel_data: dict) -> bool:
+        """Добавить новую панель"""
+        try:
+            self.panels[panel_id] = panel_data
+            if not self.current_panel_id:
+                self.current_panel_id = panel_id
+            return self._save_panels()
+        except Exception as e:
+            print(f"Ошибка добавления панели: {e}")
+            return False
+    
+    def remove_panel(self, panel_id: str) -> bool:
+        """Удалить панель"""
+        if panel_id not in self.panels:
+            return False
+        
+        try:
+            del self.panels[panel_id]
+            # Если удаляем текущую панель, сбрасываем current_panel_id
+            if self.current_panel_id == panel_id:
+                # Выбираем первую доступную панель или None
+                self.current_panel_id = next(iter(self.panels.keys()), None)
+            return self._save_panels()
+        except Exception as e:
+            print(f"Ошибка удаления панели: {e}")
+            return False
+    
+    def switch_panel(self, panel_id: str) -> bool:
+        """Переключиться на другую панель"""
+        if panel_id not in self.panels:
+            return False
+        
+        try:
+            self.current_panel_id = panel_id
+            return self._save_panels()
+        except Exception as e:
+            print(f"Ошибка переключения панели: {e}")
+            return False
+    
+    async def check_panel_status(self, panel_config: dict) -> bool:
+        """
+        Проверить доступность панели по сети
+        Возвращает True если панель доступна, False если нет
+        """
+        try:
+            url = panel_config.get('url', '')
+            username = panel_config.get('username', '')
+            password = panel_config.get('password', '')
+            
+            if not url:
+                return False
+            
+            # Формируем URL для проверки (endpoint /login)
+            login_url = f"{url.rstrip('/')}/login"
+            
+            # Создаем сессию с таймаутом
+            timeout = aiohttp.ClientTimeout(total=5)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                # Пытаемся выполнить POST запрос к /login
+                async with session.post(
+                    login_url,
+                    json={'username': username, 'password': password},
+                    ssl=False
+                ) as response:
+                    # Если получили ответ (любой), панель доступна
+                    return response.status in [200, 401, 403]  # 200 - успех, 401/403 - неверные данные, но панель работает
+        except asyncio.TimeoutError:
+            return False
+        except aiohttp.ClientError:
+            return False
+        except Exception as e:
+            print(f"Ошибка проверки панели: {e}")
+            return False
+    
+    async def check_all_panels_status(self) -> dict:
+        """
+        Проверить статус всех панелей
+        Возвращает словарь {panel_id: status}
+        """
+        statuses = {}
+        for panel_id, panel_config in self.panels.items():
+            status = await self.check_panel_status(panel_config)
+            statuses[panel_id] = status
+        return statuses
+    
+    def create_xui_config_from_panel(self, panel_id: str) -> Optional[XUIConfig]:
+        """Создать XUIConfig из конфигурации панели"""
+        panel = self.get_panel(panel_id)
+        if not panel:
+            return None
+        
+        try:
+            return XUIConfig(
+                url=panel.get('url', ''),
+                username=panel.get('username', ''),
+                password=panel.get('password', ''),
+                inbound_id=panel.get('inbound_id', 1),
+                db_path=panel.get('db_path', '/etc/x-ui/x-ui.db'),
+                api_timeout=panel.get('api_timeout', 30),
+                version=panel.get('version', 'latest'),
+                api_token=panel.get('api_token')
+            )
+        except Exception as e:
+            print(f"Ошибка создания XUIConfig: {e}")
+            return None
+    
+    def save_current_panel_to_env(self) -> bool:
+        """
+        Сохранить текущую панель в переменные окружения
+        (для совместимости с существующим кодом)
+        """
+        panel = self.get_current_panel()
+        if not panel:
+            return False
+        
+        try:
+            os.environ['XUI_URL'] = panel.get('url', '')
+            os.environ['XUI_USERNAME'] = panel.get('username', '')
+            os.environ['XUI_PASSWORD'] = panel.get('password', '')
+            os.environ['XUI_VERSION'] = panel.get('version', 'latest')
+            os.environ['INBOUND_ID'] = str(panel.get('inbound_id', 1))
+            os.environ['XUI_DB_PATH'] = panel.get('db_path', '/etc/x-ui/x-ui.db')
+            
+            api_token = panel.get('api_token')
+            if api_token:
+                os.environ['XUI_API_TOKEN'] = api_token
+            
+            return True
+        except Exception as e:
+            print(f"Ошибка сохранения в env: {e}")
+            return False
+
+
 
 class Config:
     def __init__(self):
@@ -397,6 +594,7 @@ class Config:
         self.database = DatabaseConfig.from_env()
         self.logging = LoggingConfig.from_env()
         self.users_db = UserDatabase()
+        self.panel_manager = PanelManager()
         self._validate()
 
     def _validate(self):

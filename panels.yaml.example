@@ -1,0 +1,40 @@
+# Конфигурация панелей 3x-ui для xuibot
+# Скопируйте этот файл в panels.yaml и настройте под свои панели
+
+# ID текущей активной панели
+current_panel: "panel1"
+
+# Список всех панелей
+panels:
+  # Первая панель (основная)
+  panel1:
+    alias: "Основная панель"
+    version: "3.3.1"
+    url: "https://your-domain.com:2053/admin-path"
+    username: "admin"
+    password: "your_secure_password_here"
+    api_token: "your_api_token_here_aBcDeFgHiJkLmNoPqRsTuVwXyZ123456"
+    inbound_id: 1
+    db_path: "/etc/x-ui/x-ui.db"
+    
+  # Вторая панель (резервная)
+  panel2:
+    alias: "Резервная панель"
+    version: "3.3.1"
+    url: "https://backup-server.com:2053/backup-path"
+    username: "admin"
+    password: "another_secure_password"
+    api_token: "backup_api_token_XyZ987654321aBcDeFgHiJkLmNoPqRsT"
+    inbound_id: 1
+    db_path: "/etc/x-ui/x-ui.db"
+
+# Примечания:
+# - panel_id (panel1, panel2) - уникальный идентификатор панели
+# - alias - отображаемое имя панели в боте
+# - version - версия 3x-ui (2.x.x, 3.x.x или latest)
+# - url - полный URL панели с путем
+# - username - имя пользователя для входа
+# - password - пароль для входа
+# - api_token - API токен (опционально для v3, рекомендуется)
+# - inbound_id - ID inbound для создания клиентов
+# - db_path - путь к базе данных x-ui (обычно /etc/x-ui/x-ui.db)

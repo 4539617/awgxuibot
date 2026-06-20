@@ -1967,6 +1967,9 @@ async def back_to_start_menu(callback_query: types.CallbackQuery, state: FSMCont
             [
                 InlineKeyboardButton(text="🖥️ Сервер", callback_data="server_status"),
                 InlineKeyboardButton(text="👥 Пользователи", callback_data="show_users")
+            ],
+            [
+                InlineKeyboardButton(text="🔧 Панели", callback_data="show_panels")
             ]
         ])
         
@@ -2592,6 +2595,284 @@ async def process_doremove_user(callback_query: types.CallbackQuery, state: FSMC
     except Exception as e:
         logger.error(f"Ошибка удаления пользователя: {e}")
         await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
+
+
+# ============================================
+# Управление панелями 3x-ui
+# ============================================
+
+@dp.callback_query(lambda c: c.data == "show_panels")
+async def show_panels_list(callback_query: types.CallbackQuery, state: FSMContext):
+    """Показать список всех панелей с их статусами"""
+    await callback_query.answer()
+    
+    user_id = callback_query.from_user.id
+    if not is_admin(user_id):
+        await callback_query.message.answer("⛔ Доступ запрещен")
+        return
+    
+    try:
+        panel_manager = config.panel_manager
+        panels = panel_manager.get_all_panels()
+        current_panel_id = panel_manager.get_current_panel_id()
+        
+        if not panels:
+            await callback_query.message.edit_text(
+                "📋 <b>Управление панелями</b>\n\n"
+                "❌ Панели не настроены.\n\n"
+                "Создайте файл <code>panels.yaml</code> на основе <code>panels.yaml.example</code>",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_start")]
+                ])
+            )
+            return
+        
+        # Проверяем статусы всех панелей
+        await callback_query.message.edit_text(
+            "🔄 Проверка статусов панелей...",
+            parse_mode="HTML"
+        )
+        
+        statuses = await panel_manager.check_all_panels_status()
+        
+        # Формируем текст со списком панелей
+        text = "🔧 <b>Управление панелями</b>\n\n"
+        text += "📋 <b>Список панелей:</b>\n\n"
+        
+        for panel_id, panel_config in panels.items():
+            alias = panel_config.get('alias', panel_id)
+            is_current = panel_id == current_panel_id
+            is_online = statuses.get(panel_id, False)
+            
+            # Иконки статуса
+            current_icon = "🟢" if is_current else "⚪"
+            status_icon = "✅" if is_online else "❌"
+            status_text = "Доступна" if is_online else "Недоступна"
+            
+            text += f"{current_icon} <b>{alias}</b>\n"
+            text += f"   {status_icon} {status_text}"
+            if is_current:
+                text += " (Текущая)"
+            text += f"\n   ID: <code>{panel_id}</code>\n\n"
+        
+        # Кнопки управления
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_panels"),
+                InlineKeyboardButton(text="🔌 Подключить", callback_data="select_panel_to_connect")
+            ],
+            [
+                InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_start")
+            ]
+        ])
+        
+        await callback_query.message.edit_text(
+            text,
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
+        
+    except Exception as e:
+        logger.error(f"Ошибка отображения панелей: {e}")
+        await callback_query.message.edit_text(
+            f"❌ Ошибка: {str(e)}",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_start")]
+            ])
+        )
+
+
+@dp.callback_query(lambda c: c.data == "refresh_panels")
+async def refresh_panels_status(callback_query: types.CallbackQuery, state: FSMContext):
+    """Обновить статусы всех панелей"""
+    await callback_query.answer("🔄 Обновление статусов...")
+    
+    # Просто перезагружаем список панелей
+    callback_query.data = "show_panels"
+    await show_panels_list(callback_query, state)
+
+
+@dp.callback_query(lambda c: c.data == "select_panel_to_connect")
+async def select_panel_to_connect(callback_query: types.CallbackQuery, state: FSMContext):
+    """Выбрать панель для подключения"""
+    await callback_query.answer()
+    
+    user_id = callback_query.from_user.id
+    if not is_admin(user_id):
+        await callback_query.message.answer("⛔ Доступ запрещен")
+        return
+    
+    try:
+        panel_manager = config.panel_manager
+        panels = panel_manager.get_all_panels()
+        current_panel_id = panel_manager.get_current_panel_id()
+        
+        if not panels:
+            await callback_query.answer("❌ Панели не настроены", show_alert=True)
+            return
+        
+        # Формируем кнопки для выбора панели
+        keyboard_buttons = []
+        for panel_id, panel_config in panels.items():
+            alias = panel_config.get('alias', panel_id)
+            is_current = panel_id == current_panel_id
+            
+            button_text = f"{'🟢' if is_current else '⚪'} {alias}"
+            if is_current:
+                button_text += " (Текущая)"
+            
+            keyboard_buttons.append([
+                InlineKeyboardButton(
+                    text=button_text,
+                    callback_data=f"connect_panel:{panel_id}"
+                )
+            ])
+        
+        keyboard_buttons.append([
+            InlineKeyboardButton(text="◀️ Назад", callback_data="show_panels")
+        ])
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+        
+        await callback_query.message.edit_text(
+            "🔌 <b>Выберите панель для подключения:</b>\n\n"
+            "⚠️ При переключении текущая панель будет сохранена.",
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
+        
+    except Exception as e:
+        logger.error(f"Ошибка выбора панели: {e}")
+        await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
+
+
+@dp.callback_query(lambda c: c.data and c.data.startswith("connect_panel:"))
+async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContext):
+    """Подключиться к выбранной панели"""
+    await callback_query.answer()
+    
+    user_id = callback_query.from_user.id
+    if not is_admin(user_id):
+        await callback_query.message.answer("⛔ Доступ запрещен")
+        return
+    
+    try:
+        panel_id = callback_query.data.split(":", 1)[1]
+        panel_manager = config.panel_manager
+        current_panel_id = panel_manager.get_current_panel_id()
+        
+        # Проверяем, не пытаемся ли подключиться к текущей панели
+        if panel_id == current_panel_id:
+            await callback_query.answer("ℹ️ Эта панель уже активна", show_alert=True)
+            return
+        
+        panel_config = panel_manager.get_panel(panel_id)
+        if not panel_config:
+            await callback_query.answer("❌ Панель не найдена", show_alert=True)
+            return
+        
+        alias = panel_config.get('alias', panel_id)
+        
+        await callback_query.message.edit_text(
+            f"🔄 Подключение к панели <b>{alias}</b>...\n\n"
+            "⏳ Проверка доступности...",
+            parse_mode="HTML"
+        )
+        
+        # Проверяем доступность панели
+        is_available = await panel_manager.check_panel_status(panel_config)
+        
+        if not is_available:
+            await callback_query.message.edit_text(
+                f"❌ <b>Панель {alias} недоступна</b>\n\n"
+                "Проверьте настройки подключения и доступность сервера.",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="◀️ Назад", callback_data="show_panels")]
+                ])
+            )
+            return
+        
+        # Переключаемся на новую панель
+        if panel_manager.switch_panel(panel_id):
+            # Создаем новый XUIConfig из панели
+            new_xui_config = panel_manager.create_xui_config_from_panel(panel_id)
+            
+            if new_xui_config:
+                # Обновляем конфигурацию в config
+                config.xui = new_xui_config
+                
+                # Обновляем XUIClient
+                global xui_client
+                xui_client.update_xui_config(new_xui_config)
+                
+                # Пытаемся подключиться к новой панели
+                await callback_query.message.edit_text(
+                    f"🔄 Подключение к панели <b>{alias}</b>...\n\n"
+                    "⏳ Авторизация...",
+                    parse_mode="HTML"
+                )
+                
+                if await xui_client.login():
+                    logger.info(f"✅ Переключено на панель: {alias} (ID: {panel_id})")
+                    
+                    await callback_query.message.edit_text(
+                        f"✅ <b>Успешно подключено к панели {alias}</b>\n\n"
+                        f"🔐 URL: <code>{new_xui_config.url}</code>\n"
+                        f"📋 Версия: <code>{new_xui_config.version}</code>\n"
+                        f"🆔 Inbound ID: <code>{new_xui_config.inbound_id}</code>",
+                        parse_mode="HTML",
+                        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                            [InlineKeyboardButton(text="◀️ К списку панелей", callback_data="show_panels")],
+                            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_start")]
+                        ])
+                    )
+                else:
+                    # Откатываемся к предыдущей панели
+                    if current_panel_id:
+                        panel_manager.switch_panel(current_panel_id)
+                        old_config = panel_manager.create_xui_config_from_panel(current_panel_id)
+                        if old_config:
+                            config.xui = old_config
+                            xui_client.update_xui_config(old_config)
+                            await xui_client.login()
+                    
+                    logger.error(f"❌ Не удалось подключиться к панели: {alias}")
+                    
+                    await callback_query.message.edit_text(
+                        f"❌ <b>Ошибка подключения к панели {alias}</b>\n\n"
+                        "Не удалось авторизоваться. Проверьте учетные данные.\n"
+                        "Возвращено подключение к предыдущей панели.",
+                        parse_mode="HTML",
+                        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                            [InlineKeyboardButton(text="◀️ Назад", callback_data="show_panels")]
+                        ])
+                    )
+            else:
+                await callback_query.message.edit_text(
+                    f"❌ Ошибка создания конфигурации для панели {alias}",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="◀️ Назад", callback_data="show_panels")]
+                    ])
+                )
+        else:
+            await callback_query.message.edit_text(
+                f"❌ Ошибка переключения на панель {alias}",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="◀️ Назад", callback_data="show_panels")]
+                ])
+            )
+        
+    except Exception as e:
+        logger.error(f"Ошибка подключения к панели: {e}")
+        await callback_query.message.edit_text(
+            f"❌ Ошибка: {str(e)}",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="◀️ Назад", callback_data="show_panels")]
+            ])
+        )
+
 
 
 async def main():

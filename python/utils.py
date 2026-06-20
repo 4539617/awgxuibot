@@ -112,6 +112,16 @@ class XUIClient:
                 cookie_jar=cookie_jar,
                 timeout=aiohttp.ClientTimeout(total=self.config.xui.api_timeout)
             )
+    
+    def update_xui_config(self, new_xui_config):
+        """Обновить конфигурацию XUI для переключения между панелями"""
+        self.config.xui = new_xui_config
+        self.api_token = new_xui_config.api_token
+        # Сбрасываем сессию для переподключения
+        if self.session:
+            asyncio.create_task(self.session.close())
+            self.session = None
+        self.cookies = None
         return self.session
     
     async def _get_headers(self):
