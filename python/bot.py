@@ -2787,6 +2787,8 @@ async def select_panel_to_connect(callback_query: types.CallbackQuery, state: FS
 @dp.callback_query(lambda c: c.data and c.data.startswith("connect_panel:"))
 async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContext):
     """Подключиться к выбранной панели"""
+    global xui_client
+    
     await callback_query.answer()
     
     user_id = callback_query.from_user.id
@@ -2897,7 +2899,6 @@ async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContex
                 config.xui = new_xui_config
                 
                 # Обновляем XUIClient
-                global xui_client
                 xui_client.update_xui_config(new_xui_config)
                 
                 # Пытаемся подключиться к новой панели
