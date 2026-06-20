@@ -2851,11 +2851,53 @@ async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContex
                 if await xui_client.login():
                     logger.info(f"✅ Переключено на панель: {alias} (ID: {panel_id})")
                     
+                    # Получаем статистику по ключам
+                    try:
+                        all_clients = await xui_client.get_all_clients()
+                        
+                        total_clients = len(all_clients)
+                        active_clients = sum(1 for c in all_clients if c.get('enable', False))
+                        inactive_clients = total_clients - active_clients
+                        
+                        # Подсчет трафика
+                        total_traffic_up = sum(c.get('up', 0) for c in all_clients)
+                        total_traffic_down = sum(c.get('down', 0) for c in all_clients)
+                        total_traffic = total_traffic_up + total_traffic_down
+                        
+                        def format_bytes(bytes_val):
+                            for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+                                if bytes_val < 1024.0:
+                                    return f"{bytes_val:.2f} {unit}"
+                                bytes_val /= 1024.0
+                            return f"{bytes_val:.2f} PB"
+                        
+                        stats_text = (
+                            f"✅ <b>Успешно подключено к панели {alias}</b>\n\n"
+                            f"🔐 <b>Информация о панели:</b>\n"
+                            f"• URL: <code>{new_xui_config.url}</code>\n"
+                            f"• Версия: <code>{new_xui_config.version}</code>\n"
+                            f"• Inbound ID: <code>{new_xui_config.inbound_id}</code>\n\n"
+                            f"📊 <b>Статистика ключей:</b>\n"
+                            f"• Всего ключей: <b>{total_clients}</b>\n"
+                            f"• Активных: <b>{active_clients}</b> ✅\n"
+                            f"• Неактивных: <b>{inactive_clients}</b> ❌\n\n"
+                            f"📈 <b>Трафик:</b>\n"
+                            f"• Загружено: <code>{format_bytes(total_traffic_up)}</code>\n"
+                            f"• Скачано: <code>{format_bytes(total_traffic_down)}</code>\n"
+                            f"• Всего: <code>{format_bytes(total_traffic)}</code>"
+                        )
+                    except Exception as e:
+                        logger.error(f"Ошибка получения статистики: {e}")
+                        stats_text = (
+                            f"✅ <b>Успешно подключено к панели {alias}</b>\n\n"
+                            f"🔐 URL: <code>{new_xui_config.url}</code>\n"
+                            f"📋 Версия: <code>{new_xui_config.version}</code>\n"
+                            f"🆔 Inbound ID: <code>{new_xui_config.inbound_id}</code>\n\n"
+                            f"⚠️ Не удалось получить статистику ключей"
+                        )
+                    
                     await callback_query.message.edit_text(
-                        f"✅ <b>Успешно подключено к панели {alias}</b>\n\n"
-                        f"🔐 URL: <code>{new_xui_config.url}</code>\n"
-                        f"📋 Версия: <code>{new_xui_config.version}</code>\n"
-                        f"🆔 Inbound ID: <code>{new_xui_config.inbound_id}</code>",
+                        stats_text,
                         parse_mode="HTML",
                         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                             [InlineKeyboardButton(text="◀️ К списку панелей", callback_data="show_panels")],
