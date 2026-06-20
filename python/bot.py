@@ -2837,9 +2837,9 @@ async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContex
                 stats_text = (
                     f"🟢 <b>Текущая панель: {alias}</b>\n\n"
                     f"🔐 <b>Информация о панели:</b>\n"
-                    f"• URL: <code>{config.xui.url}</code>\n"
-                    f"• Версия: <code>{config.xui.version}</code>\n"
-                    f"• Inbound ID: <code>{config.xui.inbound_id}</code>\n\n"
+                    f"• URL: <code>{panel_config.get('url', 'N/A')}</code>\n"
+                    f"• Версия: <code>{panel_config.get('version', 'N/A')}</code>\n"
+                    f"• Inbound ID: <code>{panel_config.get('inbound_id', 'N/A')}</code>\n\n"
                     f"📊 <b>Статистика ключей:</b>\n"
                     f"• Всего ключей: <b>{total_clients}</b>\n"
                     f"• Активных: <b>{active_clients}</b> ✅\n"
@@ -2853,9 +2853,9 @@ async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContex
                 logger.error(f"Ошибка получения статистики: {e}")
                 stats_text = (
                     f"🟢 <b>Текущая панель: {alias}</b>\n\n"
-                    f"🔐 URL: <code>{config.xui.url}</code>\n"
-                    f"📋 Версия: <code>{config.xui.version}</code>\n"
-                    f"🆔 Inbound ID: <code>{config.xui.inbound_id}</code>\n\n"
+                    f"🔐 URL: <code>{panel_config.get('url', 'N/A')}</code>\n"
+                    f"📋 Версия: <code>{panel_config.get('version', 'N/A')}</code>\n"
+                    f"🆔 Inbound ID: <code>{panel_config.get('inbound_id', 'N/A')}</code>\n\n"
                     f"⚠️ Не удалось получить статистику ключей"
                 )
             
