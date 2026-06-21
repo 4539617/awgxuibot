@@ -684,7 +684,7 @@ generate_reality_keys_via_api() {
     echo -e "${YELLOW}⚠️  Не удалось сгенерировать ключи через API (HTTP: $http_code)${NC}"
     return 1
 }
-}
+
 # Функция извлечения параметров из существующего инбаунда панели
 extract_inbound_params() {
     echo -e "${YELLOW}🔍 Извлечение параметров из панели...${NC}"
