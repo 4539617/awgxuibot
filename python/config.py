@@ -394,7 +394,7 @@ class UserDatabase:
 class PanelManager:
     """Менеджер для управления несколькими панелями 3x-ui"""
     
-    def __init__(self, config_path: str = "panels.yaml"):
+    def __init__(self, config_path: str = "config.yaml"):
         self.config_path = Path(config_path)
         self.panels = {}
         self.current_panel_id = None
@@ -425,7 +425,8 @@ class PanelManager:
                 
                 if data:
                     self.panels = data.get('panels', {})
-                    self.current_panel_id = data.get('current_panel')
+                    # Поддержка обоих ключей: current_panel (старый) и default_panel (новый)
+                    self.current_panel_id = data.get('default_panel') or data.get('current_panel')
                     logger.info(f"✅ Загружено панелей: {len(self.panels)}")
                     logger.info(f"✅ Текущая панель: {self.current_panel_id}")
                     
