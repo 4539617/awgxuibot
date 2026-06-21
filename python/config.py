@@ -610,6 +610,18 @@ class Config:
                 api_timeout: int
                 version: str
                 api_token: str
+                
+                def is_v2(self) -> bool:
+                    """Проверка является ли версия 2.x"""
+                    return self.version.startswith("2.")
+                
+                def is_v3(self) -> bool:
+                    """Проверка является ли версия 3.x или latest"""
+                    return self.version.startswith("3.") or self.version == "latest"
+                
+                def is_v3_new_api(self) -> bool:
+                    """Проверка использует ли версия новый API v3"""
+                    return self.version == "latest" or self.version.startswith("3.")
             
             self.xui = XUICompat(
                 url=current_panel.xui_url,
