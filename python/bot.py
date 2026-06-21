@@ -1985,10 +1985,10 @@ async def back_to_start_menu(callback_query: types.CallbackQuery, state: FSMCont
             panel_config = panel_manager.get_panel(current_panel_id)
             if panel_config:
                 # Обновляем transport и security из панели
-                if 'transport' in panel_config:
-                    config.vpn.transport = panel_config['transport']
-                if 'security' in panel_config:
-                    config.vpn.security = panel_config['security']
+                if hasattr(panel_config, 'transport'):
+                    config.vpn.transport = panel_config.transport
+                if hasattr(panel_config, 'security'):
+                    config.vpn.security = panel_config.security
                 
                 logger.info(f"🔄 Конфигурация обновлена из панели {current_panel_id}")
     except Exception as e:
@@ -2756,7 +2756,7 @@ async def show_panels_list(callback_query: types.CallbackQuery, state: FSMContex
         text += "📋 <b>Список панелей:</b>\n\n"
         
         for panel_id, panel_config in panels.items():
-            alias = panel_config.get('alias', panel_id)
+            alias = getattr(panel_config, 'alias', panel_id)
             is_current = panel_id == current_panel_id
             is_online = statuses.get(panel_id, False)
             
@@ -2829,7 +2829,7 @@ async def select_panel_to_connect(callback_query: types.CallbackQuery, state: FS
         # Формируем кнопки для выбора панели
         keyboard_buttons = []
         for panel_id, panel_config in panels.items():
-            alias = panel_config.get('alias', panel_id)
+            alias = getattr(panel_config, 'alias', panel_id)
             is_current = panel_id == current_panel_id
             
             button_text = f"{'🟢' if is_current else '⚪'} {alias}"
@@ -2883,7 +2883,7 @@ async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContex
             await callback_query.answer("❌ Панель не найдена", show_alert=True)
             return
         
-        alias = panel_config.get('alias', panel_id)
+        alias = getattr(panel_config, 'alias', panel_id)
         
         # Если это текущая панель, проверяем подключение и показываем статистику
         if panel_id == current_panel_id:
@@ -2894,7 +2894,7 @@ async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContex
             
             # Проверяем, что бот действительно подключен к этой панели
             # Сравниваем URL из config с URL из panel_config
-            panel_url = panel_config.get('xui_url') or panel_config.get('url', '')
+            panel_url = getattr(panel_config, 'xui_url', '') or getattr(panel_config, 'url', '')
             current_url = config.xui.url
             
             if panel_url != current_url:
@@ -2949,9 +2949,9 @@ async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContex
                 stats_text = (
                     f"🟢 <b>Текущая панель: {alias}</b>\n\n"
                     f"🔐 <b>Информация о панели:</b>\n"
-                    f"• URL: <code>{panel_config.get('xui_url') or panel_config.get('url', 'N/A')}</code>\n"
-                    f"• Версия: <code>{panel_config.get('xui_version') or panel_config.get('version', 'N/A')}</code>\n"
-                    f"• Inbound ID: <code>{panel_config.get('inbound_id', 'N/A')}</code>\n\n"
+                    f"• URL: <code>{getattr(panel_config, 'xui_url', 'N/A') or getattr(panel_config, 'url', 'N/A')}</code>\n"
+                    f"• Версия: <code>{getattr(panel_config, 'xui_version', 'N/A') or getattr(panel_config, 'version', 'N/A')}</code>\n"
+                    f"• Inbound ID: <code>{getattr(panel_config, 'inbound_id', 'N/A')}</code>\n\n"
                     f"📊 <b>Статистика ключей:</b>\n"
                     f"• Всего ключей: <b>{total_clients}</b>\n"
                     f"• Активных: <b>{active_clients}</b> ✅\n"
@@ -2965,9 +2965,9 @@ async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContex
                 logger.error(f"Ошибка получения статистики: {e}")
                 stats_text = (
                     f"🟢 <b>Текущая панель: {alias}</b>\n\n"
-                    f"🔐 URL: <code>{panel_config.get('xui_url') or panel_config.get('url', 'N/A')}</code>\n"
-                    f"📋 Версия: <code>{panel_config.get('xui_version') or panel_config.get('version', 'N/A')}</code>\n"
-                    f"🆔 Inbound ID: <code>{panel_config.get('inbound_id', 'N/A')}</code>\n\n"
+                    f"🔐 URL: <code>{getattr(panel_config, 'xui_url', 'N/A') or getattr(panel_config, 'url', 'N/A')}</code>\n"
+                    f"📋 Версия: <code>{getattr(panel_config, 'xui_version', 'N/A') or getattr(panel_config, 'version', 'N/A')}</code>\n"
+                    f"🆔 Inbound ID: <code>{getattr(panel_config, 'inbound_id', 'N/A')}</code>\n\n"
                     f"⚠️ Не удалось получить статистику ключей"
                 )
             
