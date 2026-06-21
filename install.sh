@@ -193,72 +193,42 @@ create_directories() {
     mkdir -p output logs data
 }
 
-# Функция создания .env если не существует
-create_env_if_not_exists() {
-    if [ ! -f ".env" ]; then
-        echo -e "${YELLOW}📝 Создание .env файла с дефолтными значениями...${NC}"
+# Функция создания config.yaml если не существует
+create_config_if_not_exists() {
+    if [ ! -f "config.yaml" ]; then
+        echo -e "${YELLOW}📝 Создание config.yaml из примера...${NC}"
+        
+        if [ ! -f "config.yaml.example" ]; then
+            echo -e "${RED}❌ config.yaml.example не найден${NC}"
+            return 1
+        fi
+        
+        # Копируем пример
+        cp config.yaml.example config.yaml
         
         # Получаем IP сервера
         SERVER_IP=$(curl -s ifconfig.me)
         
-        cat > .env << EOF
-# Server Configuration
-SERVER_PORT=443
-
-# 3x-ui Panel Configuration
-API_TIMEOUT=30
-
-# Transport Configuration
-XHTTP_MODE=auto
-
-# TLS Configuration
-TLS_FINGERPRINT=${DEFAULT_REALITY_FINGERPRINT}
-TLS_ALPN=http/1.1
-
-# Traffic Limits
-MAX_TRAFFIC_GB=1000
-MAX_DAYS=3650
-MIN_DAYS=1
-DEFAULT_TRAFFIC_GB=100
-DEFAULT_DAYS=30
-
-# Database Configuration
-DB_PATH=/app/data/bot_users.db
-DB_BACKUP_ENABLED=true
-DB_BACKUP_INTERVAL=24
-
-# Logging Configuration
-LOG_LEVEL=INFO
-LOG_FILE_ENABLED=true
-LOG_FILE_PATH=/app/logs/bot.log
-LOG_MAX_SIZE_MB=10
-LOG_BACKUP_COUNT=5
-
-# Dynamic parameters
-XUI_BOT_TOKEN=
-AWG_BOT_TOKEN=
-ADMIN_IDS=
-XUI_URL=
-XUI_USERNAME=
-XUI_PASSWORD=
-XUI_DB_PATH=/etc/x-ui/x-ui.db
-XUI_VERSION=
-REALITY_PUBLIC_KEY=
-REALITY_PRIVATE_KEY=
-REALITY_SHORT_ID=
-REALITY_SNI=${DEFAULT_REALITY_SNI}
-REALITY_FINGERPRINT=${DEFAULT_REALITY_FINGERPRINT}
-TRANSPORT=
-SECURITY=reality
-TLS_SNI=
-INBOUND_ID=1
-ALLOW_USER_DNS_QUERIES=true
-SERVER_ADDRESS=${SERVER_IP}
-SERVER_IP=${SERVER_IP}
-
-EOF
-        echo -e "${GREEN}✅ .env файл создан с дефолтными значениями${NC}"
+        # Обновляем server_address и server_ip в локальной панели
+        check_yq || return 1
+        
+        local panel_id=$(get_local_panel_id)
+        if [ -n "$panel_id" ]; then
+            yq eval -i ".panels.${panel_id}.server_address = \"${SERVER_IP}\"" config.yaml
+            yq eval -i ".panels.${panel_id}.server_ip = \"${SERVER_IP}\"" config.yaml
+            echo -e "${GREEN}✅ config.yaml создан с IP сервера: ${SERVER_IP}${NC}"
+        else
+            echo -e "${GREEN}✅ config.yaml создан из примера${NC}"
+        fi
     fi
+}
+
+# Функция создания .env если не существует (для обратной совместимости)
+# DEPRECATED: Используйте create_config_if_not_exists
+create_env_if_not_exists() {
+    echo -e "${YELLOW}⚠️  Функция create_env_if_not_exists устарела${NC}"
+    echo -e "${YELLOW}📝 Создание config.yaml вместо .env...${NC}"
+    create_config_if_not_exists
 }
 
 # Функция обновления значения в .env
@@ -480,6 +450,12 @@ update_config_value() {
                     echo -e "${GREEN}✅ Обновлено: common.xui_bot_token${NC}"
                     return 0
                     ;;
+                "AWG_BOT_TOKEN")
+                    # Токен AWG бота сохраняется в common
+                    check_yq && yq eval -i ".common.awg_bot_token = \"${value}\"" config.yaml
+                    echo -e "${GREEN}✅ Обновлено: common.awg_bot_token${NC}"
+                    return 0
+                    ;;
                 "ADMIN_IDS")
                     # Админы сохраняются в common как массив
                     check_yq && yq eval -i ".common.admin_ids = [$(echo $value | sed 's/,/, /g')]" config.yaml
@@ -533,6 +509,10 @@ get_config_value() {
                     check_yq && yq eval ".common.xui_bot_token" config.yaml 2>/dev/null
                     return 0
                     ;;
+                "AWG_BOT_TOKEN")
+                    check_yq && yq eval ".common.awg_bot_token" config.yaml 2>/dev/null
+                    return 0
+                    ;;
                 "ADMIN_IDS")
                     check_yq && yq eval ".common.admin_ids | join(\",\")" config.yaml 2>/dev/null
                     return 0
@@ -559,6 +539,12 @@ migrate_env_to_config_yaml() {
     fi
     
     echo -e "${YELLOW}🔄 Миграция данных из .env в config.yaml...${NC}"
+    
+    # Создаем резервную копию .env
+    if [ ! -f ".env.backup" ]; then
+        cp .env .env.backup
+        echo -e "${GREEN}✅ Создана резервная копия: .env.backup${NC}"
+    fi
     
     # Создаем config.yaml из примера если не существует
     if [ ! -f "config.yaml" ]; then
@@ -602,7 +588,9 @@ migrate_env_to_config_yaml() {
         ["REALITY_PUBLIC_KEY"]="reality_public_key"
         ["REALITY_PRIVATE_KEY"]="reality_private_key"
         ["REALITY_SHORT_ID"]="reality_short_id"
+        ["TLS_FINGERPRINT"]="tls_fingerprint"
         ["XUI_BOT_TOKEN"]="xui_bot_token"
+        ["AWG_BOT_TOKEN"]="awg_bot_token"
         ["ADMIN_IDS"]="admin_ids"
     )
     
@@ -613,7 +601,7 @@ migrate_env_to_config_yaml() {
         
         if [ -n "$value" ]; then
             # Для common параметров (токены, админы)
-            if [ "$env_key" = "XUI_BOT_TOKEN" ] || [ "$env_key" = "ADMIN_IDS" ]; then
+            if [ "$env_key" = "XUI_BOT_TOKEN" ] || [ "$env_key" = "AWG_BOT_TOKEN" ] || [ "$env_key" = "ADMIN_IDS" ]; then
                 if [ "$env_key" = "ADMIN_IDS" ]; then
                     # Преобразуем список через запятую в YAML массив
                     yq eval -i ".common.admin_ids = [$(echo $value | sed 's/,/, /g')]" config.yaml
@@ -632,6 +620,7 @@ migrate_env_to_config_yaml() {
     
     echo -e "${GREEN}✅ Миграция завершена${NC}"
     echo -e "${YELLOW}💡 Рекомендуется проверить config.yaml и удалить .env после проверки${NC}"
+    echo -e "${BLUE}   Резервная копия сохранена: .env.backup${NC}"
 }
 
 # Функция генерации Reality ключей через API панели 3x-ui
@@ -1139,32 +1128,35 @@ install_xuibot() {
         return
     fi
     
-    # Создание .env файла если не существует
-    create_env_if_not_exists
+    # Создание config.yaml если не существует
+    create_config_if_not_exists
     
     # Проверка XUI_URL, XUI_USERNAME, XUI_PASSWORD
     echo -e "\n${YELLOW}🔍 Проверка параметров 3x-ui панели...${NC}"
     
-    if ! grep -q "^XUI_URL=.\+" .env; then
+    XUI_URL=$(get_config_value "XUI_URL")
+    if [ -z "$XUI_URL" ]; then
         echo -e "${YELLOW}📝 Настройка параметров 3x-ui панели${NC}\n"
         read -p "Введите XUI_URL: " xui_url
-        update_env_value "XUI_URL" "$xui_url"
+        update_config_value "XUI_URL" "$xui_url"
+        XUI_URL="$xui_url"
     fi
     
-    if ! grep -q "^XUI_USERNAME=.\+" .env; then
+    XUI_USERNAME=$(get_config_value "XUI_USERNAME")
+    if [ -z "$XUI_USERNAME" ]; then
         read -p "Введите XUI_USERNAME: " xui_username
-        update_env_value "XUI_USERNAME" "$xui_username"
+        update_config_value "XUI_USERNAME" "$xui_username"
     fi
     
-    if ! grep -q "^XUI_PASSWORD=.\+" .env; then
+    XUI_PASSWORD=$(get_config_value "XUI_PASSWORD")
+    if [ -z "$XUI_PASSWORD" ]; then
         read -p "Введите XUI_PASSWORD: " xui_password
-        update_env_value "XUI_PASSWORD" "$xui_password"
+        update_config_value "XUI_PASSWORD" "$xui_password"
     fi
     
     echo -e "${GREEN}✅ Параметры 3x-ui панели настроены${NC}\n"
     
     # Обновляем SERVER_ADDRESS и TLS_SNI из XUI_URL если он уже установлен
-    XUI_URL=$(get_env_value "XUI_URL")
     if [ -n "$XUI_URL" ]; then
         # Извлекаем домен/IP из URL
         DOMAIN=$(echo "$XUI_URL" | sed -E 's|^https?://([^:/]+).*|\1|')
@@ -1281,16 +1273,18 @@ install_xuibot() {
     echo ""
     
     # Проверка XUI_BOT_TOKEN
-    if ! grep -q "^XUI_BOT_TOKEN=.\+" .env; then
+    XUI_BOT_TOKEN=$(get_config_value "XUI_BOT_TOKEN")
+    if [ -z "$XUI_BOT_TOKEN" ]; then
         echo -e "${YELLOW}📱 Настройка Telegram Bot для XUI${NC}\n"
         read -p "Введите XUI_BOT_TOKEN для XUI бота: " xui_token
-        update_env_value "XUI_BOT_TOKEN" "$xui_token"
+        update_config_value "XUI_BOT_TOKEN" "$xui_token"
     fi
     
     # Проверка ADMIN_IDS
-    if ! grep -q "^ADMIN_IDS=.\+" .env; then
+    ADMIN_IDS=$(get_config_value "ADMIN_IDS")
+    if [ -z "$ADMIN_IDS" ]; then
         read -p "Введите ADMIN_IDS (через запятую): " admin_ids
-        update_env_value "ADMIN_IDS" "$admin_ids"
+        update_config_value "ADMIN_IDS" "$admin_ids"
     fi
     
     # Определяем и сохраняем версию панели
@@ -1313,14 +1307,14 @@ install_xuibot() {
         fi
     fi
     
-    # Сохраняем в .env
+    # Сохраняем в config.yaml
     if [ -n "$XUI_VERSION" ]; then
-        echo -e "${YELLOW}📝 Сохранение версии в .env...${NC}"
-        update_env_value "XUI_VERSION" "${XUI_VERSION}"
+        echo -e "${YELLOW}📝 Сохранение версии в config.yaml...${NC}"
+        update_config_value "XUI_VERSION" "${XUI_VERSION}"
         echo -e "${GREEN}✅ XUI_VERSION обновлён: ${XUI_VERSION}${NC}"
     else
         echo -e "${YELLOW}⚠️  Не удалось определить версию панели${NC}"
-        echo -e "${BLUE}ℹ️  Будет использоваться значение из .env или 'latest'${NC}"
+        echo -e "${BLUE}ℹ️  Будет использоваться значение из config.yaml или 'latest'${NC}"
     fi
     echo ""
     
@@ -1512,14 +1506,14 @@ update_xuibot() {
         fi
     fi
     
-    # Если версия определена, сохраняем в .env
+    # Если версия определена, сохраняем в config.yaml
     if [ -n "$XUI_VERSION" ]; then
-        echo -e "${YELLOW}📝 Сохранение версии в .env...${NC}"
-        update_env_value "XUI_VERSION" "${XUI_VERSION}"
+        echo -e "${YELLOW}📝 Сохранение версии в config.yaml...${NC}"
+        update_config_value "XUI_VERSION" "${XUI_VERSION}"
         echo -e "${GREEN}✅ XUI_VERSION обновлён: ${XUI_VERSION}${NC}"
     else
         echo -e "${YELLOW}⚠️  Не удалось определить версию панели${NC}"
-        echo -e "${BLUE}ℹ️  Будет использоваться значение из .env или 'latest'${NC}"
+        echo -e "${BLUE}ℹ️  Будет использоваться значение из config.yaml или 'latest'${NC}"
     fi
     echo ""
     
@@ -1572,37 +1566,34 @@ remove_xuibot() {
     echo -e "${YELLOW}🗑️  Удаление образа...${NC}"
     docker rmi awgxuibot-xuibot 2>/dev/null || true
     
-    # Очистка XUI_BOT_TOKEN и XUI credentials из .env
+    # Очистка XUI_BOT_TOKEN и XUI credentials из config.yaml
+    if [ -f "config.yaml" ]; then
+        echo -e "${YELLOW}🧹 Очистка XUI настроек из config.yaml...${NC}"
+        
+        if check_yq; then
+            # Очищаем XUI_BOT_TOKEN из common
+            yq eval -i '.common.xui_bot_token = ""' config.yaml
+            echo -e "${GREEN}✅ XUI_BOT_TOKEN очищен${NC}"
+            
+            # Очищаем credentials локальной панели
+            local panel_id=$(get_local_panel_id)
+            if [ -n "$panel_id" ]; then
+                yq eval -i ".panels.${panel_id}.xui_url = \"\"" config.yaml
+                yq eval -i ".panels.${panel_id}.xui_username = \"\"" config.yaml
+                yq eval -i ".panels.${panel_id}.xui_password = \"\"" config.yaml
+                echo -e "${GREEN}✅ XUI credentials очищены${NC}"
+            fi
+        fi
+    fi
+    
+    # Также очищаем .env если он существует (обратная совместимость)
     if [ -f ".env" ]; then
-        echo -e "${YELLOW}🧹 Очистка XUI настроек из .env...${NC}"
-        
-        # Удаляем XUI_BOT_TOKEN
-        if grep -q "^XUI_BOT_TOKEN=" .env; then
-            sed -i '/^XUI_BOT_TOKEN=/d' .env
-            echo -e "${GREEN}✅ XUI_BOT_TOKEN удален из .env${NC}"
-        fi
-        
-        # Также удаляем старый TELEGRAM_BOT_TOKEN если он есть (для обратной совместимости)
-        if grep -q "^TELEGRAM_BOT_TOKEN=" .env; then
-            sed -i '/^TELEGRAM_BOT_TOKEN=/d' .env
-            echo -e "${GREEN}✅ TELEGRAM_BOT_TOKEN удален из .env${NC}"
-        fi
-        
-        # Очищаем XUI credentials
-        if grep -q "^XUI_URL=" .env; then
-            sed -i 's/^XUI_URL=.*/XUI_URL=/' .env
-            echo -e "${GREEN}✅ XUI_URL очищен${NC}"
-        fi
-        
-        if grep -q "^XUI_USERNAME=" .env; then
-            sed -i 's/^XUI_USERNAME=.*/XUI_USERNAME=/' .env
-            echo -e "${GREEN}✅ XUI_USERNAME очищен${NC}"
-        fi
-        
-        if grep -q "^XUI_PASSWORD=" .env; then
-            sed -i 's/^XUI_PASSWORD=.*/XUI_PASSWORD=/' .env
-            echo -e "${GREEN}✅ XUI_PASSWORD очищен${NC}"
-        fi
+        echo -e "${YELLOW}🧹 Очистка XUI настроек из .env (legacy)...${NC}"
+        sed -i '/^XUI_BOT_TOKEN=/d' .env 2>/dev/null || true
+        sed -i '/^TELEGRAM_BOT_TOKEN=/d' .env 2>/dev/null || true
+        sed -i 's/^XUI_URL=.*/XUI_URL=/' .env 2>/dev/null || true
+        sed -i 's/^XUI_USERNAME=.*/XUI_USERNAME=/' .env 2>/dev/null || true
+        sed -i 's/^XUI_PASSWORD=.*/XUI_PASSWORD=/' .env 2>/dev/null || true
     fi
     
     echo -e "${GREEN}✅ XUI Бот удален!${NC}"
@@ -1655,28 +1646,22 @@ install_awgbot() {
     
     echo -e "\n${GREEN}✅ AWG сервер найден, продолжаем установку AWGBOT...${NC}\n"
     
-    # Проверка наличия .env
-    if [ ! -f ".env" ]; then
-        create_env_if_not_exists
-    fi
+    # Создание config.yaml если не существует
+    create_config_if_not_exists
     
     # Проверка AWG_BOT_TOKEN
-    if ! grep -q "^AWG_BOT_TOKEN=.\+" .env; then
+    AWG_BOT_TOKEN=$(get_config_value "AWG_BOT_TOKEN")
+    if [ -z "$AWG_BOT_TOKEN" ]; then
         echo -e "${YELLOW}📱 Настройка Telegram Bot для AWG${NC}\n"
         read -p "Введите AWG_BOT_TOKEN для AWG бота: " awg_token
-        
-        # Добавляем AWG_BOT_TOKEN если его нет
-        if ! grep -q "^AWG_BOT_TOKEN=" .env; then
-            echo "AWG_BOT_TOKEN=$awg_token" >> .env
-        else
-            update_env_value "AWG_BOT_TOKEN" "$awg_token"
-        fi
+        update_config_value "AWG_BOT_TOKEN" "$awg_token"
     fi
     
     # Проверка ADMIN_IDS
-    if ! grep -q "^ADMIN_IDS=.\+" .env; then
+    ADMIN_IDS=$(get_config_value "ADMIN_IDS")
+    if [ -z "$ADMIN_IDS" ]; then
         read -p "Введите ADMIN_IDS (через запятую): " admin_ids
-        update_env_value "ADMIN_IDS" "$admin_ids"
+        update_config_value "ADMIN_IDS" "$admin_ids"
     fi
     
     # Остановка старых контейнеров
@@ -1844,13 +1829,19 @@ remove_awgbot() {
     echo -e "${YELLOW}🗑️  Удаление образа...${NC}"
     docker rmi awgxuibot-awgbot 2>/dev/null || true
     
-    # Очистка AWG_BOT_TOKEN из .env
-    if [ -f ".env" ]; then
-        echo -e "${YELLOW}🧹 Очистка AWG_BOT_TOKEN из .env...${NC}"
-        if grep -q "^AWG_BOT_TOKEN=" .env; then
-            sed -i '/^AWG_BOT_TOKEN=/d' .env
-            echo -e "${GREEN}✅ AWG_BOT_TOKEN удален из .env${NC}"
+    # Очистка AWG_BOT_TOKEN из config.yaml
+    if [ -f "config.yaml" ]; then
+        echo -e "${YELLOW}🧹 Очистка AWG_BOT_TOKEN из config.yaml...${NC}"
+        if check_yq; then
+            yq eval -i '.common.awg_bot_token = ""' config.yaml
+            echo -e "${GREEN}✅ AWG_BOT_TOKEN очищен${NC}"
         fi
+    fi
+    
+    # Также очищаем .env если он существует (обратная совместимость)
+    if [ -f ".env" ]; then
+        echo -e "${YELLOW}🧹 Очистка AWG_BOT_TOKEN из .env (legacy)...${NC}"
+        sed -i '/^AWG_BOT_TOKEN=/d' .env 2>/dev/null || true
     fi
     
     echo -e "${GREEN}✅ AWG Бот удален!${NC}"
@@ -3730,9 +3721,21 @@ install_3xui_v294() {
         rm -f /etc/systemd/system/x-ui.service 2>/dev/null || true
         systemctl daemon-reload
         
-        # Удаление из .env
+        # Удаление из config.yaml
+        if [ -f "${WORK_DIR}/config.yaml" ]; then
+            echo -e "${YELLOW}🔑 Очистка данных из config.yaml...${NC}"
+            if check_yq; then
+                local panel_id=$(get_local_panel_id)
+                if [ -n "$panel_id" ]; then
+                    yq eval -i "del(.panels.${panel_id})" "${WORK_DIR}/config.yaml" 2>/dev/null || true
+                    echo -e "${GREEN}✅ Панель удалена из config.yaml${NC}"
+                fi
+            fi
+        fi
+        
+        # Также очищаем .env если он существует (обратная совместимость)
         if [ -f "${WORK_DIR}/.env" ]; then
-            echo -e "${YELLOW}🔑 Очистка данных из .env...${NC}"
+            echo -e "${YELLOW}🔑 Очистка данных из .env (legacy)...${NC}"
             sed -i '/^XUI_/d' "${WORK_DIR}/.env" 2>/dev/null || true
             sed -i '/^REALITY_/d' "${WORK_DIR}/.env" 2>/dev/null || true
             sed -i '/^INBOUND_ID=/d' "${WORK_DIR}/.env" 2>/dev/null || true
@@ -4344,9 +4347,21 @@ remove_3xui() {
     rm -f /etc/systemd/system/x-ui.service 2>/dev/null || true
     systemctl daemon-reload
     
-    # Удаление из .env
+    # Удаление из config.yaml
+    if [ -f "${WORK_DIR}/config.yaml" ]; then
+        echo -e "${YELLOW}🔑 Очистка данных из config.yaml...${NC}"
+        if check_yq; then
+            local panel_id=$(get_local_panel_id)
+            if [ -n "$panel_id" ]; then
+                yq eval -i "del(.panels.${panel_id})" "${WORK_DIR}/config.yaml" 2>/dev/null || true
+                echo -e "${GREEN}✅ Панель удалена из config.yaml${NC}"
+            fi
+        fi
+    fi
+    
+    # Также очищаем .env если он существует (обратная совместимость)
     if [ -f "${WORK_DIR}/.env" ]; then
-        echo -e "${YELLOW}🔑 Очистка данных из .env...${NC}"
+        echo -e "${YELLOW}🔑 Очистка данных из .env (legacy)...${NC}"
         sed -i '/^XUI_/d' "${WORK_DIR}/.env" 2>/dev/null || true
         sed -i '/^REALITY_/d' "${WORK_DIR}/.env" 2>/dev/null || true
         sed -i '/^INBOUND_ID=/d' "${WORK_DIR}/.env" 2>/dev/null || true
@@ -4358,7 +4373,7 @@ remove_3xui() {
     echo -e "${GREEN}   - Программа удалена${NC}"
     echo -e "${GREEN}   - База данных удалена${NC}"
     echo -e "${GREEN}   - Конфигурация удалена${NC}"
-    echo -e "${GREEN}   - Данные из .env очищены${NC}"
+    echo -e "${GREEN}   - Данные из config.yaml очищены${NC}"
 }
 
 # ============================================

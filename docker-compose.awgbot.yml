@@ -7,9 +7,8 @@ services:
     container_name: awgbot
     restart: always
     privileged: true
-    env_file:
-      - .env
     volumes:
+      - ./config.yaml:/app/config.yaml:ro  # Конфигурация (read-only)
       - ./logs:/app/logs
       - ./output:/app/output
       - /var/run/docker.sock:/var/run/docker.sock
@@ -18,7 +17,6 @@ services:
       - ./settings.db:/app/settings.db:ro
     environment:
       - NODE_ENV=production
-      - TELEGRAM_BOT_TOKEN=${AWG_BOT_TOKEN}
     logging:
       driver: "json-file"
       options:

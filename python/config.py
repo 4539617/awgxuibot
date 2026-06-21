@@ -1,184 +1,316 @@
-# config.py
+# config.py - Multi-Server Configuration Manager
 import os
-from dotenv import load_dotenv
-from dataclasses import dataclass
-from typing import Optional, List
+import sys
+import shutil
+from datetime import datetime
+from dataclasses import dataclass, field
+from typing import Optional, List, Dict, Any
 import sqlite3
 import yaml
 import aiohttp
 import asyncio
 from pathlib import Path
+import logging
 
-load_dotenv()
-
-
-@dataclass
-class BotConfig:
-    token: str
-    admin_ids: List[int]
-    admin_username: Optional[str] = None
-
-    @classmethod
-    def from_env(cls):
-        admin_ids_str = os.getenv("ADMIN_IDS", "")
-        admin_ids = [int(x.strip()) for x in admin_ids_str.split(",") if x.strip()]
-        # Поддержка обоих токенов: XUI_BOT_TOKEN (новый) и TELEGRAM_BOT_TOKEN (legacy)
-        token = os.getenv("XUI_BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN", "")
-        return cls(
-            token=token,
-            admin_ids=admin_ids,
-            admin_username=os.getenv("ADMIN_USERNAME")
-        )
+logger = logging.getLogger(__name__)
 
 
 @dataclass
-class XUIConfig:
-    url: str
-    username: str
-    password: str
-    inbound_id: int
-    db_path: str
+class CommonConfig:
+    """Общие параметры для всех панелей"""
+    xui_bot_token: str
+    awg_bot_token: str = ""
+    admin_ids: List[int] = field(default_factory=list)
+    server_port: int = 443
     api_timeout: int = 30
-    version: str = "latest"
-    api_token: Optional[str] = None
-
-    @classmethod
-    def from_env(cls):
-        return cls(
-            url=os.getenv("XUI_URL", "http://localhost:2053"),
-            username=os.getenv("XUI_USERNAME", "admin"),
-            password=os.getenv("XUI_PASSWORD", ""),
-            inbound_id=int(os.getenv("INBOUND_ID", "1")),
-            db_path=os.getenv("XUI_DB_PATH", "/etc/x-ui/x-ui.db"),
-            api_timeout=int(os.getenv("API_TIMEOUT", "30")),
-            version=os.getenv("XUI_VERSION", "latest"),
-            api_token=os.getenv("XUI_API_TOKEN")
-        )
-    
-    def is_v2(self) -> bool:
-        """Проверка является ли версия 2.x (смотрим только на первую цифру)"""
-        return self.version.startswith("2.")
-    
-    def is_v3(self) -> bool:
-        """Проверка является ли версия 3.x или latest (смотрим только на первую цифру)"""
-        return self.version.startswith("3.") or self.version == "latest"
-    
-    def is_v3_new_api(self) -> bool:
-        """Проверка использует ли версия новый API v3 (любая версия 3.x)"""
-        # Для v3 всегда используем новый API, независимо от подверсии
-        if self.version == "latest":
-            return True
-        # Смотрим только на первую цифру
-        if self.version.startswith("3."):
-            return True
-        return False
+    xhttp_mode: str = "auto"
+    tls_fingerprint: str = "edge"
+    tls_alpn: str = "http/1.1"
+    max_traffic_gb: int = 1000
+    max_days: int = 3650
+    min_days: int = 1
+    default_traffic_gb: int = 100
+    default_days: int = 30
+    db_path: str = "/app/data/bot_users.db"
+    db_backup_enabled: bool = True
+    db_backup_interval: int = 24
+    log_level: str = "INFO"
+    log_file_enabled: bool = True
+    log_file_path: str = "/app/logs/bot.log"
+    log_max_size_mb: int = 10
+    log_backup_count: int = 5
+    allow_user_dns_queries: bool = False
 
 
 @dataclass
-class VPNConfig:
-    server_address: str
-    server_port: int
+class PanelConfig:
+    """Конфигурация конкретной панели"""
+    panel_id: str
+    alias: str
+    enabled: bool
+    is_local: bool = False
+    xui_version: str = "latest"
+    xui_url: str = ""
+    xui_username: str = ""
+    xui_password: str = ""
+    xui_api_token: str = ""
+    inbound_id: int = 1
     xui_db_path: str = "/etc/x-ui/x-ui.db"
-    transport: str = "tcp"  # Допустимые значения: tcp, xhttp, ws, grpc, httpupgrade, splithttp
-    security: str = "tls"   # Допустимые значения: tls, reality
+    server_address: str = ""
+    server_ip: str = ""
+    transport: str = "tcp"
+    security: str = "tls"
     tls_sni: str = ""
     tls_fingerprint: str = "chrome"
-    tls_alpn: str = "http/1.1"
     reality_sni: str = ""
     reality_fingerprint: str = "chrome"
     reality_public_key: str = ""
+    reality_private_key: str = ""
     reality_short_id: str = ""
-    xhttp_mode: str = "auto"
-
-    @classmethod
-    def from_env(cls):
-        return cls(
-            server_address=os.getenv("SERVER_ADDRESS", ""),
-            server_port=int(os.getenv("SERVER_PORT", "443")),
-            xui_db_path=os.getenv("XUI_DB_PATH", "/etc/x-ui/x-ui.db"),
-            transport=os.getenv("TRANSPORT", "tcp"),  # ВАЖНО: Установите в .env файле!
-            security=os.getenv("SECURITY", "tls"),    # ВАЖНО: Установите в .env файле!
-            tls_sni=os.getenv("TLS_SNI", ""),
-            tls_fingerprint=os.getenv("TLS_FINGERPRINT", "chrome"),
-            tls_alpn=os.getenv("TLS_ALPN", "http/1.1"),
-            reality_sni=os.getenv("REALITY_SNI", ""),
-            reality_fingerprint=os.getenv("REALITY_FINGERPRINT", "chrome"),
-            reality_public_key=os.getenv("REALITY_PUBLIC_KEY", ""),
-            reality_short_id=os.getenv("REALITY_SHORT_ID", ""),
-            xhttp_mode=os.getenv("XHTTP_MODE", "auto")
-        )
+    
+    def is_v2(self) -> bool:
+        """Проверка является ли версия 2.x"""
+        return self.xui_version.startswith("2.")
+    
+    def is_v3(self) -> bool:
+        """Проверка является ли версия 3.x или latest"""
+        return self.xui_version.startswith("3.") or self.xui_version == "latest"
+    
+    def is_v3_new_api(self) -> bool:
+        """Проверка использует ли версия новый API v3"""
+        return self.xui_version == "latest" or self.xui_version.startswith("3.")
     
     def get_sni(self) -> str:
-        if self.security == "tls":
-            return self.tls_sni
-        return self.reality_sni
+        """Получить SNI в зависимости от типа безопасности"""
+        return self.tls_sni if self.security == "tls" else self.reality_sni
     
     def get_fingerprint(self) -> str:
-        if self.security == "tls":
-            return self.tls_fingerprint
-        return self.reality_fingerprint
+        """Получить fingerprint в зависимости от типа безопасности"""
+        return self.tls_fingerprint if self.security == "tls" else self.reality_fingerprint
 
 
-@dataclass
-class LimitsConfig:
-    max_traffic_gb: int
-    max_days: int
-    min_days: int
-    default_traffic_gb: int
-    default_days: int
-
-    @classmethod
-    def from_env(cls):
-        return cls(
-            max_traffic_gb=int(os.getenv("MAX_TRAFFIC_GB", "1000")),
-            max_days=int(os.getenv("MAX_DAYS", "3650")),
-            min_days=int(os.getenv("MIN_DAYS", "1")),
-            default_traffic_gb=int(os.getenv("DEFAULT_TRAFFIC_GB", "1000")),
-            default_days=int(os.getenv("DEFAULT_DAYS", "30"))
-        )
-
-
-@dataclass
-class DatabaseConfig:
-    path: str
-    backup_enabled: bool
-    backup_interval_hours: int
-
-    @classmethod
-    def from_env(cls):
-        return cls(
-            path=os.getenv("DB_PATH", "bot_data.db"),
-            backup_enabled=os.getenv("DB_BACKUP_ENABLED", "true").lower() == "true",
-            backup_interval_hours=int(os.getenv("DB_BACKUP_INTERVAL", "24"))
-        )
-
-
-@dataclass
-class LoggingConfig:
-    level: str
-    file_enabled: bool
-    file_path: str
-    max_size_mb: int
-    backup_count: int
-
-    @classmethod
-    def from_env(cls):
-        return cls(
-            level=os.getenv("LOG_LEVEL", "INFO"),
-            file_enabled=os.getenv("LOG_FILE_ENABLED", "true").lower() == "true",
-            file_path=os.getenv("LOG_FILE_PATH", "bot.log"),
-            max_size_mb=int(os.getenv("LOG_MAX_SIZE_MB", "10")),
-            backup_count=int(os.getenv("LOG_BACKUP_COUNT", "5"))
-        )
+class ConfigManager:
+    """Менеджер конфигурации из config.yaml"""
+    
+    def __init__(self, config_path: str = "config.yaml"):
+        self.config_path = Path(config_path)
+        self.common: Optional[CommonConfig] = None
+        self.panels: Dict[str, PanelConfig] = {}
+        self.default_panel_id: Optional[str] = None
+        self._load_config()
+    
+    def _load_config(self):
+        """Загрузить конфигурацию из YAML файла с автоматической миграцией"""
+        logger.info(f"🔍 Загрузка конфигурации из: {self.config_path.absolute()}")
+        
+        # Проверяем наличие config.yaml
+        if not self.config_path.exists():
+            logger.warning(f"⚠️ Файл {self.config_path} не найден")
+            
+            # Проверяем наличие .env для автоматической миграции
+            env_path = Path('.env')
+            if env_path.exists():
+                logger.info("🔄 Обнаружен .env файл, запуск автоматической миграции...")
+                
+                # Выполняем миграцию
+                if self._migrate_env_to_yaml():
+                    logger.info("✅ Миграция завершена успешно!")
+                    logger.info(f"📄 Создан файл: {self.config_path}")
+                    # Загружаем созданный config.yaml
+                    return self._load_config()
+                else:
+                    logger.error("❌ Ошибка миграции")
+                    raise FileNotFoundError(
+                        "❌ Не удалось выполнить миграцию .env → config.yaml\n"
+                        "💡 Проверьте .env файл или создайте config.yaml вручную из config.yaml.example"
+                    )
+            else:
+                # Нет ни config.yaml, ни .env
+                raise FileNotFoundError(
+                    "❌ Не найден config.yaml\n"
+                    "💡 Создайте config.yaml из config.yaml.example\n"
+                    "💡 Или поместите .env файл для автоматической миграции"
+                )
+        
+        try:
+            with open(self.config_path, 'r', encoding='utf-8') as f:
+                data = yaml.safe_load(f)
+            
+            if not data:
+                logger.error("❌ config.yaml пустой")
+                raise ValueError("config.yaml пустой или содержит некорректные данные")
+            
+            # Загружаем общие параметры
+            common_data = data.get('common', {})
+            self.common = CommonConfig(
+                xui_bot_token=common_data.get('xui_bot_token', ''),
+                awg_bot_token=common_data.get('awg_bot_token', ''),
+                admin_ids=common_data.get('admin_ids', []),
+                server_port=common_data.get('server_port', 443),
+                api_timeout=common_data.get('api_timeout', 30),
+                xhttp_mode=common_data.get('xhttp_mode', 'auto'),
+                tls_fingerprint=common_data.get('tls_fingerprint', 'edge'),
+                tls_alpn=common_data.get('tls_alpn', 'http/1.1'),
+                max_traffic_gb=common_data.get('max_traffic_gb', 1000),
+                max_days=common_data.get('max_days', 3650),
+                min_days=common_data.get('min_days', 1),
+                default_traffic_gb=common_data.get('default_traffic_gb', 100),
+                default_days=common_data.get('default_days', 30),
+                db_path=common_data.get('db_path', '/app/data/bot_users.db'),
+                db_backup_enabled=common_data.get('db_backup_enabled', True),
+                db_backup_interval=common_data.get('db_backup_interval', 24),
+                log_level=common_data.get('log_level', 'INFO'),
+                log_file_enabled=common_data.get('log_file_enabled', True),
+                log_file_path=common_data.get('log_file_path', '/app/logs/bot.log'),
+                log_max_size_mb=common_data.get('log_max_size_mb', 10),
+                log_backup_count=common_data.get('log_backup_count', 5),
+                allow_user_dns_queries=common_data.get('allow_user_dns_queries', False)
+            )
+            
+            # Загружаем панели
+            panels_data = data.get('panels', {})
+            for panel_id, panel_data in panels_data.items():
+                self.panels[panel_id] = PanelConfig(
+                    panel_id=panel_id,
+                    alias=panel_data.get('alias', panel_id),
+                    enabled=panel_data.get('enabled', True),
+                    xui_version=panel_data.get('xui_version', '3.3.1'),
+                    xui_url=panel_data.get('xui_url', ''),
+                    xui_username=panel_data.get('xui_username', ''),
+                    xui_password=panel_data.get('xui_password', ''),
+                    xui_api_token=panel_data.get('xui_api_token', ''),
+                    inbound_id=panel_data.get('inbound_id', 1),
+                    xui_db_path=panel_data.get('xui_db_path', '/etc/x-ui/x-ui.db'),
+                    server_address=panel_data.get('server_address', ''),
+                    server_ip=panel_data.get('server_ip', ''),
+                    transport=panel_data.get('transport', 'xhttp'),
+                    security=panel_data.get('security', 'reality'),
+                    tls_sni=panel_data.get('tls_sni', ''),
+                    reality_sni=panel_data.get('reality_sni', ''),
+                    reality_fingerprint=panel_data.get('reality_fingerprint', 'chrome'),
+                    reality_public_key=panel_data.get('reality_public_key', ''),
+                    reality_private_key=panel_data.get('reality_private_key', ''),
+                    reality_short_id=panel_data.get('reality_short_id', '')
+                )
+            
+            # Загружаем панель по умолчанию
+            self.default_panel_id = data.get('default_panel')
+            
+            logger.info(f"✅ Загружено панелей: {len(self.panels)}")
+            logger.info(f"✅ Панель по умолчанию: {self.default_panel_id}")
+            
+        except yaml.YAMLError as e:
+            logger.error(f"❌ Ошибка парсинга YAML: {e}")
+            raise ValueError(f"Ошибка парсинга config.yaml: {e}")
+        except Exception as e:
+            logger.error(f"❌ Ошибка загрузки config.yaml: {e}", exc_info=True)
+            raise
+    
+    def _load_from_env(self):
+        """Загрузить конфигурацию из .env (НЕ ИСПОЛЬЗУЕТСЯ - только для миграции)"""
+        logger.error("❌ Прямая загрузка из .env больше не поддерживается")
+        logger.error("💡 Используйте config.yaml или запустите автоматическую миграцию")
+        raise RuntimeError("Загрузка из .env не поддерживается. Используйте config.yaml")
+    
+    def _migrate_env_to_yaml(self) -> bool:
+        """
+        Автоматическая миграция .env → config.yaml
+        Использует функцию из migrate_env_to_yaml.py
+        """
+        try:
+            # Импортируем функцию миграции
+            sys.path.insert(0, str(Path(__file__).parent))
+            from migrate_env_to_yaml import migrate_env_to_yaml
+            
+            env_path = Path('.env')
+            
+            # Выполняем миграцию
+            success = migrate_env_to_yaml(env_path, self.config_path)
+            
+            return success
+            
+        except ImportError as e:
+            logger.error(f"❌ Не удалось импортировать модуль миграции: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"❌ Ошибка миграции: {e}")
+            return False
+    
+    def get_panel(self, panel_id: str) -> Optional[PanelConfig]:
+        """Получить конфигурацию панели по ID"""
+        return self.panels.get(panel_id)
+    
+    def get_default_panel(self) -> Optional[PanelConfig]:
+        """Получить панель по умолчанию"""
+        if self.default_panel_id:
+            return self.panels.get(self.default_panel_id)
+        return None
+    
+    def get_all_panels(self) -> Dict[str, PanelConfig]:
+        """Получить все панели"""
+        return self.panels
+    
+    def switch_default_panel(self, panel_id: str) -> bool:
+        """Переключить панель по умолчанию"""
+        if panel_id not in self.panels:
+            return False
+        
+        self.default_panel_id = panel_id
+        
+        # Сохраняем в config.yaml
+        try:
+            if self.config_path.exists():
+                with open(self.config_path, 'r', encoding='utf-8') as f:
+                    data = yaml.safe_load(f) or {}
+                
+                data['default_panel'] = panel_id
+                
+                with open(self.config_path, 'w', encoding='utf-8') as f:
+                    yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
+                
+                logger.info(f"✅ Панель по умолчанию изменена на: {panel_id}")
+                return True
+        except Exception as e:
+            logger.error(f"❌ Ошибка сохранения: {e}")
+            return False
+        
+        return True
+    
+    async def check_panel_status(self, panel_config: PanelConfig) -> bool:
+        """Проверить доступность панели"""
+        try:
+            login_url = f"{panel_config.xui_url.rstrip('/')}/login"
+            timeout = aiohttp.ClientTimeout(total=5)
+            
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(
+                    login_url,
+                    json={'username': panel_config.xui_username, 'password': panel_config.xui_password},
+                    ssl=False
+                ) as response:
+                    return response.status in [200, 401, 403]
+        except:
+            return False
+    
+    async def check_all_panels_status(self) -> Dict[str, bool]:
+        """Проверить статус всех панелей"""
+        statuses = {}
+        for panel_id, panel_config in self.panels.items():
+            statuses[panel_id] = await self.check_panel_status(panel_config)
+        return statuses
 
 
 class UserDatabase:
+    """База данных пользователей с поддержкой мультипанелей"""
+    
     def __init__(self, db_path: str = "/app/data/bot_users.db"):
         self.db_path = db_path
         self._init_db()
-
+    
     def _init_db(self):
+        """Инициализация базы данных"""
         with sqlite3.connect(self.db_path) as conn:
+            # Таблица разрешенных пользователей
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS allowed_users (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -188,6 +320,8 @@ class UserDatabase:
                     added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            
+            # Таблица клиентов пользователей с поддержкой panel_id
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS user_clients (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -195,26 +329,44 @@ class UserDatabase:
                     client_email TEXT,
                     client_uuid TEXT,
                     comment TEXT,
+                    panel_id TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            
+            # Создаем индексы если их нет
+            try:
+                conn.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_user_clients_panel_id 
+                    ON user_clients(panel_id)
+                """)
+                conn.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_user_clients_user_panel 
+                    ON user_clients(user_id, panel_id)
+                """)
+            except sqlite3.OperationalError:
+                pass  # Индексы уже существуют
+            
+            # Остальные таблицы
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS admin_settings (
                     key TEXT PRIMARY KEY,
                     value TEXT
                 )
             """)
+            
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS notification_settings (
                     setting_name TEXT PRIMARY KEY,
                     enabled INTEGER DEFAULT 0
                 )
             """)
-            # Инициализируем настройки уведомлений по умолчанию
+            
             conn.execute("""
                 INSERT OR IGNORE INTO notification_settings (setting_name, enabled)
                 VALUES ('cpu_alert', 0), ('disk_alert', 0), ('ram_alert', 0)
             """)
+            
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS blocked_users (
                     user_id INTEGER PRIMARY KEY,
@@ -222,6 +374,7 @@ class UserDatabase:
                     blocked_by INTEGER
                 )
             """)
+            
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS user_history (
                     user_id INTEGER PRIMARY KEY,
@@ -229,48 +382,94 @@ class UserDatabase:
                     last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            
+            # Добавляем главного админа
             main_admin = self.get_main_admin()
-            conn.execute("""
-                INSERT OR IGNORE INTO allowed_users (user_id, username, added_by) 
-                VALUES (?, 'main_admin', ?)
-            """, (main_admin, main_admin))
-
+            if main_admin:
+                conn.execute("""
+                    INSERT OR IGNORE INTO allowed_users (user_id, username, added_by) 
+                    VALUES (?, 'main_admin', ?)
+                """, (main_admin, main_admin))
+    
     def get_main_admin(self) -> int:
-        return int(os.getenv("ADMIN_IDS", "0").split(',')[0])
-
+        """Получить ID главного администратора"""
+        admin_ids_str = os.getenv("ADMIN_IDS", "0")
+        try:
+            return int(admin_ids_str.split(',')[0])
+        except:
+            return 0
+    
     def is_allowed(self, user_id: int) -> bool:
+        """Проверить разрешен ли пользователь"""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute("SELECT 1 FROM allowed_users WHERE user_id = ?", (user_id,))
             return cursor.fetchone() is not None
-
-    def was_user_registered(self, user_id: int) -> bool:
-        """Проверка был ли пользователь ранее зарегистрирован в системе"""
+    
+    def is_blocked_by_admin(self, user_id: int) -> bool:
+        """Проверить заблокирован ли пользователь (глобально)"""
         with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.execute("SELECT 1 FROM user_history WHERE user_id = ?", (user_id,))
+            cursor = conn.execute("SELECT 1 FROM blocked_users WHERE user_id = ?", (user_id,))
             return cursor.fetchone() is not None
     
     def add_user(self, user_id: int, username: str = None, added_by: int = None) -> bool:
+        """Добавить пользователя"""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute(
                     "INSERT OR REPLACE INTO allowed_users (user_id, username, added_by) VALUES (?, ?, ?)",
                     (user_id, username, added_by or self.get_main_admin())
                 )
-                # Добавляем в историю пользователей
-                conn.execute(
-                    "INSERT OR IGNORE INTO user_history (user_id) VALUES (?)",
-                    (user_id,)
-                )
-                # Обновляем last_seen
+                conn.execute("INSERT OR IGNORE INTO user_history (user_id) VALUES (?)", (user_id,))
                 conn.execute(
                     "UPDATE user_history SET last_seen = CURRENT_TIMESTAMP WHERE user_id = ?",
                     (user_id,)
                 )
             return True
         except Exception as e:
-            print(f"Ошибка добавления пользователя: {e}")
+            logger.error(f"Ошибка добавления пользователя: {e}")
             return False
-
+    
+    def add_user_client(self, user_id: int, client_email: str, client_uuid: str, 
+                       comment: str = None, panel_id: str = None) -> bool:
+        """Добавить клиента пользователя с привязкой к панели"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute(
+                    "INSERT INTO user_clients (user_id, client_email, client_uuid, comment, panel_id) VALUES (?, ?, ?, ?, ?)",
+                    (user_id, client_email, client_uuid, comment, panel_id)
+                )
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка сохранения клиента: {e}")
+            return False
+    
+    def get_user_clients(self, user_id: int, panel_id: str = None) -> list:
+        """Получить клиентов пользователя (опционально с фильтром по панели)"""
+        with sqlite3.connect(self.db_path) as conn:
+            if panel_id:
+                cursor = conn.execute(
+                    "SELECT id, client_email, client_uuid, comment, panel_id, created_at FROM user_clients WHERE user_id = ? AND panel_id = ? ORDER BY created_at DESC",
+                    (user_id, panel_id)
+                )
+            else:
+                cursor = conn.execute(
+                    "SELECT id, client_email, client_uuid, comment, panel_id, created_at FROM user_clients WHERE user_id = ? ORDER BY created_at DESC",
+                    (user_id,)
+                )
+            return cursor.fetchall()
+    
+    def get_user_clients_by_panel(self, user_id: int) -> Dict[str, list]:
+        """Получить клиентов пользователя, сгруппированных по панелям"""
+        clients = self.get_user_clients(user_id)
+        grouped = {}
+        for client in clients:
+            panel_id = client[4] or "default"  # panel_id is at index 4
+            if panel_id not in grouped:
+                grouped[panel_id] = []
+            grouped[panel_id].append(client)
+        return grouped
+    
+    # Остальные методы остаются без изменений
     def remove_user(self, user_id: int) -> bool:
         if user_id == self.get_main_admin():
             return False
@@ -279,9 +478,9 @@ class UserDatabase:
                 conn.execute("DELETE FROM allowed_users WHERE user_id = ?", (user_id,))
             return True
         except Exception as e:
-            print(f"Ошибка удаления пользователя: {e}")
+            logger.error(f"Ошибка удаления пользователя: {e}")
             return False
-
+    
     def list_users(self) -> list:
         main_admin = self.get_main_admin()
         with sqlite3.connect(self.db_path) as conn:
@@ -290,52 +489,32 @@ class UserDatabase:
                 (main_admin,)
             )
             return cursor.fetchall()
-
-    def add_user_client(self, user_id: int, client_email: str, client_uuid: str, comment: str = None) -> bool:
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                conn.execute(
-                    "INSERT INTO user_clients (user_id, client_email, client_uuid, comment) VALUES (?, ?, ?, ?)",
-                    (user_id, client_email, client_uuid, comment)
-                )
-            return True
-        except Exception as e:
-            print(f"Ошибка сохранения клиента: {e}")
-            return False
-
+    
     def delete_user_client(self, client_id: int) -> bool:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute("DELETE FROM user_clients WHERE id = ?", (client_id,))
             return True
         except Exception as e:
-            print(f"Ошибка удаления клиента: {e}")
+            logger.error(f"Ошибка удаления клиента: {e}")
             return False
-
-    def get_user_clients(self, user_id: int) -> list:
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.execute(
-                "SELECT id, client_email, client_uuid, comment, created_at FROM user_clients WHERE user_id = ? ORDER BY created_at DESC",
-                (user_id,)
-            )
-            return cursor.fetchall()
-
+    
     def get_all_users_clients(self) -> list:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute("""
-                SELECT uc.id, uc.user_id, u.username, uc.client_email, uc.client_uuid, uc.comment, uc.created_at 
+                SELECT uc.id, uc.user_id, u.username, uc.client_email, uc.client_uuid, uc.comment, uc.panel_id, uc.created_at 
                 FROM user_clients uc
                 LEFT JOIN allowed_users u ON uc.user_id = u.user_id
                 ORDER BY uc.created_at DESC
             """)
             return cursor.fetchall()
-
+    
     def get_user_count(self) -> int:
         main_admin = self.get_main_admin()
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute("SELECT COUNT(*) FROM allowed_users WHERE user_id != ?", (main_admin,))
             return cursor.fetchone()[0]
-
+    
     def block_user(self, user_id: int, blocked_by: int) -> bool:
         try:
             with sqlite3.connect(self.db_path) as conn:
@@ -345,20 +524,19 @@ class UserDatabase:
                 )
             return True
         except Exception as e:
-            print(f"Ошибка блокировки: {e}")
+            logger.error(f"Ошибка блокировки: {e}")
             return False
-
+    
     def unblock_user(self, user_id: int) -> bool:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute("DELETE FROM blocked_users WHERE user_id = ?", (user_id,))
             return True
         except Exception as e:
-            print(f"Ошибка разблокировки: {e}")
+            logger.error(f"Ошибка разблокировки: {e}")
             return False
     
     def get_notification_setting(self, setting_name: str) -> bool:
-        """Получить настройку уведомления"""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute(
                 "SELECT enabled FROM notification_settings WHERE setting_name = ?",
@@ -368,7 +546,6 @@ class UserDatabase:
             return bool(result[0]) if result else False
     
     def set_notification_setting(self, setting_name: str, enabled: bool) -> bool:
-        """Установить настройку уведомления"""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute(
@@ -377,456 +554,229 @@ class UserDatabase:
                 )
             return True
         except Exception as e:
-            print(f"Ошибка сохранения настройки уведомления: {e}")
+            logger.error(f"Ошибка сохранения настройки уведомления: {e}")
             return False
     
     def get_all_notification_settings(self) -> dict:
-        """Получить все настройки уведомлений"""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute("SELECT setting_name, enabled FROM notification_settings")
             return {row[0]: bool(row[1]) for row in cursor.fetchall()}
-
-    def is_blocked_by_admin(self, user_id: int) -> bool:
+    
+    def was_user_registered(self, user_id: int) -> bool:
         with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.execute("SELECT 1 FROM blocked_users WHERE user_id = ?", (user_id,))
+            cursor = conn.execute("SELECT 1 FROM user_history WHERE user_id = ?", (user_id,))
             return cursor.fetchone() is not None
-
-class PanelManager:
-    """Менеджер для управления несколькими панелями 3x-ui"""
-    
-    def __init__(self, config_path: str = "config.yaml"):
-        self.config_path = Path(config_path)
-        self.panels = {}
-        self.current_panel_id = None
-        self._load_panels()
-    
-    def _load_panels(self):
-        """Загрузить конфигурацию панелей из YAML файла"""
-        import logging
-        logger = logging.getLogger(__name__)
-        
-        logger.info(f"🔍 Попытка загрузки панелей из: {self.config_path.absolute()}")
-        
-        if not self.config_path.exists():
-            logger.warning(f"⚠️ Файл {self.config_path} не найден")
-            self.panels = {}
-            self.current_panel_id = None
-            return
-        
-        try:
-            logger.info(f"📂 Файл найден, размер: {self.config_path.stat().st_size} байт")
-            
-            with open(self.config_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-                logger.info(f"📄 Содержимое файла прочитано: {len(content)} символов")
-                
-                data = yaml.safe_load(content)
-                logger.info(f"✅ YAML распарсен: {data}")
-                
-                if data:
-                    self.panels = data.get('panels', {})
-                    # Поддержка обоих ключей: current_panel (старый) и default_panel (новый)
-                    self.current_panel_id = data.get('default_panel') or data.get('current_panel')
-                    logger.info(f"✅ Загружено панелей: {len(self.panels)}")
-                    logger.info(f"✅ Текущая панель: {self.current_panel_id}")
-                    
-                    for panel_id, panel_config in self.panels.items():
-                        logger.info(f"  📋 {panel_id}: {panel_config.get('alias', 'без имени')}")
-                else:
-                    logger.warning("⚠️ YAML файл пустой или содержит null")
-                    self.panels = {}
-                    self.current_panel_id = None
-                    
-        except yaml.YAMLError as e:
-            logger.error(f"❌ Ошибка парсинга YAML: {e}")
-            self.panels = {}
-            self.current_panel_id = None
-        except Exception as e:
-            logger.error(f"❌ Ошибка загрузки panels.yaml: {e}", exc_info=True)
-            self.panels = {}
-            self.current_panel_id = None
-    
-    def _save_panels(self):
-        """Сохранить конфигурацию панелей в YAML файл"""
-        try:
-            data = {
-                'current_panel': self.current_panel_id,
-                'panels': self.panels
-            }
-            with open(self.config_path, 'w', encoding='utf-8') as f:
-                yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
-            return True
-        except Exception as e:
-            print(f"Ошибка сохранения panels.yaml: {e}")
-            return False
-    
-    def get_current_panel(self) -> Optional[dict]:
-        """Получить конфигурацию текущей активной панели"""
-        if self.current_panel_id and self.current_panel_id in self.panels:
-            return self.panels[self.current_panel_id]
-        return None
-    
-    def get_current_panel_id(self) -> Optional[str]:
-        """Получить ID текущей активной панели"""
-        return self.current_panel_id
-    
-    def get_all_panels(self) -> dict:
-        """Получить все панели"""
-        return self.panels
-    
-    def get_panel(self, panel_id: str) -> Optional[dict]:
-        """Получить конфигурацию конкретной панели"""
-        return self.panels.get(panel_id)
-    
-    def add_panel(self, panel_id: str, panel_data: dict) -> bool:
-        """Добавить новую панель"""
-        try:
-            self.panels[panel_id] = panel_data
-            if not self.current_panel_id:
-                self.current_panel_id = panel_id
-            return self._save_panels()
-        except Exception as e:
-            print(f"Ошибка добавления панели: {e}")
-            return False
-    
-    def remove_panel(self, panel_id: str) -> bool:
-        """Удалить панель"""
-        if panel_id not in self.panels:
-            return False
-        
-        try:
-            del self.panels[panel_id]
-            # Если удаляем текущую панель, сбрасываем current_panel_id
-            if self.current_panel_id == panel_id:
-                # Выбираем первую доступную панель или None
-                self.current_panel_id = next(iter(self.panels.keys()), None)
-            return self._save_panels()
-        except Exception as e:
-            print(f"Ошибка удаления панели: {e}")
-            return False
-    
-    def switch_panel(self, panel_id: str) -> bool:
-        """Переключиться на другую панель"""
-        if panel_id not in self.panels:
-            return False
-        
-        try:
-            self.current_panel_id = panel_id
-            return self._save_panels()
-        except Exception as e:
-            print(f"Ошибка переключения панели: {e}")
-            return False
-    
-    async def fetch_and_update_panel_settings(self, panel_id: str, xui_client) -> bool:
-        """
-        Извлечь параметры панели через API и обновить config.yaml
-        Извлекает: server_address, server_ip, transport, security, Reality ключи и т.д.
-        """
-        try:
-            panel_config = self.get_panel(panel_id)
-            if not panel_config:
-                print(f"Панель {panel_id} не найдена")
-                return False
-            
-            # Извлекаем server_address и server_ip из URL
-            xui_url = panel_config.get('xui_url') or panel_config.get('url', '')
-            if xui_url:
-                import re
-                # Извлекаем домен/IP из URL
-                match = re.search(r'https?://([^:/]+)', xui_url)
-                if match:
-                    server_address = match.group(1)
-                    
-                    # Определяем, это IP или домен
-                    is_ip = re.match(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$', server_address)
-                    
-                    if is_ip:
-                        # Это IP адрес
-                        panel_config['server_ip'] = server_address
-                        panel_config['server_address'] = server_address
-                        print(f"✅ Извлечен IP: {server_address}")
-                    else:
-                        # Это домен
-                        panel_config['server_address'] = server_address
-                        # Пытаемся получить IP через DNS
-                        try:
-                            import socket
-                            server_ip = socket.gethostbyname(server_address)
-                            panel_config['server_ip'] = server_ip
-                            print(f"✅ Извлечен домен: {server_address}, IP: {server_ip}")
-                        except:
-                            panel_config['server_ip'] = server_address
-                            print(f"✅ Извлечен домен: {server_address}")
-            
-            # Получаем inbound_id из конфига панели
-            inbound_id = panel_config.get('inbound_id', 1)
-            
-            # Получаем данные inbound через API
-            try:
-                # Формируем URL для получения списка inbounds
-                api_url = f"{xui_url}/panel/api/inbounds/list"
-                
-                await xui_client._get_session()
-                headers = await xui_client._get_headers()
-                
-                async with xui_client.session.get(api_url, headers=headers) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        
-                        if data.get('success') and data.get('obj'):
-                            inbounds = data['obj']
-                            
-                            # Ищем нужный inbound
-                            target_inbound = None
-                            for inbound in inbounds:
-                                if inbound.get('id') == inbound_id:
-                                    target_inbound = inbound
-                                    break
-                            
-                            if target_inbound:
-                                # Извлекаем параметры
-                                settings = target_inbound.get('settings', '{}')
-                                stream_settings = target_inbound.get('streamSettings', '{}')
-                                
-                                # Парсим JSON строки
-                                import json
-                                if isinstance(settings, str):
-                                    settings = json.loads(settings)
-                                if isinstance(stream_settings, str):
-                                    stream_settings = json.loads(stream_settings)
-                                
-                                # Извлекаем transport
-                                network = stream_settings.get('network', 'tcp')
-                                panel_config['transport'] = network
-                                print(f"✅ Transport: {network}")
-                                
-                                # Извлекаем security
-                                security = stream_settings.get('security', 'none')
-                                panel_config['security'] = security
-                                print(f"✅ Security: {security}")
-                                
-                                # Если Reality
-                                if security == 'reality':
-                                    reality_settings = stream_settings.get('realitySettings', {})
-                                    
-                                    if reality_settings:
-                                        # Извлекаем Reality параметры
-                                        public_key = reality_settings.get('publicKey', '')
-                                        private_key = reality_settings.get('privateKey', '')
-                                        short_ids = reality_settings.get('shortIds', [])
-                                        server_names = reality_settings.get('serverNames', [])
-                                        fingerprint = reality_settings.get('fingerprint', 'chrome')
-                                        
-                                        if public_key:
-                                            panel_config['reality_public_key'] = public_key
-                                            print(f"✅ Reality Public Key: {public_key[:20]}...")
-                                        
-                                        if private_key:
-                                            panel_config['reality_private_key'] = private_key
-                                            print(f"✅ Reality Private Key: {private_key[:20]}...")
-                                        
-                                        if short_ids:
-                                            panel_config['reality_short_id'] = short_ids[0] if short_ids else ''
-                                            print(f"✅ Reality Short ID: {short_ids[0] if short_ids else 'N/A'}")
-                                        
-                                        if server_names:
-                                            panel_config['reality_sni'] = server_names[0] if server_names else ''
-                                            print(f"✅ Reality SNI: {server_names[0] if server_names else 'N/A'}")
-                                        
-                                        if fingerprint:
-                                            panel_config['reality_fingerprint'] = fingerprint
-                                            print(f"✅ Reality Fingerprint: {fingerprint}")
-                                
-                                # Если TLS
-                                elif security == 'tls':
-                                    tls_settings = stream_settings.get('tlsSettings', {})
-                                    
-                                    if tls_settings:
-                                        server_name = tls_settings.get('serverName', '')
-                                        if server_name:
-                                            panel_config['tls_sni'] = server_name
-                                            print(f"✅ TLS SNI: {server_name}")
-                                
-                                # Сохраняем обновленную конфигурацию
-                                self.panels[panel_id] = panel_config
-                                if self._save_panels():
-                                    print(f"✅ Параметры панели {panel_id} обновлены и сохранены")
-                                    return True
-                                else:
-                                    print(f"❌ Ошибка сохранения параметров панели {panel_id}")
-                                    return False
-                            else:
-                                print(f"⚠️ Inbound с ID {inbound_id} не найден")
-                                return False
-                    else:
-                        print(f"❌ Ошибка получения inbounds: {resp.status}")
-                        return False
-            except Exception as e:
-                print(f"❌ Ошибка получения данных inbound: {e}")
-                import traceback
-                traceback.print_exc()
-                return False
-            
-            return True
-            
-        except Exception as e:
-            print(f"❌ Ошибка извлечения параметров панели: {e}")
-            import traceback
-            traceback.print_exc()
-            return False
-    
-    async def check_panel_status(self, panel_config: dict) -> bool:
-        """
-        Проверить доступность панели по сети
-        Возвращает True если панель доступна, False если нет
-        """
-        try:
-            # Поддержка обоих форматов ключей (xui_* и старые)
-            url = panel_config.get('xui_url') or panel_config.get('url', '')
-            username = panel_config.get('xui_username') or panel_config.get('username', '')
-            password = panel_config.get('xui_password') or panel_config.get('password', '')
-            
-            if not url:
-                return False
-            
-            # Формируем URL для проверки (endpoint /login)
-            login_url = f"{url.rstrip('/')}/login"
-            
-            # Создаем сессию с таймаутом
-            timeout = aiohttp.ClientTimeout(total=5)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                # Пытаемся выполнить POST запрос к /login
-                async with session.post(
-                    login_url,
-                    json={'username': username, 'password': password},
-                    ssl=False
-                ) as response:
-                    # Если получили ответ (любой), панель доступна
-                    return response.status in [200, 401, 403]  # 200 - успех, 401/403 - неверные данные, но панель работает
-        except asyncio.TimeoutError:
-            return False
-        except aiohttp.ClientError:
-            return False
-        except Exception as e:
-            print(f"Ошибка проверки панели: {e}")
-            return False
-    
-    async def check_all_panels_status(self) -> dict:
-        """
-        Проверить статус всех панелей
-        Возвращает словарь {panel_id: status}
-        """
-        statuses = {}
-        for panel_id, panel_config in self.panels.items():
-            status = await self.check_panel_status(panel_config)
-            statuses[panel_id] = status
-        return statuses
-    
-    def create_xui_config_from_panel(self, panel_id: str) -> Optional[XUIConfig]:
-        """Создать XUIConfig из конфигурации панели"""
-        panel = self.get_panel(panel_id)
-        if not panel:
-            return None
-        
-        try:
-            return XUIConfig(
-                url=panel.get('xui_url') or panel.get('url', ''),
-                username=panel.get('xui_username') or panel.get('username', ''),
-                password=panel.get('xui_password') or panel.get('password', ''),
-                inbound_id=panel.get('inbound_id', 1),
-                db_path=panel.get('xui_db_path') or panel.get('db_path', '/etc/x-ui/x-ui.db'),
-                api_timeout=panel.get('api_timeout', 30),
-                version=panel.get('xui_version') or panel.get('version', 'latest'),
-                api_token=panel.get('xui_api_token') or panel.get('api_token')
-            )
-        except Exception as e:
-            print(f"Ошибка создания XUIConfig: {e}")
-            return None
-    
-    def save_current_panel_to_env(self) -> bool:
-        """
-        Сохранить текущую панель в переменные окружения
-        (для совместимости с существующим кодом)
-        """
-        panel = self.get_current_panel()
-        if not panel:
-            return False
-        
-        try:
-            os.environ['XUI_URL'] = panel.get('url', '')
-            os.environ['XUI_USERNAME'] = panel.get('username', '')
-            os.environ['XUI_PASSWORD'] = panel.get('password', '')
-            os.environ['XUI_VERSION'] = panel.get('version', 'latest')
-            os.environ['INBOUND_ID'] = str(panel.get('inbound_id', 1))
-            os.environ['XUI_DB_PATH'] = panel.get('db_path', '/etc/x-ui/x-ui.db')
-            
-            api_token = panel.get('api_token')
-            if api_token:
-                os.environ['XUI_API_TOKEN'] = api_token
-            
-            return True
-        except Exception as e:
-            print(f"Ошибка сохранения в env: {e}")
-            return False
-
 
 
 class Config:
-    def __init__(self):
-        self.bot = BotConfig.from_env()
-        self.xui = XUIConfig.from_env()
-        self.vpn = VPNConfig.from_env()
-        self.limits = LimitsConfig.from_env()
-        self.database = DatabaseConfig.from_env()
-        self.logging = LoggingConfig.from_env()
-        self.users_db = UserDatabase()
-        self.panel_manager = PanelManager()
+    """Главный класс конфигурации с поддержкой мультипанелей"""
+    
+    def __init__(self, config_path: str = "config.yaml"):
+        self.config_manager = ConfigManager(config_path)
+        self.common = self.config_manager.common
+        self.users_db = UserDatabase(self.common.db_path)
         self._validate()
-
+        
+        # Создаем свойства для обратной совместимости со старым кодом
+        self._setup_legacy_properties()
+    
+    def _setup_legacy_properties(self):
+        """Создание свойств для обратной совместимости"""
+        from dataclasses import dataclass
+        
+        # bot property - для доступа к токену и админам
+        @dataclass
+        class BotCompat:
+            token: str
+            admin_ids: list
+            admin_username: str = None
+        
+        self.bot = BotCompat(
+            token=self.common.xui_bot_token,
+            admin_ids=self.common.admin_ids,
+            admin_username=None
+        )
+        
+        # xui property - параметры текущей панели
+        current_panel = self.get_current_panel()
+        if current_panel:
+            @dataclass
+            class XUICompat:
+                url: str
+                username: str
+                password: str
+                inbound_id: int
+                db_path: str
+                api_timeout: int
+                version: str
+                api_token: str
+            
+            self.xui = XUICompat(
+                url=current_panel.xui_url,
+                username=current_panel.xui_username,
+                password=current_panel.xui_password,
+                inbound_id=current_panel.inbound_id,
+                db_path=current_panel.xui_db_path,
+                api_timeout=self.common.api_timeout,
+                version=current_panel.xui_version,
+                api_token=current_panel.xui_api_token
+            )
+        
+        # vpn property - параметры VPN текущей панели
+        if current_panel:
+            @dataclass
+            class VPNCompat:
+                server_address: str
+                server_port: int
+                transport: str
+                security: str
+                tls_sni: str
+                tls_fingerprint: str
+                tls_alpn: str
+                reality_sni: str
+                reality_fingerprint: str
+                reality_public_key: str
+                reality_short_id: str
+                xhttp_mode: str
+                
+                def get_sni(self) -> str:
+                    return self.tls_sni if self.security == "tls" else self.reality_sni
+                
+                def get_fingerprint(self) -> str:
+                    return self.tls_fingerprint if self.security == "tls" else self.reality_fingerprint
+            
+            self.vpn = VPNCompat(
+                server_address=current_panel.server_address,
+                server_port=self.common.server_port,
+                transport=current_panel.transport,
+                security=current_panel.security,
+                tls_sni=current_panel.tls_sni,
+                tls_fingerprint=current_panel.tls_fingerprint or self.common.tls_fingerprint,
+                tls_alpn=self.common.tls_alpn,
+                reality_sni=current_panel.reality_sni,
+                reality_fingerprint=current_panel.reality_fingerprint,
+                reality_public_key=current_panel.reality_public_key,
+                reality_short_id=current_panel.reality_short_id,
+                xhttp_mode=self.common.xhttp_mode
+            )
+        
+        # limits property
+        @dataclass
+        class LimitsCompat:
+            max_traffic_gb: int
+            max_days: int
+            min_days: int
+            default_traffic_gb: int
+            default_days: int
+        
+        self.limits = LimitsCompat(
+            max_traffic_gb=self.common.max_traffic_gb,
+            max_days=self.common.max_days,
+            min_days=self.common.min_days,
+            default_traffic_gb=self.common.default_traffic_gb,
+            default_days=self.common.default_days
+        )
+        
+        # logging property
+        @dataclass
+        class LoggingCompat:
+            level: str
+            file_enabled: bool
+            file_path: str
+            max_size_mb: int
+            backup_count: int
+        
+        self.logging = LoggingCompat(
+            level=self.common.log_level,
+            file_enabled=self.common.log_file_enabled,
+            file_path=self.common.log_file_path,
+            max_size_mb=self.common.log_max_size_mb,
+            backup_count=self.common.log_backup_count
+        )
+        
+        # panel_manager property - прямая ссылка
+        self.panel_manager = self.config_manager
+    
     def _validate(self):
-        if not self.bot.token or self.bot.token == "YOUR_BOT_TOKEN_HERE":
-            raise ValueError("XUI_BOT_TOKEN или TELEGRAM_BOT_TOKEN не указан")
-        if not self.xui.password or self.xui.password == "your_password_here":
-            raise ValueError("XUI_PASSWORD не указан")
-        if self.vpn.security == "reality":
-            if not self.vpn.reality_public_key:
-                print("⚠️ REALITY_PUBLIC_KEY не указан, проверьте настройки")
-            if not self.vpn.reality_short_id:
-                print("⚠️ REALITY_SHORT_ID не указан, проверьте настройки")
-
+        """Валидация конфигурации"""
+        if not self.common.xui_bot_token:
+            raise ValueError("XUI_BOT_TOKEN не указан")
+        
+        default_panel = self.config_manager.get_default_panel()
+        if not default_panel:
+            raise ValueError("Не найдена панель по умолчанию")
+        
+        if not default_panel.xui_password:
+            raise ValueError("XUI_PASSWORD не указан для панели по умолчанию")
+        
+        if default_panel.security == "reality":
+            if not default_panel.reality_public_key:
+                logger.warning("⚠️ REALITY_PUBLIC_KEY не указан")
+            if not default_panel.reality_short_id:
+                logger.warning("⚠️ REALITY_SHORT_ID не указан")
+    
+    def get_current_panel(self) -> Optional[PanelConfig]:
+        """Получить текущую активную панель"""
+        return self.config_manager.get_default_panel()
+    
+    def get_panel(self, panel_id: str) -> Optional[PanelConfig]:
+        """Получить панель по ID"""
+        return self.config_manager.get_panel(panel_id)
+    
+    def get_all_panels(self) -> Dict[str, PanelConfig]:
+        """Получить все панели"""
+        return self.config_manager.get_all_panels()
+    
+    def switch_panel(self, panel_id: str) -> bool:
+        """Переключить текущую панель"""
+        return self.config_manager.switch_default_panel(panel_id)
+    
     def is_admin(self, user_id: int) -> bool:
-        return user_id == self.users_db.get_main_admin()
-
+        """Проверить является ли пользователь админом"""
+        return user_id in self.common.admin_ids
+    
     def is_allowed(self, user_id: int) -> bool:
+        """Проверить разрешен ли пользователь"""
         return self.users_db.is_allowed(user_id)
-
+    
     def display(self) -> str:
+        """Отобразить текущую конфигурацию"""
+        current_panel = self.get_current_panel()
         user_count = self.users_db.get_user_count()
+        
+        if not current_panel:
+            return "❌ Панель не настроена"
+        
         return f"""
 📋 <b>Конфигурация бота:</b>
 
 <b>Telegram Bot:</b>
-• Admin ID: {self.users_db.get_main_admin()}
-• Admin Username: {self.bot.admin_username}
+• Admin IDs: {', '.join(map(str, self.common.admin_ids))}
 • Разрешено пользователей: {user_count}
 
-<b>X-UI Panel:</b>
-• URL: {self.xui.url}
-• Inbound ID: {self.xui.inbound_id}
+<b>Текущая панель: {current_panel.alias}</b>
+• URL: {current_panel.xui_url}
+• Inbound ID: {current_panel.inbound_id}
+• Версия: {current_panel.xui_version}
 
 <b>VPN Settings:</b>
-• Server: {self.vpn.server_address}:{self.vpn.server_port}
-• Security: {self.vpn.security}
-• Transport: {self.vpn.transport}
-• SNI: {self.vpn.get_sni()}
-• Fingerprint: {self.vpn.get_fingerprint()}
+• Server: {current_panel.server_address}:{self.common.server_port}
+• Security: {current_panel.security}
+• Transport: {current_panel.transport}
+• SNI: {current_panel.get_sni()}
+• Fingerprint: {current_panel.get_fingerprint()}
 
 <b>Limits:</b>
-• Max Traffic: {self.limits.max_traffic_gb} GB
-• Max Days: {self.limits.max_days}
-• Default Traffic: {self.limits.default_traffic_gb} GB
-• Default Days: {self.limits.default_days}
+• Max Traffic: {self.common.max_traffic_gb} GB
+• Max Days: {self.common.max_days}
+• Default Traffic: {self.common.default_traffic_gb} GB
+• Default Days: {self.common.default_days}
+
+<b>Всего панелей:</b> {len(self.config_manager.panels)}
 """
 
 
+# Создаем глобальный экземпляр конфигурации
 config = Config()
+
+# Made with Bob

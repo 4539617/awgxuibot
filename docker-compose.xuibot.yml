@@ -6,10 +6,8 @@ services:
       target: xuibot
     container_name: xuibot
     restart: always
-    env_file:
-      - .env
     volumes:
+      - ./config.yaml:/app/config.yaml:rw  # Конфигурация (read-write для переключения панелей)
       - ./logs:/app/logs
       - ./data:/app/data
       - /etc/x-ui:/etc/x-ui:rw  # Доступ к базе данных X-UI
-      - ./config.yaml:/app/config.yaml:rw  # Конфигурация (read-write для переключения панелей)

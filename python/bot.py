@@ -164,11 +164,35 @@ async def cmd_start(message: Message, state: FSMContext):
                     InlineKeyboardButton(text="🔧 Панели", callback_data="show_panels")
                 ]
             ])
+            
+            # Получаем информацию о текущей панели
+            current_panel = config.get_current_panel()
+            panel_info = ""
+            transport = "N/A"
+            security = "N/A"
+            
+            if current_panel:
+                alias = current_panel.alias
+                is_local = current_panel.is_local
+                xui_version = current_panel.xui_version
+                xui_url = current_panel.xui_url
+                transport = current_panel.transport
+                security = current_panel.security
+                
+                panel_info = (
+                    f"\n📋 <b>Панель:</b>\n"
+                    f"• Alias: <code>{alias}</code>\n"
+                    f"• Local: <code>{'Да' if is_local else 'Нет'}</code>\n"
+                    f"• Version: <code>{xui_version}</code>\n"
+                    f"• URL: <code>{xui_url}</code>\n"
+                )
+            
             await message.answer(
                 f"👑 Администратор\n {username or first_name}\n\n"
                 f"🔐 <b>Настройки подключения:</b>\n"
-                f"• Transport: <code>{config.vpn.transport}</code>\n"
-                f"• Security: <code>{config.vpn.security}</code>",
+                f"• Transport: <code>{transport}</code>\n"
+                f"• Security: <code>{security}</code>"
+                f"{panel_info}",
                 reply_markup=keyboard,
                 parse_mode="HTML"
             )
@@ -1994,11 +2018,34 @@ async def back_to_start_menu(callback_query: types.CallbackQuery, state: FSMCont
             ]
         ])
         
+        # Получаем информацию о текущей панели
+        current_panel = config.get_current_panel()
+        panel_info = ""
+        transport = "N/A"
+        security = "N/A"
+        
+        if current_panel:
+            alias = current_panel.alias
+            is_local = current_panel.is_local
+            xui_version = current_panel.xui_version
+            xui_url = current_panel.xui_url
+            transport = current_panel.transport
+            security = current_panel.security
+            
+            panel_info = (
+                f"\n📋 <b>Панель:</b>\n"
+                f"• Alias: <code>{alias}</code>\n"
+                f"• Local: <code>{'Да' if is_local else 'Нет'}</code>\n"
+                f"• Version: <code>{xui_version}</code>\n"
+                f"• URL: <code>{xui_url}</code>\n"
+            )
+        
         text = (
             f"👑 Администратор\n {username or first_name}\n\n"
             f"🔐 <b>Настройки подключения:</b>\n"
-            f"• Transport: <code>{config.vpn.transport}</code>\n"
-            f"• Security: <code>{config.vpn.security}</code>"
+            f"• Transport: <code>{transport}</code>\n"
+            f"• Security: <code>{security}</code>"
+            f"{panel_info}"
         )
         
         try:
@@ -2117,6 +2164,10 @@ async def callback_cmd_myclients(callback_query: types.CallbackQuery, state: FSM
     
     # Очищаем состояние при открытии нового окна
     await state.clear()
+    
+    # Очищаем кеш "Все ключи" при переходе в "Мои ключи"
+    if user_id in allclients_cache:
+        del allclients_cache[user_id]
     
     # Проверка доступа
     if not is_allowed(user_id):
@@ -2273,6 +2324,10 @@ async def refresh_myclients(callback_query: types.CallbackQuery, state: FSMConte
     # Очищаем состояние
     await state.clear()
     
+    # Очищаем кеш "Все ключи" при обновлении "Мои ключи"
+    if user_id in allclients_cache:
+        del allclients_cache[user_id]
+    
     try:
         username = callback_query.from_user.username
         if not username:
@@ -2369,6 +2424,10 @@ async def refresh_myclients(callback_query: types.CallbackQuery, state: FSMConte
 async def callback_cmd_allclients(callback_query: types.CallbackQuery, state: FSMContext):
     """Обработчик кнопки 'Все ключи' (только для админа)"""
     user_id = callback_query.from_user.id
+    
+    # Очищаем кеш при переходе в "Все ключи" для принудительного обновления
+    if user_id in allclients_cache:
+        del allclients_cache[user_id]
     
     # Очищаем состояние при открытии нового окна
     await state.clear()
