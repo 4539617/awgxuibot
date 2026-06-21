@@ -326,6 +326,112 @@ class ConfigManager:
             api_token=panel.xui_api_token
         )
     
+    async def fetch_and_update_panel_settings(self, panel_id: str, xui_client) -> bool:
+        """Извлекает параметры Reality из панели и обновляет конфигурацию"""
+        try:
+            panel = self.get_panel(panel_id)
+            if not panel:
+                return False
+            
+            # Импортируем функцию для извлечения параметров Reality
+            from utils import get_inbound_reality_settings
+            
+            # Извлекаем параметры Reality из базы данных панели
+            reality_params = get_inbound_reality_settings(panel.xui_db_path, panel.inbound_id)
+            
+            if not reality_params:
+                return False
+            
+            # Обновляем параметры панели в конфигурации
+            if 'sni' in reality_params and reality_params['sni']:
+                panel.reality_sni = reality_params['sni']
+            
+            if 'fingerprint' in reality_params and reality_params['fingerprint']:
+                panel.reality_fingerprint = reality_params['fingerprint']
+            
+            if 'public_key' in reality_params and reality_params['public_key']:
+                panel.reality_public_key = reality_params['public_key']
+            
+            if 'short_id' in reality_params and reality_params['short_id']:
+                panel.reality_short_id = reality_params['short_id']
+            
+            # Сохраняем обновленную конфигурацию в файл
+            self._save_config()
+            
+            return True
+            
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Ошибка при извлечении параметров панели: {e}")
+            return False
+    
+    def _save_config(self):
+        """Сохраняет текущую конфигурацию в файл"""
+        try:
+            # Пересобираем словарь из объектов
+            config_dict = {
+                'common': {
+                    'xui_bot_token': self.common.xui_bot_token,
+                    'awg_bot_token': self.common.awg_bot_token,
+                    'admin_ids': self.common.admin_ids,
+                    'server_port': self.common.server_port,
+                    'api_timeout': self.common.api_timeout,
+                    'xhttp_mode': self.common.xhttp_mode,
+                    'tls_fingerprint': self.common.tls_fingerprint,
+                    'tls_alpn': self.common.tls_alpn,
+                    'max_traffic_gb': self.common.max_traffic_gb,
+                    'max_days': self.common.max_days,
+                    'min_days': self.common.min_days,
+                    'default_traffic_gb': self.common.default_traffic_gb,
+                    'default_days': self.common.default_days,
+                    'db_path': self.common.db_path,
+                    'db_backup_enabled': self.common.db_backup_enabled,
+                    'db_backup_interval': self.common.db_backup_interval,
+                    'log_level': self.common.log_level,
+                    'log_file_enabled': self.common.log_file_enabled,
+                    'log_file_path': self.common.log_file_path,
+                    'log_max_size_mb': self.common.log_max_size_mb,
+                    'log_backup_count': self.common.log_backup_count,
+                    'allow_user_dns_queries': self.common.allow_user_dns_queries
+                },
+                'default_panel': self.default_panel_id,
+                'panels': {}
+            }
+            
+            # Добавляем панели
+            for panel_id, panel in self.panels.items():
+                config_dict['panels'][panel_id] = {
+                    'alias': panel.alias,
+                    'enabled': panel.enabled,
+                    'is_local': panel.is_local,
+                    'xui_version': panel.xui_version,
+                    'xui_url': panel.xui_url,
+                    'xui_username': panel.xui_username,
+                    'xui_password': panel.xui_password,
+                    'xui_api_token': panel.xui_api_token,
+                    'xui_db_path': panel.xui_db_path,
+                    'inbound_id': panel.inbound_id,
+                    'server_address': panel.server_address,
+                    'transport': panel.transport,
+                    'security': panel.security,
+                    'tls_sni': panel.tls_sni,
+                    'tls_fingerprint': panel.tls_fingerprint,
+                    'reality_sni': panel.reality_sni,
+                    'reality_fingerprint': panel.reality_fingerprint,
+                    'reality_public_key': panel.reality_public_key,
+                    'reality_short_id': panel.reality_short_id
+                }
+            
+            # Сохраняем в файл
+            with open(self.config_path, 'w', encoding='utf-8') as f:
+                yaml.dump(config_dict, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+                
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Ошибка при сохранении конфигурации: {e}")
+    
     async def check_panel_status(self, panel_config: PanelConfig) -> bool:
         """Проверить доступность панели"""
         try:
