@@ -280,6 +280,10 @@ class ConfigManager:
         
         return True
     
+    def switch_panel(self, panel_id: str) -> bool:
+        """Алиас для switch_default_panel (обратная совместимость)"""
+        return self.switch_default_panel(panel_id)
+    
     async def check_panel_status(self, panel_config: PanelConfig) -> bool:
         """Проверить доступность панели"""
         try:
