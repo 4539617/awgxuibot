@@ -250,6 +250,10 @@ class ConfigManager:
         """Получить все панели"""
         return self.panels
     
+    def get_current_panel_id(self) -> Optional[str]:
+        """Получить ID текущей активной панели"""
+        return self.default_panel_id
+    
     def switch_default_panel(self, panel_id: str) -> bool:
         """Переключить панель по умолчанию"""
         if panel_id not in self.panels:
@@ -303,8 +307,9 @@ class ConfigManager:
 class UserDatabase:
     """База данных пользователей с поддержкой мультипанелей"""
     
-    def __init__(self, db_path: str = "/app/data/bot_users.db"):
+    def __init__(self, db_path: str = "/app/data/bot_users.db", admin_ids: List[int] = None):
         self.db_path = db_path
+        self.admin_ids = admin_ids or []
         self._init_db()
     
     def _init_db(self):
@@ -393,11 +398,9 @@ class UserDatabase:
     
     def get_main_admin(self) -> int:
         """Получить ID главного администратора"""
-        admin_ids_str = os.getenv("ADMIN_IDS", "0")
-        try:
-            return int(admin_ids_str.split(',')[0])
-        except:
-            return 0
+        if self.admin_ids and len(self.admin_ids) > 0:
+            return self.admin_ids[0]
+        return 0
     
     def is_allowed(self, user_id: int) -> bool:
         """Проверить разрешен ли пользователь"""
@@ -574,7 +577,7 @@ class Config:
     def __init__(self, config_path: str = "config.yaml"):
         self.config_manager = ConfigManager(config_path)
         self.common = self.config_manager.common
-        self.users_db = UserDatabase(self.common.db_path)
+        self.users_db = UserDatabase(self.common.db_path, self.common.admin_ids)
         self._validate()
         
         # Создаем свойства для обратной совместимости со старым кодом
