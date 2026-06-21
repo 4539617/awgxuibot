@@ -327,36 +327,71 @@ class ConfigManager:
         )
     
     async def fetch_and_update_panel_settings(self, panel_id: str, xui_client) -> bool:
-        """Извлекает параметры Reality из панели и обновляет конфигурацию"""
+        """Извлекает параметры из панели (transport, security, Reality) и обновляет конфигурацию"""
         try:
+            import subprocess
+            import json
+            
             panel = self.get_panel(panel_id)
             if not panel:
                 return False
             
-            # Импортируем функцию для извлечения параметров Reality
-            from utils import get_inbound_reality_settings
+            # Извлекаем stream_settings из базы данных панели
+            sql_get = f"""sqlite3 {panel.xui_db_path} "SELECT stream_settings FROM inbounds WHERE id={panel.inbound_id};" """
+            result = subprocess.run(sql_get, shell=True, capture_output=True, text=True)
             
-            # Извлекаем параметры Reality из базы данных панели
-            reality_params = get_inbound_reality_settings(panel.xui_db_path, panel.inbound_id)
-            
-            if not reality_params:
+            if result.returncode != 0 or not result.stdout:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Не удалось получить stream_settings для inbound id={panel.inbound_id}")
                 return False
             
-            # Обновляем параметры панели в конфигурации
-            if 'sni' in reality_params and reality_params['sni']:
-                panel.reality_sni = reality_params['sni']
+            stream_settings = json.loads(result.stdout.strip())
             
-            if 'fingerprint' in reality_params and reality_params['fingerprint']:
-                panel.reality_fingerprint = reality_params['fingerprint']
+            # Извлекаем transport (network)
+            transport = stream_settings.get('network', 'tcp')
+            if transport:
+                panel.transport = transport
             
-            if 'public_key' in reality_params and reality_params['public_key']:
-                panel.reality_public_key = reality_params['public_key']
+            # Извлекаем security
+            security = stream_settings.get('security', 'none')
+            if security:
+                panel.security = security
             
-            if 'short_id' in reality_params and reality_params['short_id']:
-                panel.reality_short_id = reality_params['short_id']
+            # Если security == reality, извлекаем параметры Reality
+            if security == 'reality':
+                reality_config = stream_settings.get('realitySettings', {})
+                
+                # SNI из serverNames
+                sni = reality_config.get('serverNames', [''])[0] if reality_config.get('serverNames') else ''
+                if sni:
+                    panel.reality_sni = sni
+                
+                # Fingerprint
+                settings_obj = reality_config.get('settings', {})
+                if isinstance(settings_obj, dict):
+                    fingerprint = settings_obj.get('fingerprint', reality_config.get('fingerprint', 'chrome'))
+                    public_key = settings_obj.get('publicKey', reality_config.get('publicKey', ''))
+                else:
+                    fingerprint = reality_config.get('fingerprint', 'chrome')
+                    public_key = reality_config.get('publicKey', '')
+                
+                if fingerprint:
+                    panel.reality_fingerprint = fingerprint
+                if public_key:
+                    panel.reality_public_key = public_key
+                
+                # Short ID из shortIds
+                short_id = reality_config.get('shortIds', [''])[0] if reality_config.get('shortIds') else ''
+                if short_id:
+                    panel.reality_short_id = short_id
             
             # Сохраняем обновленную конфигурацию в файл
             self._save_config()
+            
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"✅ Параметры панели {panel_id} обновлены: transport={transport}, security={security}")
             
             return True
             
