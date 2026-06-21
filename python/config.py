@@ -284,6 +284,48 @@ class ConfigManager:
         """Алиас для switch_default_panel (обратная совместимость)"""
         return self.switch_default_panel(panel_id)
     
+    def create_xui_config_from_panel(self, panel_id: str):
+        """Создает XUICompat объект из конфигурации панели"""
+        from dataclasses import dataclass
+        
+        panel = self.get_panel(panel_id)
+        if not panel:
+            return None
+        
+        @dataclass
+        class XUICompat:
+            url: str
+            username: str
+            password: str
+            inbound_id: int
+            db_path: str
+            api_timeout: int
+            version: str
+            api_token: str = ""
+            
+            def is_v2(self) -> bool:
+                """Проверка является ли версия 2.x"""
+                return self.version.startswith("2.")
+            
+            def is_v3(self) -> bool:
+                """Проверка является ли версия 3.x или latest"""
+                return self.version.startswith("3.") or self.version == "latest"
+            
+            def is_v3_new_api(self) -> bool:
+                """Проверка использует ли версия новый API v3"""
+                return self.version == "latest" or self.version.startswith("3.")
+        
+        return XUICompat(
+            url=panel.xui_url,
+            username=panel.xui_username,
+            password=panel.xui_password,
+            inbound_id=panel.inbound_id,
+            db_path=panel.xui_db_path,
+            api_timeout=self.common.api_timeout,
+            version=panel.xui_version,
+            api_token=panel.xui_api_token
+        )
+    
     async def check_panel_status(self, panel_config: PanelConfig) -> bool:
         """Проверить доступность панели"""
         try:
