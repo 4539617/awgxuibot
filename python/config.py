@@ -523,9 +523,10 @@ class PanelManager:
         Возвращает True если панель доступна, False если нет
         """
         try:
-            url = panel_config.get('url', '')
-            username = panel_config.get('username', '')
-            password = panel_config.get('password', '')
+            # Поддержка обоих форматов ключей (xui_* и старые)
+            url = panel_config.get('xui_url') or panel_config.get('url', '')
+            username = panel_config.get('xui_username') or panel_config.get('username', '')
+            password = panel_config.get('xui_password') or panel_config.get('password', '')
             
             if not url:
                 return False
@@ -571,14 +572,14 @@ class PanelManager:
         
         try:
             return XUIConfig(
-                url=panel.get('url', ''),
-                username=panel.get('username', ''),
-                password=panel.get('password', ''),
+                url=panel.get('xui_url') or panel.get('url', ''),
+                username=panel.get('xui_username') or panel.get('username', ''),
+                password=panel.get('xui_password') or panel.get('password', ''),
                 inbound_id=panel.get('inbound_id', 1),
-                db_path=panel.get('db_path', '/etc/x-ui/x-ui.db'),
+                db_path=panel.get('xui_db_path') or panel.get('db_path', '/etc/x-ui/x-ui.db'),
                 api_timeout=panel.get('api_timeout', 30),
-                version=panel.get('version', 'latest'),
-                api_token=panel.get('api_token')
+                version=panel.get('xui_version') or panel.get('version', 'latest'),
+                api_token=panel.get('xui_api_token') or panel.get('api_token')
             )
         except Exception as e:
             print(f"Ошибка создания XUIConfig: {e}")

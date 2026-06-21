@@ -2643,16 +2643,16 @@ async def show_panels_list(callback_query: types.CallbackQuery, state: FSMContex
                 f"• Файл существует: {'✅ Да' if panel_manager.config_path.exists() else '❌ Нет'}\n\n"
             )
             
-            if 'panels.yaml' in files_in_dir:
-                diagnostic_text += "✅ Файл <code>panels.yaml</code> найден в директории\n"
+            if 'config.yaml' in files_in_dir:
+                diagnostic_text += "✅ Файл <code>config.yaml</code> найден в директории\n"
                 diagnostic_text += "⚠️ Возможно, ошибка в формате YAML или файл пустой\n\n"
             else:
-                diagnostic_text += "❌ Файл <code>panels.yaml</code> не найден\n\n"
+                diagnostic_text += "❌ Файл <code>config.yaml</code> не найден\n\n"
             
             diagnostic_text += (
                 "📝 <b>Решение:</b>\n"
-                "1. Скопируйте <code>panels.yaml.example</code> в <code>panels.yaml</code>\n"
-                "2. Настройте параметры панелей\n"
+                "1. Скопируйте <code>config.yaml.example</code> в <code>config.yaml</code>\n"
+                "2. Настройте параметры панелей в секции <code>panels</code>\n"
                 "3. Перезапустите бота\n\n"
                 f"💡 Файлы в директории: {len(files_in_dir)}"
             )
@@ -2817,7 +2817,7 @@ async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContex
             
             # Проверяем, что бот действительно подключен к этой панели
             # Сравниваем URL из config с URL из panel_config
-            panel_url = panel_config.get('url', '')
+            panel_url = panel_config.get('xui_url') or panel_config.get('url', '')
             current_url = config.xui.url
             
             if panel_url != current_url:
@@ -2872,8 +2872,8 @@ async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContex
                 stats_text = (
                     f"🟢 <b>Текущая панель: {alias}</b>\n\n"
                     f"🔐 <b>Информация о панели:</b>\n"
-                    f"• URL: <code>{panel_config.get('url', 'N/A')}</code>\n"
-                    f"• Версия: <code>{panel_config.get('version', 'N/A')}</code>\n"
+                    f"• URL: <code>{panel_config.get('xui_url') or panel_config.get('url', 'N/A')}</code>\n"
+                    f"• Версия: <code>{panel_config.get('xui_version') or panel_config.get('version', 'N/A')}</code>\n"
                     f"• Inbound ID: <code>{panel_config.get('inbound_id', 'N/A')}</code>\n\n"
                     f"📊 <b>Статистика ключей:</b>\n"
                     f"• Всего ключей: <b>{total_clients}</b>\n"
@@ -2888,8 +2888,8 @@ async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContex
                 logger.error(f"Ошибка получения статистики: {e}")
                 stats_text = (
                     f"🟢 <b>Текущая панель: {alias}</b>\n\n"
-                    f"🔐 URL: <code>{panel_config.get('url', 'N/A')}</code>\n"
-                    f"📋 Версия: <code>{panel_config.get('version', 'N/A')}</code>\n"
+                    f"🔐 URL: <code>{panel_config.get('xui_url') or panel_config.get('url', 'N/A')}</code>\n"
+                    f"📋 Версия: <code>{panel_config.get('xui_version') or panel_config.get('version', 'N/A')}</code>\n"
                     f"🆔 Inbound ID: <code>{panel_config.get('inbound_id', 'N/A')}</code>\n\n"
                     f"⚠️ Не удалось получить статистику ключей"
                 )
