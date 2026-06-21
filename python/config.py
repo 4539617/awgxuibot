@@ -937,6 +937,50 @@ class Config:
         """Проверить является ли пользователь админом"""
         return user_id in self.common.admin_ids
     
+    def refresh_vpn_config(self):
+        """Обновляет VPN конфигурацию из текущей панели"""
+        from dataclasses import dataclass
+        
+        current_panel = self.config_manager.get_current_panel()
+        if not current_panel:
+            return
+        
+        @dataclass
+        class VPNCompat:
+            server_address: str
+            server_port: int
+            transport: str
+            security: str
+            tls_sni: str
+            tls_fingerprint: str
+            tls_alpn: str
+            reality_sni: str
+            reality_fingerprint: str
+            reality_public_key: str
+            reality_short_id: str
+            xhttp_mode: str
+            
+            def get_sni(self) -> str:
+                return self.tls_sni if self.security == "tls" else self.reality_sni
+            
+            def get_fingerprint(self) -> str:
+                return self.tls_fingerprint if self.security == "tls" else self.reality_fingerprint
+        
+        self.vpn = VPNCompat(
+            server_address=current_panel.server_address,
+            server_port=self.common.server_port,
+            transport=current_panel.transport,
+            security=current_panel.security,
+            tls_sni=current_panel.tls_sni,
+            tls_fingerprint=current_panel.tls_fingerprint or self.common.tls_fingerprint,
+            tls_alpn=self.common.tls_alpn,
+            reality_sni=current_panel.reality_sni,
+            reality_fingerprint=current_panel.reality_fingerprint,
+            reality_public_key=current_panel.reality_public_key,
+            reality_short_id=current_panel.reality_short_id,
+            xhttp_mode=self.common.xhttp_mode
+        )
+    
     def is_allowed(self, user_id: int) -> bool:
         """Проверить разрешен ли пользователь"""
         return self.users_db.is_allowed(user_id)

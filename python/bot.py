@@ -3033,6 +3033,9 @@ async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContex
                     try:
                         if await panel_manager.fetch_and_update_panel_settings(panel_id, xui_client):
                             logger.info(f"✅ Параметры панели {alias} обновлены")
+                            # Обновляем VPN конфигурацию в config
+                            config.refresh_vpn_config()
+                            logger.info(f"✅ VPN конфигурация обновлена: transport={config.vpn.transport}, security={config.vpn.security}")
                         else:
                             logger.warning(f"⚠️ Не удалось обновить параметры панели {alias}")
                     except Exception as e:
