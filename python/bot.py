@@ -1952,6 +1952,24 @@ async def back_to_start_menu(callback_query: types.CallbackQuery, state: FSMCont
     
     await callback_query.answer()
     
+    # Обновляем конфигурацию из текущей панели
+    try:
+        panel_manager = config.panel_manager
+        current_panel_id = panel_manager.get_current_panel_id()
+        
+        if current_panel_id:
+            panel_config = panel_manager.get_panel(current_panel_id)
+            if panel_config:
+                # Обновляем transport и security из панели
+                if 'transport' in panel_config:
+                    config.vpn.transport = panel_config['transport']
+                if 'security' in panel_config:
+                    config.vpn.security = panel_config['security']
+                
+                logger.info(f"🔄 Конфигурация обновлена из панели {current_panel_id}")
+    except Exception as e:
+        logger.error(f"Ошибка обновления конфигурации: {e}")
+    
     # Проверяем права доступа
     if not is_allowed(user_id):
         await callback_query.message.edit_text("⛔ Отказано в доступе.")
