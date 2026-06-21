@@ -517,6 +517,164 @@ class PanelManager:
             print(f"Ошибка переключения панели: {e}")
             return False
     
+    async def fetch_and_update_panel_settings(self, panel_id: str, xui_client) -> bool:
+        """
+        Извлечь параметры панели через API и обновить config.yaml
+        Извлекает: server_address, server_ip, transport, security, Reality ключи и т.д.
+        """
+        try:
+            panel_config = self.get_panel(panel_id)
+            if not panel_config:
+                print(f"Панель {panel_id} не найдена")
+                return False
+            
+            # Извлекаем server_address и server_ip из URL
+            xui_url = panel_config.get('xui_url') or panel_config.get('url', '')
+            if xui_url:
+                import re
+                # Извлекаем домен/IP из URL
+                match = re.search(r'https?://([^:/]+)', xui_url)
+                if match:
+                    server_address = match.group(1)
+                    
+                    # Определяем, это IP или домен
+                    is_ip = re.match(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$', server_address)
+                    
+                    if is_ip:
+                        # Это IP адрес
+                        panel_config['server_ip'] = server_address
+                        panel_config['server_address'] = server_address
+                        print(f"✅ Извлечен IP: {server_address}")
+                    else:
+                        # Это домен
+                        panel_config['server_address'] = server_address
+                        # Пытаемся получить IP через DNS
+                        try:
+                            import socket
+                            server_ip = socket.gethostbyname(server_address)
+                            panel_config['server_ip'] = server_ip
+                            print(f"✅ Извлечен домен: {server_address}, IP: {server_ip}")
+                        except:
+                            panel_config['server_ip'] = server_address
+                            print(f"✅ Извлечен домен: {server_address}")
+            
+            # Получаем inbound_id из конфига панели
+            inbound_id = panel_config.get('inbound_id', 1)
+            
+            # Получаем данные inbound через API
+            try:
+                # Формируем URL для получения списка inbounds
+                api_url = f"{xui_url}/panel/api/inbounds/list"
+                
+                await xui_client._get_session()
+                headers = await xui_client._get_headers()
+                
+                async with xui_client.session.get(api_url, headers=headers) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        
+                        if data.get('success') and data.get('obj'):
+                            inbounds = data['obj']
+                            
+                            # Ищем нужный inbound
+                            target_inbound = None
+                            for inbound in inbounds:
+                                if inbound.get('id') == inbound_id:
+                                    target_inbound = inbound
+                                    break
+                            
+                            if target_inbound:
+                                # Извлекаем параметры
+                                settings = target_inbound.get('settings', '{}')
+                                stream_settings = target_inbound.get('streamSettings', '{}')
+                                
+                                # Парсим JSON строки
+                                import json
+                                if isinstance(settings, str):
+                                    settings = json.loads(settings)
+                                if isinstance(stream_settings, str):
+                                    stream_settings = json.loads(stream_settings)
+                                
+                                # Извлекаем transport
+                                network = stream_settings.get('network', 'tcp')
+                                panel_config['transport'] = network
+                                print(f"✅ Transport: {network}")
+                                
+                                # Извлекаем security
+                                security = stream_settings.get('security', 'none')
+                                panel_config['security'] = security
+                                print(f"✅ Security: {security}")
+                                
+                                # Если Reality
+                                if security == 'reality':
+                                    reality_settings = stream_settings.get('realitySettings', {})
+                                    
+                                    if reality_settings:
+                                        # Извлекаем Reality параметры
+                                        public_key = reality_settings.get('publicKey', '')
+                                        private_key = reality_settings.get('privateKey', '')
+                                        short_ids = reality_settings.get('shortIds', [])
+                                        server_names = reality_settings.get('serverNames', [])
+                                        fingerprint = reality_settings.get('fingerprint', 'chrome')
+                                        
+                                        if public_key:
+                                            panel_config['reality_public_key'] = public_key
+                                            print(f"✅ Reality Public Key: {public_key[:20]}...")
+                                        
+                                        if private_key:
+                                            panel_config['reality_private_key'] = private_key
+                                            print(f"✅ Reality Private Key: {private_key[:20]}...")
+                                        
+                                        if short_ids:
+                                            panel_config['reality_short_id'] = short_ids[0] if short_ids else ''
+                                            print(f"✅ Reality Short ID: {short_ids[0] if short_ids else 'N/A'}")
+                                        
+                                        if server_names:
+                                            panel_config['reality_sni'] = server_names[0] if server_names else ''
+                                            print(f"✅ Reality SNI: {server_names[0] if server_names else 'N/A'}")
+                                        
+                                        if fingerprint:
+                                            panel_config['reality_fingerprint'] = fingerprint
+                                            print(f"✅ Reality Fingerprint: {fingerprint}")
+                                
+                                # Если TLS
+                                elif security == 'tls':
+                                    tls_settings = stream_settings.get('tlsSettings', {})
+                                    
+                                    if tls_settings:
+                                        server_name = tls_settings.get('serverName', '')
+                                        if server_name:
+                                            panel_config['tls_sni'] = server_name
+                                            print(f"✅ TLS SNI: {server_name}")
+                                
+                                # Сохраняем обновленную конфигурацию
+                                self.panels[panel_id] = panel_config
+                                if self._save_panels():
+                                    print(f"✅ Параметры панели {panel_id} обновлены и сохранены")
+                                    return True
+                                else:
+                                    print(f"❌ Ошибка сохранения параметров панели {panel_id}")
+                                    return False
+                            else:
+                                print(f"⚠️ Inbound с ID {inbound_id} не найден")
+                                return False
+                    else:
+                        print(f"❌ Ошибка получения inbounds: {resp.status}")
+                        return False
+            except Exception as e:
+                print(f"❌ Ошибка получения данных inbound: {e}")
+                import traceback
+                traceback.print_exc()
+                return False
+            
+            return True
+            
+        except Exception as e:
+            print(f"❌ Ошибка извлечения параметров панели: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
     async def check_panel_status(self, panel_config: dict) -> bool:
         """
         Проверить доступность панели по сети

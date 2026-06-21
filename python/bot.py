@@ -2946,6 +2946,21 @@ async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContex
                 if await xui_client.login():
                     logger.info(f"✅ Переключено на панель: {alias} (ID: {panel_id})")
                     
+                    # Извлекаем и сохраняем параметры панели
+                    await callback_query.message.edit_text(
+                        f"🔄 Подключение к панели <b>{alias}</b>...\n\n"
+                        "⏳ Извлечение параметров панели...",
+                        parse_mode="HTML"
+                    )
+                    
+                    try:
+                        if await panel_manager.fetch_and_update_panel_settings(panel_id, xui_client):
+                            logger.info(f"✅ Параметры панели {alias} обновлены")
+                        else:
+                            logger.warning(f"⚠️ Не удалось обновить параметры панели {alias}")
+                    except Exception as e:
+                        logger.error(f"❌ Ошибка извлечения параметров панели: {e}")
+                    
                     # Получаем статистику по ключам
                     try:
                         all_clients = await xui_client.get_all_clients()
