@@ -12,4 +12,4 @@ services:
       - ./logs:/app/logs
       - ./data:/app/data
       - /etc/x-ui:/etc/x-ui:rw  # Доступ к базе данных X-UI
-      - ./panels.yaml:/app/panels.yaml:rw  # Конфигурация панелей (read-write для переключения)
+      - ./config.yaml:/app/config.yaml:rw  # Конфигурация (read-write для переключения панелей)
