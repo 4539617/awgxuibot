@@ -1,0 +1,133 @@
+# ============================================
+# XUIBot Multi-Server Configuration
+# ============================================
+# Скопируйте этот файл в config.yaml и настройте под свои параметры
+# Этот файл заменяет .env и panels.yaml, объединяя все настройки в одном месте
+
+# ============================================
+# ОБЩИЕ ПАРАМЕТРЫ (для всех панелей)
+# ============================================
+common:
+  # Telegram Bot Tokens
+  xui_bot_token: "your_xui_bot_token_here"
+  awg_bot_token: "your_awg_bot_token_here"
+  
+  # Администраторы (список Telegram ID)
+  admin_ids:
+    - 123456789
+    - 987654321
+  
+  # Server Configuration
+  server_port: 443
+  
+  # API Configuration
+  api_timeout: 30
+  
+  # Transport Configuration
+  xhttp_mode: "auto"
+  
+  # TLS Configuration
+  tls_fingerprint: "edge"
+  tls_alpn: "http/1.1"
+  
+  # Traffic Limits
+  max_traffic_gb: 1000
+  max_days: 3650
+  min_days: 1
+  default_traffic_gb: 100
+  default_days: 30
+  
+  # Database Configuration
+  db_path: "/app/data/bot_users.db"
+  db_backup_enabled: true
+  db_backup_interval: 24
+  
+  # Logging Configuration
+  log_level: "INFO"
+  log_file_enabled: true
+  log_file_path: "/app/logs/bot.log"
+  log_max_size_mb: 10
+  log_backup_count: 5
+  
+  # Other Settings
+  allow_user_dns_queries: false
+
+# ============================================
+# ПАНЕЛЬ ПО УМОЛЧАНИЮ
+# ============================================
+# ID панели, которая будет использоваться при запуске бота
+default_panel: "panel1"
+
+# ============================================
+# ДИНАМИЧЕСКИЕ ПАРАМЕТРЫ ПО ПАНЕЛЯМ
+# ============================================
+panels:
+  # Первая панель (основная)
+  panel1:
+    alias: "Основная панель"
+    enabled: true
+    
+    # XUI Panel Configuration
+    xui_version: "3.3.1"
+    xui_url: "https://your-domain.com:2053/admin-path"
+    xui_username: "admin"
+    xui_password: "your_secure_password"
+    xui_api_token: "your_api_token_here_aBcDeFgHiJkLmNoPqRsTuVwXyZ123456"
+    inbound_id: 1
+    xui_db_path: "/etc/x-ui/x-ui.db"
+    
+    # Server Configuration
+    server_address: "your-domain.com"
+    server_ip: "1.2.3.4"
+    
+    # Transport & Security
+    transport: "xhttp"  # tcp, xhttp, ws, grpc, httpupgrade, splithttp
+    security: "reality"  # tls, reality
+    
+    # TLS Settings (если security=tls)
+    tls_sni: "your-domain.com"
+    
+    # Reality Settings (если security=reality)
+    reality_sni: "www.nvidia.com"
+    reality_fingerprint: "edge"
+    reality_public_key: "your_reality_public_key_here"
+    reality_private_key: "your_reality_private_key_here"
+    reality_short_id: "your_reality_short_id"
+  
+  # Вторая панель (резервная)
+  panel2:
+    alias: "Резервная панель"
+    enabled: true
+    
+    xui_version: "3.3.1"
+    xui_url: "https://backup-server.com:2053/backup-path"
+    xui_username: "admin"
+    xui_password: "another_secure_password"
+    xui_api_token: "backup_api_token_XyZ987654321aBcDeFgHiJkLmNoPqRsT"
+    inbound_id: 1
+    xui_db_path: "/etc/x-ui/x-ui.db"
+    
+    server_address: "backup-server.com"
+    server_ip: "5.6.7.8"
+    
+    transport: "xhttp"
+    security: "reality"
+    
+    tls_sni: "backup-server.com"
+    
+    reality_sni: "www.google.com"
+    reality_fingerprint: "chrome"
+    reality_public_key: "backup_reality_public_key"
+    reality_private_key: "backup_reality_private_key"
+    reality_short_id: "backup_short_id"
+
+# ============================================
+# ПРИМЕЧАНИЯ
+# ============================================
+# 1. Общие параметры (common) применяются ко всем панелям
+# 2. Динамические параметры (panels) специфичны для каждой панели
+# 3. При создании ключа он автоматически привязывается к текущей активной панели
+# 4. Пользователи видят все свои ключи со всех панелей
+# 5. Блокировка пользователей работает глобально на всех панелях
+# 6. Админ может переключать панели через меню "🔧 Панели"
+# 7. Для добавления новой панели просто добавьте новый блок в секцию panels

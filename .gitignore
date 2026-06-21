@@ -79,6 +79,7 @@ data/
 
 # Panel configurations (contains sensitive credentials)
 panels.yaml
+config.yaml
 
 # Backup files
 *.bak
