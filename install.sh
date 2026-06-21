@@ -323,6 +323,316 @@ update_env_value() {
 get_env_value() {
     local key=$1
     grep "^${key}=" .env 2>/dev/null | cut -d'=' -f2 | head -1
+}
+
+# ============================================
+# ФУНКЦИИ ДЛЯ РАБОТЫ С CONFIG.YAML
+# ============================================
+
+# Проверка наличия yq (YAML processor)
+check_yq() {
+    if ! command -v yq &> /dev/null; then
+        echo -e "${YELLOW}📦 Установка yq (YAML processor)...${NC}"
+        
+        # Определяем архитектуру
+        ARCH=$(uname -m)
+        case $ARCH in
+            x86_64)
+                YQ_ARCH="amd64"
+                ;;
+            aarch64|arm64)
+                YQ_ARCH="arm64"
+                ;;
+            armv7l)
+                YQ_ARCH="arm"
+                ;;
+            *)
+                echo -e "${RED}❌ Неподдерживаемая архитектура: $ARCH${NC}"
+                return 1
+                ;;
+        esac
+        
+        # Скачиваем и устанавливаем yq
+        YQ_VERSION="v4.35.1"
+        wget -q "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_${YQ_ARCH}" -O /usr/local/bin/yq
+        chmod +x /usr/local/bin/yq
+        
+        if command -v yq &> /dev/null; then
+            echo -e "${GREEN}✅ yq установлен${NC}"
+        else
+            echo -e "${RED}❌ Не удалось установить yq${NC}"
+            return 1
+        fi
+    fi
+    return 0
+}
+
+# Получить ID локальной панели из config.yaml
+get_local_panel_id() {
+    if [ ! -f "config.yaml" ]; then
+        echo ""
+        return 1
+    fi
+    
+    check_yq || return 1
+    
+    # Ищем панель с is_local: true
+    local panel_id=$(yq eval '.panels | to_entries | .[] | select(.value.is_local == true) | .key' config.yaml 2>/dev/null | head -1)
+    
+    if [ -z "$panel_id" ]; then
+        # Если не найдена, используем default_panel
+        panel_id=$(yq eval '.default_panel' config.yaml 2>/dev/null)
+    fi
+    
+    echo "$panel_id"
+}
+
+# Обновить значение в config.yaml для локальной панели
+update_config_yaml_value() {
+    local key=$1
+    local value=$2
+    
+    # Проверяем наличие config.yaml
+    if [ ! -f "config.yaml" ]; then
+        echo -e "${YELLOW}⚠️  config.yaml не найден, создаем из примера...${NC}"
+        if [ -f "config.yaml.example" ]; then
+            cp config.yaml.example config.yaml
+        else
+            echo -e "${RED}❌ config.yaml.example не найден${NC}"
+            return 1
+        fi
+    fi
+    
+    check_yq || return 1
+    
+    # Получаем ID локальной панели
+    local panel_id=$(get_local_panel_id)
+    
+    if [ -z "$panel_id" ]; then
+        echo -e "${RED}❌ Локальная панель не найдена в config.yaml${NC}"
+        return 1
+    fi
+    
+    # Обновляем значение для локальной панели
+    yq eval -i ".panels.${panel_id}.${key} = \"${value}\"" config.yaml
+    
+    echo -e "${GREEN}✅ Обновлено: panels.${panel_id}.${key} = ${value}${NC}"
+}
+
+# Получить значение из config.yaml для локальной панели
+get_config_yaml_value() {
+    local key=$1
+    
+    if [ ! -f "config.yaml" ]; then
+        echo ""
+        return 1
+    fi
+    
+    check_yq || return 1
+    
+    # Получаем ID локальной панели
+    local panel_id=$(get_local_panel_id)
+    
+    if [ -z "$panel_id" ]; then
+        echo ""
+        return 1
+    fi
+    
+    # Получаем значение
+    yq eval ".panels.${panel_id}.${key}" config.yaml 2>/dev/null
+}
+
+# Универсальная функция обновления конфигурации
+# Автоматически определяет, использовать .env или config.yaml
+update_config_value() {
+    local key=$1
+    local value=$2
+    
+    # Проверяем наличие config.yaml
+    if [ -f "config.yaml" ]; then
+        # Используем config.yaml
+        local panel_id=$(get_local_panel_id)
+        
+        if [ -n "$panel_id" ]; then
+            # Маппинг старых ключей .env на новые ключи config.yaml
+            local yaml_key="$key"
+            case "$key" in
+                "XUI_VERSION") yaml_key="xui_version" ;;
+                "XUI_URL") yaml_key="xui_url" ;;
+                "XUI_USERNAME") yaml_key="xui_username" ;;
+                "XUI_PASSWORD") yaml_key="xui_password" ;;
+                "XUI_API_TOKEN") yaml_key="xui_api_token" ;;
+                "XUI_DB_PATH") yaml_key="xui_db_path" ;;
+                "INBOUND_ID") yaml_key="inbound_id" ;;
+                "SERVER_ADDRESS") yaml_key="server_address" ;;
+                "SERVER_IP") yaml_key="server_ip" ;;
+                "TRANSPORT") yaml_key="transport" ;;
+                "SECURITY") yaml_key="security" ;;
+                "TLS_SNI") yaml_key="tls_sni" ;;
+                "REALITY_SNI") yaml_key="reality_sni" ;;
+                "REALITY_FINGERPRINT") yaml_key="reality_fingerprint" ;;
+                "REALITY_PUBLIC_KEY") yaml_key="reality_public_key" ;;
+                "REALITY_PRIVATE_KEY") yaml_key="reality_private_key" ;;
+                "REALITY_SHORT_ID") yaml_key="reality_short_id" ;;
+                "XUI_BOT_TOKEN")
+                    # Токен бота сохраняется в common
+                    check_yq && yq eval -i ".common.xui_bot_token = \"${value}\"" config.yaml
+                    echo -e "${GREEN}✅ Обновлено: common.xui_bot_token${NC}"
+                    return 0
+                    ;;
+                "ADMIN_IDS")
+                    # Админы сохраняются в common как массив
+                    check_yq && yq eval -i ".common.admin_ids = [$(echo $value | sed 's/,/, /g')]" config.yaml
+                    echo -e "${GREEN}✅ Обновлено: common.admin_ids${NC}"
+                    return 0
+                    ;;
+            esac
+            
+            # Обновляем значение в config.yaml
+            update_config_yaml_value "$yaml_key" "$value"
+        else
+            echo -e "${YELLOW}⚠️  Локальная панель не найдена, используем .env${NC}"
+            update_env_value "$key" "$value"
+        fi
+    else
+        # Используем .env (обратная совместимость)
+        update_env_value "$key" "$value"
+    fi
+}
+
+# Универсальная функция получения значения конфигурации
+get_config_value() {
+    local key=$1
+    
+    # Проверяем наличие config.yaml
+    if [ -f "config.yaml" ]; then
+        local panel_id=$(get_local_panel_id)
+        
+        if [ -n "$panel_id" ]; then
+            # Маппинг ключей
+            local yaml_key="$key"
+            case "$key" in
+                "XUI_VERSION") yaml_key="xui_version" ;;
+                "XUI_URL") yaml_key="xui_url" ;;
+                "XUI_USERNAME") yaml_key="xui_username" ;;
+                "XUI_PASSWORD") yaml_key="xui_password" ;;
+                "XUI_API_TOKEN") yaml_key="xui_api_token" ;;
+                "XUI_DB_PATH") yaml_key="xui_db_path" ;;
+                "INBOUND_ID") yaml_key="inbound_id" ;;
+                "SERVER_ADDRESS") yaml_key="server_address" ;;
+                "SERVER_IP") yaml_key="server_ip" ;;
+                "TRANSPORT") yaml_key="transport" ;;
+                "SECURITY") yaml_key="security" ;;
+                "TLS_SNI") yaml_key="tls_sni" ;;
+                "REALITY_SNI") yaml_key="reality_sni" ;;
+                "REALITY_FINGERPRINT") yaml_key="reality_fingerprint" ;;
+                "REALITY_PUBLIC_KEY") yaml_key="reality_public_key" ;;
+                "REALITY_PRIVATE_KEY") yaml_key="reality_private_key" ;;
+                "REALITY_SHORT_ID") yaml_key="reality_short_id" ;;
+                "XUI_BOT_TOKEN")
+                    check_yq && yq eval ".common.xui_bot_token" config.yaml 2>/dev/null
+                    return 0
+                    ;;
+                "ADMIN_IDS")
+                    check_yq && yq eval ".common.admin_ids | join(\",\")" config.yaml 2>/dev/null
+                    return 0
+                    ;;
+            esac
+            
+            # Получаем значение из config.yaml
+            get_config_yaml_value "$yaml_key"
+        else
+            # Fallback на .env
+            get_env_value "$key"
+        fi
+    else
+        # Используем .env
+        get_env_value "$key"
+    fi
+}
+
+# Миграция из .env в config.yaml
+migrate_env_to_config_yaml() {
+    if [ ! -f ".env" ]; then
+        echo -e "${BLUE}ℹ️  .env не найден, миграция не требуется${NC}"
+        return 0
+    fi
+    
+    echo -e "${YELLOW}🔄 Миграция данных из .env в config.yaml...${NC}"
+    
+    # Создаем config.yaml из примера если не существует
+    if [ ! -f "config.yaml" ]; then
+        if [ -f "config.yaml.example" ]; then
+            cp config.yaml.example config.yaml
+            echo -e "${GREEN}✅ config.yaml создан из примера${NC}"
+        else
+            echo -e "${RED}❌ config.yaml.example не найден${NC}"
+            return 1
+        fi
+    fi
+    
+    check_yq || return 1
+    
+    # Получаем ID локальной панели
+    local panel_id=$(get_local_panel_id)
+    
+    if [ -z "$panel_id" ]; then
+        echo -e "${RED}❌ Локальная панель не найдена${NC}"
+        return 1
+    fi
+    
+    echo -e "${BLUE}📋 Миграция в панель: ${panel_id}${NC}"
+    
+    # Маппинг переменных .env -> config.yaml
+    declare -A env_to_yaml=(
+        ["XUI_VERSION"]="xui_version"
+        ["XUI_URL"]="xui_url"
+        ["XUI_USERNAME"]="xui_username"
+        ["XUI_PASSWORD"]="xui_password"
+        ["XUI_API_TOKEN"]="xui_api_token"
+        ["XUI_DB_PATH"]="xui_db_path"
+        ["INBOUND_ID"]="inbound_id"
+        ["SERVER_ADDRESS"]="server_address"
+        ["SERVER_IP"]="server_ip"
+        ["TRANSPORT"]="transport"
+        ["SECURITY"]="security"
+        ["TLS_SNI"]="tls_sni"
+        ["REALITY_SNI"]="reality_sni"
+        ["REALITY_FINGERPRINT"]="reality_fingerprint"
+        ["REALITY_PUBLIC_KEY"]="reality_public_key"
+        ["REALITY_PRIVATE_KEY"]="reality_private_key"
+        ["REALITY_SHORT_ID"]="reality_short_id"
+        ["XUI_BOT_TOKEN"]="xui_bot_token"
+        ["ADMIN_IDS"]="admin_ids"
+    )
+    
+    # Мигрируем значения
+    for env_key in "${!env_to_yaml[@]}"; do
+        yaml_key="${env_to_yaml[$env_key]}"
+        value=$(get_env_value "$env_key")
+        
+        if [ -n "$value" ]; then
+            # Для common параметров (токены, админы)
+            if [ "$env_key" = "XUI_BOT_TOKEN" ] || [ "$env_key" = "ADMIN_IDS" ]; then
+                if [ "$env_key" = "ADMIN_IDS" ]; then
+                    # Преобразуем список через запятую в YAML массив
+                    yq eval -i ".common.admin_ids = [$(echo $value | sed 's/,/, /g')]" config.yaml
+                    echo -e "${GREEN}✓ common.admin_ids${NC}"
+                else
+                    yq eval -i ".common.${yaml_key} = \"${value}\"" config.yaml
+                    echo -e "${GREEN}✓ common.${yaml_key}${NC}"
+                fi
+            else
+                # Для параметров панели
+                yq eval -i ".panels.${panel_id}.${yaml_key} = \"${value}\"" config.yaml
+                echo -e "${GREEN}✓ panels.${panel_id}.${yaml_key}${NC}"
+            fi
+        fi
+    done
+    
+    echo -e "${GREEN}✅ Миграция завершена${NC}"
+    echo -e "${YELLOW}💡 Рекомендуется проверить config.yaml и удалить .env после проверки${NC}"
+}
 
 # Функция генерации Reality ключей через API панели 3x-ui
 generate_reality_keys_via_api() {
@@ -4708,6 +5018,7 @@ show_menu() {
     echo -e "${BLUE}---${NC}"
     echo -e "${YELLOW}Системные утилиты:${NC}"
     echo -e "${GREEN}17)${NC} Анализ диска и памяти"
+    echo -e "${GREEN}18)${NC} Миграция .env → config.yaml"
     echo -e "${BLUE}---${NC}"
     echo -e "${RED}99)${NC} Удалить ВСЁ (AWG + Боты + 3x-ui)"
     echo -e "${GREEN}0)${NC} Выход"
@@ -4913,6 +5224,44 @@ while true; do
                 bash disk_analyzer.sh
             else
                 echo -e "${RED}❌ Файл disk_analyzer.sh не найден!${NC}"
+            fi
+            ;;
+        18)
+            echo -e "\n${BLUE}========================================${NC}"
+            echo -e "${BLUE}   Миграция .env → config.yaml${NC}"
+            echo -e "${BLUE}========================================${NC}\n"
+            
+            if [ ! -f ".env" ]; then
+                echo -e "${RED}❌ Файл .env не найден${NC}"
+                echo -e "${YELLOW}Миграция не требуется${NC}"
+            else
+                echo -e "${YELLOW}📋 Найден файл .env${NC}"
+                echo -e "${YELLOW}Будет выполнена миграция данных в config.yaml${NC}\n"
+                
+                read -p "Продолжить миграцию? (Enter - да, 0 - отмена): " migrate_choice
+                if [[ "$migrate_choice" == "0" ]]; then
+                    echo -e "${YELLOW}Миграция отменена${NC}"
+                else
+                    migrate_env_to_config_yaml
+                    
+                    if [ $? -eq 0 ]; then
+                        echo -e "\n${GREEN}✅ Миграция успешно завершена${NC}"
+                        echo -e "${YELLOW}📝 Проверьте config.yaml и убедитесь, что все данные корректны${NC}"
+                        echo -e "${YELLOW}💡 После проверки можно удалить .env:${NC}"
+                        echo -e "${BLUE}   rm .env${NC}\n"
+                        
+                        read -p "Показать содержимое config.yaml? (Enter - да, 0 - нет): " show_choice
+                        if [[ "$show_choice" != "0" ]]; then
+                            echo -e "\n${BLUE}========================================${NC}"
+                            echo -e "${BLUE}   Содержимое config.yaml:${NC}"
+                            echo -e "${BLUE}========================================${NC}"
+                            cat config.yaml
+                            echo -e "${BLUE}========================================${NC}"
+                        fi
+                    else
+                        echo -e "\n${RED}❌ Ошибка миграции${NC}"
+                    fi
+                fi
             fi
             ;;
         99)

@@ -62,10 +62,11 @@ default_panel: "panel1"
 # ДИНАМИЧЕСКИЕ ПАРАМЕТРЫ ПО ПАНЕЛЯМ
 # ============================================
 panels:
-  # Первая панель (основная)
+  # Первая панель (основная) - ЛОКАЛЬНАЯ
   panel1:
     alias: "Основная панель"
     enabled: true
+    is_local: true  # true = локальная панель (обновляется install.sh), false = удаленная (только чтение)
     
     # XUI Panel Configuration
     xui_version: "3.3.1"
@@ -94,10 +95,11 @@ panels:
     reality_private_key: "your_reality_private_key_here"
     reality_short_id: "your_reality_short_id"
   
-  # Вторая панель (резервная)
+  # Вторая панель (резервная) - УДАЛЕННАЯ
   panel2:
     alias: "Резервная панель"
     enabled: true
+    is_local: false  # true = локальная панель (обновляется install.sh), false = удаленная (только чтение)
     
     xui_version: "3.3.1"
     xui_url: "https://backup-server.com:2053/backup-path"
