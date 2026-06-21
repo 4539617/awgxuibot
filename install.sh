@@ -1430,8 +1430,8 @@ update_xuibot() {
     # Обновляем SERVER_ADDRESS и TLS_SNI из XUI_URL (ПОСЛЕ git pull, чтобы всегда выполнялось)
     echo ""
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${BLUE}📋 Шаг 1: Чтение XUI_URL из .env${NC}"
-    XUI_URL=$(get_env_value "XUI_URL")
+    echo -e "${BLUE}📋 Шаг 1: Чтение XUI_URL из config.yaml${NC}"
+    XUI_URL=$(get_config_value "XUI_URL")
     echo -e "${GREEN}✓ XUI_URL прочитан: ${XUI_URL}${NC}"
     
     if [ -n "$XUI_URL" ]; then
@@ -1445,32 +1445,26 @@ update_xuibot() {
             echo -e "${YELLOW}🔄 Будут обновлены SERVER_ADDRESS и TLS_SNI${NC}"
             
             echo -e "\n${BLUE}📋 Шаг 4: Обновление SERVER_ADDRESS${NC}"
-            CURRENT_SERVER=$(get_env_value "SERVER_ADDRESS")
+            CURRENT_SERVER=$(get_config_value "SERVER_ADDRESS")
             echo -e "${YELLOW}  Текущее значение: ${CURRENT_SERVER}${NC}"
             echo -e "${YELLOW}  Новое значение: ${DOMAIN}${NC}"
-            sed -i "s|^SERVER_ADDRESS=.*|SERVER_ADDRESS=${DOMAIN}|" .env
-            NEW_SERVER=$(get_env_value "SERVER_ADDRESS")
+            update_config_value "SERVER_ADDRESS" "${DOMAIN}"
+            NEW_SERVER=$(get_config_value "SERVER_ADDRESS")
             echo -e "${GREEN}✅ SERVER_ADDRESS обновлён: ${NEW_SERVER}${NC}"
             
             echo -e "\n${BLUE}📋 Шаг 5: Обновление TLS_SNI${NC}"
-            CURRENT_TLS_SNI=$(get_env_value "TLS_SNI")
+            CURRENT_TLS_SNI=$(get_config_value "TLS_SNI")
             echo -e "${YELLOW}  Текущее значение: ${CURRENT_TLS_SNI:-<пусто>}${NC}"
             echo -e "${YELLOW}  Новое значение: ${DOMAIN}${NC}"
-            if grep -q "^TLS_SNI=" .env 2>/dev/null; then
-                sed -i "s|^TLS_SNI=.*|TLS_SNI=${DOMAIN}|" .env
-                echo -e "${GREEN}✓ Строка TLS_SNI обновлена${NC}"
-            else
-                echo "TLS_SNI=${DOMAIN}" >> .env
-                echo -e "${GREEN}✓ Строка TLS_SNI добавлена${NC}"
-            fi
-            NEW_TLS_SNI=$(get_env_value "TLS_SNI")
+            update_config_value "TLS_SNI" "${DOMAIN}"
+            NEW_TLS_SNI=$(get_config_value "TLS_SNI")
             echo -e "${GREEN}✅ TLS_SNI обновлён: ${NEW_TLS_SNI}${NC}"
         else
             echo -e "${YELLOW}⚠️  Это IP АДРЕС (не домен)${NC}"
             echo -e "${BLUE}ℹ️  SERVER_ADDRESS и TLS_SNI НЕ изменяются${NC}"
         fi
     else
-        echo -e "${RED}❌ XUI_URL не найден в .env${NC}"
+        echo -e "${RED}❌ XUI_URL не найден в config.yaml${NC}"
     fi
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
     

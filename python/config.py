@@ -941,7 +941,7 @@ class Config:
         """Обновляет VPN конфигурацию из текущей панели"""
         from dataclasses import dataclass
         
-        current_panel = self.config_manager.get_current_panel()
+        current_panel = self.config_manager.get_default_panel()
         if not current_panel:
             return
         
