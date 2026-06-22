@@ -343,8 +343,18 @@ class ConfigManager:
             
             # Получаем данные inbound через API панели
             try:
-                # Используем URL из конфига панели
-                api_url = f"{panel.xui_url}/panel/api/inbounds/get/{panel.inbound_id}"
+                # Формируем правильный URL (xui_url уже содержит базовый путь)
+                # Убираем дублирование /panel если оно есть в xui_url
+                base_url = panel.xui_url.rstrip('/')
+                # Если URL уже содержит /panel, используем его как есть
+                if '/panel' in base_url or base_url.endswith('/login'):
+                    # Извлекаем базовый URL до /panel или /login
+                    if '/panel' in base_url:
+                        base_url = base_url.split('/panel')[0]
+                    elif '/login' in base_url:
+                        base_url = base_url.split('/login')[0]
+                
+                api_url = f"{base_url}/panel/api/inbounds/get/{panel.inbound_id}"
                 logger.info(f"   API URL: {api_url}")
                 
                 # Используем метод API для получения inbound
