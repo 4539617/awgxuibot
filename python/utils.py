@@ -425,11 +425,48 @@ class XUIClient:
         else:
             total_bytes = total_gb * 1024 * 1024 * 1024
         
-        # Определяем flow в зависимости от transport и security
+        # Получаем реальные настройки inbound из панели для определения flow
         flow = ""
-        if self.config.vpn.transport == "tcp" and self.config.vpn.security in ["reality", "tls"]:
-            flow = "xtls-rprx-vision"
-            logger.info(f"Установлен flow для TCP+{self.config.vpn.security}: {flow}")
+        try:
+            endpoint_get = f"{self.config.xui.url}/panel/api/inbounds/get/{self.config.xui.inbound_id}"
+            headers = await self._get_headers()
+            
+            async with self.session.get(endpoint_get, headers=headers) as resp:
+                if resp.status == 200:
+                    result = await resp.json()
+                    if result.get('success'):
+                        inbound_data = result.get('obj', {})
+                        stream_settings_str = inbound_data.get('streamSettings', '{}')
+                        stream_settings = json.loads(stream_settings_str) if isinstance(stream_settings_str, str) else stream_settings_str
+                        
+                        # Извлекаем реальные transport и security из inbound
+                        real_transport = stream_settings.get('network', 'tcp')
+                        real_security = stream_settings.get('security', 'none')
+                        
+                        # Устанавливаем flow на основе реальных настроек inbound
+                        if real_transport == "tcp" and real_security in ["reality", "tls"]:
+                            flow = "xtls-rprx-vision"
+                            logger.info(f"Установлен flow для {real_transport}+{real_security}: {flow}")
+                        else:
+                            logger.info(f"Flow не требуется для {real_transport}+{real_security}")
+                    else:
+                        logger.warning(f"⚠️ Не удалось получить настройки inbound, используем конфиг")
+                        # Fallback на конфиг
+                        if self.config.vpn.transport == "tcp" and self.config.vpn.security in ["reality", "tls"]:
+                            flow = "xtls-rprx-vision"
+                            logger.info(f"Установлен flow из конфига для TCP+{self.config.vpn.security}: {flow}")
+                else:
+                    logger.warning(f"⚠️ API вернул статус {resp.status}, используем конфиг")
+                    # Fallback на конфиг
+                    if self.config.vpn.transport == "tcp" and self.config.vpn.security in ["reality", "tls"]:
+                        flow = "xtls-rprx-vision"
+                        logger.info(f"Установлен flow из конфига для TCP+{self.config.vpn.security}: {flow}")
+        except Exception as e:
+            logger.warning(f"⚠️ Ошибка получения настроек inbound: {e}, используем конфиг")
+            # Fallback на конфиг
+            if self.config.vpn.transport == "tcp" and self.config.vpn.security in ["reality", "tls"]:
+                flow = "xtls-rprx-vision"
+                logger.info(f"Установлен flow из конфига для TCP+{self.config.vpn.security}: {flow}")
         
         # Формируем данные клиента согласно API v3
         client_data = {
@@ -1122,18 +1159,41 @@ async def get_client_link(xui_client, email: str, client_uuid: str, vpn_config, 
     """Универсальная функция получения VLESS ссылки для v2 и v3"""
     # Для v3 и v2 ВСЕГДА используем ручную генерацию
     # Панель v3 часто возвращает некорректные ссылки (неправильный sid, spx и т.д.)
+    
+    # Получаем данные клиента для извлечения реального flow из БД
+    client_flow = None
+    try:
+        if hasattr(xui_client, '_get_client_details_v3'):
+            client_data = await xui_client._get_client_details_v3(email)
+            if client_data:
+                client_flow = client_data.get('flow', '')
+                logger.info(f"🔑 Flow клиента {email} из БД: '{client_flow}'")
+            else:
+                logger.warning(f"⚠️ Не удалось получить данные клиента {email}, flow будет определен автоматически")
+        else:
+            logger.info(f"ℹ️ Метод _get_client_details_v3 недоступен, flow будет определен автоматически")
+    except Exception as e:
+        logger.warning(f"⚠️ Ошибка получения flow клиента: {e}, flow будет определен автоматически")
+    
     logger.info(f"🔗 Генерация VLESS ссылки вручную")
-    return generate_vless_link(client_uuid, email, vpn_config, inbound_id)
+    return generate_vless_link(client_uuid, email, vpn_config, inbound_id, client_flow)
 
 
 
-def generate_vless_link(client_uuid: str, email: str, vpn_config, inbound_id: int) -> str:
+def generate_vless_link(client_uuid: str, email: str, vpn_config, inbound_id: int, client_flow: Optional[str] = None) -> str:
     """Универсальная генерация VLESS ссылки в зависимости от настроек
     
     Поддерживаемые сценарии:
     1. xhttp + reality
     2. tcp + reality
     3. tcp + tls
+    
+    Args:
+        client_uuid: UUID клиента
+        email: Email клиента
+        vpn_config: Конфигурация VPN
+        inbound_id: ID inbound
+        client_flow: Flow клиента из БД (опционально, если None - определяется автоматически)
     """
     import urllib.parse
     
@@ -1206,8 +1266,13 @@ def generate_vless_link(client_uuid: str, email: str, vpn_config, inbound_id: in
         
         # Flow для TCP + Reality
         if transport == "tcp":
-            params += "&flow=xtls-rprx-vision"
-            logger.debug(f"Добавлен flow для TCP+Reality")
+            # Используем переданный flow из БД клиента или значение по умолчанию
+            flow_value = client_flow if client_flow is not None else "xtls-rprx-vision"
+            if flow_value:  # Добавляем только если не пустой
+                params += f"&flow={flow_value}"
+                logger.info(f"Добавлен flow для TCP+Reality: {flow_value}")
+            else:
+                logger.warning(f"⚠️ Flow пустой для TCP+Reality, клиент может не подключиться!")
     
     # ===== СЦЕНАРИЙ 3: TLS (обычно с tcp) =====
     elif vpn_config.security == "tls":
@@ -1227,8 +1292,13 @@ def generate_vless_link(client_uuid: str, email: str, vpn_config, inbound_id: in
         
         # Flow для TCP + TLS
         if transport == "tcp":
-            params += "&flow=xtls-rprx-vision"
-            logger.debug(f"Добавлен flow для TCP+TLS")
+            # Используем переданный flow из БД клиента или значение по умолчанию
+            flow_value = client_flow if client_flow is not None else "xtls-rprx-vision"
+            if flow_value:  # Добавляем только если не пустой
+                params += f"&flow={flow_value}"
+                logger.info(f"Добавлен flow для TCP+TLS: {flow_value}")
+            else:
+                logger.warning(f"⚠️ Flow пустой для TCP+TLS, клиент может не подключиться!")
     
     # ===== Дополнительные параметры для xHTTP =====
     if transport == "xhttp":
