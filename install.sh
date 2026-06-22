@@ -427,6 +427,7 @@ update_config_value() {
             # Маппинг старых ключей .env на новые ключи config.yaml
             local yaml_key="$key"
             case "$key" in
+                # Параметры панели
                 "XUI_VERSION") yaml_key="xui_version" ;;
                 "XUI_URL") yaml_key="xui_url" ;;
                 "XUI_USERNAME") yaml_key="xui_username" ;;
@@ -439,27 +440,108 @@ update_config_value() {
                 "TRANSPORT") yaml_key="transport" ;;
                 "SECURITY") yaml_key="security" ;;
                 "TLS_SNI") yaml_key="tls_sni" ;;
+                "TLS_FINGERPRINT") yaml_key="tls_fingerprint" ;;
+                "TLS_ALPN") yaml_key="tls_alpn" ;;
                 "REALITY_SNI") yaml_key="reality_sni" ;;
                 "REALITY_FINGERPRINT") yaml_key="reality_fingerprint" ;;
                 "REALITY_PUBLIC_KEY") yaml_key="reality_public_key" ;;
                 "REALITY_PRIVATE_KEY") yaml_key="reality_private_key" ;;
                 "REALITY_SHORT_ID") yaml_key="reality_short_id" ;;
+                
+                # Параметры common (сохраняются в common секцию)
                 "XUI_BOT_TOKEN")
-                    # Токен бота сохраняется в common
                     check_yq && yq eval -i ".common.xui_bot_token = \"${value}\"" config.yaml
                     echo -e "${GREEN}✅ Обновлено: common.xui_bot_token${NC}"
                     return 0
                     ;;
                 "AWG_BOT_TOKEN")
-                    # Токен AWG бота сохраняется в common
                     check_yq && yq eval -i ".common.awg_bot_token = \"${value}\"" config.yaml
                     echo -e "${GREEN}✅ Обновлено: common.awg_bot_token${NC}"
                     return 0
                     ;;
                 "ADMIN_IDS")
-                    # Админы сохраняются в common как массив
                     check_yq && yq eval -i ".common.admin_ids = [$(echo $value | sed 's/,/, /g')]" config.yaml
                     echo -e "${GREEN}✅ Обновлено: common.admin_ids${NC}"
+                    return 0
+                    ;;
+                "SERVER_PORT")
+                    check_yq && yq eval -i ".common.server_port = ${value}" config.yaml
+                    echo -e "${GREEN}✅ Обновлено: common.server_port${NC}"
+                    return 0
+                    ;;
+                "API_TIMEOUT")
+                    check_yq && yq eval -i ".common.api_timeout = ${value}" config.yaml
+                    echo -e "${GREEN}✅ Обновлено: common.api_timeout${NC}"
+                    return 0
+                    ;;
+                "XHTTP_MODE")
+                    check_yq && yq eval -i ".common.xhttp_mode = \"${value}\"" config.yaml
+                    echo -e "${GREEN}✅ Обновлено: common.xhttp_mode${NC}"
+                    return 0
+                    ;;
+                "MAX_TRAFFIC_GB")
+                    check_yq && yq eval -i ".common.max_traffic_gb = ${value}" config.yaml
+                    echo -e "${GREEN}✅ Обновлено: common.max_traffic_gb${NC}"
+                    return 0
+                    ;;
+                "MAX_DAYS")
+                    check_yq && yq eval -i ".common.max_days = ${value}" config.yaml
+                    echo -e "${GREEN}✅ Обновлено: common.max_days${NC}"
+                    return 0
+                    ;;
+                "MIN_DAYS")
+                    check_yq && yq eval -i ".common.min_days = ${value}" config.yaml
+                    echo -e "${GREEN}✅ Обновлено: common.min_days${NC}"
+                    return 0
+                    ;;
+                "DEFAULT_TRAFFIC_GB")
+                    check_yq && yq eval -i ".common.default_traffic_gb = ${value}" config.yaml
+                    echo -e "${GREEN}✅ Обновлено: common.default_traffic_gb${NC}"
+                    return 0
+                    ;;
+                "DEFAULT_DAYS")
+                    check_yq && yq eval -i ".common.default_days = ${value}" config.yaml
+                    echo -e "${GREEN}✅ Обновлено: common.default_days${NC}"
+                    return 0
+                    ;;
+                "DB_PATH")
+                    check_yq && yq eval -i ".common.db_path = \"${value}\"" config.yaml
+                    echo -e "${GREEN}✅ Обновлено: common.db_path${NC}"
+                    return 0
+                    ;;
+                "DB_BACKUP_ENABLED")
+                    check_yq && yq eval -i ".common.db_backup_enabled = ${value}" config.yaml
+                    echo -e "${GREEN}✅ Обновлено: common.db_backup_enabled${NC}"
+                    return 0
+                    ;;
+                "DB_BACKUP_INTERVAL")
+                    check_yq && yq eval -i ".common.db_backup_interval = ${value}" config.yaml
+                    echo -e "${GREEN}✅ Обновлено: common.db_backup_interval${NC}"
+                    return 0
+                    ;;
+                "LOG_LEVEL")
+                    check_yq && yq eval -i ".common.log_level = \"${value}\"" config.yaml
+                    echo -e "${GREEN}✅ Обновлено: common.log_level${NC}"
+                    return 0
+                    ;;
+                "LOG_FILE_ENABLED")
+                    check_yq && yq eval -i ".common.log_file_enabled = ${value}" config.yaml
+                    echo -e "${GREEN}✅ Обновлено: common.log_file_enabled${NC}"
+                    return 0
+                    ;;
+                "LOG_FILE_PATH")
+                    check_yq && yq eval -i ".common.log_file_path = \"${value}\"" config.yaml
+                    echo -e "${GREEN}✅ Обновлено: common.log_file_path${NC}"
+                    return 0
+                    ;;
+                "LOG_MAX_SIZE_MB")
+                    check_yq && yq eval -i ".common.log_max_size_mb = ${value}" config.yaml
+                    echo -e "${GREEN}✅ Обновлено: common.log_max_size_mb${NC}"
+                    return 0
+                    ;;
+                "LOG_BACKUP_COUNT")
+                    check_yq && yq eval -i ".common.log_backup_count = ${value}" config.yaml
+                    echo -e "${GREEN}✅ Обновлено: common.log_backup_count${NC}"
                     return 0
                     ;;
             esac
@@ -779,10 +861,10 @@ create_static_params() {
     
     # 3x-ui Panel статические параметры
     update_config_value "XUI_DB_PATH" "/etc/x-ui/x-ui.db"
-    update_env_value "API_TIMEOUT" "30"
+    update_config_value "API_TIMEOUT" "30"
     
     # VPN Server статические параметры
-    update_env_value "SERVER_PORT" "443"
+    update_config_value "SERVER_PORT" "443"
     
     # TLS статические параметры
     update_config_value "TLS_FINGERPRINT" "${DEFAULT_REALITY_FINGERPRINT}"
@@ -793,26 +875,26 @@ create_static_params() {
     update_config_value "REALITY_FINGERPRINT" "${DEFAULT_REALITY_FINGERPRINT}"
     
     # xHTTP статические параметры
-    update_env_value "XHTTP_MODE" "auto"
+    update_config_value "XHTTP_MODE" "auto"
     
     # Лимиты
-    update_env_value "MAX_TRAFFIC_GB" "1000"
-    update_env_value "MAX_DAYS" "3650"
-    update_env_value "MIN_DAYS" "1"
-    update_env_value "DEFAULT_TRAFFIC_GB" "100"
-    update_env_value "DEFAULT_DAYS" "30"
+    update_config_value "MAX_TRAFFIC_GB" "1000"
+    update_config_value "MAX_DAYS" "3650"
+    update_config_value "MIN_DAYS" "1"
+    update_config_value "DEFAULT_TRAFFIC_GB" "100"
+    update_config_value "DEFAULT_DAYS" "30"
     
     # База данных
-    update_env_value "DB_PATH" "/app/data/bot_users.db"
-    update_env_value "DB_BACKUP_ENABLED" "true"
-    update_env_value "DB_BACKUP_INTERVAL" "24"
+    update_config_value "DB_PATH" "/app/data/bot_users.db"
+    update_config_value "DB_BACKUP_ENABLED" "true"
+    update_config_value "DB_BACKUP_INTERVAL" "24"
     
     # Логирование
-    update_env_value "LOG_LEVEL" "INFO"
-    update_env_value "LOG_FILE_ENABLED" "true"
-    update_env_value "LOG_FILE_PATH" "/app/logs/bot.log"
-    update_env_value "LOG_MAX_SIZE_MB" "10"
-    update_env_value "LOG_BACKUP_COUNT" "5"
+    update_config_value "LOG_LEVEL" "INFO"
+    update_config_value "LOG_FILE_ENABLED" "true"
+    update_config_value "LOG_FILE_PATH" "/app/logs/bot.log"
+    update_config_value "LOG_MAX_SIZE_MB" "10"
+    update_config_value "LOG_BACKUP_COUNT" "5"
     
     echo -e "${GREEN}✅ Статические параметры созданы${NC}"
 }
@@ -837,7 +919,7 @@ interactive_setup() {
     XUI_BOT_TOKEN=$(get_env_value "XUI_BOT_TOKEN")
     if [ -z "$XUI_BOT_TOKEN" ]; then
         read -p "Введите XUI_BOT_TOKEN: " XUI_BOT_TOKEN
-        update_env_value "XUI_BOT_TOKEN" "$XUI_BOT_TOKEN"
+        update_config_value "XUI_BOT_TOKEN" "$XUI_BOT_TOKEN"
     else
         echo -e "XUI_BOT_TOKEN: ${XUI_BOT_TOKEN:0:10}... ${GREEN}✓${NC}"
     fi
@@ -845,7 +927,7 @@ interactive_setup() {
     ADMIN_IDS=$(get_env_value "ADMIN_IDS")
     if [ -z "$ADMIN_IDS" ]; then
         read -p "Введите ADMIN_IDS (ID администраторов через запятую): " ADMIN_IDS
-        update_env_value "ADMIN_IDS" "$ADMIN_IDS"
+        update_config_value "ADMIN_IDS" "$ADMIN_IDS"
     else
         echo -e "ADMIN_IDS: $ADMIN_IDS ${GREEN}✓${NC}"
     fi
@@ -2661,7 +2743,7 @@ EOF
         create_env_if_not_exists
         
         echo -e "${YELLOW}💾 Сохранение учетных данных в .env...${NC}"
-        update_env_value "XUI_URL" "${XUI_URL}"
+        update_config_value "XUI_URL" "${XUI_URL}"
         update_config_value "XUI_USERNAME" "${XUI_USERNAME}"
         update_config_value "XUI_PASSWORD" "${XUI_PASSWORD}"
         update_config_value "REALITY_PUBLIC_KEY" "${REALITY_PUBLIC_KEY}"
@@ -2669,13 +2751,13 @@ EOF
         update_config_value "REALITY_SHORT_ID" "${REALITY_SHORT_ID}"
         update_config_value "SERVER_ADDRESS" "${SERVER_IP}"
         update_config_value "SERVER_IP" "${SERVER_IP}"
-        update_env_value "SERVER_PORT" "443"
+        update_config_value "SERVER_PORT" "443"
         
         # Сохраняем версию панели
         if [ -n "$XUI_VERSION" ]; then
-            update_env_value "XUI_VERSION" "${XUI_VERSION}"
+            update_config_value "XUI_VERSION" "${XUI_VERSION}"
         else
-            update_env_value "XUI_VERSION" "latest"
+            update_config_value "XUI_VERSION" "latest"
         fi
         
         # Автоматическое создание inbound
@@ -3976,7 +4058,7 @@ install_3xui_v294() {
         create_env_if_not_exists
         
         # Сохранение учетных данных в .env
-        update_env_value "XUI_URL" "${XUI_URL}"
+        update_config_value "XUI_URL" "${XUI_URL}"
         update_config_value "XUI_USERNAME" "${XUI_USERNAME}"
         update_config_value "XUI_PASSWORD" "${XUI_PASSWORD}"
         update_config_value "REALITY_PUBLIC_KEY" "${REALITY_PUBLIC_KEY}"
@@ -3984,8 +4066,8 @@ install_3xui_v294() {
         update_config_value "REALITY_SHORT_ID" "${REALITY_SHORT_ID}"
         update_config_value "SERVER_ADDRESS" "${SERVER_IP}"
         update_config_value "SERVER_IP" "${SERVER_IP}"
-        update_env_value "SERVER_PORT" "443"
-        update_env_value "XUI_VERSION" "2.9.4"
+        update_config_value "SERVER_PORT" "443"
+        update_config_value "XUI_VERSION" "2.9.4"
         
         # Финальное сообщение
         echo -e "\n${GREEN}✅ Установка 3x-ui панели завершена!${NC}\n"
@@ -4184,8 +4266,8 @@ install_3xui_v3() {
         
         echo -e "${YELLOW}⚠ Сохранение настроек панели в .env...${NC}"
         
-        update_env_value "XUI_VERSION" "$XUI_VERSION"
-        update_env_value "XUI_URL" "$XUI_URL"
+        update_config_value "XUI_VERSION" "$XUI_VERSION"
+        update_config_value "XUI_URL" "$XUI_URL"
         update_config_value "XUI_USERNAME" "$XUI_USERNAME"
         update_config_value "XUI_PASSWORD" "$XUI_PASSWORD"
         update_config_value "XUI_API_TOKEN" "$XUI_API_TOKEN"
