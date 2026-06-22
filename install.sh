@@ -549,12 +549,12 @@ update_config_value() {
             # Обновляем значение в config.yaml
             update_config_yaml_value "$yaml_key" "$value"
         else
-            echo -e "${YELLOW}⚠️  Локальная панель не найдена, используем .env${NC}"
-            update_env_value "$key" "$value"
+            echo -e "${YELLOW}⚠️  Локальная панель не найдена в config.yaml${NC}"
+            echo -e "${YELLOW}⚠️  Параметр ${key} не будет сохранен${NC}"
         fi
     else
-        # Используем .env (обратная совместимость)
-        update_env_value "$key" "$value"
+        echo -e "${YELLOW}⚠️  config.yaml не найден${NC}"
+        echo -e "${YELLOW}⚠️  Параметр ${key} не будет сохранен${NC}"
     fi
 }
 
@@ -766,8 +766,16 @@ extract_inbound_params() {
         return 1
     fi
     
-    # Получаем ID первого инбаунда
-    local INBOUND_ID=$(sqlite3 /etc/x-ui/x-ui.db "SELECT id FROM inbounds ORDER BY id ASC LIMIT 1;" 2>/dev/null)
+    # Получаем INBOUND_ID из config.yaml (если указан)
+    local INBOUND_ID=$(yq eval '.panels.panel1.inbound_id' config.yaml 2>/dev/null)
+    
+    # Если не указан или пустой, берем первый
+    if [ -z "$INBOUND_ID" ] || [ "$INBOUND_ID" = "null" ]; then
+        echo -e "${BLUE}  INBOUND_ID не указан в config.yaml, ищем первый...${NC}"
+        INBOUND_ID=$(sqlite3 /etc/x-ui/x-ui.db "SELECT id FROM inbounds ORDER BY id ASC LIMIT 1;" 2>/dev/null)
+    else
+        echo -e "${BLUE}  Используем INBOUND_ID из config.yaml: ${INBOUND_ID}${NC}"
+    fi
     
     if [ -z "$INBOUND_ID" ]; then
         echo -e "${YELLOW}⚠️  Инбаунды не найдены в панели${NC}"
@@ -1845,15 +1853,16 @@ update_awgbot() {
     
     # Проверка и добавление ALLOW_USER_DNS_QUERIES если его нет
     echo -e "\n${BLUE}📋 Проверка параметра ALLOW_USER_DNS_QUERIES${NC}"
-    if grep -q "^ALLOW_USER_DNS_QUERIES=" .env 2>/dev/null; then
-        CURRENT_VALUE=$(get_env_value "ALLOW_USER_DNS_QUERIES")
-        echo -e "${GREEN}✓ Параметр уже существует: ${CURRENT_VALUE}${NC}"
-        echo -e "${BLUE}ℹ️  Оставляем текущее значение без изменений${NC}"
-    else
-        echo -e "${YELLOW}⚠️  Параметр ALLOW_USER_DNS_QUERIES не найден${NC}"
-        echo -e "${YELLOW}🔧 Добавляем с значением по умолчанию: true${NC}"
-        echo "ALLOW_USER_DNS_QUERIES=true" >> .env
-        echo -e "${GREEN}✅ Параметр ALLOW_USER_DNS_QUERIES добавлен: true${NC}"
+    if [ -f "config.yaml" ]; then
+        CURRENT_VALUE=$(yq eval '.common.allow_user_dns_queries' config.yaml 2>/dev/null)
+        if [ "$CURRENT_VALUE" != "null" ] && [ -n "$CURRENT_VALUE" ]; then
+            echo -e "${GREEN}✓ Параметр уже существует: ${CURRENT_VALUE}${NC}"
+            echo -e "${BLUE}ℹ️  Оставляем текущее значение без изменений${NC}"
+        else
+            echo -e "${YELLOW}⚠️  Параметр ALLOW_USER_DNS_QUERIES не найден${NC}"
+            echo -e "${YELLOW}🔧 Добавляем с значением по умолчанию: true${NC}"
+            update_config_value "ALLOW_USER_DNS_QUERIES" "true"
+        fi
     fi
     
     # Остановка контейнера
