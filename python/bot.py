@@ -168,16 +168,16 @@ async def cmd_start(message: Message, state: FSMContext):
             # Получаем информацию о текущей панели
             current_panel = config.get_current_panel()
             panel_info = ""
-            transport = "N/A"
-            security = "N/A"
+            
+            # Используем актуальные данные из config.vpn (обновляются через refresh_vpn_config)
+            transport = config.vpn.transport if hasattr(config, 'vpn') and config.vpn else "N/A"
+            security = config.vpn.security if hasattr(config, 'vpn') and config.vpn else "N/A"
             
             if current_panel:
                 alias = current_panel.alias
                 is_local = current_panel.is_local
                 xui_version = current_panel.xui_version
                 xui_url = current_panel.xui_url
-                transport = current_panel.transport
-                security = current_panel.security
                 
                 panel_info = (
                     f"\n📋 <b>Панель:</b>\n"
@@ -2021,16 +2021,16 @@ async def back_to_start_menu(callback_query: types.CallbackQuery, state: FSMCont
         # Получаем информацию о текущей панели
         current_panel = config.get_current_panel()
         panel_info = ""
-        transport = "N/A"
-        security = "N/A"
+        
+        # Используем актуальные данные из config.vpn (обновляются через refresh_vpn_config)
+        transport = config.vpn.transport if hasattr(config, 'vpn') and config.vpn else "N/A"
+        security = config.vpn.security if hasattr(config, 'vpn') and config.vpn else "N/A"
         
         if current_panel:
             alias = current_panel.alias
             is_local = current_panel.is_local
             xui_version = current_panel.xui_version
             xui_url = current_panel.xui_url
-            transport = current_panel.transport
-            security = current_panel.security
             
             panel_info = (
                 f"\n📋 <b>Панель:</b>\n"

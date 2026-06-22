@@ -448,6 +448,7 @@ class ConfigManager:
                     'xui_db_path': panel.xui_db_path,
                     'inbound_id': panel.inbound_id,
                     'server_address': panel.server_address,
+                    'server_ip': panel.server_ip,
                     'transport': panel.transport,
                     'security': panel.security,
                     'tls_sni': panel.tls_sni,
@@ -455,6 +456,7 @@ class ConfigManager:
                     'reality_sni': panel.reality_sni,
                     'reality_fingerprint': panel.reality_fingerprint,
                     'reality_public_key': panel.reality_public_key,
+                    'reality_private_key': panel.reality_private_key,
                     'reality_short_id': panel.reality_short_id
                 }
             
