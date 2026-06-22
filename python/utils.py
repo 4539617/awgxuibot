@@ -556,56 +556,50 @@ class XUIClient:
             return None
 
     async def _get_all_clients_v3(self) -> list:
-        """Получение всех клиентов через v3 API"""
+        """Получение всех клиентов через v3 API (полный список с UUID)"""
         if not self.session:
             if not await self.login():
                 return []
         
-        # Используем paginated endpoint с большим pageSize для получения всех клиентов
-        endpoint = f"{self.config.xui.url}/panel/api/clients/list/paged"
+        # Используем ПОЛНЫЙ endpoint /list который возвращает UUID
+        # НЕ используем /list/paged - он возвращает slim данные БЕЗ UUID!
+        endpoint = f"{self.config.xui.url}/panel/api/clients/list"
         headers = await self._get_headers()
-        
-        # Параметры для получения всех клиентов (максимум 200 за раз по документации)
-        params = {
-            'page': 1,
-            'pageSize': 200
-        }
         
         all_clients = []
         
         try:
-            # Получаем клиентов постранично
-            while True:
-                async with self.session.get(endpoint, headers=headers, params=params) as resp:
-                    if resp.status == 200:
-                        result = await resp.json()
-                        if result.get('success'):
-                            obj = result.get('obj', {})
-                            clients = obj.get('items', [])
-                            total = obj.get('total', 0)
+            async with self.session.get(endpoint, headers=headers) as resp:
+                if resp.status == 200:
+                    result = await resp.json()
+                    if result.get('success'):
+                        clients = result.get('obj', [])
+                        
+                        if not clients:
+                            logger.warning("⚠️ Список клиентов пуст")
+                            return []
+                        
+                        current_time = int(time.time() * 1000)
+                        
+                        logger.info(f"📊 Получено {len(clients)} клиентов из /list endpoint")
+                        
+                        # Преобразуем в формат v2 для совместимости
+                        for client in clients:
+                            expiry_time = client.get('expiryTime', 0)
+                            enable = client.get('enable', True)
                             
-                            if not clients:
-                                break
+                            # Определяем статус
+                            if expiry_time > 0 and expiry_time < current_time:
+                                status = 'expired'
+                            elif not enable:
+                                status = 'inactive'
+                            else:
+                                status = 'active'
                             
-                            current_time = int(time.time() * 1000)
-                            
-                            # Преобразуем в формат v2 для совместимости
-                            for client in clients:
-                                expiry_time = client.get('expiryTime', 0)
-                                enable = client.get('enable', True)
-                                
-                                # Определяем статус
-                                if expiry_time > 0 and expiry_time < current_time:
-                                    status = 'expired'
-                                elif not enable:
-                                    status = 'inactive'
-                                else:
-                                    status = 'active'
-                                
-                                traffic = client.get('traffic', {})
-                                all_clients.append({
-                                    'uuid': client.get('uuid', ''),
-                                    'email': client.get('email', ''),
+                            traffic = client.get('traffic', {})
+                            all_clients.append({
+                                'uuid': client.get('uuid', ''),
+                                'email': client.get('email', ''),
                                     'comment': client.get('comment', ''),
                                     'enable': enable,
                                     'expiryTime': expiry_time,
