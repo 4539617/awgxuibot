@@ -360,6 +360,82 @@ get_local_panel_id() {
     echo "$panel_id"
 }
 
+# Добавить локальную панель в config.yaml
+add_local_panel_to_config() {
+    local xui_version=$1
+    local xui_url=$2
+    local xui_username=$3
+    local xui_password=$4
+    local server_ip=$5
+    
+    # Проверяем наличие config.yaml
+    if [ ! -f "config.yaml" ]; then
+        echo -e "${YELLOW}⚠️  config.yaml не найден, создаем из примера...${NC}"
+        if [ -f "config.yaml.example" ]; then
+            cp config.yaml.example config.yaml
+        else
+            echo -e "${RED}❌ config.yaml.example не найден${NC}"
+            return 1
+        fi
+    fi
+    
+    check_yq || return 1
+    
+    # Проверяем, есть ли уже локальная панель
+    local existing_panel=$(get_local_panel_id 2>/dev/null)
+    
+    if [ -n "$existing_panel" ]; then
+        echo -e "${YELLOW}ℹ️  Локальная панель уже существует: ${existing_panel}${NC}"
+        echo -e "${YELLOW}ℹ️  Обновляем данные существующей панели${NC}"
+        return 0
+    fi
+    
+    # Генерируем уникальный ID для новой панели
+    local panel_id="local_panel"
+    local counter=1
+    
+    # Проверяем, существует ли панель с таким ID
+    while yq eval ".panels.${panel_id}" config.yaml 2>/dev/null | grep -qv "null"; do
+        panel_id="local_panel${counter}"
+        counter=$((counter + 1))
+    done
+    
+    echo -e "${GREEN}✅ Создание новой локальной панели: ${panel_id}${NC}"
+    
+    # Добавляем новую панель в config.yaml
+    yq eval -i ".panels.${panel_id}.alias = \"Локальная панель\"" config.yaml
+    yq eval -i ".panels.${panel_id}.enabled = true" config.yaml
+    yq eval -i ".panels.${panel_id}.is_local = true" config.yaml
+    yq eval -i ".panels.${panel_id}.xui_version = \"${xui_version}\"" config.yaml
+    yq eval -i ".panels.${panel_id}.xui_url = \"${xui_url}\"" config.yaml
+    yq eval -i ".panels.${panel_id}.xui_username = \"${xui_username}\"" config.yaml
+    yq eval -i ".panels.${panel_id}.xui_password = \"${xui_password}\"" config.yaml
+    yq eval -i ".panels.${panel_id}.xui_api_token = \"\"" config.yaml
+    yq eval -i ".panels.${panel_id}.xui_db_path = \"/etc/x-ui/x-ui.db\"" config.yaml
+    yq eval -i ".panels.${panel_id}.inbound_id = \"1\"" config.yaml
+    yq eval -i ".panels.${panel_id}.server_address = \"${server_ip}\"" config.yaml
+    yq eval -i ".panels.${panel_id}.server_ip = \"\"" config.yaml
+    yq eval -i ".panels.${panel_id}.transport = \"tcp\"" config.yaml
+    yq eval -i ".panels.${panel_id}.security = \"reality\"" config.yaml
+    yq eval -i ".panels.${panel_id}.tls_sni = \"\"" config.yaml
+    yq eval -i ".panels.${panel_id}.tls_fingerprint = \"chrome\"" config.yaml
+    yq eval -i ".panels.${panel_id}.reality_sni = \"www.nvidia.com\"" config.yaml
+    yq eval -i ".panels.${panel_id}.reality_fingerprint = \"edge\"" config.yaml
+    yq eval -i ".panels.${panel_id}.reality_public_key = \"\"" config.yaml
+    yq eval -i ".panels.${panel_id}.reality_private_key = \"\"" config.yaml
+    yq eval -i ".panels.${panel_id}.reality_short_id = \"\"" config.yaml
+    
+    # Устанавливаем эту панель как default_panel если default_panel не установлен
+    local current_default=$(yq eval ".default_panel" config.yaml 2>/dev/null)
+    if [ -z "$current_default" ] || [ "$current_default" = "null" ]; then
+        yq eval -i ".default_panel = \"${panel_id}\"" config.yaml
+        echo -e "${GREEN}✅ Панель ${panel_id} установлена как default_panel${NC}"
+    fi
+    
+    echo -e "${GREEN}✅ Локальная панель ${panel_id} успешно добавлена в config.yaml${NC}"
+    return 0
+}
+
 # Обновить значение в config.yaml для локальной панели
 update_config_yaml_value() {
     local key=$1
@@ -2759,10 +2835,22 @@ EOF
         # Генерация Short IDs
         REALITY_SHORT_ID=$(openssl rand -hex 8)
         
-        # Создание .env файла с учетными данными 3x-ui
+        # Создание .env файла с учетными данными 3x-ui (устаревшая функция, создает config.yaml)
         create_env_if_not_exists
         
-        echo -e "${YELLOW}💾 Сохранение учетных данных в .env...${NC}"
+        # Определяем версию для добавления в config.yaml
+        XUI_VERSION_FOR_CONFIG="${XUI_VERSION:-latest}"
+        
+        # Добавляем локальную панель в config.yaml перед сохранением данных
+        echo -e "${YELLOW}📝 Добавление локальной панели в config.yaml...${NC}"
+        if add_local_panel_to_config "$XUI_VERSION_FOR_CONFIG" "${XUI_URL}" "${XUI_USERNAME}" "${XUI_PASSWORD}" "${SERVER_IP}"; then
+            echo -e "${GREEN}✅ Локальная панель добавлена в config.yaml${NC}"
+        else
+            echo -e "${RED}❌ Не удалось добавить локальную панель в config.yaml${NC}"
+            echo -e "${YELLOW}⚠️  Данные будут сохранены в .env (legacy режим)${NC}"
+        fi
+        
+        echo -e "${YELLOW}💾 Сохранение учетных данных...${NC}"
         update_config_value "XUI_URL" "${XUI_URL}"
         update_config_value "XUI_USERNAME" "${XUI_USERNAME}"
         update_config_value "XUI_PASSWORD" "${XUI_PASSWORD}"
@@ -2779,6 +2867,8 @@ EOF
         else
             update_config_value "XUI_VERSION" "latest"
         fi
+        
+        echo -e "${GREEN}✅ Все данные успешно сохранены${NC}"
         
         # Автоматическое создание inbound
         echo -e "\n${YELLOW}🔧 Создание VLESS Reality inbound...${NC}"
@@ -4074,10 +4164,20 @@ install_3xui_v294() {
         # Генерация Short IDs
         REALITY_SHORT_ID=$(openssl rand -hex 8)
         
-        # Создание .env файла с учетными данными 3x-ui
+        # Создание .env файла с учетными данными 3x-ui (устаревшая функция, создает config.yaml)
         create_env_if_not_exists
         
-        # Сохранение учетных данных в .env
+        # Добавляем локальную панель в config.yaml перед сохранением данных
+        echo -e "${YELLOW}📝 Добавление локальной панели в config.yaml...${NC}"
+        if add_local_panel_to_config "2.9.4" "${XUI_URL}" "${XUI_USERNAME}" "${XUI_PASSWORD}" "${SERVER_IP}"; then
+            echo -e "${GREEN}✅ Локальная панель добавлена в config.yaml${NC}"
+        else
+            echo -e "${RED}❌ Не удалось добавить локальную панель в config.yaml${NC}"
+            echo -e "${YELLOW}⚠️  Данные будут сохранены в .env (legacy режим)${NC}"
+        fi
+        
+        # Сохранение учетных данных
+        echo -e "${YELLOW}💾 Сохранение учетных данных...${NC}"
         update_config_value "XUI_URL" "${XUI_URL}"
         update_config_value "XUI_USERNAME" "${XUI_USERNAME}"
         update_config_value "XUI_PASSWORD" "${XUI_PASSWORD}"
@@ -4088,6 +4188,8 @@ install_3xui_v294() {
         update_config_value "SERVER_IP" "${SERVER_IP}"
         update_config_value "SERVER_PORT" "443"
         update_config_value "XUI_VERSION" "2.9.4"
+        
+        echo -e "${GREEN}✅ Все данные успешно сохранены${NC}"
         
         # Финальное сообщение
         echo -e "\n${GREEN}✅ Установка 3x-ui панели завершена!${NC}\n"
@@ -4281,10 +4383,19 @@ install_3xui_v3() {
             XUI_URL="http://${SERVER_IP}:${XUI_PORT}"
         fi
         
-        # Сохранение в .env
+        # Сохранение в .env (устаревшая функция, создает config.yaml)
         create_env_if_not_exists
         
-        echo -e "${YELLOW}⚠ Сохранение настроек панели в .env...${NC}"
+        # Добавляем локальную панель в config.yaml перед сохранением данных
+        echo -e "${YELLOW}📝 Добавление локальной панели в config.yaml...${NC}"
+        if add_local_panel_to_config "$XUI_VERSION" "$XUI_URL" "$XUI_USERNAME" "$XUI_PASSWORD" "$SERVER_IP"; then
+            echo -e "${GREEN}✅ Локальная панель добавлена в config.yaml${NC}"
+        else
+            echo -e "${RED}❌ Не удалось добавить локальную панель в config.yaml${NC}"
+            echo -e "${YELLOW}⚠️  Данные будут сохранены в .env (legacy режим)${NC}"
+        fi
+        
+        echo -e "${YELLOW}💾 Сохранение настроек панели...${NC}"
         
         update_config_value "XUI_VERSION" "$XUI_VERSION"
         update_config_value "XUI_URL" "$XUI_URL"
@@ -4388,6 +4499,13 @@ install_3xui_v3() {
                 echo -e "${GREEN}✓ Reality Short ID сгенерирован: ${REALITY_SHORT_ID}${NC}"
             fi
         fi
+        
+        # Сохраняем дополнительные параметры
+        update_config_value "SERVER_ADDRESS" "${SERVER_IP}"
+        update_config_value "SERVER_IP" "${SERVER_IP}"
+        update_config_value "SERVER_PORT" "443"
+        
+        echo -e "${GREEN}✅ Все данные успешно сохранены${NC}"
         
         # Вывод учетных данных
         echo -e "\n${GREEN}═══════════════════════════════════════════${NC}"
