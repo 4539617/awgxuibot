@@ -460,39 +460,48 @@ class XUIClient:
         headers = await self._get_headers()
         
         try:
-            logger.info(f"Создание клиента v3: email={email}, inbound={self.config.xui.inbound_id}")
+            logger.info(f"Создание клиента v3: email={email}, inbound={self.config.xui.inbound_id}, flow={flow}")
             logger.debug(f"Request URL: {endpoint}")
             logger.debug(f"Request headers: {headers}")
             logger.debug(f"Request data: {json.dumps(data, indent=2)}")
             
             async with self.session.post(endpoint, json=data, headers=headers) as resp:
                 response_text = await resp.text()
-                logger.debug(f"Response status: {resp.status}")
-                logger.debug(f"Response text: {response_text}")
+                logger.info(f"Response status: {resp.status}")
+                logger.info(f"Response text: {response_text}")
                 
                 if resp.status == 200:
                     try:
                         result = json.loads(response_text) if response_text else {}
+                        logger.info(f"📦 Полный ответ API при создании: {json.dumps(result, indent=2, ensure_ascii=False)}")
                     except json.JSONDecodeError as je:
                         logger.error(f"Ошибка парсинга JSON: {je}")
+                        logger.error(f"Response text: {response_text}")
                         result = {}
                     
                     if result.get('success'):
-                        logger.info(f"Клиент {email} создан через v3 API")
+                        logger.info(f"✅ Клиент {email} создан через v3 API")
+                        
                         # В v3 API UUID возвращается в obj
                         obj = result.get('obj', {})
+                        logger.info(f"📦 obj из ответа: {obj}")
+                        logger.info(f"📦 Тип obj: {type(obj)}")
+                        
                         client_uuid = obj.get('uuid', '') if isinstance(obj, dict) else ''
+                        logger.info(f"🔑 UUID из obj: '{client_uuid}'")
                         
                         # Если UUID не в ответе, получаем через список клиентов
                         if not client_uuid:
-                            logger.warning(f"UUID не найден в ответе API, получаем через список клиентов")
+                            logger.warning(f"⚠️ UUID не найден в ответе API, получаем через список клиентов")
                             client_details = await self._get_client_details_v3(email)
+                            logger.info(f"📦 Детали клиента из списка: {client_details}")
                             client_uuid = client_details.get('uuid', '') if client_details else ''
+                            logger.info(f"🔑 UUID из списка: '{client_uuid}'")
                         
                         if client_uuid:
-                            logger.info(f"UUID клиента {email}: {client_uuid}")
+                            logger.info(f"✅ UUID клиента {email}: {client_uuid}")
                         else:
-                            logger.error(f"Не удалось получить UUID для клиента {email}")
+                            logger.error(f"❌ Не удалось получить UUID для клиента {email}")
                         
                         return {"success": True, "uuid": client_uuid}
                     else:
@@ -512,24 +521,32 @@ class XUIClient:
             return {"success": False, "error": str(e)}
 
     async def _get_client_details_v3(self, email: str) -> dict:
-        """Получение деталей клиента через v3 API (поиск в списке клиентов)"""
+        """Получение деталей клиента через v3 API GET /panel/api/clients/get/{email}"""
         if not self.session:
             if not await self.login():
                 return None
         
-        # В v3 API нет endpoint для получения одного клиента по email
-        # Получаем список всех клиентов и ищем нужного
+        # В v3 API есть endpoint для получения клиента по email
+        endpoint = f"{self.config.xui.url}/panel/api/clients/get/{email}"
+        headers = await self._get_headers()
+        
         try:
-            all_clients = await self._get_all_clients_v3()
-            
-            # Ищем клиента по email
-            for client in all_clients:
-                if client.get('email') == email:
-                    logger.info(f"Найден клиент {email} с UUID: {client.get('uuid')}")
-                    return client
-            
-            logger.warning(f"Клиент {email} не найден в списке")
-            return None
+            logger.info(f"🔍 Запрос деталей клиента: {email}")
+            async with self.session.get(endpoint, headers=headers) as resp:
+                if resp.status == 200:
+                    result = await resp.json()
+                    if result.get('success'):
+                        client = result.get('obj', {})
+                        logger.info(f"✅ Получены детали клиента {email}")
+                        logger.info(f"📦 Полные данные клиента: {json.dumps(client, indent=2, ensure_ascii=False)}")
+                        logger.info(f"🔑 UUID клиента: '{client.get('uuid')}'")
+                        return client
+                    else:
+                        logger.warning(f"⚠️ API вернул success=false для клиента {email}")
+                        return None
+                else:
+                    logger.error(f"❌ Ошибка получения клиента {email}: HTTP {resp.status}")
+                    return None
             
         except Exception as e:
             logger.error(f"Ошибка получения деталей клиента v3: {e}")
