@@ -703,9 +703,9 @@ extract_inbound_params() {
         echo -e "${BLUE}  Безопасность: ${SECURITY}${NC}"
         
         # Обновляем базовые параметры
-        update_env_value "INBOUND_ID" "${INBOUND_ID}"
-        update_env_value "TRANSPORT" "${TRANSPORT}"
-        update_env_value "SECURITY" "${SECURITY}"
+        update_config_value "INBOUND_ID" "${INBOUND_ID}"
+        update_config_value "TRANSPORT" "${TRANSPORT}"
+        update_config_value "SECURITY" "${SECURITY}"
     fi
     
     # Если Reality - извлекаем ключи
@@ -719,27 +719,27 @@ extract_inbound_params() {
         local REALITY_FINGERPRINT=$(sqlite3 /etc/x-ui/x-ui.db "SELECT json_extract(stream_settings, '$.realitySettings.settings.fingerprint') FROM inbounds WHERE id=${INBOUND_ID};" 2>/dev/null)
         
         if [ -n "$REALITY_PUBLIC" ]; then
-            update_env_value "REALITY_PUBLIC_KEY" "${REALITY_PUBLIC}"
+            update_config_value "REALITY_PUBLIC_KEY" "${REALITY_PUBLIC}"
             echo -e "${GREEN}  ✓ Public Key обновлен${NC}"
         fi
         
         if [ -n "$REALITY_PRIVATE" ]; then
-            update_env_value "REALITY_PRIVATE_KEY" "${REALITY_PRIVATE}"
+            update_config_value "REALITY_PRIVATE_KEY" "${REALITY_PRIVATE}"
             echo -e "${GREEN}  ✓ Private Key обновлен${NC}"
         fi
         
         if [ -n "$REALITY_SHORT" ]; then
-            update_env_value "REALITY_SHORT_ID" "${REALITY_SHORT}"
+            update_config_value "REALITY_SHORT_ID" "${REALITY_SHORT}"
             echo -e "${GREEN}  ✓ Short ID обновлен${NC}"
         fi
         
         if [ -n "$REALITY_SNI" ]; then
-            update_env_value "REALITY_SNI" "${REALITY_SNI}"
+            update_config_value "REALITY_SNI" "${REALITY_SNI}"
             echo -e "${GREEN}  ✓ SNI обновлен: ${REALITY_SNI}${NC}"
         fi
         
         if [ -n "$REALITY_FINGERPRINT" ]; then
-            update_env_value "REALITY_FINGERPRINT" "${REALITY_FINGERPRINT}"
+            update_config_value "REALITY_FINGERPRINT" "${REALITY_FINGERPRINT}"
             echo -e "${GREEN}  ✓ Fingerprint обновлен: ${REALITY_FINGERPRINT}${NC}"
         fi
     fi
@@ -753,17 +753,17 @@ extract_inbound_params() {
         local TLS_SNI=$(sqlite3 /etc/x-ui/x-ui.db "SELECT json_extract(stream_settings, '$.tlsSettings.serverName') FROM inbounds WHERE id=${INBOUND_ID};" 2>/dev/null)
         
         if [ -n "$TLS_FINGERPRINT" ]; then
-            update_env_value "TLS_FINGERPRINT" "${TLS_FINGERPRINT}"
+            update_config_value "TLS_FINGERPRINT" "${TLS_FINGERPRINT}"
             echo -e "${GREEN}  ✓ TLS Fingerprint обновлен: ${TLS_FINGERPRINT}${NC}"
         fi
         
         if [ -n "$TLS_ALPN" ]; then
-            update_env_value "TLS_ALPN" "${TLS_ALPN}"
+            update_config_value "TLS_ALPN" "${TLS_ALPN}"
             echo -e "${GREEN}  ✓ TLS ALPN обновлен: ${TLS_ALPN}${NC}"
         fi
         
         if [ -n "$TLS_SNI" ] && [ "$TLS_SNI" != "null" ]; then
-            update_env_value "TLS_SNI" "${TLS_SNI}"
+            update_config_value "TLS_SNI" "${TLS_SNI}"
             echo -e "${GREEN}  ✓ TLS SNI обновлен: ${TLS_SNI}${NC}"
         fi
     fi
@@ -778,19 +778,19 @@ create_static_params() {
     echo -e "${YELLOW}📋 Создание статических параметров...${NC}"
     
     # 3x-ui Panel статические параметры
-    update_env_value "XUI_DB_PATH" "/etc/x-ui/x-ui.db"
+    update_config_value "XUI_DB_PATH" "/etc/x-ui/x-ui.db"
     update_env_value "API_TIMEOUT" "30"
     
     # VPN Server статические параметры
     update_env_value "SERVER_PORT" "443"
     
     # TLS статические параметры
-    update_env_value "TLS_FINGERPRINT" "${DEFAULT_REALITY_FINGERPRINT}"
-    update_env_value "TLS_ALPN" "http/1.1"
+    update_config_value "TLS_FINGERPRINT" "${DEFAULT_REALITY_FINGERPRINT}"
+    update_config_value "TLS_ALPN" "http/1.1"
     
     # Reality статические параметры
-    update_env_value "REALITY_SNI" "${DEFAULT_REALITY_SNI}"
-    update_env_value "REALITY_FINGERPRINT" "${DEFAULT_REALITY_FINGERPRINT}"
+    update_config_value "REALITY_SNI" "${DEFAULT_REALITY_SNI}"
+    update_config_value "REALITY_FINGERPRINT" "${DEFAULT_REALITY_FINGERPRINT}"
     
     # xHTTP статические параметры
     update_env_value "XHTTP_MODE" "auto"
@@ -854,8 +854,8 @@ interactive_setup() {
     echo -e "\n${GREEN}🔧 Автоматическое заполнение параметров...${NC}"
     
     # IP сервера
-    update_env_value "SERVER_ADDRESS" "$SERVER_IP"
-    update_env_value "SERVER_IP" "$SERVER_IP"
+    update_config_value "SERVER_ADDRESS" "$SERVER_IP"
+    update_config_value "SERVER_IP" "$SERVER_IP"
     
     # ==================== Проверка данных 3x-ui ====================
     XUI_URL=$(get_env_value "XUI_URL")
@@ -900,12 +900,12 @@ install_bot() {
             echo -e "${YELLOW}🔄 Обнаружен домен в XUI_URL: ${DOMAIN}${NC}"
             CURRENT_SERVER=$(get_env_value "SERVER_ADDRESS")
             if [ "$CURRENT_SERVER" != "$DOMAIN" ]; then
-                update_env_value "SERVER_ADDRESS" "$DOMAIN"
+                update_config_value "SERVER_ADDRESS" "$DOMAIN"
                 echo -e "${GREEN}✅ SERVER_ADDRESS обновлён: ${DOMAIN}${NC}"
             fi
             CURRENT_TLS_SNI=$(get_env_value "TLS_SNI")
             if [ "$CURRENT_TLS_SNI" != "$DOMAIN" ]; then
-                update_env_value "TLS_SNI" "$DOMAIN"
+                update_config_value "TLS_SNI" "$DOMAIN"
                 echo -e "${GREEN}✅ TLS_SNI обновлён: ${DOMAIN}${NC}"
             fi
         fi
@@ -1168,14 +1168,14 @@ install_xuibot() {
             # Обновляем SERVER_ADDRESS
             CURRENT_SERVER=$(get_env_value "SERVER_ADDRESS")
             if [ "$CURRENT_SERVER" != "$DOMAIN" ]; then
-                update_env_value "SERVER_ADDRESS" "$DOMAIN"
+                update_config_value "SERVER_ADDRESS" "$DOMAIN"
                 echo -e "${GREEN}✅ SERVER_ADDRESS обновлён: ${DOMAIN}${NC}"
             fi
             
             # Обновляем TLS_SNI
             CURRENT_TLS_SNI=$(get_env_value "TLS_SNI")
             if [ "$CURRENT_TLS_SNI" != "$DOMAIN" ]; then
-                update_env_value "TLS_SNI" "$DOMAIN"
+                update_config_value "TLS_SNI" "$DOMAIN"
                 echo -e "${GREEN}✅ TLS_SNI обновлён: ${DOMAIN}${NC}"
             fi
         fi
@@ -1196,9 +1196,9 @@ install_xuibot() {
         echo -e "${BLUE}Транспорт: ${TRANSPORT}, Безопасность: ${SECURITY}${NC}"
         
         # Сохраняем INBOUND_ID, TRANSPORT и SECURITY
-        update_env_value "INBOUND_ID" "${FIRST_INBOUND_ID}"
-        update_env_value "TRANSPORT" "${TRANSPORT}"
-        update_env_value "SECURITY" "${SECURITY}"
+        update_config_value "INBOUND_ID" "${FIRST_INBOUND_ID}"
+        update_config_value "TRANSPORT" "${TRANSPORT}"
+        update_config_value "SECURITY" "${SECURITY}"
         
         # Если security = reality - извлекаем все Reality параметры
         if [ "$SECURITY" = "reality" ]; then
@@ -1214,21 +1214,21 @@ install_xuibot() {
                 echo -e "${GREEN}✅ Reality параметры извлечены из инбаунда${NC}"
                 
                 # Сохраняем все Reality параметры
-                update_env_value "REALITY_PUBLIC_KEY" "${REALITY_PUBLIC}"
-                update_env_value "REALITY_PRIVATE_KEY" "${REALITY_PRIVATE}"
-                update_env_value "REALITY_SHORT_ID" "${REALITY_SHORT}"
+                update_config_value "REALITY_PUBLIC_KEY" "${REALITY_PUBLIC}"
+                update_config_value "REALITY_PRIVATE_KEY" "${REALITY_PRIVATE}"
+                update_config_value "REALITY_SHORT_ID" "${REALITY_SHORT}"
                 
                 echo -e "${BLUE}  Public Key: ${REALITY_PUBLIC:0:20}...${NC}"
                 echo -e "${BLUE}  Short ID: ${REALITY_SHORT}${NC}"
                 
                 # Сохраняем SNI и Fingerprint (обязательно)
                 if [ -n "$REALITY_SNI" ]; then
-                    update_env_value "REALITY_SNI" "${REALITY_SNI}"
+                    update_config_value "REALITY_SNI" "${REALITY_SNI}"
                     echo -e "${BLUE}  SNI: ${REALITY_SNI}${NC}"
                 fi
                 
                 if [ -n "$REALITY_FINGERPRINT" ]; then
-                    update_env_value "REALITY_FINGERPRINT" "${REALITY_FINGERPRINT}"
+                    update_config_value "REALITY_FINGERPRINT" "${REALITY_FINGERPRINT}"
                     echo -e "${BLUE}  Fingerprint: ${REALITY_FINGERPRINT}${NC}"
                 fi
             else
@@ -1237,9 +1237,9 @@ install_xuibot() {
                 read -p "Введите REALITY_PRIVATE_KEY: " reality_priv
                 read -p "Введите REALITY_SHORT_ID: " reality_short
                 
-                update_env_value "REALITY_PUBLIC_KEY" "${reality_pub}"
-                update_env_value "REALITY_PRIVATE_KEY" "${reality_priv}"
-                update_env_value "REALITY_SHORT_ID" "${reality_short}"
+                update_config_value "REALITY_PUBLIC_KEY" "${reality_pub}"
+                update_config_value "REALITY_PRIVATE_KEY" "${reality_priv}"
+                update_config_value "REALITY_SHORT_ID" "${reality_short}"
             fi
         fi
         
@@ -1252,17 +1252,17 @@ install_xuibot() {
             TLS_SNI=$(sqlite3 /etc/x-ui/x-ui.db "SELECT json_extract(stream_settings, '$.tlsSettings.serverName') FROM inbounds WHERE id=${FIRST_INBOUND_ID};" 2>/dev/null)
             
             if [ -n "$TLS_FINGERPRINT" ] && [ "$TLS_FINGERPRINT" != "null" ]; then
-                update_env_value "TLS_FINGERPRINT" "${TLS_FINGERPRINT}"
+                update_config_value "TLS_FINGERPRINT" "${TLS_FINGERPRINT}"
                 echo -e "${GREEN}✅ TLS Fingerprint: ${TLS_FINGERPRINT}${NC}"
             fi
             
             if [ -n "$TLS_ALPN" ] && [ "$TLS_ALPN" != "null" ]; then
-                update_env_value "TLS_ALPN" "${TLS_ALPN}"
+                update_config_value "TLS_ALPN" "${TLS_ALPN}"
                 echo -e "${GREEN}✅ TLS ALPN: ${TLS_ALPN}${NC}"
             fi
             
             if [ -n "$TLS_SNI" ] && [ "$TLS_SNI" != "null" ]; then
-                update_env_value "TLS_SNI" "${TLS_SNI}"
+                update_config_value "TLS_SNI" "${TLS_SNI}"
                 echo -e "${GREEN}✅ TLS SNI: ${TLS_SNI}${NC}"
             fi
         fi
@@ -2662,13 +2662,13 @@ EOF
         
         echo -e "${YELLOW}💾 Сохранение учетных данных в .env...${NC}"
         update_env_value "XUI_URL" "${XUI_URL}"
-        update_env_value "XUI_USERNAME" "${XUI_USERNAME}"
-        update_env_value "XUI_PASSWORD" "${XUI_PASSWORD}"
-        update_env_value "REALITY_PUBLIC_KEY" "${REALITY_PUBLIC_KEY}"
-        update_env_value "REALITY_PRIVATE_KEY" "${REALITY_PRIVATE_KEY}"
-        update_env_value "REALITY_SHORT_ID" "${REALITY_SHORT_ID}"
-        update_env_value "SERVER_ADDRESS" "${SERVER_IP}"
-        update_env_value "SERVER_IP" "${SERVER_IP}"
+        update_config_value "XUI_USERNAME" "${XUI_USERNAME}"
+        update_config_value "XUI_PASSWORD" "${XUI_PASSWORD}"
+        update_config_value "REALITY_PUBLIC_KEY" "${REALITY_PUBLIC_KEY}"
+        update_config_value "REALITY_PRIVATE_KEY" "${REALITY_PRIVATE_KEY}"
+        update_config_value "REALITY_SHORT_ID" "${REALITY_SHORT_ID}"
+        update_config_value "SERVER_ADDRESS" "${SERVER_IP}"
+        update_config_value "SERVER_IP" "${SERVER_IP}"
         update_env_value "SERVER_PORT" "443"
         
         # Сохраняем версию панели
@@ -2686,7 +2686,7 @@ EOF
         
         if [ -n "$XUI_API_TOKEN" ]; then
             echo -e "${GREEN}✅ API Token извлечен: ${XUI_API_TOKEN:0:20}...${NC}"
-            update_env_value "XUI_API_TOKEN" "${XUI_API_TOKEN}"
+            update_config_value "XUI_API_TOKEN" "${XUI_API_TOKEN}"
         fi
         
         # Даем панели время на запуск
@@ -2864,7 +2864,7 @@ STREAMEOF
                     echo -e "${GREEN}   Security: reality${NC}"
                     
                     # Сохраняем ID в .env
-                    update_env_value "INBOUND_ID" "${INBOUND_ID}"
+                    update_config_value "INBOUND_ID" "${INBOUND_ID}"
                     
                     # Извлекаем реальные Reality ключи из созданного inbound
                     echo -e "${YELLOW}🔑 Извлечение Reality ключей из inbound...${NC}"
@@ -2881,10 +2881,10 @@ STREAMEOF
                         echo -e "${GREEN}   SNI: ${ACTUAL_SNI}${NC}"
                         
                         # Обновляем .env с реальными ключами из inbound
-                        update_env_value "REALITY_PUBLIC_KEY" "${ACTUAL_PUBLIC_KEY}"
-                        update_env_value "REALITY_SHORT_ID" "${ACTUAL_SHORT_ID}"
-                        update_env_value "REALITY_FINGERPRINT" "${ACTUAL_FINGERPRINT}"
-                        update_env_value "REALITY_SNI" "${ACTUAL_SNI}"
+                        update_config_value "REALITY_PUBLIC_KEY" "${ACTUAL_PUBLIC_KEY}"
+                        update_config_value "REALITY_SHORT_ID" "${ACTUAL_SHORT_ID}"
+                        update_config_value "REALITY_FINGERPRINT" "${ACTUAL_FINGERPRINT}"
+                        update_config_value "REALITY_SNI" "${ACTUAL_SNI}"
                         
                         echo -e "${GREEN}✅ Ключи сохранены в .env${NC}"
                     else
@@ -2975,7 +2975,7 @@ STREAMEOF
                 INBOUND_ID=$(echo "$API_RESPONSE_BODY" | grep -oP '(?<="id":)\d+' | head -1)
                 if [ -n "$INBOUND_ID" ]; then
                     echo -e "${GREEN}   Inbound ID: ${INBOUND_ID}${NC}"
-                    update_env_value "INBOUND_ID" "${INBOUND_ID}"
+                    update_config_value "INBOUND_ID" "${INBOUND_ID}"
                 fi
                 
                 INBOUND_CREATED=true
@@ -3130,9 +3130,9 @@ STREAMEOF
             echo -e "${GREEN}   Network: xhttp${NC}"
             echo -e "${GREEN}   Security: reality${NC}"
             
-            update_env_value "INBOUND_ID" "${INBOUND_ID}"
-            update_env_value "TRANSPORT" "xhttp"
-            update_env_value "SECURITY" "reality"
+            update_config_value "INBOUND_ID" "${INBOUND_ID}"
+            update_config_value "TRANSPORT" "xhttp"
+            update_config_value "SECURITY" "reality"
             
             # Извлекаем реальные Reality ключи из созданного inbound
             echo -e "${YELLOW}🔑 Извлечение Reality ключей из inbound...${NC}"
@@ -3149,10 +3149,10 @@ STREAMEOF
                 echo -e "${GREEN}   SNI: ${ACTUAL_SNI}${NC}"
                 
                 # Обновляем .env с реальными ключами из inbound
-                update_env_value "REALITY_PUBLIC_KEY" "${ACTUAL_PUBLIC_KEY}"
-                update_env_value "REALITY_SHORT_ID" "${ACTUAL_SHORT_ID}"
-                update_env_value "REALITY_FINGERPRINT" "${ACTUAL_FINGERPRINT}"
-                update_env_value "REALITY_SNI" "${ACTUAL_SNI}"
+                update_config_value "REALITY_PUBLIC_KEY" "${ACTUAL_PUBLIC_KEY}"
+                update_config_value "REALITY_SHORT_ID" "${ACTUAL_SHORT_ID}"
+                update_config_value "REALITY_FINGERPRINT" "${ACTUAL_FINGERPRINT}"
+                update_config_value "REALITY_SNI" "${ACTUAL_SNI}"
                 
                 echo -e "${GREEN}✅ Ключи сохранены в .env${NC}"
             else
@@ -3262,9 +3262,9 @@ STREAMEOF
             echo -e "${GREEN}   Network: tcp${NC}"
             echo -e "${GREEN}   Security: reality${NC}"
             
-            update_env_value "INBOUND_ID" "${INBOUND_ID}"
-            update_env_value "TRANSPORT" "tcp"
-            update_env_value "SECURITY" "reality"
+            update_config_value "INBOUND_ID" "${INBOUND_ID}"
+            update_config_value "TRANSPORT" "tcp"
+            update_config_value "SECURITY" "reality"
             
             # Извлекаем реальные Reality ключи из созданного inbound
             echo -e "${YELLOW}🔑 Извлечение Reality ключей из inbound...${NC}"
@@ -3281,10 +3281,10 @@ STREAMEOF
                 echo -e "${GREEN}   SNI: ${ACTUAL_SNI}${NC}"
                 
                 # Обновляем .env с реальными ключами из inbound
-                update_env_value "REALITY_PUBLIC_KEY" "${ACTUAL_PUBLIC_KEY}"
-                update_env_value "REALITY_SHORT_ID" "${ACTUAL_SHORT_ID}"
-                update_env_value "REALITY_FINGERPRINT" "${ACTUAL_FINGERPRINT}"
-                update_env_value "REALITY_SNI" "${ACTUAL_SNI}"
+                update_config_value "REALITY_PUBLIC_KEY" "${ACTUAL_PUBLIC_KEY}"
+                update_config_value "REALITY_SHORT_ID" "${ACTUAL_SHORT_ID}"
+                update_config_value "REALITY_FINGERPRINT" "${ACTUAL_FINGERPRINT}"
+                update_config_value "REALITY_SNI" "${ACTUAL_SNI}"
                 
                 echo -e "${GREEN}✅ Ключи сохранены в .env${NC}"
             else
@@ -3400,9 +3400,9 @@ STREAMEOF
             echo -e "${GREEN}   Network: tcp${NC}"
             echo -e "${GREEN}   Security: tls${NC}"
             
-            update_env_value "INBOUND_ID" "${INBOUND_ID}"
-            update_env_value "TRANSPORT" "tcp"
-            update_env_value "SECURITY" "tls"
+            update_config_value "INBOUND_ID" "${INBOUND_ID}"
+            update_config_value "TRANSPORT" "tcp"
+            update_config_value "SECURITY" "tls"
             
             # Извлекаем TLS параметры из созданного inbound
             echo -e "${YELLOW}🔑 Извлечение TLS параметров из inbound...${NC}"
@@ -3416,9 +3416,9 @@ STREAMEOF
                 echo -e "${GREEN}   SNI: ${SERVER_IP}${NC}"
                 
                 # Обновляем .env с реальными параметрами из inbound
-                update_env_value "TLS_FINGERPRINT" "${ACTUAL_FINGERPRINT}"
-                update_env_value "TLS_ALPN" "${ACTUAL_ALPN}"
-                update_env_value "TLS_SNI" "${SERVER_IP}"
+                update_config_value "TLS_FINGERPRINT" "${ACTUAL_FINGERPRINT}"
+                update_config_value "TLS_ALPN" "${ACTUAL_ALPN}"
+                update_config_value "TLS_SNI" "${SERVER_IP}"
                 
                 echo -e "${GREEN}✅ Параметры сохранены в .env${NC}"
             else
@@ -3977,13 +3977,13 @@ install_3xui_v294() {
         
         # Сохранение учетных данных в .env
         update_env_value "XUI_URL" "${XUI_URL}"
-        update_env_value "XUI_USERNAME" "${XUI_USERNAME}"
-        update_env_value "XUI_PASSWORD" "${XUI_PASSWORD}"
-        update_env_value "REALITY_PUBLIC_KEY" "${REALITY_PUBLIC_KEY}"
-        update_env_value "REALITY_PRIVATE_KEY" "${REALITY_PRIVATE_KEY}"
-        update_env_value "REALITY_SHORT_ID" "${REALITY_SHORT_ID}"
-        update_env_value "SERVER_ADDRESS" "${SERVER_IP}"
-        update_env_value "SERVER_IP" "${SERVER_IP}"
+        update_config_value "XUI_USERNAME" "${XUI_USERNAME}"
+        update_config_value "XUI_PASSWORD" "${XUI_PASSWORD}"
+        update_config_value "REALITY_PUBLIC_KEY" "${REALITY_PUBLIC_KEY}"
+        update_config_value "REALITY_PRIVATE_KEY" "${REALITY_PRIVATE_KEY}"
+        update_config_value "REALITY_SHORT_ID" "${REALITY_SHORT_ID}"
+        update_config_value "SERVER_ADDRESS" "${SERVER_IP}"
+        update_config_value "SERVER_IP" "${SERVER_IP}"
         update_env_value "SERVER_PORT" "443"
         update_env_value "XUI_VERSION" "2.9.4"
         
@@ -4186,11 +4186,11 @@ install_3xui_v3() {
         
         update_env_value "XUI_VERSION" "$XUI_VERSION"
         update_env_value "XUI_URL" "$XUI_URL"
-        update_env_value "XUI_USERNAME" "$XUI_USERNAME"
-        update_env_value "XUI_PASSWORD" "$XUI_PASSWORD"
-        update_env_value "XUI_API_TOKEN" "$XUI_API_TOKEN"
-        update_env_value "INBOUND_ID" "1"
-        update_env_value "XUI_DB_PATH" "/etc/x-ui/x-ui.db"
+        update_config_value "XUI_USERNAME" "$XUI_USERNAME"
+        update_config_value "XUI_PASSWORD" "$XUI_PASSWORD"
+        update_config_value "XUI_API_TOKEN" "$XUI_API_TOKEN"
+        update_config_value "INBOUND_ID" "1"
+        update_config_value "XUI_DB_PATH" "/etc/x-ui/x-ui.db"
         
         # Генерация Reality ключей если их нет
         REALITY_PRIVATE_KEY=$(get_env_value "REALITY_PRIVATE_KEY")
@@ -4203,8 +4203,8 @@ install_3xui_v3() {
             # Метод 1: Через API панели (ПРИОРИТЕТ)
             if [ -n "$XUI_API_TOKEN" ]; then
                 if generate_reality_keys_via_api "$XUI_URL" "$XUI_API_TOKEN"; then
-                    update_env_value "REALITY_PRIVATE_KEY" "$REALITY_PRIVATE_KEY"
-                    update_env_value "REALITY_PUBLIC_KEY" "$REALITY_PUBLIC_KEY"
+                    update_config_value "REALITY_PRIVATE_KEY" "$REALITY_PRIVATE_KEY"
+                    update_config_value "REALITY_PUBLIC_KEY" "$REALITY_PUBLIC_KEY"
                     echo -e "${GREEN}✓ Reality ключи сохранены в .env${NC}"
                 fi
             fi
@@ -4226,8 +4226,8 @@ install_3xui_v3() {
                     REALITY_PUBLIC_KEY=$(echo "$REALITY_KEYS" | grep -E "(Public key:|Password \(PublicKey\):)" | awk '{print $NF}')
                     
                     if [ -n "$REALITY_PRIVATE_KEY" ] && [ -n "$REALITY_PUBLIC_KEY" ]; then
-                        update_env_value "REALITY_PRIVATE_KEY" "$REALITY_PRIVATE_KEY"
-                        update_env_value "REALITY_PUBLIC_KEY" "$REALITY_PUBLIC_KEY"
+                        update_config_value "REALITY_PRIVATE_KEY" "$REALITY_PRIVATE_KEY"
+                        update_config_value "REALITY_PUBLIC_KEY" "$REALITY_PUBLIC_KEY"
                         echo -e "${GREEN}✓ Reality ключи успешно сгенерированы через xray${NC}"
                         echo -e "${BLUE}  Private Key: ${REALITY_PRIVATE_KEY:0:20}...${NC}"
                         echo -e "${BLUE}  Public Key:  ${REALITY_PUBLIC_KEY:0:20}...${NC}"
@@ -4258,8 +4258,8 @@ install_3xui_v3() {
                         REALITY_PUBLIC_KEY=$(echo "$REALITY_KEYS" | grep "Public key:" | awk '{print $3}')
                         
                         if [ -n "$REALITY_PRIVATE_KEY" ] && [ -n "$REALITY_PUBLIC_KEY" ]; then
-                            update_env_value "REALITY_PRIVATE_KEY" "$REALITY_PRIVATE_KEY"
-                            update_env_value "REALITY_PUBLIC_KEY" "$REALITY_PUBLIC_KEY"
+                            update_config_value "REALITY_PRIVATE_KEY" "$REALITY_PRIVATE_KEY"
+                            update_config_value "REALITY_PUBLIC_KEY" "$REALITY_PUBLIC_KEY"
                             echo -e "${GREEN}✓ Reality ключи успешно сгенерированы через xray${NC}"
                             echo -e "${BLUE}  Private Key: ${REALITY_PRIVATE_KEY:0:20}...${NC}"
                             echo -e "${BLUE}  Public Key:  ${REALITY_PUBLIC_KEY:0:20}...${NC}"
@@ -4282,7 +4282,7 @@ install_3xui_v3() {
             # Генерация Short ID
             if [ -z "$REALITY_SHORT_ID" ]; then
                 REALITY_SHORT_ID=$(openssl rand -hex 8)
-                update_env_value "REALITY_SHORT_ID" "$REALITY_SHORT_ID"
+                update_config_value "REALITY_SHORT_ID" "$REALITY_SHORT_ID"
                 echo -e "${GREEN}✓ Reality Short ID сгенерирован: ${REALITY_SHORT_ID}${NC}"
             fi
         fi
