@@ -3150,6 +3150,22 @@ async def main():
 
     if await xui_client.login():
         logger.info("✅ Подключение к X-UI установлено")
+        
+        # Извлекаем и обновляем параметры текущей панели из БД
+        try:
+            current_panel_id = panel_manager.get_current_panel_id()
+            if current_panel_id:
+                logger.info(f"🔄 Обновление параметров панели {current_panel_id} из БД...")
+                if await panel_manager.fetch_and_update_panel_settings(current_panel_id, xui_client):
+                    logger.info(f"✅ Параметры панели {current_panel_id} обновлены из БД")
+                    # Обновляем VPN конфигурацию
+                    config.refresh_vpn_config()
+                    logger.info(f"✅ VPN конфигурация обновлена: transport={config.vpn.transport}, security={config.vpn.security}")
+                else:
+                    logger.warning(f"⚠️ Не удалось обновить параметры панели {current_panel_id}")
+        except Exception as e:
+            logger.error(f"❌ Ошибка обновления параметров панели при запуске: {e}")
+        
         await dp.start_polling(bot)
     else:
         logger.error("❌ Не удалось подключиться к X-UI")
