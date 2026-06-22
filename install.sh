@@ -2835,19 +2835,27 @@ EOF
         # Генерация Short IDs
         REALITY_SHORT_ID=$(openssl rand -hex 8)
         
-        # Создание .env файла с учетными данными 3x-ui (устаревшая функция, создает config.yaml)
-        create_env_if_not_exists
+        # Создание config.yaml если не существует (БЕЗ попытки обновить локальную панель)
+        if [ ! -f "config.yaml" ]; then
+            echo -e "${YELLOW}📝 Создание config.yaml из примера...${NC}"
+            if [ -f "config.yaml.example" ]; then
+                cp config.yaml.example config.yaml
+                echo -e "${GREEN}✅ config.yaml создан из примера${NC}"
+            else
+                echo -e "${RED}❌ config.yaml.example не найден${NC}"
+            fi
+        fi
         
         # Определяем версию для добавления в config.yaml
         XUI_VERSION_FOR_CONFIG="${XUI_VERSION:-latest}"
         
-        # Добавляем локальную панель в config.yaml перед сохранением данных
+        # Добавляем локальную панель в config.yaml ПЕРЕД сохранением данных
         echo -e "${YELLOW}📝 Добавление локальной панели в config.yaml...${NC}"
         if add_local_panel_to_config "$XUI_VERSION_FOR_CONFIG" "${XUI_URL}" "${XUI_USERNAME}" "${XUI_PASSWORD}" "${SERVER_IP}"; then
             echo -e "${GREEN}✅ Локальная панель добавлена в config.yaml${NC}"
         else
             echo -e "${RED}❌ Не удалось добавить локальную панель в config.yaml${NC}"
-            echo -e "${YELLOW}⚠️  Данные будут сохранены в .env (legacy режим)${NC}"
+            echo -e "${YELLOW}⚠️  Продолжаем без config.yaml${NC}"
         fi
         
         echo -e "${YELLOW}💾 Сохранение учетных данных...${NC}"
@@ -4164,16 +4172,24 @@ install_3xui_v294() {
         # Генерация Short IDs
         REALITY_SHORT_ID=$(openssl rand -hex 8)
         
-        # Создание .env файла с учетными данными 3x-ui (устаревшая функция, создает config.yaml)
-        create_env_if_not_exists
+        # Создание config.yaml если не существует (БЕЗ попытки обновить локальную панель)
+        if [ ! -f "config.yaml" ]; then
+            echo -e "${YELLOW}📝 Создание config.yaml из примера...${NC}"
+            if [ -f "config.yaml.example" ]; then
+                cp config.yaml.example config.yaml
+                echo -e "${GREEN}✅ config.yaml создан из примера${NC}"
+            else
+                echo -e "${RED}❌ config.yaml.example не найден${NC}"
+            fi
+        fi
         
-        # Добавляем локальную панель в config.yaml перед сохранением данных
+        # Добавляем локальную панель в config.yaml ПЕРЕД сохранением данных
         echo -e "${YELLOW}📝 Добавление локальной панели в config.yaml...${NC}"
         if add_local_panel_to_config "2.9.4" "${XUI_URL}" "${XUI_USERNAME}" "${XUI_PASSWORD}" "${SERVER_IP}"; then
             echo -e "${GREEN}✅ Локальная панель добавлена в config.yaml${NC}"
         else
             echo -e "${RED}❌ Не удалось добавить локальную панель в config.yaml${NC}"
-            echo -e "${YELLOW}⚠️  Данные будут сохранены в .env (legacy режим)${NC}"
+            echo -e "${YELLOW}⚠️  Продолжаем без config.yaml${NC}"
         fi
         
         # Сохранение учетных данных
@@ -4383,16 +4399,24 @@ install_3xui_v3() {
             XUI_URL="http://${SERVER_IP}:${XUI_PORT}"
         fi
         
-        # Сохранение в .env (устаревшая функция, создает config.yaml)
-        create_env_if_not_exists
+        # Создание config.yaml если не существует (БЕЗ попытки обновить локальную панель)
+        if [ ! -f "config.yaml" ]; then
+            echo -e "${YELLOW}📝 Создание config.yaml из примера...${NC}"
+            if [ -f "config.yaml.example" ]; then
+                cp config.yaml.example config.yaml
+                echo -e "${GREEN}✅ config.yaml создан из примера${NC}"
+            else
+                echo -e "${RED}❌ config.yaml.example не найден${NC}"
+            fi
+        fi
         
-        # Добавляем локальную панель в config.yaml перед сохранением данных
+        # Добавляем локальную панель в config.yaml ПЕРЕД сохранением данных
         echo -e "${YELLOW}📝 Добавление локальной панели в config.yaml...${NC}"
         if add_local_panel_to_config "$XUI_VERSION" "$XUI_URL" "$XUI_USERNAME" "$XUI_PASSWORD" "$SERVER_IP"; then
             echo -e "${GREEN}✅ Локальная панель добавлена в config.yaml${NC}"
         else
             echo -e "${RED}❌ Не удалось добавить локальную панель в config.yaml${NC}"
-            echo -e "${YELLOW}⚠️  Данные будут сохранены в .env (legacy режим)${NC}"
+            echo -e "${YELLOW}⚠️  Продолжаем без config.yaml${NC}"
         fi
         
         echo -e "${YELLOW}💾 Сохранение настроек панели...${NC}"
