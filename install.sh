@@ -760,6 +760,14 @@ generate_reality_keys_via_api() {
 extract_inbound_params() {
     echo -e "${YELLOW}🔍 Извлечение параметров из панели...${NC}"
     
+    # Проверяем is_local для panel1
+    local IS_LOCAL=$(yq eval '.panels.panel1.is_local' config.yaml 2>/dev/null)
+    if [ "$IS_LOCAL" = "false" ]; then
+        echo -e "${BLUE}ℹ️  Панель удаленная (is_local: false)${NC}"
+        echo -e "${BLUE}ℹ️  Параметры будут обновлены ботом через API при подключении${NC}"
+        return 0
+    fi
+    
     # Проверка наличия базы данных
     if [ ! -f "/etc/x-ui/x-ui.db" ]; then
         echo -e "${YELLOW}⚠️  База данных 3x-ui не найдена, пропускаем извлечение${NC}"
