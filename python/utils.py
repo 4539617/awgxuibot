@@ -441,9 +441,10 @@ class XUIClient:
             client_data["comment"] = comment
         
         # Формируем финальный запрос
+        # ВАЖНО: inboundIds должен быть массивом целых чисел, не строк
         data = {
             "client": client_data,
-            "inboundIds": [self.config.xui.inbound_id]
+            "inboundIds": [int(self.config.xui.inbound_id)]
         }
         
         # ВАЖНО: Используем базовый путь из XUI_URL
