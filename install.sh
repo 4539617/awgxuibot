@@ -259,7 +259,7 @@ update_env_value() {
                 echo -e "${YELLOW}🔄 Обнаружен домен в XUI_URL: ${domain}${NC}"
                 
                 # Получаем текущий SERVER_ADDRESS
-                local current_server_address=$(get_env_value "SERVER_ADDRESS")
+                local current_server_address=$(get_config_value "SERVER_ADDRESS")
                 
                 # Обновляем SERVER_ADDRESS если он отличается от домена
                 if [ "$current_server_address" != "$domain" ]; then
@@ -1011,7 +1011,7 @@ interactive_setup() {
     # ==================== Telegram Bot ====================
     echo -e "\n${GREEN}📱 Настройка Telegram Bot${NC}\n"
     
-    XUI_BOT_TOKEN=$(get_env_value "XUI_BOT_TOKEN")
+    XUI_BOT_TOKEN=$(get_config_value "XUI_BOT_TOKEN")
     if [ -z "$XUI_BOT_TOKEN" ]; then
         read -p "Введите XUI_BOT_TOKEN: " XUI_BOT_TOKEN
         update_config_value "XUI_BOT_TOKEN" "$XUI_BOT_TOKEN"
@@ -1035,11 +1035,11 @@ interactive_setup() {
     update_config_value "SERVER_IP" "$SERVER_IP"
     
     # ==================== Проверка данных 3x-ui ====================
-    XUI_URL=$(get_env_value "XUI_URL")
-    XUI_USERNAME=$(get_env_value "XUI_USERNAME")
-    XUI_PASSWORD=$(get_env_value "XUI_PASSWORD")
-    REALITY_PUBLIC_KEY=$(get_env_value "REALITY_PUBLIC_KEY")
-    REALITY_SHORT_ID=$(get_env_value "REALITY_SHORT_ID")
+    XUI_URL=$(get_config_value "XUI_URL")
+    XUI_USERNAME=$(get_config_value "XUI_USERNAME")
+    XUI_PASSWORD=$(get_config_value "XUI_PASSWORD")
+    REALITY_PUBLIC_KEY=$(get_config_value "REALITY_PUBLIC_KEY")
+    REALITY_SHORT_ID=$(get_config_value "REALITY_SHORT_ID")
     
     if [ -z "$XUI_URL" ] || [ -z "$REALITY_PUBLIC_KEY" ]; then
         echo -e "\n${RED}❌ Данные 3x-ui панели не найдены!${NC}"
@@ -1070,12 +1070,12 @@ install_bot() {
     interactive_setup
     
     # Обновляем SERVER_ADDRESS и TLS_SNI из XUI_URL если он установлен
-    XUI_URL=$(get_env_value "XUI_URL")
+    XUI_URL=$(get_config_value "XUI_URL")
     if [ -n "$XUI_URL" ]; then
         DOMAIN=$(echo "$XUI_URL" | sed -E 's|^https?://([^:/]+).*|\1|')
         if [ -n "$DOMAIN" ] && [[ ! "$DOMAIN" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo -e "${YELLOW}🔄 Обнаружен домен в XUI_URL: ${DOMAIN}${NC}"
-            CURRENT_SERVER=$(get_env_value "SERVER_ADDRESS")
+            CURRENT_SERVER=$(get_config_value "SERVER_ADDRESS")
             if [ "$CURRENT_SERVER" != "$DOMAIN" ]; then
                 update_config_value "SERVER_ADDRESS" "$DOMAIN"
                 echo -e "${GREEN}✅ SERVER_ADDRESS обновлён: ${DOMAIN}${NC}"
@@ -1343,7 +1343,7 @@ install_xuibot() {
             echo -e "${YELLOW}🔄 Обнаружен домен в XUI_URL: ${DOMAIN}${NC}"
             
             # Обновляем SERVER_ADDRESS
-            CURRENT_SERVER=$(get_env_value "SERVER_ADDRESS")
+            CURRENT_SERVER=$(get_config_value "SERVER_ADDRESS")
             if [ "$CURRENT_SERVER" != "$DOMAIN" ]; then
                 update_config_value "SERVER_ADDRESS" "$DOMAIN"
                 echo -e "${GREEN}✅ SERVER_ADDRESS обновлён: ${DOMAIN}${NC}"
@@ -2583,7 +2583,7 @@ detect_xui_version() {
     
     if [ -z "$version" ]; then
         # Альтернативный метод - проверяем структуру API
-        local xui_url=$(get_env_value "XUI_URL" 2>/dev/null)
+        local xui_url=$(get_config_value "XUI_URL" 2>/dev/null)
         if [ -n "$xui_url" ]; then
             # Проверяем наличие /panel/ в URL (характерно для v3.x)
             if echo "$xui_url" | grep -q "/panel"; then
@@ -3242,10 +3242,10 @@ create_xhttp_reality_inbound() {
     echo -e "${BLUE}   Создание XHTTP Reality Inbound${NC}"
     echo -e "${BLUE}========================================${NC}\n"
     
-    # Загружаем Reality ключи из .env
-    REALITY_PRIVATE_KEY=$(get_env_value "REALITY_PRIVATE_KEY")
-    REALITY_PUBLIC_KEY=$(get_env_value "REALITY_PUBLIC_KEY")
-    REALITY_SHORT_ID=$(get_env_value "REALITY_SHORT_ID")
+    # Загружаем Reality ключи из config.yaml (или .env для обратной совместимости)
+    REALITY_PRIVATE_KEY=$(get_config_value "REALITY_PRIVATE_KEY")
+    REALITY_PUBLIC_KEY=$(get_config_value "REALITY_PUBLIC_KEY")
+    REALITY_SHORT_ID=$(get_config_value "REALITY_SHORT_ID")
     
     # Проверяем наличие необходимых данных
     if [ -z "$REALITY_PRIVATE_KEY" ] || [ -z "$REALITY_PUBLIC_KEY" ] || [ -z "$REALITY_SHORT_ID" ]; then
@@ -3381,10 +3381,10 @@ create_tcp_reality_inbound() {
     echo -e "${BLUE}   Создание TCP Reality Inbound${NC}"
     echo -e "${BLUE}========================================${NC}\n"
     
-    # Загружаем Reality ключи из .env
-    REALITY_PRIVATE_KEY=$(get_env_value "REALITY_PRIVATE_KEY")
-    REALITY_PUBLIC_KEY=$(get_env_value "REALITY_PUBLIC_KEY")
-    REALITY_SHORT_ID=$(get_env_value "REALITY_SHORT_ID")
+    # Загружаем Reality ключи из config.yaml (или .env для обратной совместимости)
+    REALITY_PRIVATE_KEY=$(get_config_value "REALITY_PRIVATE_KEY")
+    REALITY_PUBLIC_KEY=$(get_config_value "REALITY_PUBLIC_KEY")
+    REALITY_SHORT_ID=$(get_config_value "REALITY_SHORT_ID")
     
     # Проверяем наличие необходимых данных
     if [ -z "$REALITY_PRIVATE_KEY" ] || [ -z "$REALITY_PUBLIC_KEY" ] || [ -z "$REALITY_SHORT_ID" ]; then
@@ -4430,9 +4430,9 @@ install_3xui_v3() {
         update_config_value "XUI_DB_PATH" "/etc/x-ui/x-ui.db"
         
         # Генерация Reality ключей если их нет
-        REALITY_PRIVATE_KEY=$(get_env_value "REALITY_PRIVATE_KEY")
-        REALITY_PUBLIC_KEY=$(get_env_value "REALITY_PUBLIC_KEY")
-        REALITY_SHORT_ID=$(get_env_value "REALITY_SHORT_ID")
+        REALITY_PRIVATE_KEY=$(get_config_value "REALITY_PRIVATE_KEY")
+        REALITY_PUBLIC_KEY=$(get_config_value "REALITY_PUBLIC_KEY")
+        REALITY_SHORT_ID=$(get_config_value "REALITY_SHORT_ID")
         
         if [ -z "$REALITY_PRIVATE_KEY" ] || [ -z "$REALITY_PUBLIC_KEY" ]; then
             echo -e "${YELLOW}⚠ Генерация Reality ключей...${NC}"
