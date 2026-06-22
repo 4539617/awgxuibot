@@ -472,9 +472,21 @@ class XUIClient:
                     
                     if result.get('success'):
                         logger.info(f"Клиент {email} создан через v3 API")
-                        # Получаем UUID клиента
-                        client_details = await self._get_client_details_v3(email)
-                        client_uuid = client_details.get('uuid', '') if client_details else ''
+                        # В v3 API UUID возвращается в obj
+                        obj = result.get('obj', {})
+                        client_uuid = obj.get('uuid', '') if isinstance(obj, dict) else ''
+                        
+                        # Если UUID не в ответе, получаем через список клиентов
+                        if not client_uuid:
+                            logger.warning(f"UUID не найден в ответе API, получаем через список клиентов")
+                            client_details = await self._get_client_details_v3(email)
+                            client_uuid = client_details.get('uuid', '') if client_details else ''
+                        
+                        if client_uuid:
+                            logger.info(f"UUID клиента {email}: {client_uuid}")
+                        else:
+                            logger.error(f"Не удалось получить UUID для клиента {email}")
+                        
                         return {"success": True, "uuid": client_uuid}
                     else:
                         error_msg = result.get('msg', response_text)
@@ -493,46 +505,25 @@ class XUIClient:
             return {"success": False, "error": str(e)}
 
     async def _get_client_details_v3(self, email: str) -> dict:
-        """Получение деталей клиента через v3 API"""
+        """Получение деталей клиента через v3 API (поиск в списке клиентов)"""
         if not self.session:
             if not await self.login():
                 return None
         
-        endpoint = f"{self.config.xui.url}/panel/api/clients/get/{email}"
-        headers = await self._get_headers()
-        
+        # В v3 API нет endpoint для получения одного клиента по email
+        # Получаем список всех клиентов и ищем нужного
         try:
-            async with self.session.get(endpoint, headers=headers) as resp:
-                if resp.status == 200:
-                    result = await resp.json()
-                    if result.get('success'):
-                        client = result.get('obj', {})
-                        current_time = int(time.time() * 1000)
-                        expiry_time = client.get('expiryTime', 0)
-                        enable = client.get('enable', True)
-                        
-                        # Определяем статус
-                        if expiry_time > 0 and expiry_time < current_time:
-                            status = 'expired'
-                        elif not enable:
-                            status = 'inactive'
-                        else:
-                            status = 'active'
-                        
-                        traffic = client.get('traffic', {})
-                        return {
-                            'uuid': client.get('uuid', ''),
-                            'email': client.get('email', ''),
-                            'comment': client.get('comment', ''),
-                            'enable': enable,
-                            'expiryTime': expiry_time,
-                            'totalGB': client.get('totalGB', 0),
-                            'status': status,
-                            'up': traffic.get('up', 0),
-                            'down': traffic.get('down', 0)
-                        }
+            all_clients = await self._get_all_clients_v3()
             
+            # Ищем клиента по email
+            for client in all_clients:
+                if client.get('email') == email:
+                    logger.info(f"Найден клиент {email} с UUID: {client.get('uuid')}")
+                    return client
+            
+            logger.warning(f"Клиент {email} не найден в списке")
             return None
+            
         except Exception as e:
             logger.error(f"Ошибка получения деталей клиента v3: {e}")
             return None
