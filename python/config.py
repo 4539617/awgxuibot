@@ -343,14 +343,10 @@ class ConfigManager:
             
             # Получаем данные inbound через API панели
             try:
-                # xui_url может быть:
-                # https://domain.com/panel или
-                # https://domain.com/secret_path (где secret_path это путь к панели)
-                # API всегда по адресу: {xui_url}/api/inbounds/get/{id}
+                # xui_url содержит секретный путь, например: https://domain.com/secret_path
+                # API находится по адресу: {xui_url}/panel/api/inbounds/get/{id}
                 base_url = panel.xui_url.rstrip('/')
-                
-                # Если URL заканчивается на /panel, /login или другой путь - используем его
-                api_url = f"{base_url}/api/inbounds/get/{panel.inbound_id}"
+                api_url = f"{base_url}/panel/api/inbounds/get/{panel.inbound_id}"
                 logger.info(f"   API URL: {api_url}")
                 
                 # Используем метод API для получения inbound
