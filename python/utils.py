@@ -600,29 +600,23 @@ class XUIClient:
                             all_clients.append({
                                 'uuid': client.get('uuid', ''),
                                 'email': client.get('email', ''),
-                                    'comment': client.get('comment', ''),
-                                    'enable': enable,
-                                    'expiryTime': expiry_time,
-                                    'totalGB': client.get('totalGB', 0),
-                                    'status': status,
-                                    'up': traffic.get('up', 0),
-                                    'down': traffic.get('down', 0)
-                                })
-                            
-                            # Проверяем, есть ли еще страницы
-                            if len(all_clients) >= total:
-                                break
-                            
-                            params['page'] += 1
-                        else:
-                            logger.error(f"API вернул success=false: {result}")
-                            break
+                                'comment': client.get('comment', ''),
+                                'enable': enable,
+                                'expiryTime': expiry_time,
+                                'totalGB': client.get('totalGB', 0),
+                                'status': status,
+                                'up': traffic.get('up', 0),
+                                'down': traffic.get('down', 0)
+                            })
+                        
+                        return all_clients
                     else:
-                        text = await resp.text()
-                        logger.error(f"Ошибка получения клиентов v3: {resp.status} - {text}")
-                        break
-            
-            return all_clients
+                        logger.error(f"API вернул success=false: {result}")
+                        return []
+                else:
+                    text = await resp.text()
+                    logger.error(f"Ошибка получения клиентов v3: {resp.status} - {text}")
+                    return []
             
         except Exception as e:
             logger.error(f"Ошибка получения клиентов v3: {e}")
