@@ -536,9 +536,12 @@ class XUIClient:
                 if resp.status == 200:
                     result = await resp.json()
                     if result.get('success'):
-                        client = result.get('obj', {})
+                        obj = result.get('obj', {})
+                        # В v3 API структура: obj.client содержит данные клиента
+                        client = obj.get('client', {})
                         logger.info(f"✅ Получены детали клиента {email}")
-                        logger.info(f"📦 Полные данные клиента: {json.dumps(client, indent=2, ensure_ascii=False)}")
+                        logger.info(f"📦 Полные данные obj: {json.dumps(obj, indent=2, ensure_ascii=False)}")
+                        logger.info(f"📦 Данные client: {json.dumps(client, indent=2, ensure_ascii=False)}")
                         logger.info(f"🔑 UUID клиента: '{client.get('uuid')}'")
                         return client
                     else:
