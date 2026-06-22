@@ -349,9 +349,12 @@ get_local_panel_id() {
     # Ищем панель с is_local: true
     local panel_id=$(yq eval '.panels | to_entries | .[] | select(.value.is_local == true) | .key' config.yaml 2>/dev/null | head -1)
     
+    # ВАЖНО: НЕ используем default_panel как fallback!
+    # Инсталлятор должен работать ТОЛЬКО с локальной панелью
     if [ -z "$panel_id" ]; then
-        # Если не найдена, используем default_panel
-        panel_id=$(yq eval '.default_panel' config.yaml 2>/dev/null)
+        echo -e "${YELLOW}⚠️  Локальная панель (is_local: true) не найдена в config.yaml${NC}" >&2
+        echo ""
+        return 1
     fi
     
     echo "$panel_id"
