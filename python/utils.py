@@ -425,9 +425,16 @@ class XUIClient:
         else:
             total_bytes = total_gb * 1024 * 1024 * 1024
         
+        # Определяем flow в зависимости от transport и security
+        flow = ""
+        if self.config.vpn.transport == "tcp" and self.config.vpn.security in ["reality", "tls"]:
+            flow = "xtls-rprx-vision"
+            logger.info(f"Установлен flow для TCP+{self.config.vpn.security}: {flow}")
+        
         # Формируем данные клиента согласно API v3
         client_data = {
             "email": email,
+            "flow": flow,  # ВАЖНО: flow обязателен для TCP+Reality/TLS
             "totalGB": total_bytes,
             "expiryTime": expiry_time,
             "enable": True,
@@ -1105,26 +1112,10 @@ class XUIClient:
 
 async def get_client_link(xui_client, email: str, client_uuid: str, vpn_config, inbound_id: int) -> Optional[str]:
     """Универсальная функция получения VLESS ссылки для v2 и v3"""
-    if xui_client.config.xui.is_v3_new_api():
-        # Для v3 сначала пробуем получить ссылку от панели
-        links = await xui_client.get_client_links_v3(email)
-        if links and len(links) > 0:
-            panel_link = links[0]
-            # Проверяем корректность ссылки от панели
-            # Если short_id слишком короткий (меньше 10 символов), генерируем вручную
-            if 'sid=' in panel_link:
-                import re
-                sid_match = re.search(r'sid=([^&]+)', panel_link)
-                if sid_match and len(sid_match.group(1)) < 10:
-                    logger.warning(f"⚠️ Панель вернула некорректную ссылку (короткий sid), генерируем вручную")
-                    return generate_vless_link(client_uuid, email, vpn_config, inbound_id)
-            return panel_link
-        else:
-            logger.warning(f"Не удалось получить ссылку от панели v3 для {email}, генерируем вручную")
-            return generate_vless_link(client_uuid, email, vpn_config, inbound_id)
-    else:
-        # Для v2 генерируем вручную
-        return generate_vless_link(client_uuid, email, vpn_config, inbound_id)
+    # Для v3 и v2 ВСЕГДА используем ручную генерацию
+    # Панель v3 часто возвращает некорректные ссылки (неправильный sid, spx и т.д.)
+    logger.info(f"🔗 Генерация VLESS ссылки вручную")
+    return generate_vless_link(client_uuid, email, vpn_config, inbound_id)
 
 
 
