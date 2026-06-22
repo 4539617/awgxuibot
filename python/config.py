@@ -343,9 +343,13 @@ class ConfigManager:
             
             # Получаем данные inbound через API панели
             try:
+                # Используем URL из конфига панели
+                api_url = f"{panel.xui_url}/panel/api/inbounds/get/{panel.inbound_id}"
+                logger.info(f"   API URL: {api_url}")
+                
                 # Используем метод API для получения inbound
                 response = await xui_client.session.get(
-                    f"{xui_client.base_url}/panel/api/inbounds/get/{panel.inbound_id}",
+                    api_url,
                     headers={"Accept": "application/json"}
                 )
                 
@@ -372,6 +376,8 @@ class ConfigManager:
                 
             except Exception as e:
                 logger.error(f"❌ Ошибка при получении данных через API: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
                 return False
             
             # Извлекаем transport (network)
