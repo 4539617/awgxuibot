@@ -1115,13 +1115,22 @@ class XUIClient:
 async def get_client_link(xui_client, email: str, client_uuid: str, vpn_config, inbound_id: int) -> Optional[str]:
     """Универсальная функция получения VLESS ссылки для v2 и v3"""
     if xui_client.config.xui.is_v3_new_api():
-        # Для v3 получаем готовую ссылку от панели
+        # Для v3 сначала пробуем получить ссылку от панели
         links = await xui_client.get_client_links_v3(email)
         if links and len(links) > 0:
-            return links[0]
+            panel_link = links[0]
+            # Проверяем корректность ссылки от панели
+            # Если short_id слишком короткий (меньше 10 символов), генерируем вручную
+            if 'sid=' in panel_link:
+                import re
+                sid_match = re.search(r'sid=([^&]+)', panel_link)
+                if sid_match and len(sid_match.group(1)) < 10:
+                    logger.warning(f"⚠️ Панель вернула некорректную ссылку (короткий sid), генерируем вручную")
+                    return generate_vless_link(client_uuid, email, vpn_config, inbound_id)
+            return panel_link
         else:
-            logger.error(f"Не удалось получить ссылку от панели v3 для {email}")
-            return None
+            logger.warning(f"Не удалось получить ссылку от панели v3 для {email}, генерируем вручную")
+            return generate_vless_link(client_uuid, email, vpn_config, inbound_id)
     else:
         # Для v2 генерируем вручную
         return generate_vless_link(client_uuid, email, vpn_config, inbound_id)
@@ -1138,11 +1147,19 @@ def generate_vless_link(client_uuid: str, email: str, vpn_config, inbound_id: in
     """
     import urllib.parse
     
-    # Получаем реальные параметры Reality из inbound (если используется Reality)
+    # Для Docker-окружения используем параметры из конфига, а не из БД
+    # (БД может быть недоступна, если X-UI на удаленном сервере)
     reality_params = {}
     if vpn_config.security == "reality":
-        reality_params = get_inbound_reality_settings(vpn_config.xui_db_path, inbound_id)
-        logger.info(f"Используем параметры Reality из inbound: {reality_params}")
+        # Пытаемся получить параметры из БД только если путь локальный
+        if hasattr(vpn_config, 'xui_db_path') and vpn_config.xui_db_path.startswith('/etc/'):
+            reality_params = get_inbound_reality_settings(vpn_config.xui_db_path, inbound_id)
+            if reality_params:
+                logger.info(f"Используем параметры Reality из inbound БД: {reality_params}")
+        
+        # Если не получили из БД, используем параметры из конфига
+        if not reality_params:
+            logger.info(f"Используем параметры Reality из конфига")
     
     # ВАЛИДАЦИЯ: Проверяем и устанавливаем transport
     transport = vpn_config.transport if vpn_config.transport else "tcp"
@@ -1171,36 +1188,28 @@ def generate_vless_link(client_uuid: str, email: str, vpn_config, inbound_id: in
     
     # ===== СЦЕНАРИЙ 1 и 2: Reality (xhttp или tcp) =====
     if vpn_config.security == "reality":
-        # Fingerprint для Reality
-        if reality_params.get('fingerprint'):
-            params += f"&fp={reality_params['fingerprint']}"
-        else:
-            params += f"&fp={vpn_config.reality_fingerprint}"
+        # Fingerprint для Reality (приоритет: БД -> конфиг)
+        fingerprint = reality_params.get('fingerprint') or vpn_config.reality_fingerprint
+        if fingerprint:
+            params += f"&fp={fingerprint}"
         
-        # Public key (pbk) - ОБЯЗАТЕЛЬНЫЙ параметр для Reality
-        if reality_params.get('public_key'):
-            params += f"&pbk={reality_params['public_key']}"
+        # Public key (pbk) - ОБЯЗАТЕЛЬНЫЙ параметр для Reality (приоритет: БД -> конфиг)
+        public_key = reality_params.get('public_key') or getattr(vpn_config, 'reality_public_key', '')
+        if public_key:
+            params += f"&pbk={public_key}"
         else:
-            reality_public_key = getattr(vpn_config, 'reality_public_key', '')
-            if reality_public_key:
-                params += f"&pbk={reality_public_key}"
-            else:
-                logger.error("⚠️ REALITY_PUBLIC_KEY не найден!")
+            logger.error("⚠️ REALITY_PUBLIC_KEY не найден ни в БД, ни в конфиге!")
         
-        # SNI для Reality
-        if reality_params.get('sni'):
-            params += f"&sni={reality_params['sni']}"
-        else:
-            if vpn_config.reality_sni:
-                params += f"&sni={vpn_config.reality_sni}"
+        # SNI для Reality (приоритет: БД -> конфиг)
+        sni = reality_params.get('sni') or vpn_config.reality_sni
+        if sni:
+            params += f"&sni={sni}"
         
-        # Short ID (sid) для Reality
-        if reality_params.get('short_id'):
-            params += f"&sid={reality_params['short_id']}"
-        else:
-            reality_short_id = getattr(vpn_config, 'reality_short_id', '')
-            if reality_short_id:
-                params += f"&sid={reality_short_id}"
+        # Short ID (sid) для Reality (приоритет: БД -> конфиг)
+        short_id = reality_params.get('short_id') or getattr(vpn_config, 'reality_short_id', '')
+        if short_id:
+            params += f"&sid={short_id}"
+            logger.debug(f"Используем short_id: {short_id}")
         
         # spiderX (SpiderX path) для Reality
         params += "&spx=%2F"
