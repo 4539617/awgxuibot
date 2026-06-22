@@ -349,10 +349,16 @@ class ConfigManager:
                 api_url = f"{base_url}/panel/api/inbounds/get/{panel.inbound_id}"
                 logger.info(f"   API URL: {api_url}")
                 
+                # Формируем заголовки с Bearer token
+                headers = {
+                    "Accept": "application/json",
+                    "Authorization": f"Bearer {panel.xui_api_token}"
+                }
+                
                 # Используем метод API для получения inbound
                 response = await xui_client.session.get(
                     api_url,
-                    headers={"Accept": "application/json"}
+                    headers=headers
                 )
                 
                 if response.status != 200:
