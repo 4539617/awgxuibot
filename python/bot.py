@@ -3153,10 +3153,10 @@ async def main():
         
         # Извлекаем и обновляем параметры текущей панели из БД
         try:
-            current_panel_id = panel_manager.get_current_panel_id()
+            current_panel_id = config.panel_manager.get_current_panel_id()
             if current_panel_id:
                 logger.info(f"🔄 Обновление параметров панели {current_panel_id} из БД...")
-                if await panel_manager.fetch_and_update_panel_settings(current_panel_id, xui_client):
+                if await config.panel_manager.fetch_and_update_panel_settings(current_panel_id, xui_client):
                     logger.info(f"✅ Параметры панели {current_panel_id} обновлены из БД")
                     # Обновляем VPN конфигурацию
                     config.refresh_vpn_config()
