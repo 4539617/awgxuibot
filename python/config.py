@@ -450,6 +450,13 @@ class ConfigManager:
     def _save_config(self):
         """Сохраняет текущую конфигурацию в файл"""
         try:
+            # ВАЖНО: Загружаем текущий config.yaml чтобы сохранить is_local
+            # is_local НЕ должен изменяться программно!
+            existing_config = {}
+            if os.path.exists(self.config_path):
+                with open(self.config_path, 'r', encoding='utf-8') as f:
+                    existing_config = yaml.safe_load(f) or {}
+            
             # Пересобираем словарь из объектов
             config_dict = {
                 'common': {
@@ -482,10 +489,16 @@ class ConfigManager:
             
             # Добавляем панели
             for panel_id, panel in self.panels.items():
+                # ВАЖНО: Сохраняем is_local из существующего файла, если он там есть
+                # is_local НЕ должен изменяться программно!
+                existing_is_local = panel.is_local
+                if existing_config.get('panels', {}).get(panel_id, {}).get('is_local') is not None:
+                    existing_is_local = existing_config['panels'][panel_id]['is_local']
+                
                 config_dict['panels'][panel_id] = {
                     'alias': panel.alias,
                     'enabled': panel.enabled,
-                    'is_local': panel.is_local,
+                    'is_local': existing_is_local,  # Используем значение из файла
                     'xui_version': panel.xui_version,
                     'xui_url': panel.xui_url,
                     'xui_username': panel.xui_username,
