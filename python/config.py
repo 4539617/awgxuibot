@@ -329,45 +329,75 @@ class ConfigManager:
     async def fetch_and_update_panel_settings(self, panel_id: str, xui_client) -> bool:
         """Извлекает параметры из панели (transport, security, Reality) и обновляет конфигурацию"""
         try:
-            import subprocess
             import json
+            import logging
+            logger = logging.getLogger(__name__)
             
             panel = self.get_panel(panel_id)
             if not panel:
+                logger.error(f"❌ Панель {panel_id} не найдена")
                 return False
             
-            # Извлекаем stream_settings из базы данных панели
-            sql_get = f"""sqlite3 {panel.xui_db_path} "SELECT stream_settings FROM inbounds WHERE id={panel.inbound_id};" """
-            result = subprocess.run(sql_get, shell=True, capture_output=True, text=True)
+            logger.info(f"🔍 Извлечение параметров из панели {panel_id} через API")
+            logger.info(f"   Inbound ID: {panel.inbound_id}")
             
-            if result.returncode != 0 or not result.stdout:
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.warning(f"Не удалось получить stream_settings для inbound id={panel.inbound_id}")
+            # Получаем данные inbound через API панели
+            try:
+                # Используем метод API для получения inbound
+                response = await xui_client.session.get(
+                    f"{xui_client.base_url}/panel/api/inbounds/get/{panel.inbound_id}",
+                    headers={"Accept": "application/json"}
+                )
+                
+                if response.status != 200:
+                    logger.warning(f"⚠️ API вернул статус {response.status}")
+                    return False
+                
+                data = await response.json()
+                
+                if not data.get('success'):
+                    logger.warning(f"⚠️ API вернул success=false")
+                    return False
+                
+                inbound_data = data.get('obj')
+                if not inbound_data:
+                    logger.warning(f"⚠️ Нет данных inbound в ответе API")
+                    return False
+                
+                # Извлекаем streamSettings
+                stream_settings_str = inbound_data.get('streamSettings', '{}')
+                stream_settings = json.loads(stream_settings_str) if isinstance(stream_settings_str, str) else stream_settings_str
+                
+                logger.info(f"✅ Stream settings получены через API")
+                
+            except Exception as e:
+                logger.error(f"❌ Ошибка при получении данных через API: {e}")
                 return False
-            
-            stream_settings = json.loads(result.stdout.strip())
             
             # Извлекаем transport (network)
             transport = stream_settings.get('network', 'tcp')
+            logger.info(f"📡 Transport из API: {transport}")
             if transport:
                 panel.transport = transport
             
             # Извлекаем security
             security = stream_settings.get('security', 'none')
+            logger.info(f"🔒 Security из API: {security}")
             if security:
                 panel.security = security
             
             # Если security == reality, извлекаем параметры Reality
             if security == 'reality':
                 reality_config = stream_settings.get('realitySettings', {})
+                logger.info(f"🎭 Reality config найден: {bool(reality_config)}")
                 
                 # SNI из serverNames
                 sni = reality_config.get('serverNames', [''])[0] if reality_config.get('serverNames') else ''
                 if sni:
                     panel.reality_sni = sni
+                    logger.info(f"   SNI: {sni}")
                 
-                # Fingerprint
+                # Fingerprint и Public Key
                 settings_obj = reality_config.get('settings', {})
                 if isinstance(settings_obj, dict):
                     fingerprint = settings_obj.get('fingerprint', reality_config.get('fingerprint', 'chrome'))
@@ -378,20 +408,22 @@ class ConfigManager:
                 
                 if fingerprint:
                     panel.reality_fingerprint = fingerprint
+                    logger.info(f"   Fingerprint: {fingerprint}")
                 if public_key:
                     panel.reality_public_key = public_key
+                    logger.info(f"   Public Key: {public_key[:20]}...")
                 
                 # Short ID из shortIds
                 short_id = reality_config.get('shortIds', [''])[0] if reality_config.get('shortIds') else ''
                 if short_id:
                     panel.reality_short_id = short_id
+                    logger.info(f"   Short ID: {short_id}")
             
             # Сохраняем обновленную конфигурацию в файл
+            logger.info(f"💾 Сохранение конфигурации в config.yaml...")
             self._save_config()
-            
-            import logging
-            logger = logging.getLogger(__name__)
             logger.info(f"✅ Параметры панели {panel_id} обновлены: transport={transport}, security={security}")
+            logger.info(f"📝 Конфигурация сохранена в файл config.yaml")
             
             return True
             
