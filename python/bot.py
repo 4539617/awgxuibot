@@ -1130,10 +1130,16 @@ async def back_to_allclients(callback_query: types.CallbackQuery):
                 'data': all_clients
             }
         
+        # Получаем информацию о текущей панели
+        current_panel = config.get_current_panel()
+        panel_info = ""
+        if current_panel:
+            panel_info = f"📡 <b>Панель:</b> {current_panel.alias}  {current_panel.xui_version}\n\n"
+        
         # Подсчитываем статистику
         if not all_clients:
             # Показываем полное окно даже если ключей нет
-            text = f"📋 <b>Все ключи</b>\n\n"
+            text = panel_info
             text += f"🔑 Всего ключей: 0\n"
             text += f"✅ Активных: 0\n"
             text += f"⏸️ Неактивных: 0\n"
@@ -1177,7 +1183,7 @@ async def back_to_allclients(callback_query: types.CallbackQuery):
                 return f"{bytes_value / (1024**3):.2f} GB"
         
         # Обновляем текст статистики
-        text = f"📋 <b>Все ключи</b>\n\n"
+        text = panel_info
         text += f"🔑 Всего ключей: {total_count}\n"
         text += f"✅ Активных: {active_count}\n"
         text += f"⏸️ Неактивных: {inactive_count}\n"
