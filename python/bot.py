@@ -443,7 +443,7 @@ async def cmd_my_clients(message: Message):
     clients = await xui_client.get_user_clients_by_username(username)
 
     if not clients:
-        await message.answer("📭 У вас пока нет ключей.\n\nИспользуйте /new для создания.")
+        await message.answer("📭 У вас пока нет ключей.\n\n")
         return
 
     # Подсчитываем статистику
@@ -2223,7 +2223,6 @@ async def callback_cmd_myclients(callback_query: types.CallbackQuery, state: FSM
             text += f"⏸️ Неактивных: 0\n"
             text += f"⏰ Просроченных: 0\n\n"
             text += "📭 <i>У вас пока нет ключей.</i>\n\n"
-            text += "Используйте /new для создания."
             
             # Добавляем кнопки "Обновить" и "Назад"
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -2357,7 +2356,6 @@ async def refresh_myclients(callback_query: types.CallbackQuery, state: FSMConte
             text += f"⏸️ Неактивных: 0\n"
             text += f"⏰ Просроченных: 0\n\n"
             text += "📭 <i>У вас пока нет ключей.</i>\n\n"
-            text += "Используйте /new для создания."
             
             # Добавляем кнопки "Обновить" и "Назад"
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
