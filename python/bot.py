@@ -659,8 +659,14 @@ async def cmd_all_clients(message: Message):
             else:
                 return f"{bytes_value / (1024**3):.2f} GB"
         
+        # Получаем информацию о текущей панели
+        current_panel = config.get_current_panel()
+        panel_info = ""
+        if current_panel:
+            panel_info = f"📡 <b>Панель:</b> {current_panel.alias}  {current_panel.xui_version}\n\n"
+        
         # Формируем текст статистики
-        text = f"📊 <b>Статистика ключей</b>\n\n"
+        text = panel_info
         text += f"🔑 Всего ключей: {total_count}\n"
         text += f"✅ Активных: {active_count}\n"
         text += f"⏸️ Неактивных: {inactive_count}\n"
