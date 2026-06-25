@@ -352,7 +352,7 @@ get_local_panel_id() {
     # ВАЖНО: НЕ используем default_panel как fallback!
     # Инсталлятор должен работать ТОЛЬКО с локальной панелью
     if [ -z "$panel_id" ]; then
-        echo -e "${YELLOW}⚠️  Локальная панель (is_local: true) не найдена в config.yaml${NC}" >&2
+        echo -e "${YELLOW}⚠️  Локальная (is_local: true) не найдена в config.yaml${NC}" >&2
         echo ""
         return 1
     fi
@@ -403,7 +403,7 @@ add_local_panel_to_config() {
     echo -e "${GREEN}✅ Создание новой локальной панели: ${panel_id}${NC}"
     
     # Добавляем новую панель в config.yaml
-    yq eval -i ".panels.${panel_id}.alias = \"Локальная панель\"" config.yaml
+    yq eval -i ".panels.${panel_id}.alias = \"Локальная\"" config.yaml
     yq eval -i ".panels.${panel_id}.enabled = true" config.yaml
     yq eval -i ".panels.${panel_id}.is_local = true" config.yaml
     yq eval -i ".panels.${panel_id}.xui_version = \"${xui_version}\"" config.yaml

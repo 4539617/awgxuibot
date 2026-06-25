@@ -124,10 +124,16 @@ async def cmd_start(message: Message, state: FSMContext):
                     InlineKeyboardButton(text="🔑 Мои ключи", callback_data="cmd_myclients")
                 ]
             ])
+            
+            # Получаем информацию о текущей панели
+            current_panel = config.get_current_panel()
+            panel_alias = current_panel.alias if current_panel else "N/A"
+            
             await message.answer(
                 f"👤 Добро пожаловать, {first_name}!\n\n"
                 f"✅ <b>У вас обнаружены активные ключи.</b>\n"
-                f"Доступ предоставлен автоматически.\n\n"
+                f"Доступ предоставлен автоматически.\n"
+                f"📡 <b>Панель:</b> <code>{panel_alias}</code>\n\n"
                 f"🔐 <b>Настройки подключения:</b>\n"
                 f"• Transport: <code>{config.vpn.transport}</code>\n"
                 f"• Security: <code>{config.vpn.security}</code>\n\n"
@@ -206,8 +212,14 @@ async def cmd_start(message: Message, state: FSMContext):
                     InlineKeyboardButton(text="🔑 Мои ключи", callback_data="cmd_myclients")
                 ]
             ])
+            
+            # Получаем информацию о текущей панели
+            current_panel = config.get_current_panel()
+            panel_alias = current_panel.alias if current_panel else "N/A"
+            
             await message.answer(
-                f"👤 <b>Пользователь:</b> {username or first_name}\n\n"
+                f"👤 <b>Пользователь:</b> {username or first_name}\n"
+                f"📡 <b>Панель:</b> <code>{panel_alias}</code>\n\n"
                 f"🔐 <b>Настройки подключения:</b>\n"
                 f"• Transport: <code>{config.vpn.transport}</code>\n"
                 f"• Security: <code>{config.vpn.security}</code>\n\n"
