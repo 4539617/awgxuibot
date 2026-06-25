@@ -3960,6 +3960,24 @@ install_3xui_v294() {
         echo -e "${YELLOW}ℹ️  Будет запрошен новый сертификат при установке${NC}\n"
     fi
     
+    # Очистка поврежденных сертификатов перед установкой
+    if [ "$USE_EXISTING_CERT" = false ] && [ -d "/root/.acme.sh/${SERVER_IP}_ecc" ]; then
+        echo -e "${YELLOW}🧹 Обнаружен поврежденный сертификат, удаляем...${NC}"
+        
+        # Проверяем целостность ключа
+        if [ -f "/root/.acme.sh/${SERVER_IP}_ecc/${SERVER_IP}.key" ]; then
+            if ! openssl rsa -in "/root/.acme.sh/${SERVER_IP}_ecc/${SERVER_IP}.key" -check -noout 2>/dev/null; then
+                echo -e "${YELLOW}⚠️  Приватный ключ поврежден, удаляем директорию сертификата${NC}"
+                rm -rf "/root/.acme.sh/${SERVER_IP}_ecc"
+                echo -e "${GREEN}✓ Поврежденный сертификат удален${NC}"
+            fi
+        else
+            echo -e "${YELLOW}⚠️  Приватный ключ отсутствует, удаляем директорию сертификата${NC}"
+            rm -rf "/root/.acme.sh/${SERVER_IP}_ecc"
+            echo -e "${GREEN}✓ Неполный сертификат удален${NC}"
+        fi
+    fi
+    
     echo -e "${YELLOW}📦 Загрузка и установка 3x-ui v2.9.4...${NC}\n"
     
     # Запускаем установку с выводом на экран и в файл одновременно
@@ -4286,8 +4304,29 @@ install_3xui_v3() {
     else
         if [ "$ENABLE_CERT_REUSE" != "true" ]; then
             echo -e "\n${YELLOW}ℹ️  Проверка существующих сертификатов отключена (ENABLE_CERT_REUSE не установлен)${NC}"
+            echo -e "${YELLOW}ℹ️  SSL сертификат будет пропущен (можно настроить позже)${NC}\n"
+        else
+            echo -e "${YELLOW}ℹ️  Существующий сертификат не найден${NC}"
+            echo -e "${YELLOW}ℹ️  Будет запрошен новый SSL сертификат для IP-адреса${NC}\n"
         fi
-        echo -e "${YELLOW}ℹ️  SSL сертификат будет пропущен (можно настроить позже)${NC}\n"
+    fi
+    
+    # Очистка поврежденных сертификатов перед установкой
+    if [ "$USE_EXISTING_CERT" = false ] && [ -n "$SERVER_IP" ] && [ -d "/root/.acme.sh/${SERVER_IP}_ecc" ]; then
+        echo -e "${YELLOW}🧹 Обнаружен поврежденный сертификат, удаляем...${NC}"
+        
+        # Проверяем целостность ключа
+        if [ -f "/root/.acme.sh/${SERVER_IP}_ecc/${SERVER_IP}.key" ]; then
+            if ! openssl rsa -in "/root/.acme.sh/${SERVER_IP}_ecc/${SERVER_IP}.key" -check -noout 2>/dev/null; then
+                echo -e "${YELLOW}⚠️  Приватный ключ поврежден, удаляем директорию сертификата${NC}"
+                rm -rf "/root/.acme.sh/${SERVER_IP}_ecc"
+                echo -e "${GREEN}✓ Поврежденный сертификат удален${NC}"
+            fi
+        else
+            echo -e "${YELLOW}⚠️  Приватный ключ отсутствует, удаляем директорию сертификата${NC}"
+            rm -rf "/root/.acme.sh/${SERVER_IP}_ecc"
+            echo -e "${GREEN}✓ Неполный сертификат удален${NC}"
+        fi
     fi
     
     # Установка через официальный скрипт
@@ -4300,11 +4339,22 @@ install_3xui_v3() {
     # Устанавливаем переменную окружения для пропуска SSL
     export ENABLE_CERT_REUSE="true"
     
+    # Определяем какую опцию SSL использовать
+    if [ "$ENABLE_CERT_REUSE" = "true" ]; then
+        # 2 - Let's Encrypt for IP Address
+        SSL_OPTION="2"
+        echo -e "${YELLOW}⚠ Будет запрошен SSL сертификат для IP-адреса (опция 2)${NC}"
+    else
+        # 4 - Skip SSL
+        SSL_OPTION="4"
+        echo -e "${YELLOW}⚠ SSL будет пропущен (опция 4)${NC}"
+    fi
+    
     # Автоматически отвечаем на вопросы установщика:
     # 1 - выбор SQLite
-    # 4 - пропуск SSL (Skip SSL)
-    # Добавляем больше пустых строк для обработки всех возможных вопросов
-    printf '1\n4\n\n\n\n\n\n\n\n\n\n' | bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh) 2>&1 | tee "$INSTALL_OUTPUT"
+    # $SSL_OPTION - выбор SSL (2 для Let's Encrypt IP или 4 для Skip)
+    # Добавляем IP адрес и пустые строки для обработки всех возможных вопросов
+    printf "1\n${SSL_OPTION}\n${SERVER_IP}\n\n\n\n\n\n\n\n\n" | bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh) 2>&1 | tee "$INSTALL_OUTPUT"
     
     # Проверка успешности установки
     if systemctl is-active --quiet x-ui; then
