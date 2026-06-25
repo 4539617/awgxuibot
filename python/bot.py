@@ -2103,8 +2103,13 @@ async def back_to_start_menu(callback_query: types.CallbackQuery, state: FSMCont
             ]
         ])
         
+        # Получаем информацию о текущей панели
+        current_panel = config.get_current_panel()
+        panel_alias = current_panel.alias if current_panel else "N/A"
+        
         text = (
-            f"👤 <b>Пользователь:</b> {username or first_name}\n\n"
+            f"👤 <b>Пользователь:</b> {username or first_name}\n"
+            f"📡 <b>Панель:</b> <code>{panel_alias}</code>\n\n"
             f"🔐 <b>Настройки подключения:</b>\n"
             f"• Transport: <code>{config.vpn.transport}</code>\n"
             f"• Security: <code>{config.vpn.security}</code>\n\n"

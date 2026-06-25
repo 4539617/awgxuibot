@@ -1152,8 +1152,9 @@ class XUIClient:
             headers['Content-Type'] = 'application/json'
             
             # Формируем данные для обновления (используем структуру из client)
+            # Важно: id должен быть UUID (строка), а не числовой ID из базы
             update_data = {
-                "id": client.get('id'),  # Используем числовой ID из базы
+                "id": client_uuid,  # UUID клиента (строка)
                 "email": email,
                 "enable": enable,
                 "flow": client.get('flow', ''),
