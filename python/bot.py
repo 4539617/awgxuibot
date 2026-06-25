@@ -875,8 +875,12 @@ async def enable_client(callback_query: types.CallbackQuery):
     client_uuid = callback_query.data.split('_', 1)[1]
     
     try:
+        # Получаем email клиента для v3 API
+        client = await xui_client.get_client_details(client_uuid)
+        email = client.get('email') if client else None
+        
         # Включаем клиента
-        success = await xui_client.update_client_status(client_uuid, True)
+        success = await xui_client.update_client_status(client_uuid, True, email)
         
         if success:
             await callback_query.answer("✅ Ключ включен")
@@ -901,8 +905,12 @@ async def disable_client(callback_query: types.CallbackQuery):
     client_uuid = callback_query.data.split('_', 1)[1]
     
     try:
+        # Получаем email клиента для v3 API
+        client = await xui_client.get_client_details(client_uuid)
+        email = client.get('email') if client else None
+        
         # Выключаем клиента
-        success = await xui_client.update_client_status(client_uuid, False)
+        success = await xui_client.update_client_status(client_uuid, False, email)
         
         if success:
             await callback_query.answer("⏸️ Ключ выключен")

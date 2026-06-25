@@ -1048,9 +1048,14 @@ class XUIClient:
 
             return None
     
-    async def update_client_status(self, client_uuid: str, enable: bool) -> bool:
-        """Включение/выключение клиента"""
+    async def update_client_status(self, client_uuid: str, enable: bool, email: str = None) -> bool:
+        """Включение/выключение клиента (универсальный метод для v2 и v3)"""
         try:
+            # Для v3 используем API
+            if self.config.xui.is_v3_new_api():
+                return await self._update_client_status_v3(client_uuid, enable, email)
+            
+            # Для v2 используем прямой доступ к SQLite
             # Получаем текущие настройки inbound
             sql_get = f"""sqlite3 {self.config.xui.db_path} "SELECT settings FROM inbounds WHERE id={self.config.xui.inbound_id};" """
             result = subprocess.run(sql_get, shell=True, capture_output=True, text=True)
@@ -1107,6 +1112,82 @@ class XUIClient:
                 
         except Exception as e:
             logger.error(f"Ошибка обновления статуса клиента: {e}")
+            return False
+    
+    async def _update_client_status_v3(self, client_uuid: str, enable: bool, email: str = None) -> bool:
+        """Обновление статуса клиента через v3 API"""
+        if not self.session:
+            if not await self.login():
+                return False
+        
+        try:
+            # Если email не передан, получаем его из деталей клиента
+            if not email:
+                # Получаем все клиенты и ищем по UUID
+                all_clients = await self.get_all_clients()
+                client_data = None
+                for client in all_clients:
+                    if client.get('uuid') == client_uuid:
+                        client_data = client
+                        email = client.get('email')
+                        break
+                
+                if not email:
+                    logger.error(f"Не удалось найти email для клиента {client_uuid}")
+                    return False
+            
+            # Получаем полные данные клиента
+            client = await self._get_client_details_v3(email)
+            if not client:
+                logger.error(f"Не удалось получить данные клиента {email}")
+                return False
+            
+            # Обновляем статус
+            client['enable'] = enable
+            
+            # Отправляем обновление через API
+            endpoint = f"{self.config.xui.url}/panel/api/inbounds/updateClient/{client_uuid}"
+            headers = await self._get_headers()
+            headers['Content-Type'] = 'application/json'
+            
+            # Формируем данные для обновления
+            update_data = {
+                "id": client_uuid,
+                "settings": json.dumps({
+                    "clients": [{
+                        "id": client_uuid,
+                        "email": email,
+                        "enable": enable,
+                        "flow": client.get('flow', ''),
+                        "limitIp": client.get('limitIp', 0),
+                        "totalGB": client.get('totalGB', 0),
+                        "expiryTime": client.get('expiryTime', 0),
+                        "subId": client.get('subId', ''),
+                        "tgId": client.get('tgId', ''),
+                        "reset": client.get('reset', 0)
+                    }]
+                })
+            }
+            
+            logger.info(f"🔄 Обновление статуса клиента {email} (UUID: {client_uuid}) -> enable={enable}")
+            
+            async with self.session.post(endpoint, headers=headers, json=update_data) as resp:
+                if resp.status == 200:
+                    result = await resp.json()
+                    if result.get('success'):
+                        status_text = "включен" if enable else "выключен"
+                        logger.info(f"✅ Клиент {email} {status_text}")
+                        return True
+                    else:
+                        logger.error(f"❌ API вернул success=false: {result.get('msg', 'Unknown error')}")
+                        return False
+                else:
+                    error_text = await resp.text()
+                    logger.error(f"❌ Ошибка обновления статуса: HTTP {resp.status}, {error_text}")
+                    return False
+                    
+        except Exception as e:
+            logger.error(f"Ошибка обновления статуса клиента v3: {e}")
             return False
     async def get_server_status(self) -> dict:
         """Получение статуса сервера (CPU, RAM, Disk, Network, Xray)"""
