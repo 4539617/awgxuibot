@@ -1200,22 +1200,17 @@ async def back_to_allclients(callback_query: types.CallbackQuery):
         import time
         user_id = callback_query.from_user.id
         
-        # Проверяем кеш
-        should_refresh = True
-        all_clients = []
+        # Всегда очищаем кеш при возврате из информации о ключе
+        # для актуальности данных после включения/выключения
         if user_id in allclients_cache:
-            cache_time = allclients_cache[user_id]['time']
-            if time.time() - cache_time < 30:  # Кеш действителен 30 секунд
-                should_refresh = False
-                all_clients = allclients_cache[user_id]['data']
+            del allclients_cache[user_id]
         
-        # Обновляем данные если нужно
-        if should_refresh:
-            all_clients = await xui_client.get_all_clients()
-            allclients_cache[user_id] = {
-                'time': time.time(),
-                'data': all_clients
-            }
+        # Получаем свежие данные
+        all_clients = await xui_client.get_all_clients()
+        allclients_cache[user_id] = {
+            'time': time.time(),
+            'data': all_clients
+        }
         
         # Получаем информацию о текущей панели
         current_panel = config.get_current_panel()
@@ -1226,7 +1221,8 @@ async def back_to_allclients(callback_query: types.CallbackQuery):
         # Подсчитываем статистику
         if not all_clients:
             # Показываем полное окно даже если ключей нет
-            text = panel_info
+            text = "📋 <b>Все ключи</b>\n\n"
+            text += panel_info
             text += f"🔑 Всего ключей: 0\n"
             text += f"✅ Активных: 0\n"
             text += f"⏸️ Неактивных: 0\n"
@@ -1270,7 +1266,8 @@ async def back_to_allclients(callback_query: types.CallbackQuery):
                 return f"{bytes_value / (1024**3):.2f} GB"
         
         # Обновляем текст статистики
-        text = panel_info
+        text = "📋 <b>Все ключи</b>\n\n"
+        text += panel_info
         text += f"🔑 Всего ключей: {total_count}\n"
         text += f"✅ Активных: {active_count}\n"
         text += f"⏸️ Неактивных: {inactive_count}\n"
