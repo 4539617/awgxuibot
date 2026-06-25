@@ -5271,7 +5271,6 @@ show_menu() {
     echo -e "${BLUE}---${NC}"
     echo -e "${YELLOW}Системные утилиты:${NC}"
     echo -e "${GREEN}17)${NC} Анализ диска и памяти"
-    echo -e "${GREEN}18)${NC} Миграция .env → config.yaml"
     echo -e "${BLUE}---${NC}"
     echo -e "${RED}99)${NC} Удалить ВСЁ (AWG + Боты + 3x-ui)"
     echo -e "${GREEN}0)${NC} Выход"
@@ -5477,44 +5476,6 @@ while true; do
                 bash disk_analyzer.sh
             else
                 echo -e "${RED}❌ Файл disk_analyzer.sh не найден!${NC}"
-            fi
-            ;;
-        18)
-            echo -e "\n${BLUE}========================================${NC}"
-            echo -e "${BLUE}   Миграция .env → config.yaml${NC}"
-            echo -e "${BLUE}========================================${NC}\n"
-            
-            if [ ! -f ".env" ]; then
-                echo -e "${RED}❌ Файл .env не найден${NC}"
-                echo -e "${YELLOW}Миграция не требуется${NC}"
-            else
-                echo -e "${YELLOW}📋 Найден файл .env${NC}"
-                echo -e "${YELLOW}Будет выполнена миграция данных в config.yaml${NC}\n"
-                
-                read -p "Продолжить миграцию? (Enter - да, 0 - отмена): " migrate_choice
-                if [[ "$migrate_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Миграция отменена${NC}"
-                else
-                    migrate_env_to_config_yaml
-                    
-                    if [ $? -eq 0 ]; then
-                        echo -e "\n${GREEN}✅ Миграция успешно завершена${NC}"
-                        echo -e "${YELLOW}📝 Проверьте config.yaml и убедитесь, что все данные корректны${NC}"
-                        echo -e "${YELLOW}💡 После проверки можно удалить .env:${NC}"
-                        echo -e "${BLUE}   rm .env${NC}\n"
-                        
-                        read -p "Показать содержимое config.yaml? (Enter - да, 0 - нет): " show_choice
-                        if [[ "$show_choice" != "0" ]]; then
-                            echo -e "\n${BLUE}========================================${NC}"
-                            echo -e "${BLUE}   Содержимое config.yaml:${NC}"
-                            echo -e "${BLUE}========================================${NC}"
-                            cat config.yaml
-                            echo -e "${BLUE}========================================${NC}"
-                        fi
-                    else
-                        echo -e "\n${RED}❌ Ошибка миграции${NC}"
-                    fi
-                fi
             fi
             ;;
         99)
