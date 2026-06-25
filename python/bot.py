@@ -896,9 +896,8 @@ async def enable_client(callback_query: types.CallbackQuery):
         
         if success:
             await callback_query.answer("✅ Ключ включен")
-            # Обновляем информацию о клиенте
-            callback_query.data = f"allclient_{client_uuid}"
-            await show_all_client_details(callback_query)
+            # Обновляем информацию о клиенте - получаем свежие данные
+            await refresh_client_details(callback_query, client_uuid)
         else:
             await callback_query.answer("❌ Ошибка включения ключа", show_alert=True)
         
@@ -926,15 +925,83 @@ async def disable_client(callback_query: types.CallbackQuery):
         
         if success:
             await callback_query.answer("⏸️ Ключ выключен")
-            # Обновляем информацию о клиенте
-            callback_query.data = f"allclient_{client_uuid}"
-            await show_all_client_details(callback_query)
+            # Обновляем информацию о клиенте - получаем свежие данные
+            await refresh_client_details(callback_query, client_uuid)
         else:
             await callback_query.answer("❌ Ошибка выключения ключа", show_alert=True)
         
     except Exception as e:
         logger.error(f"Ошибка выключения клиента: {e}")
         await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
+
+
+async def refresh_client_details(callback_query: types.CallbackQuery, client_uuid: str):
+    """Обновить информацию о клиенте после изменения статуса"""
+    try:
+        # Получаем обновленные детали клиента
+        client = await xui_client.get_client_details(client_uuid)
+        
+        if not client:
+            await callback_query.message.edit_text("❌ Ключ не найден!")
+            return
+        
+        # Определяем статус с иконкой
+        if client['status'] == 'active':
+            status_text = "✅ Активен"
+        elif client['status'] == 'inactive':
+            status_text = "⏸️ Неактивен (выключен)"
+        else:  # expired
+            status_text = "⏰ Просрочен"
+        
+        # Форматируем трафик
+        total_gb = client['totalGB']
+        if total_gb > 0:
+            traffic_text = f"{total_gb / (1024**3):.2f} GB"
+        else:
+            traffic_text = "Безлимит"
+        
+        # Форматируем срок окончания
+        expiry_time = client['expiryTime']
+        if expiry_time > 0:
+            from datetime import datetime
+            expiry_date = datetime.fromtimestamp(expiry_time / 1000)
+            expiry_text = expiry_date.strftime("%Y-%m-%d %H:%M")
+        else:
+            expiry_text = "Бессрочно"
+        
+        # Формируем текст
+        text = f"📋 <b>Информация о ключе</b>\n\n"
+        text += f"{status_text}\n"
+        text += f"📧 <b>Email:</b> <code>{client['email']}</code>\n"
+        text += f"📝 <b>Комментарий:</b> {client['comment'] if client['comment'] else 'Не указан'}\n"
+        text += f"📊 <b>Общий трафик:</b> {traffic_text}\n"
+        text += f"📅 <b>Срок окончания:</b> {expiry_text}\n"
+        
+        # Создаем кнопки управления
+        buttons = []
+        
+        # Кнопки "Показать ключ" и "Показать QR" в одной строке
+        buttons.append([
+            InlineKeyboardButton(text="🔑 Показать ключ", callback_data=f"showkey_{client_uuid}"),
+            InlineKeyboardButton(text="📱 Показать QR", callback_data=f"showqr_{client_uuid}")
+        ])
+        
+        # Кнопки включить/выключить в зависимости от статуса
+        if client['enable']:
+            buttons.append([InlineKeyboardButton(text="⏸️ Выключить ключ", callback_data=f"disable_{client_uuid}")])
+        else:
+            buttons.append([InlineKeyboardButton(text="✅ Включить ключ", callback_data=f"enable_{client_uuid}")])
+        
+        # Кнопка "Назад"
+        buttons.append([InlineKeyboardButton(text="🔙 Назад к списку", callback_data="back_to_allclients")])
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+        
+        await callback_query.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+        
+    except Exception as e:
+        logger.error(f"Ошибка обновления информации о клиенте: {e}")
+        await callback_query.message.edit_text(f"❌ Ошибка обновления: {str(e)}")
 
 
 @dp.callback_query(lambda c: c.data and c.data.startswith('showlink_'))
