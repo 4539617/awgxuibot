@@ -1145,31 +1145,29 @@ class XUIClient:
             # Обновляем статус
             client['enable'] = enable
             
-            # Отправляем обновление через API
-            endpoint = f"{self.config.xui.url}/panel/api/inbounds/updateClient/{client_uuid}"
+            # Отправляем обновление через API v3
+            # Используем endpoint для обновления клиента по email
+            endpoint = f"{self.config.xui.url}/panel/api/clients/update/{email}"
             headers = await self._get_headers()
             headers['Content-Type'] = 'application/json'
             
-            # Формируем данные для обновления
+            # Формируем данные для обновления (используем структуру из client)
             update_data = {
-                "id": client_uuid,
-                "settings": json.dumps({
-                    "clients": [{
-                        "id": client_uuid,
-                        "email": email,
-                        "enable": enable,
-                        "flow": client.get('flow', ''),
-                        "limitIp": client.get('limitIp', 0),
-                        "totalGB": client.get('totalGB', 0),
-                        "expiryTime": client.get('expiryTime', 0),
-                        "subId": client.get('subId', ''),
-                        "tgId": client.get('tgId', ''),
-                        "reset": client.get('reset', 0)
-                    }]
-                })
+                "id": client.get('id'),  # Используем числовой ID из базы
+                "email": email,
+                "enable": enable,
+                "flow": client.get('flow', ''),
+                "limitIp": client.get('limitIp', 0),
+                "totalGB": client.get('totalGB', 0),
+                "expiryTime": client.get('expiryTime', 0),
+                "subId": client.get('subId', ''),
+                "tgId": client.get('tgId', ''),
+                "reset": client.get('reset', 0)
             }
             
             logger.info(f"🔄 Обновление статуса клиента {email} (UUID: {client_uuid}) -> enable={enable}")
+            logger.info(f"📤 Endpoint: {endpoint}")
+            logger.info(f"📦 Данные: {json.dumps(update_data, indent=2)}")
             
             async with self.session.post(endpoint, headers=headers, json=update_data) as resp:
                 if resp.status == 200:
