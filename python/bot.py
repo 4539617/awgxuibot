@@ -194,7 +194,7 @@ async def cmd_start(message: Message, state: FSMContext):
                 )
             
             await message.answer(
-                f"👑 Администратор\n {username or first_name}\n\n"
+                f"👑 Администратор\n\n\n"
                 f"🔐 <b>Настройки подключения:</b>\n"
                 f"• Transport: <code>{transport}</code>\n"
                 f"• Security: <code>{security}</code>"
@@ -2137,7 +2137,7 @@ async def back_to_start_menu(callback_query: types.CallbackQuery, state: FSMCont
             )
         
         text = (
-            f"👑 Администратор\n {username or first_name}\n\n"
+            f"👑 Администратор\n\n\n"
             f"🔐 <b>Настройки подключения:</b>\n"
             f"• Transport: <code>{transport}</code>\n"
             f"• Security: <code>{security}</code>"
