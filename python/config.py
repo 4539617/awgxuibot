@@ -1047,6 +1047,24 @@ class Config:
             reality_short_id=current_panel.reality_short_id,
             xhttp_mode=self.common.xhttp_mode
         )
+    def reload_config(self):
+        """Перезагрузить конфигурацию из YAML файла и обновить все зависимости"""
+        logger.info("🔄 Перезагрузка конфигурации Config...")
+        
+        # Перезагружаем config_manager
+        self.config_manager.reload_config()
+        
+        # Обновляем ссылку на common
+        self.common = self.config_manager.common
+        
+        # Обновляем legacy properties для обратной совместимости
+        self._setup_legacy_properties()
+        
+        # Обновляем VPN конфигурацию
+        self.refresh_vpn_config()
+        
+        logger.info("✅ Конфигурация Config успешно перезагружена")
+    
     
     def is_allowed(self, user_id: int) -> bool:
         """Проверить разрешен ли пользователь"""
