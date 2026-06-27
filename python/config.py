@@ -205,6 +205,12 @@ class ConfigManager:
         except Exception as e:
             logger.error(f"❌ Ошибка загрузки config.yaml: {e}", exc_info=True)
             raise
+    def reload_config(self):
+        """Перезагрузить конфигурацию из YAML файла"""
+        logger.info("🔄 Перезагрузка конфигурации из config.yaml...")
+        self._load_config()
+        logger.info("✅ Конфигурация успешно перезагружена")
+    
     
     def _load_from_env(self):
         """Загрузить конфигурацию из .env (НЕ ИСПОЛЬЗУЕТСЯ - только для миграции)"""

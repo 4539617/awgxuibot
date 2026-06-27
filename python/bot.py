@@ -2900,9 +2900,12 @@ async def show_panels_list(callback_query: types.CallbackQuery, state: FSMContex
 @dp.callback_query(lambda c: c.data == "refresh_panels")
 async def refresh_panels_status(callback_query: types.CallbackQuery, state: FSMContext):
     """Обновить статусы всех панелей"""
-    await callback_query.answer("🔄 Обновление статусов...")
+    await callback_query.answer("🔄 Обновление конфигурации...")
     
-    # Просто вызываем show_panels_list напрямую
+    # Перезагружаем config.yaml
+    config.reload_config()
+    
+    # Показываем обновленный список панелей
     await show_panels_list(callback_query, state)
 
 
