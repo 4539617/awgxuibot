@@ -244,13 +244,18 @@ class PanelMonitor:
                 logger.debug(f"⏭️ Пропуск панели {panel_id} (отключена или не найдена)")
                 continue
             
-            # Фильтруем: только v3+ или локальные панели
+            # Локальные панели используем всегда (работают через БД)
             is_local = getattr(panel_config, 'is_local', False)
-            is_v3_or_higher = panel_config.is_v3() if hasattr(panel_config, 'is_v3') else False
             
-            if not is_v3_or_higher and not is_local:
-                logger.debug(f"⏭️ Пропуск панели {panel_id} (v2.x, не локальная, нет API)")
-                continue
+            if is_local:
+                logger.debug(f"✅ Локальная панель {panel_id} доступна для failover")
+            else:
+                # Для удаленных панелей проверяем версию (нужен API v3+)
+                is_v3_or_higher = panel_config.is_v3() if hasattr(panel_config, 'is_v3') else False
+                
+                if not is_v3_or_higher:
+                    logger.debug(f"⏭️ Пропуск панели {panel_id} (v2.x, удаленная, нет API)")
+                    continue
             
             # Проверяем доступность
             logger.info(f"🔍 Проверка доступности панели {panel_id}...")

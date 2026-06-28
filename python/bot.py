@@ -2305,10 +2305,17 @@ async def callback_cmd_myclients(callback_query: types.CallbackQuery, state: FSM
         # Получаем ключи пользователя из X-UI по username
         clients = await xui_client.get_user_clients_by_username(username)
         
+        # Получаем информацию о текущей панели
+        current_panel = config.get_current_panel()
+        panel_info = ""
+        if current_panel:
+            panel_info = f"📡 <b>Панель:</b> {current_panel.alias} <code>v{current_panel.xui_version}</code>\n\n"
+        
         # Подсчитываем статистику
         if not clients:
             # Показываем полное окно даже если ключей нет
             text = f"🔑 <b>Мои ключи (0)</b>\n\n"
+            text += panel_info
             text += f"✅ Активных: 0\n"
             text += f"⏸️ Неактивных: 0\n"
             text += f"⏰ Просроченных: 0\n\n"
@@ -2372,6 +2379,7 @@ async def callback_cmd_myclients(callback_query: types.CallbackQuery, state: FSM
         keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
         
         text = f"🔑 <b>Мои ключи ({len(clients)})</b>\n\n"
+        text += panel_info
         text += f"✅ Активных: {active_count}\n"
         text += f"⏸️ Неактивных: {inactive_count}\n"
         text += f"⏰ Просроченных: {expired_count}\n\n"
@@ -2435,6 +2443,12 @@ async def refresh_myclients(callback_query: types.CallbackQuery, state: FSMConte
             await callback_query.answer("❌ У вас не установлен username", show_alert=True)
             return
         
+        # Получаем информацию о текущей панели
+        current_panel = config.get_current_panel()
+        panel_info = ""
+        if current_panel:
+            panel_info = f"📡 <b>Панель:</b> {current_panel.alias} <code>v{current_panel.xui_version}</code>\n\n"
+        
         # Получаем ключи пользователя из X-UI по username
         clients = await xui_client.get_user_clients_by_username(username)
         
@@ -2442,6 +2456,7 @@ async def refresh_myclients(callback_query: types.CallbackQuery, state: FSMConte
         if not clients:
             # Показываем полное окно даже если ключей нет
             text = f"🔑 <b>Мои ключи (0)</b>\n\n"
+            text += panel_info
             text += f"✅ Активных: 0\n"
             text += f"⏸️ Неактивных: 0\n"
             text += f"⏰ Просроченных: 0\n\n"
@@ -2499,6 +2514,7 @@ async def refresh_myclients(callback_query: types.CallbackQuery, state: FSMConte
         keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
         
         text = f"🔑 <b>Мои ключи ({len(clients)})</b>\n\n"
+        text += panel_info
         text += f"✅ Активных: {active_count}\n"
         text += f"⏸️ Неактивных: {inactive_count}\n"
         text += f"⏰ Просроченных: {expired_count}\n\n"
@@ -2934,14 +2950,18 @@ async def select_panel_to_connect(callback_query: types.CallbackQuery, state: FS
         # Показываем только панели v3+ (с API) или локальные панели (работают через БД)
         keyboard_buttons = []
         for panel_id, panel_config in panels.items():
-            # Фильтруем: только v3+ или локальные панели
+            # Локальные панели показываем всегда (работают через БД)
             is_local = getattr(panel_config, 'is_local', False)
-            is_v3_or_higher = panel_config.is_v3() if hasattr(panel_config, 'is_v3') else False
             
-            # Пропускаем панели v2.x, если они не локальные
-            if not is_v3_or_higher and not is_local:
-                logger.debug(f"⏭️ Пропуск панели {panel_id} (v2.x, не локальная)")
-                continue
+            if is_local:
+                logger.debug(f"✅ Локальная панель {panel_id} добавлена в список")
+            else:
+                # Для удаленных панелей проверяем версию (нужен API v3+)
+                is_v3_or_higher = panel_config.is_v3() if hasattr(panel_config, 'is_v3') else False
+                
+                if not is_v3_or_higher:
+                    logger.debug(f"⏭️ Пропуск панели {panel_id} (v2.x, удаленная, нет API)")
+                    continue
             
             alias = getattr(panel_config, 'alias', panel_id)
             is_current = panel_id == current_panel_id
