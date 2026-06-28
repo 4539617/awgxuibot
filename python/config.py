@@ -186,6 +186,7 @@ class ConfigManager:
                     panel_id=panel_id,
                     alias=panel_data.get('alias', panel_id),
                     enabled=panel_data.get('enabled', True),
+                    is_local=panel_data.get('is_local', False),
                     xui_version=panel_data.get('xui_version', '3.3.1'),
                     xui_url=panel_data.get('xui_url', ''),
                     xui_username=panel_data.get('xui_username', ''),
