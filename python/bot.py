@@ -14,6 +14,7 @@ from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 import sqlite3
 from config import config
 from utils import XUIClient, generate_vless_link, get_client_link, setup_logging
+from panel_monitor import PanelMonitor
 
 setup_logging(config.logging)
 logger = logging.getLogger(__name__)
@@ -3268,7 +3269,46 @@ async def main():
         except Exception as e:
             logger.error(f"❌ Ошибка обновления параметров панели при запуске: {e}")
         
-        await dp.start_polling(bot)
+        # Инициализация и запуск мониторинга панелей
+        panel_monitor = None
+        monitoring_task = None
+        
+        try:
+            # Создаем экземпляр монитора панелей
+            panel_monitor = PanelMonitor(
+                config_manager=config.panel_manager,
+                bot=bot,
+                admin_ids=config.common.admin_ids
+            )
+            
+            # Запускаем мониторинг в фоновой задаче
+            if panel_monitor.enabled:
+                logger.info("🔍 Запуск фонового мониторинга панелей...")
+                monitoring_task = asyncio.create_task(panel_monitor.start_monitoring())
+                logger.info("✅ Мониторинг панелей запущен")
+            else:
+                logger.info("⏸️ Мониторинг панелей отключен в конфигурации")
+            
+            # Запуск polling бота
+            await dp.start_polling(bot)
+            
+        finally:
+            # Graceful shutdown мониторинга
+            if panel_monitor and monitoring_task:
+                logger.info("🛑 Остановка мониторинга панелей...")
+                await panel_monitor.stop_monitoring()
+                
+                # Ожидаем завершения задачи мониторинга
+                if not monitoring_task.done():
+                    try:
+                        await asyncio.wait_for(monitoring_task, timeout=5.0)
+                    except asyncio.TimeoutError:
+                        logger.warning("⚠️ Таймаут при остановке мониторинга")
+                        monitoring_task.cancel()
+                    except asyncio.CancelledError:
+                        pass
+                
+                logger.info("✅ Мониторинг панелей остановлен")
     else:
         logger.error("❌ Не удалось подключиться к X-UI")
         return

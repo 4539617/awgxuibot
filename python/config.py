@@ -40,6 +40,12 @@ class CommonConfig:
     log_max_size_mb: int = 10
     log_backup_count: int = 5
     allow_user_dns_queries: bool = False
+    # Panel Monitoring
+    panel_monitoring_enabled: bool = True
+    panel_check_interval: int = 30
+    panel_failure_threshold: int = 3
+    panel_recovery_threshold: int = 3
+    panel_check_timeout: int = 5
 
 
 @dataclass
@@ -164,7 +170,13 @@ class ConfigManager:
                 log_file_path=common_data.get('log_file_path', '/app/logs/bot.log'),
                 log_max_size_mb=common_data.get('log_max_size_mb', 10),
                 log_backup_count=common_data.get('log_backup_count', 5),
-                allow_user_dns_queries=common_data.get('allow_user_dns_queries', False)
+                allow_user_dns_queries=common_data.get('allow_user_dns_queries', False),
+                # Panel Monitoring
+                panel_monitoring_enabled=common_data.get('panel_monitoring_enabled', True),
+                panel_check_interval=common_data.get('panel_check_interval', 30),
+                panel_failure_threshold=common_data.get('panel_failure_threshold', 3),
+                panel_recovery_threshold=common_data.get('panel_recovery_threshold', 3),
+                panel_check_timeout=common_data.get('panel_check_timeout', 5)
             )
             
             # Загружаем панели
