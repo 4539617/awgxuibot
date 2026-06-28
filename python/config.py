@@ -556,7 +556,7 @@ class ConfigManager:
                 async with session.post(
                     login_url,
                     json={'username': panel_config.xui_username, 'password': panel_config.xui_password},
-                    ssl=False
+                    ssl=True
                 ) as response:
                     return response.status in [200, 401, 403]
         except:
