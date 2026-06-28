@@ -2857,6 +2857,7 @@ async def show_panels_list(callback_query: types.CallbackQuery, state: FSMContex
         
         for panel_id, panel_config in panels.items():
             alias = getattr(panel_config, 'alias', panel_id)
+            version = getattr(panel_config, 'xui_version', 'N/A')
             is_current = panel_id == current_panel_id
             is_online = statuses.get(panel_id, False)
             
@@ -2865,7 +2866,7 @@ async def show_panels_list(callback_query: types.CallbackQuery, state: FSMContex
             status_icon = "✅" if is_online else "❌"
             status_text = "Доступна" if is_online else "Недоступна"
             
-            text += f"{current_icon} <b>{alias}</b>\n"
+            text += f"{current_icon} <b>{alias}</b> <code>v{version}</code>\n"
             text += f"   {status_icon} {status_text}"
             if is_current:
                 text += " (Текущая)"
@@ -2930,8 +2931,18 @@ async def select_panel_to_connect(callback_query: types.CallbackQuery, state: FS
             return
         
         # Формируем кнопки для выбора панели
+        # Показываем только панели v3+ (с API) или локальные панели (работают через БД)
         keyboard_buttons = []
         for panel_id, panel_config in panels.items():
+            # Фильтруем: только v3+ или локальные панели
+            is_local = getattr(panel_config, 'is_local', False)
+            is_v3_or_higher = panel_config.is_v3() if hasattr(panel_config, 'is_v3') else False
+            
+            # Пропускаем панели v2.x, если они не локальные
+            if not is_v3_or_higher and not is_local:
+                logger.debug(f"⏭️ Пропуск панели {panel_id} (v2.x, не локальная)")
+                continue
+            
             alias = getattr(panel_config, 'alias', panel_id)
             is_current = panel_id == current_panel_id
             

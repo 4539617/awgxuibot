@@ -244,6 +244,14 @@ class PanelMonitor:
                 logger.debug(f"⏭️ Пропуск панели {panel_id} (отключена или не найдена)")
                 continue
             
+            # Фильтруем: только v3+ или локальные панели
+            is_local = getattr(panel_config, 'is_local', False)
+            is_v3_or_higher = panel_config.is_v3() if hasattr(panel_config, 'is_v3') else False
+            
+            if not is_v3_or_higher and not is_local:
+                logger.debug(f"⏭️ Пропуск панели {panel_id} (v2.x, не локальная, нет API)")
+                continue
+            
             # Проверяем доступность
             logger.info(f"🔍 Проверка доступности панели {panel_id}...")
             is_available = await self.config_manager.check_panel_status(panel_config)
