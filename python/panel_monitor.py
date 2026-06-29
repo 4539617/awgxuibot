@@ -29,8 +29,8 @@ class PanelMonitor:
     
     Функции:
     - Проверка текущей панели каждые N секунд
-    - Переключение после N последовательных неудач
-    - Автоматический возврат на default_panel после восстановления
+    - Переключение после N последовательных неудач на следующую доступную панель
+    - Поддержка локальных панелей (v2.x и v3.x) и удаленных панелей (только v3.x)
     - Уведомления администраторов о переключениях
     """
     
@@ -51,7 +51,6 @@ class PanelMonitor:
         self.enabled = config_manager.common.panel_monitoring_enabled
         self.check_interval = config_manager.common.panel_check_interval
         self.failure_threshold = config_manager.common.panel_failure_threshold
-        self.recovery_threshold = config_manager.common.panel_recovery_threshold
         self.check_timeout = config_manager.common.panel_check_timeout
         
         # Состояние панелей
@@ -73,8 +72,7 @@ class PanelMonitor:
         logger.info(f"  - Мониторинг: {'✅ Включен' if self.enabled else '❌ Отключен'}")
         logger.info(f"  - Интервал проверки: {self.check_interval}с")
         logger.info(f"  - Порог неудач: {self.failure_threshold}")
-        logger.info(f"  - Порог восстановления: {self.recovery_threshold}")
-        logger.info(f"  - Default панель: {self.default_panel_id}")
+        logger.info(f"  - Поддержка: локальные панели (v2+v3), удаленные (только v3)")
     
     def _initialize_panel_states(self):
         """Инициализация состояний всех панелей"""
@@ -143,10 +141,6 @@ class PanelMonitor:
                 else:
                     await self._handle_panel_unavailable(current_panel_id)
                 
-                # Проверка восстановления default_panel (если мы не на ней)
-                if current_panel_id != self.default_panel_id:
-                    await self._check_default_panel_recovery()
-                
             except Exception as e:
                 logger.error(f"❌ Ошибка в цикле мониторинга: {e}", exc_info=True)
             
@@ -195,7 +189,7 @@ class PanelMonitor:
         
         # Детальное логирование только для отладки
         if state.consecutive_successes <= 3:
-            logger.debug(f"✅ Панель {panel_id}: доступна ({state.consecutive_successes}/{self.recovery_threshold} успехов)")
+            logger.debug(f"✅ Панель {panel_id}: доступна")
     
     async def _handle_panel_unavailable(self, panel_id: str):
         """Обработка недоступной панели"""
@@ -288,58 +282,6 @@ class PanelMonitor:
             f"⚠️ Требуется немедленное вмешательство.\n\n"
             f"⏰ Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         )
-    
-    async def _check_default_panel_recovery(self):
-        """Проверка восстановления default_panel для автоматического возврата"""
-        if not self.default_panel_id:
-            return
-        
-        default_panel = self.config_manager.get_panel(self.default_panel_id)
-        if not default_panel:
-            return
-        
-        # Проверяем доступность default_panel
-        is_available = await self.config_manager.check_panel_status(default_panel)
-        
-        if self.default_panel_id not in self.panel_states:
-            self.panel_states[self.default_panel_id] = PanelState(panel_id=self.default_panel_id)
-        
-        state = self.panel_states[self.default_panel_id]
-        
-        if is_available:
-            state.consecutive_successes += 1
-            state.consecutive_failures = 0
-            successes = state.consecutive_successes
-            
-            if not state.is_available:
-                logger.info(f"✅ Default панель {self.default_panel_id} восстановлена")
-                state.is_available = True
-                state.last_status_change = datetime.now()
-            
-            logger.debug(f"✅ Default панель {self.default_panel_id} доступна ({successes}/{self.recovery_threshold})")
-            
-            # Проверяем достижение порога для восстановления
-            if successes >= self.recovery_threshold:
-                logger.info(f"🔄 Default панель восстановлена {successes} раз подряд. Переключаемся обратно...")
-                current_panel_id = self.config_manager.get_current_panel_id()
-                success = await self._switch_to_panel(self.default_panel_id, current_panel_id)
-                
-                if success:
-                    await self._notify_admins(
-                        f"✅ <b>Восстановление default панели</b>\n\n"
-                        f"🔄 Автоматический возврат на default панель\n"
-                        f"📡 Панель: <b>{default_panel.alias}</b>\n"
-                        f"🆔 ID: <code>{self.default_panel_id}</code>\n\n"
-                        f"⏰ Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-                    )
-                    # Сбрасываем счетчик после успешного переключения
-                    state.consecutive_successes = 0
-        else:
-            state.consecutive_successes = 0
-            state.consecutive_failures += 1
-            if state.is_available:
-                state.is_available = False
-                state.last_status_change = datetime.now()
     
     async def _switch_to_panel(self, target_panel_id: str, from_panel_id: str) -> bool:
         """
@@ -438,8 +380,6 @@ class PanelMonitor:
             'running': self.running,
             'check_interval': self.check_interval,
             'failure_threshold': self.failure_threshold,
-            'recovery_threshold': self.recovery_threshold,
-            'default_panel_id': self.default_panel_id,
             'current_panel_id': self.config_manager.get_current_panel_id(),
             'panel_states': {
                 panel_id: {

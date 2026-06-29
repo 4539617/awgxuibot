@@ -44,7 +44,6 @@ class CommonConfig:
     panel_monitoring_enabled: bool = True
     panel_check_interval: int = 30
     panel_failure_threshold: int = 3
-    panel_recovery_threshold: int = 3
     panel_check_timeout: int = 5
 
 
@@ -175,7 +174,6 @@ class ConfigManager:
                 panel_monitoring_enabled=common_data.get('panel_monitoring_enabled', True),
                 panel_check_interval=common_data.get('panel_check_interval', 30),
                 panel_failure_threshold=common_data.get('panel_failure_threshold', 3),
-                panel_recovery_threshold=common_data.get('panel_recovery_threshold', 3),
                 panel_check_timeout=common_data.get('panel_check_timeout', 5)
             )
             
