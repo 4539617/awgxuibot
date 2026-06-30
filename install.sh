@@ -2637,14 +2637,18 @@ select_xui_version() {
                 install_3xui_latest
             else
                 echo -e "${GREEN}Отменено. Устанавливаем v3.x...${NC}"
-                NONINTERACTIVE=1; install_3xui_v3; unset NONINTERACTIVE
+                NONINTERACTIVE=1
+                install_3xui_v3
+                return
             fi
             ;;
         3)
             echo -e "\n${GREEN}✓ Установка 3x-ui v3.x с поддержкой API${NC}"
             echo -e "${YELLOW}Эта версия полностью поддерживается ботом через API${NC}"
             echo -e "${YELLOW}API токен будет автоматически извлечен и сохранен${NC}\n"
-            NONINTERACTIVE=1; install_3xui_v3; unset NONINTERACTIVE
+            NONINTERACTIVE=1
+            install_3xui_v3
+            return
             ;;
         0)
             echo -e "${YELLOW}Отменено${NC}"
@@ -2653,7 +2657,9 @@ select_xui_version() {
         *)
             echo -e "${YELLOW}Неверный выбор. Устанавливаем v3.x по умолчанию...${NC}"
             sleep 2
-            NONINTERACTIVE=1; install_3xui_v3; unset NONINTERACTIVE
+            NONINTERACTIVE=1
+            install_3xui_v3
+            return
             ;;
     esac
 }
@@ -5136,9 +5142,8 @@ while true; do
                     continue
                 fi
             fi
-            NONINTERACTIVE=1
+            export NONINTERACTIVE=1
             install_3xui_v3
-            exit 0
             ;;
         4)
             sync_repository
