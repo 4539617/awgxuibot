@@ -210,77 +210,6 @@ create_config_if_not_exists() {
     fi
 }
 
-# Функция создания .env если не существует (для обратной совместимости)
-# DEPRECATED: Используйте create_config_if_not_exists
-create_env_if_not_exists() {
-    echo -e "${YELLOW}⚠️  Функция create_env_if_not_exists устарела${NC}"
-    echo -e "${YELLOW}📝 Создание config.yaml вместо .env...${NC}"
-    create_config_if_not_exists
-}
-
-# Функция обновления значения в .env
-update_env_value() {
-    local key=$1
-    local value=$2
-    
-    if grep -q "^${key}=" .env 2>/dev/null; then
-        # Обновляем существующее значение
-        sed -i "s|^${key}=.*|${key}=${value}|" .env
-    else
-        # Убеждаемся, что файл заканчивается переносом строки
-        [ -n "$(tail -c1 .env)" ] && echo "" >> .env
-        # Добавляем новое значение без лишнего переноса
-        printf "%s=%s\n" "${key}" "${value}" >> .env
-    fi
-    
-    # Если обновляется XUI_URL, автоматически обновляем SERVER_ADDRESS и TLS_SNI
-    if [ "$key" = "XUI_URL" ] && [ -n "$value" ]; then
-        # Извлекаем домен/IP из URL (например: https://websrvinfo.run:48531/path -> websrvinfo.run)
-        local domain=$(echo "$value" | sed -E 's|^https?://([^:/]+).*|\1|')
-        
-        if [ -n "$domain" ] && [ "$domain" != "localhost" ] && [ "$domain" != "127.0.0.1" ]; then
-            # Проверяем, является ли это доменом (не IP адресом)
-            # IP адрес содержит только цифры и точки
-            if [[ ! "$domain" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-                # Это домен, обновляем SERVER_ADDRESS и TLS_SNI
-                echo -e "${YELLOW}🔄 Обнаружен домен в XUI_URL: ${domain}${NC}"
-                
-                # Получаем текущий SERVER_ADDRESS
-                local current_server_address=$(get_config_value "SERVER_ADDRESS")
-                
-                # Обновляем SERVER_ADDRESS если он отличается от домена
-                if [ "$current_server_address" != "$domain" ]; then
-                    echo -e "${YELLOW}🔄 Обновление SERVER_ADDRESS: ${current_server_address} -> ${domain}${NC}"
-                    if grep -q "^SERVER_ADDRESS=" .env 2>/dev/null; then
-                        sed -i "s|^SERVER_ADDRESS=.*|SERVER_ADDRESS=${domain}|" .env
-                    else
-                        echo "SERVER_ADDRESS=${domain}" >> .env
-                    fi
-                fi
-                
-                # Обновляем TLS_SNI если он пустой или отличается
-                local current_tls_sni=$(get_env_value "TLS_SNI")
-                if [ -z "$current_tls_sni" ] || [ "$current_tls_sni" != "$domain" ]; then
-                    echo -e "${YELLOW}🔄 Обновление TLS_SNI: ${current_tls_sni} -> ${domain}${NC}"
-                    if grep -q "^TLS_SNI=" .env 2>/dev/null; then
-                        sed -i "s|^TLS_SNI=.*|TLS_SNI=${domain}|" .env
-                    else
-                        echo "TLS_SNI=${domain}" >> .env
-                    fi
-                fi
-            else
-                # Это IP адрес, не обновляем
-                echo -e "${BLUE}ℹ️  Обнаружен IP адрес в XUI_URL: ${domain}, SERVER_ADDRESS и TLS_SNI не изменяются${NC}"
-            fi
-        fi
-    fi
-}
-
-# Функция получения значения из .env
-get_env_value() {
-    local key=$1
-    grep "^${key}=" .env 2>/dev/null | cut -d'=' -f2 | head -1
-}
 
 # ============================================
 # ФУНКЦИИ ДЛЯ РАБОТЫ С CONFIG.YAML
@@ -489,7 +418,6 @@ get_config_yaml_value() {
 }
 
 # Универсальная функция обновления конфигурации
-# Автоматически определяет, использовать .env или config.yaml
 update_config_value() {
     local key=$1
     local value=$2
@@ -500,7 +428,7 @@ update_config_value() {
         local panel_id=$(get_local_panel_id)
         
         if [ -n "$panel_id" ]; then
-            # Маппинг старых ключей .env на новые ключи config.yaml
+            # Маппинг ключей для config.yaml
             local yaml_key="$key"
             case "$key" in
                 # Параметры панели
@@ -639,146 +567,54 @@ get_config_value() {
     local key=$1
     
     # Проверяем наличие config.yaml
-    if [ -f "config.yaml" ]; then
-        local panel_id=$(get_local_panel_id)
-        
-        if [ -n "$panel_id" ]; then
-            # Маппинг ключей
-            local yaml_key="$key"
-            case "$key" in
-                "XUI_VERSION") yaml_key="xui_version" ;;
-                "XUI_URL") yaml_key="xui_url" ;;
-                "XUI_USERNAME") yaml_key="xui_username" ;;
-                "XUI_PASSWORD") yaml_key="xui_password" ;;
-                "XUI_API_TOKEN") yaml_key="xui_api_token" ;;
-                "XUI_DB_PATH") yaml_key="xui_db_path" ;;
-                "INBOUND_ID") yaml_key="inbound_id" ;;
-                "SERVER_ADDRESS") yaml_key="server_address" ;;
-                "SERVER_IP") yaml_key="server_ip" ;;
-                "TRANSPORT") yaml_key="transport" ;;
-                "SECURITY") yaml_key="security" ;;
-                "TLS_SNI") yaml_key="tls_sni" ;;
-                "REALITY_SNI") yaml_key="reality_sni" ;;
-                "REALITY_FINGERPRINT") yaml_key="reality_fingerprint" ;;
-                "REALITY_PUBLIC_KEY") yaml_key="reality_public_key" ;;
-                "REALITY_PRIVATE_KEY") yaml_key="reality_private_key" ;;
-                "REALITY_SHORT_ID") yaml_key="reality_short_id" ;;
-                "XUI_BOT_TOKEN")
-                    check_yq && yq eval ".common.xui_bot_token" config.yaml 2>/dev/null
-                    return 0
-                    ;;
-                "AWG_BOT_TOKEN")
-                    check_yq && yq eval ".common.awg_bot_token" config.yaml 2>/dev/null
-                    return 0
-                    ;;
-                "ADMIN_IDS")
-                    check_yq && yq eval ".common.admin_ids | join(\",\")" config.yaml 2>/dev/null
-                    return 0
-                    ;;
-            esac
-            
-            # Получаем значение из config.yaml
-            get_config_yaml_value "$yaml_key"
-        else
-            # Fallback на .env
-            get_env_value "$key"
-        fi
-    else
-        # Используем .env
-        get_env_value "$key"
-    fi
-}
-
-# Миграция из .env в config.yaml
-migrate_env_to_config_yaml() {
-    if [ ! -f ".env" ]; then
-        echo -e "${BLUE}ℹ️  .env не найден, миграция не требуется${NC}"
-        return 0
-    fi
-    
-    echo -e "${YELLOW}🔄 Миграция данных из .env в config.yaml...${NC}"
-    
-    # Создаем резервную копию .env
-    if [ ! -f ".env.backup" ]; then
-        cp .env .env.backup
-        echo -e "${GREEN}✅ Создана резервная копия: .env.backup${NC}"
-    fi
-    
-    # Создаем config.yaml из примера если не существует
     if [ ! -f "config.yaml" ]; then
-        if [ -f "config.yaml.example" ]; then
-            cp config.yaml.example config.yaml
-            echo -e "${GREEN}✅ config.yaml создан из примера${NC}"
-        else
-            echo -e "${RED}❌ config.yaml.example не найден${NC}"
-            return 1
-        fi
-    fi
-    
-    check_yq || return 1
-    
-    # Получаем ID локальной панели
-    local panel_id=$(get_local_panel_id)
-    
-    if [ -z "$panel_id" ]; then
-        echo -e "${RED}❌ Локальная панель не найдена${NC}"
+        echo -e "${RED}❌ config.yaml не найден${NC}"
         return 1
     fi
     
-    echo -e "${BLUE}📋 Миграция в панель: ${panel_id}${NC}"
+    local panel_id=$(get_local_panel_id)
     
-    # Маппинг переменных .env -> config.yaml
-    declare -A env_to_yaml=(
-        ["XUI_VERSION"]="xui_version"
-        ["XUI_URL"]="xui_url"
-        ["XUI_USERNAME"]="xui_username"
-        ["XUI_PASSWORD"]="xui_password"
-        ["XUI_API_TOKEN"]="xui_api_token"
-        ["XUI_DB_PATH"]="xui_db_path"
-        ["INBOUND_ID"]="inbound_id"
-        ["SERVER_ADDRESS"]="server_address"
-        ["SERVER_IP"]="server_ip"
-        ["TRANSPORT"]="transport"
-        ["SECURITY"]="security"
-        ["TLS_SNI"]="tls_sni"
-        ["REALITY_SNI"]="reality_sni"
-        ["REALITY_FINGERPRINT"]="reality_fingerprint"
-        ["REALITY_PUBLIC_KEY"]="reality_public_key"
-        ["REALITY_PRIVATE_KEY"]="reality_private_key"
-        ["REALITY_SHORT_ID"]="reality_short_id"
-        ["TLS_FINGERPRINT"]="tls_fingerprint"
-        ["XUI_BOT_TOKEN"]="xui_bot_token"
-        ["AWG_BOT_TOKEN"]="awg_bot_token"
-        ["ADMIN_IDS"]="admin_ids"
-    )
+    if [ -z "$panel_id" ]; then
+        echo -e "${YELLOW}⚠️  Локальная панель не найдена в config.yaml${NC}"
+        return 1
+    fi
     
-    # Мигрируем значения
-    for env_key in "${!env_to_yaml[@]}"; do
-        yaml_key="${env_to_yaml[$env_key]}"
-        value=$(get_env_value "$env_key")
-        
-        if [ -n "$value" ]; then
-            # Для common параметров (токены, админы)
-            if [ "$env_key" = "XUI_BOT_TOKEN" ] || [ "$env_key" = "AWG_BOT_TOKEN" ] || [ "$env_key" = "ADMIN_IDS" ]; then
-                if [ "$env_key" = "ADMIN_IDS" ]; then
-                    # Преобразуем список через запятую в YAML массив
-                    yq eval -i ".common.admin_ids = [$(echo $value | sed 's/,/, /g')]" config.yaml
-                    echo -e "${GREEN}✓ common.admin_ids${NC}"
-                else
-                    yq eval -i ".common.${yaml_key} = \"${value}\"" config.yaml
-                    echo -e "${GREEN}✓ common.${yaml_key}${NC}"
-                fi
-            else
-                # Для параметров панели
-                yq eval -i ".panels.${panel_id}.${yaml_key} = \"${value}\"" config.yaml
-                echo -e "${GREEN}✓ panels.${panel_id}.${yaml_key}${NC}"
-            fi
-        fi
-    done
+    # Маппинг ключей
+    local yaml_key="$key"
+    case "$key" in
+        "XUI_VERSION") yaml_key="xui_version" ;;
+        "XUI_URL") yaml_key="xui_url" ;;
+        "XUI_USERNAME") yaml_key="xui_username" ;;
+        "XUI_PASSWORD") yaml_key="xui_password" ;;
+        "XUI_API_TOKEN") yaml_key="xui_api_token" ;;
+        "XUI_DB_PATH") yaml_key="xui_db_path" ;;
+        "INBOUND_ID") yaml_key="inbound_id" ;;
+        "SERVER_ADDRESS") yaml_key="server_address" ;;
+        "SERVER_IP") yaml_key="server_ip" ;;
+        "TRANSPORT") yaml_key="transport" ;;
+        "SECURITY") yaml_key="security" ;;
+        "TLS_SNI") yaml_key="tls_sni" ;;
+        "REALITY_SNI") yaml_key="reality_sni" ;;
+        "REALITY_FINGERPRINT") yaml_key="reality_fingerprint" ;;
+        "REALITY_PUBLIC_KEY") yaml_key="reality_public_key" ;;
+        "REALITY_PRIVATE_KEY") yaml_key="reality_private_key" ;;
+        "REALITY_SHORT_ID") yaml_key="reality_short_id" ;;
+        "XUI_BOT_TOKEN")
+            check_yq && yq eval ".common.xui_bot_token" config.yaml 2>/dev/null
+            return 0
+            ;;
+        "AWG_BOT_TOKEN")
+            check_yq && yq eval ".common.awg_bot_token" config.yaml 2>/dev/null
+            return 0
+            ;;
+        "ADMIN_IDS")
+            check_yq && yq eval ".common.admin_ids | join(\",\")" config.yaml 2>/dev/null
+            return 0
+            ;;
+    esac
     
-    echo -e "${GREEN}✅ Миграция завершена${NC}"
-    echo -e "${YELLOW}💡 Рекомендуется проверить config.yaml и удалить .env после проверки${NC}"
-    echo -e "${BLUE}   Резервная копия сохранена: .env.backup${NC}"
+    # Получаем значение из config.yaml
+    get_config_yaml_value "$yaml_key"
 }
 
 # Функция генерации Reality ключей через API панели 3x-ui
@@ -997,7 +833,8 @@ interactive_setup() {
     echo -e "${BLUE}   Настройка Параметров Бота${NC}"
     echo -e "${BLUE}========================================${NC}\n"
     
-    create_env_if_not_exists
+    # Создаем config.yaml если не существует
+    create_config_if_not_exists
     
     # Создаем статические параметры
     create_static_params
@@ -1016,7 +853,7 @@ interactive_setup() {
         echo -e "XUI_BOT_TOKEN: ${XUI_BOT_TOKEN:0:10}... ${GREEN}✓${NC}"
     fi
     
-    ADMIN_IDS=$(get_env_value "ADMIN_IDS")
+    ADMIN_IDS=$(get_config_value "ADMIN_IDS")
     if [ -z "$ADMIN_IDS" ]; then
         read -p "Введите ADMIN_IDS (ID администраторов через запятую): " ADMIN_IDS
         update_config_value "ADMIN_IDS" "$ADMIN_IDS"
@@ -1077,7 +914,7 @@ install_bot() {
                 update_config_value "SERVER_ADDRESS" "$DOMAIN"
                 echo -e "${GREEN}✅ SERVER_ADDRESS обновлён: ${DOMAIN}${NC}"
             fi
-            CURRENT_TLS_SNI=$(get_env_value "TLS_SNI")
+            CURRENT_TLS_SNI=$(get_config_value "TLS_SNI")
             if [ "$CURRENT_TLS_SNI" != "$DOMAIN" ]; then
                 update_config_value "TLS_SNI" "$DOMAIN"
                 echo -e "${GREEN}✅ TLS_SNI обновлён: ${DOMAIN}${NC}"
@@ -1347,7 +1184,7 @@ install_xuibot() {
             fi
             
             # Обновляем TLS_SNI
-            CURRENT_TLS_SNI=$(get_env_value "TLS_SNI")
+            CURRENT_TLS_SNI=$(get_config_value "TLS_SNI")
             if [ "$CURRENT_TLS_SNI" != "$DOMAIN" ]; then
                 update_config_value "TLS_SNI" "$DOMAIN"
                 echo -e "${GREEN}✅ TLS_SNI обновлён: ${DOMAIN}${NC}"
@@ -1754,15 +1591,6 @@ remove_xuibot() {
         fi
     fi
     
-    # Также очищаем .env если он существует (обратная совместимость)
-    if [ -f ".env" ]; then
-        echo -e "${YELLOW}🧹 Очистка XUI настроек из .env (legacy)...${NC}"
-        sed -i '/^XUI_BOT_TOKEN=/d' .env 2>/dev/null || true
-        sed -i '/^TELEGRAM_BOT_TOKEN=/d' .env 2>/dev/null || true
-        sed -i 's/^XUI_URL=.*/XUI_URL=/' .env 2>/dev/null || true
-        sed -i 's/^XUI_USERNAME=.*/XUI_USERNAME=/' .env 2>/dev/null || true
-        sed -i 's/^XUI_PASSWORD=.*/XUI_PASSWORD=/' .env 2>/dev/null || true
-    fi
     
     echo -e "${GREEN}✅ XUI Бот удален!${NC}"
 }
@@ -2005,12 +1833,6 @@ remove_awgbot() {
             yq eval -i '.common.awg_bot_token = ""' config.yaml
             echo -e "${GREEN}✅ AWG_BOT_TOKEN очищен${NC}"
         fi
-    fi
-    
-    # Также очищаем .env если он существует (обратная совместимость)
-    if [ -f ".env" ]; then
-        echo -e "${YELLOW}🧹 Очистка AWG_BOT_TOKEN из .env (legacy)...${NC}"
-        sed -i '/^AWG_BOT_TOKEN=/d' .env 2>/dev/null || true
     fi
     
     echo -e "${GREEN}✅ AWG Бот удален!${NC}"
@@ -2259,9 +2081,9 @@ show_status() {
             [ -n "$xui_version" ] && xui_version="v${xui_version}"
         fi
         
-        # Способ 2: Из .env файла
-        if [ -z "$xui_version" ] && [ -f ".env" ]; then
-            xui_version=$(grep "^XUI_VERSION=" .env 2>/dev/null | cut -d'=' -f2)
+        # Способ 2: Из config.yaml
+        if [ -z "$xui_version" ] && [ -f "config.yaml" ]; then
+            xui_version=$(get_config_value "XUI_VERSION" 2>/dev/null)
             # Добавляем v если его нет
             [[ -n "$xui_version" && ! "$xui_version" =~ ^v ]] && xui_version="v${xui_version}"
         fi
@@ -2275,19 +2097,12 @@ show_status() {
         # Если ничего не нашли
         [ -z "$xui_version" ] && xui_version="Unknown"
         
-        # Получаем данные из .env
-        if [ -f ".env" ]; then
-            local xui_url=$(grep "^XUI_URL=" .env 2>/dev/null | cut -d'=' -f2)
-            local xui_user=$(grep "^XUI_USERNAME=" .env 2>/dev/null | cut -d'=' -f2)
-            local xui_pass=$(grep "^XUI_PASSWORD=" .env 2>/dev/null | cut -d'=' -f2)
-            local transport=$(grep "^TRANSPORT=" .env 2>/dev/null | cut -d'=' -f2)
-            local security=$(grep "^SECURITY=" .env 2>/dev/null | cut -d'=' -f2)
-            local inbound_id=$(grep "^INBOUND_ID=" .env 2>/dev/null | cut -d'=' -f2)
-            local xui_db_path=$(grep "^XUI_DB_PATH=" .env 2>/dev/null | cut -d'=' -f2)
+        # Получаем данные из config.yaml
+        if [ -f "config.yaml" ]; then
+            local inbound_id=$(get_config_value "INBOUND_ID" 2>/dev/null)
+            local xui_db_path=$(get_config_value "XUI_DB_PATH" 2>/dev/null)
             
             # Значения по умолчанию
-            [ -z "$transport" ] && transport="tcp"
-            [ -z "$security" ] && security="tls"
             [ -z "$inbound_id" ] && inbound_id="1"
             [ -z "$xui_db_path" ] && xui_db_path="/etc/x-ui/x-ui.db"
             
@@ -2430,34 +2245,6 @@ show_status() {
         echo -e "  AWG Bot: ${RED}❌ Не установлен${NC}"
     fi
     
-    # ============================================
-    # DYNAMIC PARAMETERS
-    # ============================================
-    if [ -f ".env" ]; then
-        echo -e "\n${YELLOW}${BOLD}DYNAMIC PARAMETERS (.env):${NC}"
-        
-        # Извлекаем все параметры из секции "# Dynamic parameters"
-        local in_dynamic_section=false
-        while IFS= read -r line; do
-            # Начало секции Dynamic parameters
-            if [[ "$line" =~ ^#.*Dynamic\ parameters ]]; then
-                in_dynamic_section=true
-                continue
-            fi
-            
-            # Конец секции (следующий комментарий или пустая строка после параметров)
-            if [ "$in_dynamic_section" = true ] && [[ "$line" =~ ^# ]] && [[ ! "$line" =~ ^#.*Dynamic\ parameters ]]; then
-                break
-            fi
-            
-            # Выводим параметры из секции
-            if [ "$in_dynamic_section" = true ] && [[ "$line" =~ ^[A-Z_]+= ]]; then
-                local param_name=$(echo "$line" | cut -d'=' -f1)
-                local param_value=$(echo "$line" | cut -d'=' -f2-)
-                [ -n "$param_value" ] && echo -e "  ${param_name}: ${param_value}"
-            fi
-        done < .env
-    fi
     
     # ============================================
     # SYSTEM AUTOSTART
@@ -3080,7 +2867,7 @@ STREAMEOF
                     echo -e "${GREEN}   Network: xhttp${NC}"
                     echo -e "${GREEN}   Security: reality${NC}"
                     
-                    # Сохраняем ID в .env
+                    # Сохраняем ID в config.yaml
                     update_config_value "INBOUND_ID" "${INBOUND_ID}"
                     
                     # Извлекаем реальные Reality ключи из созданного inbound
@@ -3097,13 +2884,13 @@ STREAMEOF
                         echo -e "${GREEN}   Fingerprint: ${ACTUAL_FINGERPRINT}${NC}"
                         echo -e "${GREEN}   SNI: ${ACTUAL_SNI}${NC}"
                         
-                        # Обновляем .env с реальными ключами из inbound
+                        # Обновляем config.yaml с реальными ключами из inbound
                         update_config_value "REALITY_PUBLIC_KEY" "${ACTUAL_PUBLIC_KEY}"
                         update_config_value "REALITY_SHORT_ID" "${ACTUAL_SHORT_ID}"
                         update_config_value "REALITY_FINGERPRINT" "${ACTUAL_FINGERPRINT}"
                         update_config_value "REALITY_SNI" "${ACTUAL_SNI}"
                         
-                        echo -e "${GREEN}✅ Ключи сохранены в .env${NC}"
+                        echo -e "${GREEN}✅ Ключи сохранены в config.yaml${NC}"
                     else
                         echo -e "${YELLOW}⚠ Не удалось извлечь ключи из inbound, используем сгенерированные${NC}"
                     fi
@@ -3241,7 +3028,7 @@ STREAMEOF
         fi
         echo -e "${BLUE}========================================${NC}"
         echo -e "${YELLOW}💾 Также эти данные сохранены в:${NC}"
-        echo -e "   ${YELLOW}${WORK_DIR}/.env${NC}"
+        echo -e "   ${YELLOW}${WORK_DIR}/config.yaml${NC}"
         echo -e "${BLUE}========================================${NC}"
         
         if [ -n "$XUI_VERSION" ]; then
@@ -3259,7 +3046,7 @@ create_xhttp_reality_inbound() {
     echo -e "${BLUE}   Создание XHTTP Reality Inbound${NC}"
     echo -e "${BLUE}========================================${NC}\n"
     
-    # Загружаем Reality ключи из config.yaml (или .env для обратной совместимости)
+    # Загружаем Reality ключи из config.yaml
     REALITY_PRIVATE_KEY=$(get_config_value "REALITY_PRIVATE_KEY")
     REALITY_PUBLIC_KEY=$(get_config_value "REALITY_PUBLIC_KEY")
     REALITY_SHORT_ID=$(get_config_value "REALITY_SHORT_ID")
@@ -3407,13 +3194,13 @@ APIJSON
                 echo -e "${GREEN}   Fingerprint: ${ACTUAL_FINGERPRINT}${NC}"
                 echo -e "${GREEN}   SNI: ${ACTUAL_SNI}${NC}"
                 
-                # Обновляем .env с реальными ключами из inbound
+                # Обновляем config.yaml с реальными ключами из inbound
                 update_config_value "REALITY_PUBLIC_KEY" "${ACTUAL_PUBLIC_KEY}"
                 update_config_value "REALITY_SHORT_ID" "${ACTUAL_SHORT_ID}"
                 update_config_value "REALITY_FINGERPRINT" "${ACTUAL_FINGERPRINT}"
                 update_config_value "REALITY_SNI" "${ACTUAL_SNI}"
                 
-                echo -e "${GREEN}✅ Ключи сохранены в .env${NC}"
+                echo -e "${GREEN}✅ Ключи сохранены в config.yaml${NC}"
             else
                 echo -e "${YELLOW}⚠ Не удалось извлечь ключи из inbound, используем сгенерированные${NC}"
             fi
@@ -3439,7 +3226,7 @@ create_tcp_reality_inbound() {
     echo -e "${BLUE}   Создание TCP Reality Inbound${NC}"
     echo -e "${BLUE}========================================${NC}\n"
     
-    # Загружаем Reality ключи из config.yaml (или .env для обратной совместимости)
+    # Загружаем Reality ключи из config.yaml
     REALITY_PRIVATE_KEY=$(get_config_value "REALITY_PRIVATE_KEY")
     REALITY_PUBLIC_KEY=$(get_config_value "REALITY_PUBLIC_KEY")
     REALITY_SHORT_ID=$(get_config_value "REALITY_SHORT_ID")
@@ -3572,13 +3359,13 @@ APIJSON
                 echo -e "${GREEN}   Fingerprint: ${ACTUAL_FINGERPRINT}${NC}"
                 echo -e "${GREEN}   SNI: ${ACTUAL_SNI}${NC}"
                 
-                # Обновляем .env с реальными ключами из inbound
+                # Обновляем config.yaml с реальными ключами из inbound
                 update_config_value "REALITY_PUBLIC_KEY" "${ACTUAL_PUBLIC_KEY}"
                 update_config_value "REALITY_SHORT_ID" "${ACTUAL_SHORT_ID}"
                 update_config_value "REALITY_FINGERPRINT" "${ACTUAL_FINGERPRINT}"
                 update_config_value "REALITY_SNI" "${ACTUAL_SNI}"
                 
-                echo -e "${GREEN}✅ Ключи сохранены в .env${NC}"
+                echo -e "${GREEN}✅ Ключи сохранены в config.yaml${NC}"
             else
                 echo -e "${YELLOW}⚠ Не удалось извлечь ключи из inbound, используем сгенерированные${NC}"
             fi
@@ -3706,12 +3493,12 @@ STREAMEOF
                 echo -e "${GREEN}   ALPN: ${ACTUAL_ALPN}${NC}"
                 echo -e "${GREEN}   SNI: ${SERVER_IP}${NC}"
                 
-                # Обновляем .env с реальными параметрами из inbound
+                # Обновляем config.yaml с реальными параметрами из inbound
                 update_config_value "TLS_FINGERPRINT" "${ACTUAL_FINGERPRINT}"
                 update_config_value "TLS_ALPN" "${ACTUAL_ALPN}"
                 update_config_value "TLS_SNI" "${SERVER_IP}"
                 
-                echo -e "${GREEN}✅ Параметры сохранены в .env${NC}"
+                echo -e "${GREEN}✅ Параметры сохранены в config.yaml${NC}"
             else
                 echo -e "${YELLOW}⚠ Не удалось извлечь параметры из inbound${NC}"
             fi
@@ -3869,16 +3656,6 @@ install_3xui_v294() {
                     echo -e "${GREEN}✅ Панель удалена из config.yaml${NC}"
                 fi
             fi
-        fi
-        
-        # Также очищаем .env если он существует (обратная совместимость)
-        if [ -f "${WORK_DIR}/.env" ]; then
-            echo -e "${YELLOW}🔑 Очистка данных из .env (legacy)...${NC}"
-            sed -i '/^XUI_/d' "${WORK_DIR}/.env" 2>/dev/null || true
-            sed -i '/^REALITY_/d' "${WORK_DIR}/.env" 2>/dev/null || true
-            sed -i '/^INBOUND_ID=/d' "${WORK_DIR}/.env" 2>/dev/null || true
-            sed -i '/^TRANSPORT=/d' "${WORK_DIR}/.env" 2>/dev/null || true
-            sed -i '/^SECURITY=/d' "${WORK_DIR}/.env" 2>/dev/null || true
         fi
         
         echo -e "${GREEN}✅ Старая панель удалена${NC}\n"
@@ -4243,7 +4020,7 @@ install_3xui_v3() {
                 if generate_reality_keys_via_api "$XUI_URL" "$XUI_API_TOKEN"; then
                     update_config_value "REALITY_PRIVATE_KEY" "$REALITY_PRIVATE_KEY"
                     update_config_value "REALITY_PUBLIC_KEY" "$REALITY_PUBLIC_KEY"
-                    echo -e "${GREEN}✓ Reality ключи сохранены в .env${NC}"
+                    echo -e "${GREEN}✓ Reality ключи сохранены в config.yaml${NC}"
                 fi
             fi
             
@@ -4396,16 +4173,6 @@ remove_3xui() {
                 echo -e "${GREEN}✅ Панель удалена из config.yaml${NC}"
             fi
         fi
-    fi
-    
-    # Также очищаем .env если он существует (обратная совместимость)
-    if [ -f "${WORK_DIR}/.env" ]; then
-        echo -e "${YELLOW}🔑 Очистка данных из .env (legacy)...${NC}"
-        sed -i '/^XUI_/d' "${WORK_DIR}/.env" 2>/dev/null || true
-        sed -i '/^REALITY_/d' "${WORK_DIR}/.env" 2>/dev/null || true
-        sed -i '/^INBOUND_ID=/d' "${WORK_DIR}/.env" 2>/dev/null || true
-        sed -i '/^TRANSPORT=/d' "${WORK_DIR}/.env" 2>/dev/null || true
-        sed -i '/^SECURITY=/d' "${WORK_DIR}/.env" 2>/dev/null || true
     fi
     
     echo -e "${GREEN}✅ 3x-ui панель полностью удалена!${NC}"
