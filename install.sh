@@ -3739,9 +3739,12 @@ STREAMEOF
 
 # Функция меню после установки 3x-ui
 post_install_menu() {
-    # В автоматическом режиме — пропускаем всё меню
+    # В автоматическом режиме — автоматически создаём inbound и устанавливаем бота
     if [ -n "$NONINTERACTIVE" ]; then
-        echo -e "${BLUE}ℹ️  Автоматический режим: пропускаем меню после установки${NC}"
+        echo -e "${BLUE}ℹ️  Автоматический режим: создаём XHTTP Reality inbound и устанавливаем бота${NC}"
+        if create_xhttp_reality_inbound; then
+            install_bot
+        fi
         return
     fi
 
@@ -5144,6 +5147,8 @@ while true; do
             fi
             export NONINTERACTIVE=1
             install_3xui_v3
+            echo -e "\n${GREEN}✅ Установка завершена успешно!${NC}"
+            exit 0
             ;;
         4)
             sync_repository
