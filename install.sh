@@ -2637,14 +2637,14 @@ select_xui_version() {
                 install_3xui_latest
             else
                 echo -e "${GREEN}Отменено. Устанавливаем v3.x...${NC}"
-                install_3xui_v3
+                NONINTERACTIVE=1; install_3xui_v3; unset NONINTERACTIVE
             fi
             ;;
         3)
             echo -e "\n${GREEN}✓ Установка 3x-ui v3.x с поддержкой API${NC}"
             echo -e "${YELLOW}Эта версия полностью поддерживается ботом через API${NC}"
             echo -e "${YELLOW}API токен будет автоматически извлечен и сохранен${NC}\n"
-            install_3xui_v3
+            NONINTERACTIVE=1; install_3xui_v3; unset NONINTERACTIVE
             ;;
         0)
             echo -e "${YELLOW}Отменено${NC}"
@@ -2653,7 +2653,7 @@ select_xui_version() {
         *)
             echo -e "${YELLOW}Неверный выбор. Устанавливаем v3.x по умолчанию...${NC}"
             sleep 2
-            install_3xui_v3
+            NONINTERACTIVE=1; install_3xui_v3; unset NONINTERACTIVE
             ;;
     esac
 }
@@ -4125,10 +4125,19 @@ install_3xui_v3() {
 
     # Запускаем официальный установщик 3x-ui
     # Он сам управляет SSL сертификатами через свой интерактивный процесс
-    INSTALLER_TMP=$(mktemp)
-    curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh -o "$INSTALLER_TMP"
-    bash "$INSTALLER_TMP" 2>&1 | tee "$INSTALL_LOG_FILE"
-    rm -f "$INSTALLER_TMP"
+    # Автоматически отвечаем на вопросы установщика:
+    # 1 - выбор SQLite (по умолчанию, рекомендуется для < 500 клиентов)
+    # n - не настраивать порт панели (будет случайный)
+    # 4 - пропустить SSL (Skip SSL)
+    # (пусто) - IPv6 address (skip)
+    # (пусто) - Port для ACME (default 80)
+    bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh) 2>&1 << EOF | tee "$INSTALL_LOG_FILE"
+1
+n
+4
+
+
+EOF
 
     # Читаем содержимое лога в переменную для последующего анализа
     INSTALL_OUTPUT=$(cat "$INSTALL_LOG_FILE" 2>/dev/null || echo "")
@@ -5127,7 +5136,7 @@ while true; do
                     continue
                 fi
             fi
-            install_3xui_v3
+            NONINTERACTIVE=1; install_3xui_v3; unset NONINTERACTIVE
             ;;
         4)
             sync_repository
