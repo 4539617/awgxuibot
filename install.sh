@@ -9,11 +9,6 @@ NC='\033[0m'
 
 # Константы
 WORK_DIR="/opt/awgxuibot"
-
-# ============================================
-# НАСТРОЙКИ REALITY ПО УМОЛЧАНИЮ
-# Измените эти значения перед установкой
-# ============================================
 DEFAULT_REALITY_SNI="www.nvidia.com"
 DEFAULT_REALITY_FINGERPRINT="edge"  # Варианты: edge, chrome, firefox, safari
 
@@ -4129,9 +4124,6 @@ install_3xui_v3() {
     # 4 - пропуск SSL (Skip SSL)
     # Добавляем больше пустых строк для обработки всех возможных вопросов
     printf '1\n4\n\n\n\n\n\n\n\n\n\n' | bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh) 2>&1 | tee "$INSTALL_OUTPUT"
-
-    # Удаляем временный файл
-    rm -f "$INSTALL_OUTPUT"
     
     # Проверка успешности установки
     if systemctl is-active --quiet x-ui; then
@@ -4159,14 +4151,17 @@ install_3xui_v3() {
         echo -e "${YELLOW}⚠ Извлечение учетных данных панели...${NC}"
         
         # Парсим вывод установщика для получения данных и очищаем от ANSI кодов
-        XUI_USERNAME=$(echo "$INSTALL_OUTPUT" | grep -oP 'Username:\s+\K\S+' | tail -1 | sed 's/\x1b\[[0-9;]*m//g')
-        XUI_PASSWORD=$(echo "$INSTALL_OUTPUT" | grep -oP 'Password:\s+\K\S+' | tail -1 | sed 's/\x1b\[[0-9;]*m//g')
-        XUI_PORT=$(echo "$INSTALL_OUTPUT" | grep -oP 'Port:\s+\K\d+' | tail -1 | sed 's/\x1b\[[0-9;]*m//g')
-        XUI_WEB_BASE_PATH=$(echo "$INSTALL_OUTPUT" | grep -oP 'WebBasePath:\s+\K\S+' | tail -1 | sed 's/\x1b\[[0-9;]*m//g')
-        XUI_API_TOKEN=$(echo "$INSTALL_OUTPUT" | grep -oP 'API Token:\s+\K\S+' | tail -1 | sed 's/\x1b\[[0-9;]*m//g')
-
+        XUI_USERNAME=$(grep -oP 'Username:\s+\K\S+' "$INSTALL_OUTPUT" | tail -1 | sed 's/\x1b\[[0-9;]*m//g')
+        XUI_PASSWORD=$(grep -oP 'Password:\s+\K\S+' "$INSTALL_OUTPUT" | tail -1 | sed 's/\x1b\[[0-9;]*m//g')
+        XUI_PORT=$(grep -oP 'Port:\s+\K\d+' "$INSTALL_OUTPUT" | tail -1 | sed 's/\x1b\[[0-9;]*m//g')
+        XUI_WEB_BASE_PATH=$(grep -oP 'WebBasePath:\s+\K\S+' "$INSTALL_OUTPUT" | tail -1 | sed 's/\x1b\[[0-9;]*m//g')
+        XUI_API_TOKEN=$(grep -oP 'API Token:\s+\K\S+' "$INSTALL_OUTPUT" | tail -1 | sed 's/\x1b\[[0-9;]*m//g')
+        
         # Извлекаем версию из вывода установщика (например: "Got x-ui latest version: v3.3.1")
-        XUI_VERSION=$(echo "$INSTALL_OUTPUT" | grep -oP 'Got x-ui latest version:\s*v?\K[\d.]+' | head -1 | sed 's/\x1b\[[0-9;]*m//g')
+        XUI_VERSION=$(grep -oP 'Got x-ui latest version:\s*v?\K[\d.]+' "$INSTALL_OUTPUT" | head -1 | sed 's/\x1b\[[0-9;]*m//g')
+        
+        # Удаляем временный файл
+        rm -f "$INSTALL_OUTPUT"
         
         # Если версия не извлечена из установщика, пробуем через x-ui version
         if [ -z "$XUI_VERSION" ]; then
