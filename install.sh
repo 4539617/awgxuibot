@@ -4468,10 +4468,9 @@ install_3xui_v3() {
     # XUI_SSL_MODE        — режим SSL без вопроса.
     INSTALLER_TMP=$(mktemp)
     curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh -o "$INSTALLER_TMP"
-    export XUI_NONINTERACTIVE=1 XUI_DB_TYPE=sqlite XUI_SSL_MODE="$XUI_SSL_MODE_VAL"
+    # Передаем переменные напрямую в команду bash для гарантированной передачи в subshell
     # Запускаем в subshell чтобы < /dev/null не закрыл stdin родительского процесса
-    ( bash "$INSTALLER_TMP" < /dev/null ) 2>&1 | tee "$INSTALL_LOG_FILE"
-    unset XUI_NONINTERACTIVE XUI_DB_TYPE XUI_SSL_MODE
+    ( XUI_NONINTERACTIVE=1 XUI_DB_TYPE=sqlite XUI_SSL_MODE="$XUI_SSL_MODE_VAL" bash "$INSTALLER_TMP" < /dev/null ) 2>&1 | tee "$INSTALL_LOG_FILE"
     rm -f "$INSTALLER_TMP"
 
     # Читаем содержимое лога в переменную для последующего анализа
@@ -5502,7 +5501,7 @@ while true; do
                     continue
                 fi
             fi
-            NONINTERACTIVE=1; install_3xui_v3; unset NONINTERACTIVE
+            install_3xui_v3
             ;;
         4)
             sync_repository
