@@ -375,8 +375,20 @@ export class RouteBot {
         totalIPs += addresses.ipv4.length;
       }
 
+      // Check if we have any IPs to generate
+      if (totalIPs === 0) {
+        logger.warn(`No IP addresses found for any domain from chat ${chatId}`);
+        if (verbose && processingMsg) {
+          this.bot.editMessageText(
+            '❌ Домены найдены, но не удалось получить IP адреса. Возможно, домены недоступны или заблокированы.',
+            { chat_id: chatId, message_id: processingMsg.message_id }
+          );
+        }
+        return;
+      }
+
       // Generate batch file
-      const filename = domains.length === 1 
+      const filename = domains.length === 1
         ? generateFilename(domains[0])
         : generateMultipleDomainsFilename(domains);
 
