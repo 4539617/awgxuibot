@@ -3668,8 +3668,9 @@ install_3xui_v294() {
     # Запускаем установку с выводом на экран и в файл одновременно
     INSTALL_LOG="/tmp/xui_install_$$.log"
     
-    # Запускаем официальный установщик без манипуляций с сертификатами
-    bash <(curl -Ls "https://raw.githubusercontent.com/MHSanaei/3x-ui/v2.9.4/install.sh") v2.9.4 2>&1 | tee "$INSTALL_LOG"
+    # Передаем пустые ответы (Enter) на все вопросы через stdin для автоматической установки
+    # Установщик будет использовать дефолтные значения (случайный порт, логин, пароль, SSL)
+    printf '\n\n\n\n\n' | bash <(curl -Ls "https://raw.githubusercontent.com/MHSanaei/3x-ui/v2.9.4/install.sh") v2.9.4 2>&1 | tee "$INSTALL_LOG"
     
     # Читаем вывод из лог-файла
     INSTALL_OUTPUT=$(cat "$INSTALL_LOG" 2>/dev/null || echo "")
@@ -3841,15 +3842,9 @@ install_3xui_v294() {
         
         # Финальное сообщение
         echo -e "\n${GREEN}✅ Установка 3x-ui панели завершена!${NC}\n"
-        echo -e "\n${BLUE}Также можно установить вручную:${NC}\n"
-        echo -e "${YELLOW}VERSION=v2.9.4 && bash <(curl -Ls "https://raw.githubusercontent.com/mhsanaei/3x-ui/$VERSION/install.sh") $VERSION${NC}\n"
         
-
-
-        # Интерактивное меню после установки (пропускаем в автоматическом режиме)
-        if [ -z "$NONINTERACTIVE" ]; then
-            post_install_menu
-        fi
+        # Интерактивное меню после установки
+        post_install_menu
     else
         echo -e "\n${RED}❌ Ошибка установки 3x-ui v2.9.4 панели${NC}"
     fi
