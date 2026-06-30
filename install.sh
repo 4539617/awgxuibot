@@ -2367,16 +2367,16 @@ show_status() {
     echo -e "\n${YELLOW}${BOLD}XUIBOT:${NC}"
     
     if docker ps --filter name=xuibot --format "{{.Names}}" | grep -q xuibot; then
-        local xui_token=$(grep "^XUI_BOT_TOKEN=" .env 2>/dev/null | cut -d'=' -f2)
+        local xui_token=$(get_config_value "XUI_BOT_TOKEN" | tr -d '"')
         local xui_bot_username=$(get_bot_username "$xui_token" "xuibot")
-        local db_path=$(grep "^DB_PATH=" .env 2>/dev/null | cut -d'=' -f2)
+        local db_path=$(get_config_value "DB_PATH")
         
         # Значение по умолчанию для DB_PATH
         [ -z "$db_path" ] && db_path="/app/data/bot_users.db"
         
         # Получаем количество пользователей из базы данных
         local user_count=0
-        local admin_ids=$(grep "^ADMIN_IDS=" .env 2>/dev/null | cut -d'=' -f2)
+        local admin_ids=$(get_config_value "ADMIN_IDS")
         local main_admin=$(echo "$admin_ids" | cut -d',' -f1)
         
         # Проверяем базу данных внутри контейнера
@@ -2409,7 +2409,7 @@ show_status() {
     echo -e "\n${YELLOW}${BOLD}AWGBOT:${NC}"
     
     if docker ps --filter name=awgbot --format "{{.Names}}" | grep -q awgbot; then
-        local awg_token=$(grep "^AWG_BOT_TOKEN=" .env 2>/dev/null | cut -d'=' -f2)
+        local awg_token=$(get_config_value "AWG_BOT_TOKEN" | tr -d '"')
         local awg_bot_username=$(get_bot_username "$awg_token" "awgbot")
         
         if [ "$awg_bot_username" != "Unknown" ]; then
