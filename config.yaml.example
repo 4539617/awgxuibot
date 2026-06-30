@@ -1,241 +1,53 @@
-# ============================================
-# AWGXUIBot Multi-Server Configuration
-# ============================================
-# Скопируйте этот файл в config.yaml и настройте под свои параметры
-# Этот файл заменяет .env, объединяя все настройки в одном месте
-#
-# Поддерживает:
-# - XUI Bot: управление 3x-ui панелями
-# - AWG Bot: генерация AWG конфигураций и DNS резолвинг
-# - Мультипанели: управление несколькими 3x-ui серверами
-
-# ============================================
-# ОБЩИЕ ПАРАМЕТРЫ (для всех панелей и ботов)
-# ============================================
 common:
-  # ============================================
-  # Telegram Bot Tokens
-  # ============================================
-  # XUI Bot - для управления 3x-ui панелью
-  xui_bot_token: "your_xui_bot_token_here"
-  
-  # AWG Bot - для генерации AWG конфигов (опционально)
-  awg_bot_token: "your_awg_bot_token_here"
-  
-  # ============================================
-  # Администраторы
-  # ============================================
-  # Список Telegram ID администраторов (общий для обоих ботов)
-  # Только эти пользователи могут управлять ботами
-  admin_ids:
-    - 123456789
-    - 987654321
-  
-  # ============================================
-  # Server Configuration
-  # ============================================
-  # Порт сервера по умолчанию (используется если не указан в панели)
+  xui_bot_token: ""
+  awg_bot_token: ""
+  admin_ids: []
   server_port: 443
-  
-  # ============================================
-  # API Configuration
-  # ============================================
-  # Таймаут для API запросов (секунды)
   api_timeout: 30
-  
-  # ============================================
-  # Transport Configuration
-  # ============================================
-  # Режим xHTTP: auto, stream, packet
   xhttp_mode: "auto"
-  
-  # ============================================
-  # TLS Configuration (общие настройки)
-  # ============================================
-  # TLS fingerprint: chrome, firefox, safari, edge, ios, android, random
   tls_fingerprint: "edge"
-  
-  # TLS ALPN протокол
   tls_alpn: "http/1.1"
-  
-  # ============================================
-  # Traffic Limits (для XUI Bot)
-  # ============================================
-  # Максимальный трафик (GB)
   max_traffic_gb: 1000
-  
-  # Максимальное количество дней
   max_days: 3650
-  
-  # Минимальное количество дней
   min_days: 1
-  
-  # Трафик по умолчанию (GB)
   default_traffic_gb: 100
-  
-  # Дней по умолчанию
   default_days: 30
-  
-  # ============================================
-  # Database Configuration
-  # ============================================
-  # Путь к базе данных пользователей
   db_path: "/app/data/bot_users.db"
-  
-  # Включить автоматическое резервное копирование БД
   db_backup_enabled: true
-  
-  # Интервал резервного копирования (часы)
   db_backup_interval: 24
-  
-  # ============================================
-  # Logging Configuration
-  # ============================================
-  # Уровень логирования: DEBUG, INFO, WARNING, ERROR, CRITICAL
   log_level: "INFO"
-  
-  # Включить запись логов в файл
   log_file_enabled: true
-  
-  # Путь к файлу логов
   log_file_path: "/app/logs/bot.log"
-  
-  # Максимальный размер файла лога (MB)
   log_max_size_mb: 10
-  
-  # Количество резервных копий логов
   log_backup_count: 5
-  
-  # ============================================
-  # AWG Bot Settings
-  # ============================================
-  # Разрешить обычным пользователям делать DNS запросы
-  # true: обычные пользователи могут отправлять домены и получать файлы + статистику
-  # false: только админы могут использовать DNS функции
-  
-  # ============================================
-  # Panel Monitoring Configuration
-  # ============================================
-  # Включить автоматический мониторинг доступности панелей
-  panel_monitoring_enabled: true
-  
-  # Интервал проверки панелей (секунды)
-  panel_check_interval: 30
-  
-  # Количество последовательных неудач перед автоматическим переключением на следующую доступную панель
-  # При недоступности текущей панели система автоматически переключится на следующую доступную:
-  # - Локальные панели (v2.x и v3.x) - всегда доступны для переключения
-  # - Удаленные панели (только v3.x) - требуют API для работы
-  panel_failure_threshold: 3
-  
-  # Таймаут проверки доступности панели (секунды)
-  panel_check_timeout: 5
   allow_user_dns_queries: false
+  panel_monitoring_enabled: true
+  panel_check_interval: 30
+  panel_failure_threshold: 3
+  panel_check_timeout: 5
 
-# ============================================
-# ПАНЕЛЬ ПО УМОЛЧАНИЮ
-# ============================================
-# ID панели, которая будет использоваться при запуске бота
 default_panel: "panel1"
 
-# ============================================
-# ДИНАМИЧЕСКИЕ ПАРАМЕТРЫ ПО ПАНЕЛЯМ
-# ============================================
 panels:
-  # Первая панель (основная) - ЛОКАЛЬНАЯ
   panel1:
-    alias: "Основная панель"
+    alias: "Локальная"
     enabled: true
-    is_local: true  # true = локальная панель (обновляется install.sh), false = удаленная (только чтение)
-    
-    # XUI Panel Configuration
-    xui_version: "3.3.1"
-    xui_url: "https://your-domain.com:2053/admin-path"
-    xui_username: "admin"
-    xui_password: "your_secure_password"
-    xui_api_token: "your_api_token_here_aBcDeFgHiJkLmNoPqRsTuVwXyZ123456"
+    is_local: true
+    xui_version: ""
+    xui_url: ""
+    xui_username: ""
+    xui_password: ""
+    xui_api_token: ""
     inbound_id: 1
     xui_db_path: "/etc/x-ui/x-ui.db"
-    
-    # Server Configuration
-    server_address: "your-domain.com"
-    server_ip: "1.2.3.4"
-    
-    # Transport & Security
-    transport: "xhttp"  # tcp, xhttp, ws, grpc, httpupgrade, splithttp
-    security: "reality"  # tls, reality
-    
-    # TLS Settings (если security=tls)
-    tls_sni: "your-domain.com"
-    
-    # Reality Settings (если security=reality)
-    reality_sni: "www.nvidia.com"
-    reality_fingerprint: "edge"
-    reality_public_key: "your_reality_public_key_here"
-    reality_private_key: "your_reality_private_key_here"
-    reality_short_id: "your_reality_short_id"
-  
-  # Вторая панель (резервная) - УДАЛЕННАЯ
-  panel2:
-    alias: "Резервная панель"
-    enabled: true
-    is_local: false  # true = локальная панель (обновляется install.sh), false = удаленная (только чтение)
-    
-    xui_version: "3.3.1"
-    xui_url: "https://backup-server.com:2053/backup-path"
-    xui_username: "admin"
-    xui_password: "another_secure_password"
-    xui_api_token: "backup_api_token_XyZ987654321aBcDeFgHiJkLmNoPqRsT"
-    inbound_id: 1
-    xui_db_path: "/etc/x-ui/x-ui.db"
-    
-    server_address: "backup-server.com"
-    server_ip: "5.6.7.8"
-    
+    server_address: ""
+    server_ip: ""
     transport: "xhttp"
     security: "reality"
-    
-    tls_sni: "backup-server.com"
-    
-    reality_sni: "www.google.com"
-    reality_fingerprint: "chrome"
-    reality_public_key: "backup_reality_public_key"
-    reality_private_key: "backup_reality_private_key"
-    reality_short_id: "backup_short_id"
-
-# ============================================
-# ПРИМЕЧАНИЯ И РЕКОМЕНДАЦИИ
-# ============================================
-#
-# 📌 Общая информация:
-# 1. Общие параметры (common) применяются ко всем панелям и ботам
-# 2. Динамические параметры (panels) специфичны для каждой панели
-# 3. При создании ключа он автоматически привязывается к текущей активной панели
-# 4. Пользователи видят все свои ключи со всех панелей
-# 5. Блокировка пользователей работает глобально на всех панелях
-# 6. Админ может переключать панели через меню "🔧 Панели"
-# 7. Для добавления новой панели просто добавьте новый блок в секцию panels
-#
-# 🔄 Миграция с .env:
-# - Если у вас есть .env файл, он будет автоматически конвертирован в config.yaml при первом запуске
-# - Резервная копия .env будет создана автоматически (.env.backup.TIMESTAMP)
-# - После миграции .env больше не используется
-# - Для ручной миграции: python python/migrate_env_to_yaml.py
-#
-# 🤖 Два бота в одном проекте:
-# - XUI Bot (xui_bot_token): управление 3x-ui панелями, создание ключей
-# - AWG Bot (awg_bot_token): генерация AWG конфигов, DNS резолвинг
-# - Оба бота используют общий список admin_ids
-# - Каждый бот можно запустить отдельно или оба вместе
-#
-# 🔐 Безопасность:
-# - Храните config.yaml в безопасном месте
-# - Не коммитьте config.yaml в git (добавлен в .gitignore)
-# - Используйте сильные пароли для xui_password
-# - Рекомендуется использовать xui_api_token вместо username/password для v3
-#
-# 📚 Дополнительная документация:
-# - docs/MIGRATION_PLAN.md - детальный план миграции
-# - docs/MIGRATION_ARCHITECTURE.md - архитектура системы
-# - docs/MIGRATION_SUMMARY.md - краткое резюме
-# - README.md - основная документация проекта
+    tls_sni: ""
+    tls_fingerprint: "edge"
+    reality_sni: "www.nvidia.com"
+    reality_fingerprint: "edge"
+    reality_public_key: ""
+    reality_private_key: ""
+    reality_short_id: ""

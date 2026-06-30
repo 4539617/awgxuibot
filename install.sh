@@ -1011,7 +1011,7 @@ interactive_setup() {
     # ==================== Telegram Bot ====================
     echo -e "\n${GREEN}📱 Настройка Telegram Bot${NC}\n"
     
-    XUI_BOT_TOKEN=$(get_config_value "XUI_BOT_TOKEN")
+    XUI_BOT_TOKEN=$(get_config_value "XUI_BOT_TOKEN" | tr -d '"')
     if [ -z "$XUI_BOT_TOKEN" ]; then
         read -p "Введите XUI_BOT_TOKEN: " XUI_BOT_TOKEN
         update_config_value "XUI_BOT_TOKEN" "$XUI_BOT_TOKEN"
@@ -1450,7 +1450,7 @@ install_xuibot() {
     echo ""
     
     # Проверка XUI_BOT_TOKEN
-    XUI_BOT_TOKEN=$(get_config_value "XUI_BOT_TOKEN")
+    XUI_BOT_TOKEN=$(get_config_value "XUI_BOT_TOKEN" | tr -d '"')
     if [ -z "$XUI_BOT_TOKEN" ]; then
         echo -e "${YELLOW}📱 Настройка Telegram Bot для XUI${NC}\n"
         read -p "Введите XUI_BOT_TOKEN для XUI бота: " xui_token
@@ -1821,7 +1821,7 @@ install_awgbot() {
     create_config_if_not_exists
     
     # Проверка AWG_BOT_TOKEN
-    AWG_BOT_TOKEN=$(get_config_value "AWG_BOT_TOKEN")
+    AWG_BOT_TOKEN=$(get_config_value "AWG_BOT_TOKEN" | tr -d '"')
     if [ -z "$AWG_BOT_TOKEN" ]; then
         echo -e "${YELLOW}📱 Настройка Telegram Bot для AWG${NC}\n"
         read -p "Введите AWG_BOT_TOKEN для AWG бота: " awg_token
