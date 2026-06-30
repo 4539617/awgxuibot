@@ -4461,13 +4461,17 @@ install_3xui_v3() {
     INSTALL_LOG_FILE=$(mktemp)
 
     # Запускаем установщик через переменные окружения.
-    # XUI_NONINTERACTIVE=1 переводит установщик 3x-ui в неинтерактивный режим
-    # (строка 48 install.sh: if [[ "${XUI_NONINTERACTIVE:-0}" == "1" ]] ...).
+    # XUI_NONINTERACTIVE=1 активирует неинтерактивный режим установщика 3x-ui
+    # (строка 48 install.sh: if [[ "${XUI_NONINTERACTIVE:-0}" == "1" ]] || [[ ! -t 0 ]]).
+    # Закрываем stdin (< /dev/null) как второй триггер — [[ ! -t 0 ]] тоже становится true.
     # XUI_DB_TYPE=sqlite  — выбор БД без вопроса.
     # XUI_SSL_MODE        — режим SSL без вопроса.
     INSTALLER_TMP=$(mktemp)
     curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh -o "$INSTALLER_TMP"
-    XUI_NONINTERACTIVE=1 XUI_DB_TYPE=sqlite XUI_SSL_MODE="$XUI_SSL_MODE_VAL" bash "$INSTALLER_TMP" 2>&1 | tee "$INSTALL_LOG_FILE"
+    export XUI_NONINTERACTIVE=1 XUI_DB_TYPE=sqlite XUI_SSL_MODE="$XUI_SSL_MODE_VAL"
+    # Запускаем в subshell чтобы < /dev/null не закрыл stdin родительского процесса
+    ( bash "$INSTALLER_TMP" < /dev/null ) 2>&1 | tee "$INSTALL_LOG_FILE"
+    unset XUI_NONINTERACTIVE XUI_DB_TYPE XUI_SSL_MODE
     rm -f "$INSTALLER_TMP"
 
     # Читаем содержимое лога в переменную для последующего анализа
