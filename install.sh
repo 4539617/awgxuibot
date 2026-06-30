@@ -4325,25 +4325,26 @@ install_3xui_v3() {
     echo -e "${YELLOW}⚠ Запуск установщика 3x-ui...${NC}"
     echo -e "${YELLOW}⚠ Будет автоматически выбрана база данных SQLite${NC}"
 
-    # Определяем опцию SSL на основе глобальной настройки ENABLE_CERT_REUSE (строка 26)
-    # "false" → опция 4 (Skip SSL)
-    # "true"  → опция 2 (Let's Encrypt для IP)
+    # Определяем режим SSL через переменную окружения XUI_SSL_MODE
+    # (установщик 3x-ui читает переменные окружения когда stdin не является tty)
+    # "true"  и нет существующего сертификата → ip  (Let's Encrypt для IP, опция 2)
+    # иначе                                   → none (Skip SSL, опция 4)
     if [ "$ENABLE_CERT_REUSE" = "true" ] && [ "$USE_EXISTING_CERT" = false ]; then
-        SSL_OPTION="2"
-        echo -e "${YELLOW}⚠ Будет запрошен SSL сертификат для IP-адреса (опция 2)${NC}"
+        XUI_SSL_MODE_VAL="ip"
+        echo -e "${YELLOW}⚠ Будет запрошен SSL сертификат для IP-адреса (XUI_SSL_MODE=ip)${NC}"
     else
-        SSL_OPTION="4"
-        echo -e "${YELLOW}⚠ SSL будет пропущен (опция 4)${NC}"
+        XUI_SSL_MODE_VAL="none"
+        echo -e "${YELLOW}⚠ SSL будет пропущен (XUI_SSL_MODE=none)${NC}"
     fi
 
     # Создаем временный файл для сохранения вывода установщика
     INSTALL_LOG_FILE=$(mktemp)
 
-    # Скачиваем установщик во временный файл и запускаем через stdin
-    # (bash <(...) теряет stdin из pipe — поэтому скачиваем отдельно)
+    # Запускаем установщик через переменные окружения — единственный надёжный способ
+    # т.к. установщик использует read -rp напрямую из /dev/tty когда stdin не tty
     INSTALLER_TMP=$(mktemp)
     curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh -o "$INSTALLER_TMP"
-    printf "1\n${SSL_OPTION}\n${SERVER_IP}\n\n\n\n\n\n\n\n\n" | bash "$INSTALLER_TMP" 2>&1 | tee "$INSTALL_LOG_FILE"
+    XUI_DB_TYPE=sqlite XUI_SSL_MODE="$XUI_SSL_MODE_VAL" bash "$INSTALLER_TMP" 2>&1 | tee "$INSTALL_LOG_FILE"
     rm -f "$INSTALLER_TMP"
 
     # Читаем содержимое лога в переменную для последующего анализа
