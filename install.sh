@@ -207,7 +207,7 @@ create_config_if_not_exists() {
         cp config.yaml.example config.yaml
         
         # Получаем IP сервера
-        SERVER_IP=$(curl -s ifconfig.me)
+        SERVER_IP=$(curl -s -4 https://api4.ipify.org 2>/dev/null || curl -s -4 https://ipv4.icanhazip.com 2>/dev/null || curl -s -4 ifconfig.me 2>/dev/null || echo "")
         
         # Обновляем server_address и server_ip в локальной панели
         check_yq || return 1
@@ -360,6 +360,16 @@ get_local_panel_id() {
     echo "$panel_id"
 }
 
+# Оборачивает IP в скобки если это IPv6, чтобы URL был валидным (RFC 3986)
+format_host_for_url() {
+    local ip="$1"
+    if [[ "$ip" == *:* ]]; then
+        echo "[${ip}]"
+    else
+        echo "$ip"
+    fi
+}
+
 # Добавить локальную панель в config.yaml
 add_local_panel_to_config() {
     local xui_version=$1
@@ -414,7 +424,7 @@ add_local_panel_to_config() {
     yq eval -i ".panels.${panel_id}.xui_db_path = \"/etc/x-ui/x-ui.db\"" config.yaml
     yq eval -i ".panels.${panel_id}.inbound_id = \"1\"" config.yaml
     yq eval -i ".panels.${panel_id}.server_address = \"${server_ip}\"" config.yaml
-    yq eval -i ".panels.${panel_id}.server_ip = \"\"" config.yaml
+    yq eval -i ".panels.${panel_id}.server_ip = \"${server_ip}\"" config.yaml
     yq eval -i ".panels.${panel_id}.transport = \"tcp\"" config.yaml
     yq eval -i ".panels.${panel_id}.security = \"reality\"" config.yaml
     yq eval -i ".panels.${panel_id}.tls_sni = \"\"" config.yaml
@@ -1006,7 +1016,7 @@ interactive_setup() {
     create_static_params
     
     # Получаем IP сервера
-    SERVER_IP=$(curl -s ifconfig.me)
+    SERVER_IP=$(curl -s -4 https://api4.ipify.org 2>/dev/null || curl -s -4 https://ipv4.icanhazip.com 2>/dev/null || curl -s -4 ifconfig.me 2>/dev/null || echo "")
     
     # ==================== Telegram Bot ====================
     echo -e "\n${GREEN}📱 Настройка Telegram Bot${NC}\n"
@@ -2663,7 +2673,7 @@ install_3xui_latest() {
         fi
     fi
     
-    SERVER_IP=$(curl -s ifconfig.me)
+    SERVER_IP=$(curl -s -4 https://api4.ipify.org 2>/dev/null || curl -s -4 https://ipv4.icanhazip.com 2>/dev/null || curl -s -4 ifconfig.me 2>/dev/null || echo "")
     
     # Генерируем случайный пароль для панели
     GENERATED_PASSWORD=$(openssl rand -base64 16 | tr -d "=+/" | cut -c1-16)
@@ -2806,7 +2816,7 @@ EOF
         # Формируем URL для v2.9.4 (всегда HTTP для старой установки)
         # Используем корневой путь для упрощения
         XUI_PATH="/"
-        XUI_URL="http://${SERVER_IP}:${XUI_PORT}"
+        XUI_URL="http://$(format_host_for_url "${SERVER_IP}"):${XUI_PORT}"
         
         echo -e "\n${GREEN}═══════════════════════════════════════════${NC}"
         echo -e "${GREEN}     Панель 3x-ui успешно установлена!${NC}"
@@ -4014,7 +4024,7 @@ install_3xui_v294() {
         echo -e "${GREEN}✅ Старая панель удалена${NC}\n"
     fi
     
-    SERVER_IP=$(curl -s ifconfig.me)
+    SERVER_IP=$(curl -s -4 https://api4.ipify.org 2>/dev/null || curl -s -4 https://ipv4.icanhazip.com 2>/dev/null || curl -s -4 ifconfig.me 2>/dev/null || echo "")
     
     # Проверяем существующий сертификат перед установкой (если включено)
     USE_EXISTING_CERT=false
@@ -4221,14 +4231,14 @@ install_3xui_v294() {
         fi
         
         if [ -z "$XUI_PATH" ] || [ "$XUI_PATH" = "/" ]; then
-            XUI_URL="${PROTOCOL}://${SERVER_IP}:${XUI_PORT}"
+            XUI_URL="${PROTOCOL}://$(format_host_for_url "${SERVER_IP}"):${XUI_PORT}"
         else
             # Добавляем leading slash если нужно
             if [[ "$XUI_PATH" != /* ]]; then
                 XUI_PATH="/${XUI_PATH}"
             fi
             # Используем webBasePath независимо от протокола (HTTP или HTTPS)
-            XUI_URL="${PROTOCOL}://${SERVER_IP}:${XUI_PORT}${XUI_PATH}"
+            XUI_URL="${PROTOCOL}://$(format_host_for_url "${SERVER_IP}"):${XUI_PORT}${XUI_PATH}"
         fi
         
         echo -e "\n${GREEN}═══════════════════════════════════════════${NC}"
@@ -4527,9 +4537,9 @@ install_3xui_v3() {
                 if [[ "$XUI_WEB_BASE_PATH" != /* ]]; then
                     XUI_WEB_BASE_PATH="/${XUI_WEB_BASE_PATH}"
                 fi
-                XUI_URL="${PROTOCOL}://${SERVER_IP}:${XUI_PORT}${XUI_WEB_BASE_PATH}"
+                XUI_URL="${PROTOCOL}://$(format_host_for_url "${SERVER_IP}"):${XUI_PORT}${XUI_WEB_BASE_PATH}"
             else
-                XUI_URL="${PROTOCOL}://${SERVER_IP}:${XUI_PORT}"
+                XUI_URL="${PROTOCOL}://$(format_host_for_url "${SERVER_IP}"):${XUI_PORT}"
             fi
         fi
         
