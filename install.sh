@@ -2393,7 +2393,7 @@ show_status() {
         # Проверка автозагрузки
         local xui_restart_policy=$(docker inspect xuibot --format='{{.HostConfig.RestartPolicy.Name}}' 2>/dev/null)
         if [ "$xui_restart_policy" = "always" ]; then
-            echo -e "  Автозагрузка: ${GREEN}✅ Включена${NC} (always - всегда перезапускается)"
+            echo -e "  Автозагрузка: ${GREEN}✅ Включена${NC}"
         elif [ "$xui_restart_policy" = "unless-stopped" ]; then
             echo -e "  Автозагрузка: ${GREEN}✅ Включена${NC} (unless-stopped - кроме ручной остановки)"
         else
@@ -2420,7 +2420,7 @@ show_status() {
         # Проверка автозагрузки
         local awg_restart_policy=$(docker inspect awgbot --format='{{.HostConfig.RestartPolicy.Name}}' 2>/dev/null)
         if [ "$awg_restart_policy" = "always" ]; then
-            echo -e "  Автозагрузка: ${GREEN}✅ Включена${NC} (always - всегда перезапускается)"
+            echo -e "  Автозагрузка: ${GREEN}✅ Включена${NC}"
         elif [ "$awg_restart_policy" = "unless-stopped" ]; then
             echo -e "  Автозагрузка: ${GREEN}✅ Включена${NC} (unless-stopped - кроме ручной остановки)"
         else
