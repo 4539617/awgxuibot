@@ -3754,10 +3754,17 @@ install_3xui_v294() {
         if [ -n "$XUI_ACCESS_URL" ]; then
             # Используем URL напрямую из установщика
             XUI_URL="$XUI_ACCESS_URL"
+            
+            # ВАЖНО: Если SSL не установился, принудительно меняем https на http
+            if [ "$SSL_SETUP_FAILED" = true ]; then
+                XUI_URL=$(echo "$XUI_URL" | sed 's|^https://|http://|')
+                echo -e "${YELLOW}⚠️  SSL не установлен, URL изменен на HTTP: ${XUI_URL}${NC}"
+            fi
         else
             # Fallback: определяем протокол по наличию сертификата
             local PROTOCOL="http"
-            if [ -f "/root/cert/ip/fullchain.pem" ] && [ -f "/root/cert/ip/privkey.pem" ]; then
+            # Проверяем сертификат только если SSL_SETUP_FAILED != true
+            if [ "$SSL_SETUP_FAILED" != true ] && [ -f "/root/cert/ip/fullchain.pem" ] && [ -f "/root/cert/ip/privkey.pem" ]; then
                 PROTOCOL="https"
             fi
             
@@ -3953,14 +3960,18 @@ install_3xui_v3() {
         XUI_ACCESS_URL=$(echo "$INSTALL_OUTPUT" | grep -oP 'Access URL:\s+\K\S+' | tail -1 | sed 's/\x1b\[[0-9;]*m//g')
         
         if [ -n "$XUI_ACCESS_URL" ]; then
-            # Используем URL напрямую из установщика — он уже содержит правильный протокол
+            # Используем URL напрямую из установщика
             XUI_URL="$XUI_ACCESS_URL"
-        else
-            # Fallback: определяем протокол по наличию сертификата
-            local PROTOCOL="http"
-            if [ -f "/root/cert/ip/fullchain.pem" ] && [ -f "/root/cert/ip/privkey.pem" ]; then
-                PROTOCOL="https"
+            
+            # ВАЖНО: Мы пропускаем SSL (выбор 4), поэтому принудительно используем HTTP
+            # Если установщик вернул https, меняем на http
+            if [[ "$XUI_URL" == https://* ]]; then
+                XUI_URL=$(echo "$XUI_URL" | sed 's|^https://|http://|')
+                echo -e "${YELLOW}⚠️  SSL пропущен при установке, URL изменен на HTTP: ${XUI_URL}${NC}"
             fi
+        else
+            # Fallback: используем HTTP так как мы пропустили SSL при установке
+            local PROTOCOL="http"
             
             if [ -n "$XUI_WEB_BASE_PATH" ] && [ "$XUI_WEB_BASE_PATH" != "/" ]; then
                 if [[ "$XUI_WEB_BASE_PATH" != /* ]]; then
