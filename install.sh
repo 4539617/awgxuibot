@@ -3303,7 +3303,47 @@ STREAMEOF
     STREAM_SETTINGS_JSON_ESCAPED=$(echo "$STREAM_SETTINGS_JSON" | sed "s/'/''/g")
     SNIFFING_JSON_ESCAPED=$(echo "$SNIFFING_JSON" | sed "s/'/''/g")
     
-    # Проверяем и удаляем существующий inbound
+    # Получаем API токен и URL из config.yaml
+    local API_TOKEN=$(get_config_value "XUI_API_TOKEN")
+    local PANEL_URL=$(get_config_value "XUI_URL")
+    
+    # Пробуем создать через API (приоритет для v3)
+    local INBOUND_CREATED_API=false
+    if [ -n "$API_TOKEN" ] && [ -n "$PANEL_URL" ]; then
+        echo -e "${YELLOW}📤 Создание inbound через API...${NC}"
+        
+        local API_INBOUND_JSON=$(cat <<APIJSON
+{
+  "enable": true,
+  "remark": "VLESS-Reality-xHTTP",
+  "listen": "",
+  "port": 443,
+  "protocol": "vless",
+  "settings": {"clients":[],"decryption":"none","fallbacks":[]},
+  "streamSettings": $(echo "$STREAM_SETTINGS_JSON"),
+  "sniffing": {"enabled":true,"destOverride":["http","tls","quic","fakedns"],"metadataOnly":false,"routeOnly":false},
+  "tag": "inbound-443"
+}
+APIJSON
+)
+        local API_RESP=$(curl -sk -w "\n%{http_code}" -X POST "${PANEL_URL%/}/panel/api/inbounds/add" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${API_TOKEN}" \
+            -d "$API_INBOUND_JSON" 2>/dev/null)
+        local API_CODE=$(echo "$API_RESP" | tail -1)
+        local API_BODY=$(echo "$API_RESP" | head -n-1)
+        
+        if echo "$API_BODY" | grep -q '"success":true'; then
+            INBOUND_ID=$(echo "$API_BODY" | grep -oP '"id":\K\d+' | head -1)
+            echo -e "${GREEN}✅ XHTTP Reality inbound создан через API! ID: ${INBOUND_ID}${NC}"
+            INBOUND_CREATED_API=true
+        else
+            echo -e "${YELLOW}⚠ API не сработал (${API_CODE}), пробуем через SQL...${NC}"
+        fi
+    fi
+    
+    if [ "$INBOUND_CREATED_API" = false ]; then
+    # Проверяем и удаляем существующий inbound через SQL
     EXISTING_INBOUND=$(sqlite3 /etc/x-ui/x-ui.db "SELECT id FROM inbounds WHERE tag='inbound-443' OR remark='VLESS-Reality-xHTTP';" 2>/dev/null)
     
     if [ -n "$EXISTING_INBOUND" ]; then
@@ -3321,8 +3361,10 @@ STREAMEOF
     
     if [ $SQL_EXIT_CODE -eq 0 ]; then
         INBOUND_ID=$(sqlite3 /etc/x-ui/x-ui.db "SELECT id FROM inbounds WHERE remark='VLESS-Reality-xHTTP' ORDER BY id DESC LIMIT 1;" 2>/dev/null)
-        
-        if [ -n "$INBOUND_ID" ]; then
+    fi
+    fi # конец блока SQL
+    
+    if [ -n "$INBOUND_ID" ]; then
             echo -e "${GREEN}✅ XHTTP Reality inbound создан успешно!${NC}"
             echo -e "${GREEN}   ID: ${INBOUND_ID}${NC}"
             echo -e "${GREEN}   Порт: 443${NC}"
@@ -3368,7 +3410,6 @@ STREAMEOF
             sleep 3
             
             return 0
-        fi
     fi
     
     echo -e "${RED}❌ Ошибка создания inbound${NC}"
@@ -3435,26 +3476,60 @@ STREAMEOF
     STREAM_SETTINGS_JSON_ESCAPED=$(echo "$STREAM_SETTINGS_JSON" | sed "s/'/''/g")
     SNIFFING_JSON_ESCAPED=$(echo "$SNIFFING_JSON" | sed "s/'/''/g")
     
-    # Проверяем и удаляем существующий inbound
-    EXISTING_INBOUND=$(sqlite3 /etc/x-ui/x-ui.db "SELECT id FROM inbounds WHERE tag='inbound-443' OR remark='VLESS-Reality-TCP';" 2>/dev/null)
+    # Получаем API токен и URL из config.yaml
+    local API_TOKEN=$(get_config_value "XUI_API_TOKEN")
+    local PANEL_URL=$(get_config_value "XUI_URL")
     
-    if [ -n "$EXISTING_INBOUND" ]; then
-        echo -e "${YELLOW}⚠ Найден существующий inbound (ID: ${EXISTING_INBOUND}), удаляем...${NC}"
-        sqlite3 /etc/x-ui/x-ui.db "DELETE FROM inbounds WHERE tag='inbound-443' OR remark='VLESS-Reality-TCP';" 2>/dev/null
+    # Пробуем создать через API
+    local INBOUND_CREATED_API=false
+    if [ -n "$API_TOKEN" ] && [ -n "$PANEL_URL" ]; then
+        echo -e "${YELLOW}📤 Создание inbound через API...${NC}"
+        local API_INBOUND_JSON=$(cat <<APIJSON
+{
+  "enable": true,
+  "remark": "VLESS-Reality-TCP",
+  "listen": "",
+  "port": 443,
+  "protocol": "vless",
+  "settings": {"clients":[],"decryption":"none","fallbacks":[]},
+  "streamSettings": $(echo "$STREAM_SETTINGS_JSON"),
+  "sniffing": {"enabled":true,"destOverride":["http","tls","quic","fakedns"],"metadataOnly":false,"routeOnly":false},
+  "tag": "inbound-443"
+}
+APIJSON
+)
+        local API_RESP=$(curl -sk -w "\n%{http_code}" -X POST "${PANEL_URL%/}/panel/api/inbounds/add" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${API_TOKEN}" \
+            -d "$API_INBOUND_JSON" 2>/dev/null)
+        local API_CODE=$(echo "$API_RESP" | tail -1)
+        local API_BODY=$(echo "$API_RESP" | head -n-1)
+        
+        if echo "$API_BODY" | grep -q '"success":true'; then
+            INBOUND_ID=$(echo "$API_BODY" | grep -oP '"id":\K\d+' | head -1)
+            echo -e "${GREEN}✅ TCP Reality inbound создан через API! ID: ${INBOUND_ID}${NC}"
+            INBOUND_CREATED_API=true
+        else
+            echo -e "${YELLOW}⚠ API не сработал (${API_CODE}), пробуем через SQL...${NC}"
+        fi
     fi
     
-    # Вставляем inbound в базу данных
+    if [ "$INBOUND_CREATED_API" = false ]; then
+    EXISTING_INBOUND=$(sqlite3 /etc/x-ui/x-ui.db "SELECT id FROM inbounds WHERE tag='inbound-443' OR remark='VLESS-Reality-TCP';" 2>/dev/null)
+    if [ -n "$EXISTING_INBOUND" ]; then
+        sqlite3 /etc/x-ui/x-ui.db "DELETE FROM inbounds WHERE tag='inbound-443' OR remark='VLESS-Reality-TCP';" 2>/dev/null
+    fi
     SQL_INSERT="INSERT INTO inbounds (user_id, up, down, total, remark, enable, expiry_time, listen, port, protocol, settings, stream_settings, tag, sniffing) VALUES (1, 0, 0, 0, 'VLESS-Reality-TCP', 1, 0, '', 443, 'vless', '${SETTINGS_JSON_ESCAPED}', '${STREAM_SETTINGS_JSON_ESCAPED}', 'inbound-443', '${SNIFFING_JSON_ESCAPED}');"
-    
     set +e
     SQL_RESULT=$(sqlite3 /etc/x-ui/x-ui.db "${SQL_INSERT}" 2>&1)
     SQL_EXIT_CODE=$?
     set -e
-    
     if [ $SQL_EXIT_CODE -eq 0 ]; then
         INBOUND_ID=$(sqlite3 /etc/x-ui/x-ui.db "SELECT id FROM inbounds WHERE remark='VLESS-Reality-TCP' ORDER BY id DESC LIMIT 1;" 2>/dev/null)
-        
-        if [ -n "$INBOUND_ID" ]; then
+    fi
+    fi # конец блока SQL
+    
+    if [ -n "$INBOUND_ID" ]; then
             echo -e "${GREEN}✅ TCP Reality inbound создан успешно!${NC}"
             echo -e "${GREEN}   ID: ${INBOUND_ID}${NC}"
             echo -e "${GREEN}   Порт: 443${NC}"
@@ -3500,7 +3575,6 @@ STREAMEOF
             sleep 3
             
             return 0
-        fi
     fi
     
     echo -e "${RED}❌ Ошибка создания inbound${NC}"
@@ -4304,13 +4378,18 @@ install_3xui_v3() {
     fi
     
     # Очистка поврежденных сертификатов перед установкой
+    # Удаляем только если: нет существующего сертификата И директория acme.sh существует
+    # И ключ реально повреждён (не читается ни как EC, ни как RSA)
     if [ "$USE_EXISTING_CERT" = false ] && [ -n "$SERVER_IP" ] && [ -d "/root/.acme.sh/${SERVER_IP}_ecc" ]; then
-        echo -e "${YELLOW}🧹 Обнаружен поврежденный сертификат, удаляем...${NC}"
-        
-        # Проверяем целостность ключа
-        if [ -f "/root/.acme.sh/${SERVER_IP}_ecc/${SERVER_IP}.key" ]; then
-            if ! openssl rsa -in "/root/.acme.sh/${SERVER_IP}_ecc/${SERVER_IP}.key" -check -noout 2>/dev/null; then
-                echo -e "${YELLOW}⚠️  Приватный ключ поврежден, удаляем директорию сертификата${NC}"
+        local KEY_FILE="/root/.acme.sh/${SERVER_IP}_ecc/${SERVER_IP}.key"
+        if [ -f "$KEY_FILE" ]; then
+            # Проверяем как EC (acme.sh с IP использует ECC) и как RSA
+            if openssl ec -in "$KEY_FILE" -check -noout 2>/dev/null || \
+               openssl rsa -in "$KEY_FILE" -check -noout 2>/dev/null; then
+                # Ключ целостный — НЕ удаляем, это валидный сертификат
+                echo -e "${BLUE}ℹ️  Сертификат в acme.sh валиден, оставляем${NC}"
+            else
+                echo -e "${YELLOW}⚠️  Приватный ключ повреждён, удаляем директорию сертификата${NC}"
                 rm -rf "/root/.acme.sh/${SERVER_IP}_ecc"
                 echo -e "${GREEN}✓ Поврежденный сертификат удален${NC}"
             fi
@@ -4430,15 +4509,28 @@ install_3xui_v3() {
         # Получение IP сервера
         SERVER_IP=$(curl -s https://api4.ipify.org 2>/dev/null || curl -s https://ipv4.icanhazip.com 2>/dev/null || echo "YOUR_SERVER_IP")
         
-        # Формируем URL с webBasePath если он есть
-        if [ -n "$XUI_WEB_BASE_PATH" ] && [ "$XUI_WEB_BASE_PATH" != "/" ]; then
-            # Добавляем leading slash если нужно
-            if [[ "$XUI_WEB_BASE_PATH" != /* ]]; then
-                XUI_WEB_BASE_PATH="/${XUI_WEB_BASE_PATH}"
-            fi
-            XUI_URL="http://${SERVER_IP}:${XUI_PORT}${XUI_WEB_BASE_PATH}"
+        # Определяем протокол: читаем Access URL из вывода установщика
+        # Установщик сам знает был ли настроен SSL
+        XUI_ACCESS_URL=$(echo "$INSTALL_OUTPUT" | grep -oP 'Access URL:\s+\K\S+' | tail -1 | sed 's/\x1b\[[0-9;]*m//g')
+        
+        if [ -n "$XUI_ACCESS_URL" ]; then
+            # Используем URL напрямую из установщика — он уже содержит правильный протокол
+            XUI_URL="$XUI_ACCESS_URL"
         else
-            XUI_URL="http://${SERVER_IP}:${XUI_PORT}"
+            # Fallback: определяем протокол по наличию сертификата
+            local PROTOCOL="http"
+            if [ -f "/root/cert/ip/fullchain.pem" ] && [ -f "/root/cert/ip/privkey.pem" ]; then
+                PROTOCOL="https"
+            fi
+            
+            if [ -n "$XUI_WEB_BASE_PATH" ] && [ "$XUI_WEB_BASE_PATH" != "/" ]; then
+                if [[ "$XUI_WEB_BASE_PATH" != /* ]]; then
+                    XUI_WEB_BASE_PATH="/${XUI_WEB_BASE_PATH}"
+                fi
+                XUI_URL="${PROTOCOL}://${SERVER_IP}:${XUI_PORT}${XUI_WEB_BASE_PATH}"
+            else
+                XUI_URL="${PROTOCOL}://${SERVER_IP}:${XUI_PORT}"
+            fi
         fi
         
         # Создание config.yaml если не существует (БЕЗ попытки обновить локальную панель)
