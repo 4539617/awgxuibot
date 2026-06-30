@@ -1015,6 +1015,11 @@ interactive_setup() {
     
     XUI_BOT_TOKEN=$(get_config_value "XUI_BOT_TOKEN" | tr -d '"')
     if [ -z "$XUI_BOT_TOKEN" ]; then
+        if [ -n "$NONINTERACTIVE" ]; then
+            echo -e "${RED}❌ Ошибка: XUI_BOT_TOKEN не установлен${NC}"
+            echo -e "${YELLOW}Установите XUI_BOT_TOKEN в config.yaml перед автоматической установкой${NC}"
+            return 1
+        fi
         read -p "Введите XUI_BOT_TOKEN: " XUI_BOT_TOKEN
         update_config_value "XUI_BOT_TOKEN" "$XUI_BOT_TOKEN"
     else
@@ -1023,6 +1028,11 @@ interactive_setup() {
     
     ADMIN_IDS=$(get_env_value "ADMIN_IDS")
     if [ -z "$ADMIN_IDS" ]; then
+        if [ -n "$NONINTERACTIVE" ]; then
+            echo -e "${RED}❌ Ошибка: ADMIN_IDS не установлен${NC}"
+            echo -e "${YELLOW}Установите ADMIN_IDS в config.yaml перед автоматической установкой${NC}"
+            return 1
+        fi
         read -p "Введите ADMIN_IDS (ID администраторов через запятую): " ADMIN_IDS
         update_config_value "ADMIN_IDS" "$ADMIN_IDS"
     else
@@ -3739,14 +3749,7 @@ STREAMEOF
 
 # Функция меню после установки 3x-ui
 post_install_menu() {
-    # В автоматическом режиме — автоматически создаём inbound и устанавливаем бота
-    if [ -n "$NONINTERACTIVE" ]; then
-        echo -e "${BLUE}ℹ️  Автоматический режим: создаём XHTTP Reality inbound и устанавливаем бота${NC}"
-        if create_xhttp_reality_inbound; then
-            install_bot
-        fi
-        return
-    fi
+    # Меню после установки всегда интерактивное
 
     while true; do
         echo -e "\n${BLUE}========================================${NC}"
@@ -4370,10 +4373,8 @@ EOF
         echo -e "${YELLOW}⚠ API Token необходим для работы бота с панелью v3${NC}"
         echo -e "${YELLOW}⚠ Все данные сохранены в файл config.yaml${NC}\n"
         
-        # Вызов меню после установки (пропускаем в автоматическом режиме)
-        if [ -z "$NONINTERACTIVE" ]; then
-            post_install_menu
-        fi
+        # Вызов меню после установки (в автоматическом режиме создаст inbound и установит бота)
+        post_install_menu
     else
         echo -e "\n${RED}✗ Ошибка установки 3x-ui v3.x панели${NC}"
         echo -e "${YELLOW}Проверьте логи установки выше${NC}"
@@ -5147,8 +5148,7 @@ while true; do
             fi
             export NONINTERACTIVE=1
             install_3xui_v3
-            echo -e "\n${GREEN}✅ Установка завершена успешно!${NC}"
-            exit 0
+            unset NONINTERACTIVE
             ;;
         4)
             sync_repository
