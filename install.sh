@@ -1015,11 +1015,6 @@ interactive_setup() {
     
     XUI_BOT_TOKEN=$(get_config_value "XUI_BOT_TOKEN" | tr -d '"')
     if [ -z "$XUI_BOT_TOKEN" ]; then
-        if [ -n "$NONINTERACTIVE" ]; then
-            echo -e "${RED}❌ Ошибка: XUI_BOT_TOKEN не установлен${NC}"
-            echo -e "${YELLOW}Установите XUI_BOT_TOKEN в config.yaml перед автоматической установкой${NC}"
-            return 1
-        fi
         read -p "Введите XUI_BOT_TOKEN: " XUI_BOT_TOKEN
         update_config_value "XUI_BOT_TOKEN" "$XUI_BOT_TOKEN"
     else
@@ -1028,11 +1023,6 @@ interactive_setup() {
     
     ADMIN_IDS=$(get_env_value "ADMIN_IDS")
     if [ -z "$ADMIN_IDS" ]; then
-        if [ -n "$NONINTERACTIVE" ]; then
-            echo -e "${RED}❌ Ошибка: ADMIN_IDS не установлен${NC}"
-            echo -e "${YELLOW}Установите ADMIN_IDS в config.yaml перед автоматической установкой${NC}"
-            return 1
-        fi
         read -p "Введите ADMIN_IDS (ID администраторов через запятую): " ADMIN_IDS
         update_config_value "ADMIN_IDS" "$ADMIN_IDS"
     else
@@ -3749,7 +3739,6 @@ STREAMEOF
 
 # Функция меню после установки 3x-ui
 post_install_menu() {
-    # Меню после установки всегда интерактивное
 
     while true; do
         echo -e "\n${BLUE}========================================${NC}"
@@ -4130,30 +4119,19 @@ install_3xui_v3() {
     
     # Установка через официальный скрипт
     echo -e "${YELLOW}⚠ Запуск установщика 3x-ui...${NC}"
-    echo -e "${YELLOW}⚠ Установщик 3x-ui сам управляет SSL сертификатами${NC}"
+    echo -e "${YELLOW}⚠ Будет автоматически выбрана база данных SQLite${NC}"
 
     # Создаем временный файл для сохранения вывода установщика
-    INSTALL_LOG_FILE=$(mktemp)
+    INSTALL_OUTPUT=$(mktemp)
 
-    # Запускаем официальный установщик 3x-ui
-    # Он сам управляет SSL сертификатами через свой интерактивный процесс
     # Автоматически отвечаем на вопросы установщика:
-    # 1 - выбор SQLite (по умолчанию, рекомендуется для < 500 клиентов)
-    # n - не настраивать порт панели (будет случайный)
-    # 4 - пропустить SSL (Skip SSL)
-    # (пусто) - IPv6 address (skip)
-    # (пусто) - Port для ACME (default 80)
-    bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh) 2>&1 << EOF | tee "$INSTALL_LOG_FILE"
-1
-n
-4
+    # 1 - выбор SQLite
+    # 4 - пропуск SSL (Skip SSL)
+    # Добавляем больше пустых строк для обработки всех возможных вопросов
+    printf '1\n4\n\n\n\n\n\n\n\n\n\n' | bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh) 2>&1 | tee "$INSTALL_OUTPUT"
 
-
-EOF
-
-    # Читаем содержимое лога в переменную для последующего анализа
-    INSTALL_OUTPUT=$(cat "$INSTALL_LOG_FILE" 2>/dev/null || echo "")
-    rm -f "$INSTALL_LOG_FILE"
+    # Удаляем временный файл
+    rm -f "$INSTALL_OUTPUT"
     
     # Проверка успешности установки
     if systemctl is-active --quiet x-ui; then
@@ -4373,7 +4351,7 @@ EOF
         echo -e "${YELLOW}⚠ API Token необходим для работы бота с панелью v3${NC}"
         echo -e "${YELLOW}⚠ Все данные сохранены в файл config.yaml${NC}\n"
         
-        # Вызов меню после установки (в автоматическом режиме создаст inbound и установит бота)
+        # Вызов меню после установки
         post_install_menu
     else
         echo -e "\n${RED}✗ Ошибка установки 3x-ui v3.x панели${NC}"
@@ -5146,9 +5124,7 @@ while true; do
                     continue
                 fi
             fi
-            export NONINTERACTIVE=1
             install_3xui_v3
-            unset NONINTERACTIVE
             ;;
         4)
             sync_repository
