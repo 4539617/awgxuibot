@@ -2619,9 +2619,14 @@ select_xui_version() {
     echo -e "\n${BLUE}Рекомендации:${NC}"
     echo -e "  ${YELLOW}v2.9.4${NC} - работает через прямой доступ к БД"
     echo -e "  ${YELLOW}v3.x${NC}   - работает через API (требуется API токен)"
-    echo -e "\n${YELLOW}Выберите версию для установки [1]:${NC} "
-    read -p "" version_choice
-    version_choice=${version_choice:-1}
+    if [ -n "$NONINTERACTIVE" ]; then
+        version_choice="${XUI_VERSION_CHOICE:-3}"
+        echo -e "${BLUE}ℹ️  Автоматический режим: выбрана версия ${version_choice}${NC}"
+    else
+        echo -e "\n${YELLOW}Выберите версию для установки [3]:${NC} "
+        read -p "" version_choice
+        version_choice=${version_choice:-3}
+    fi
     
     case $version_choice in
         1)
@@ -2631,12 +2636,16 @@ select_xui_version() {
             echo -e "\n${RED}⚠️  ВНИМАНИЕ!${NC}"
             echo -e "${YELLOW}Последняя версия v2.x может быть нестабильной!${NC}"
             echo -e "${YELLOW}Рекомендуется использовать v2.9.4 или v3.x${NC}"
-            read -p "Вы уверены что хотите продолжить? (нажмите Enter для подтверждения или 0 для отмены): " confirm_latest
+            if [ -z "$NONINTERACTIVE" ]; then
+                read -p "Вы уверены что хотите продолжить? (нажмите Enter для подтверждения или 0 для отмены): " confirm_latest
+            else
+                confirm_latest=""
+            fi
             if [[ "$confirm_latest" != "0" ]]; then
                 install_3xui_latest
             else
-                echo -e "${GREEN}Отменено. Устанавливаем v2.9.4...${NC}"
-                install_3xui_v294
+                echo -e "${GREEN}Отменено. Устанавливаем v3.x...${NC}"
+                install_3xui_v3
             fi
             ;;
         3)
@@ -2650,9 +2659,9 @@ select_xui_version() {
             return
             ;;
         *)
-            echo -e "${YELLOW}Неверный выбор. Устанавливаем v2.9.4 по умолчанию...${NC}"
+            echo -e "${YELLOW}Неверный выбор. Устанавливаем v3.x по умолчанию...${NC}"
             sleep 2
-            install_3xui_v294
+            install_3xui_v3
             ;;
     esac
 }
@@ -2666,7 +2675,12 @@ install_3xui_latest() {
     # Проверка установлена ли уже панель
     if systemctl is-active --quiet x-ui; then
         echo -e "${YELLOW}⚠ 3x-ui панель уже установлена${NC}"
-        read -p "Переустановить? (нажмите Enter для подтверждения или 0 для отмены): " reinstall
+        if [ -z "$NONINTERACTIVE" ]; then
+            read -p "Переустановить? (нажмите Enter для подтверждения или 0 для отмены): " reinstall
+        else
+            reinstall=""
+            echo -e "${BLUE}ℹ️  Автоматический режим: продолжаем переустановку${NC}"
+        fi
         if [[ "$reinstall" == "0" ]]; then
             echo -e "${YELLOW}Отменено${NC}"
             return
@@ -3727,6 +3741,12 @@ STREAMEOF
 
 # Функция меню после установки 3x-ui
 post_install_menu() {
+    # В автоматическом режиме — пропускаем всё меню
+    if [ -n "$NONINTERACTIVE" ]; then
+        echo -e "${BLUE}ℹ️  Автоматический режим: пропускаем меню после установки${NC}"
+        return
+    fi
+
     while true; do
         echo -e "\n${BLUE}========================================${NC}"
         echo -e "${BLUE}   Создать подключение?${NC}"
@@ -3761,7 +3781,6 @@ post_install_menu() {
             case $inbound_type in
                 1)
                     if create_xhttp_reality_inbound; then
-                        # Предлагаем установить бота
                         echo -e "\n${BLUE}========================================${NC}"
                         echo -e "${BLUE}   Установить xuibot?${NC}"
                         echo -e "${BLUE}========================================${NC}"
@@ -3769,7 +3788,6 @@ post_install_menu() {
                         echo -e "${GREEN}0${NC}     - Нет, вернуться в главное меню"
                         echo -e "${BLUE}========================================${NC}"
                         read -p "Ваш выбор: " install_bot_choice
-                        
                         if [[ "$install_bot_choice" != "0" ]]; then
                             install_bot
                         fi
@@ -3778,7 +3796,6 @@ post_install_menu() {
                     ;;
                 2)
                     if create_tcp_reality_inbound; then
-                        # Предлагаем установить бота
                         echo -e "\n${BLUE}========================================${NC}"
                         echo -e "${BLUE}   Установить xuibot?${NC}"
                         echo -e "${BLUE}========================================${NC}"
@@ -3786,7 +3803,6 @@ post_install_menu() {
                         echo -e "${GREEN}0${NC}     - Нет, вернуться в главное меню"
                         echo -e "${BLUE}========================================${NC}"
                         read -p "Ваш выбор: " install_bot_choice
-                        
                         if [[ "$install_bot_choice" != "0" ]]; then
                             install_bot
                         fi
@@ -3795,7 +3811,6 @@ post_install_menu() {
                     ;;
                 3)
                     if create_tcp_tls_inbound; then
-                        # Предлагаем установить бота
                         echo -e "\n${BLUE}========================================${NC}"
                         echo -e "${BLUE}   Установить xuibot?${NC}"
                         echo -e "${BLUE}========================================${NC}"
@@ -3803,7 +3818,6 @@ post_install_menu() {
                         echo -e "${GREEN}0${NC}     - Нет, вернуться в главное меню"
                         echo -e "${BLUE}========================================${NC}"
                         read -p "Ваш выбор: " install_bot_choice
-                        
                         if [[ "$install_bot_choice" != "0" ]]; then
                             install_bot
                         fi
@@ -3837,7 +3851,12 @@ check_existing_certificate() {
                 echo -e "${GREEN}✅ Сертификат действителен ещё ${days_left} дней${NC}"
                 echo -e "${BLUE}Срок действия до: ${expiry_date}${NC}"
                 
-                read -p "Использовать существующий сертификат? (Enter - да, 0 - запросить новый): " use_existing
+                if [ -z "$NONINTERACTIVE" ]; then
+                    read -p "Использовать существующий сертификат? (Enter - да, 0 - запросить новый): " use_existing
+                else
+                    use_existing=""
+                    echo -e "${BLUE}ℹ️  Автоматический режим: используем существующий сертификат${NC}"
+                fi
                 
                 if [[ "$use_existing" != "0" ]]; then
                     return 0  # Использовать существующий
@@ -3975,7 +3994,12 @@ install_3xui_v294() {
     # Проверка установлена ли уже панель
     if systemctl is-active --quiet x-ui; then
         echo -e "${YELLOW}⚠ 3x-ui панель уже установлена${NC}"
-        read -p "Переустановить? (нажмите Enter для подтверждения или 0 для отмены): " reinstall
+        if [ -z "$NONINTERACTIVE" ]; then
+            read -p "Переустановить? (нажмите Enter для подтверждения или 0 для отмены): " reinstall
+        else
+            reinstall=""
+            echo -e "${BLUE}ℹ️  Автоматический режим: продолжаем переустановку${NC}"
+        fi
         if [[ "$reinstall" == "0" ]]; then
             echo -e "${YELLOW}Отменено${NC}"
             return
@@ -4316,8 +4340,10 @@ install_3xui_v294() {
         
 
 
-        # Интерактивное меню после установки
-        post_install_menu
+        # Интерактивное меню после установки (пропускаем в автоматическом режиме)
+        if [ -z "$NONINTERACTIVE" ]; then
+            post_install_menu
+        fi
     else
         echo -e "\n${RED}❌ Ошибка установки 3x-ui v2.9.4 панели${NC}"
     fi
@@ -4337,7 +4363,12 @@ install_3xui_v3() {
     # Проверка установленной панели
     if systemctl is-active --quiet x-ui; then
         echo -e "${YELLOW}⚠ 3x-ui панель уже установлена${NC}"
-        read -p "Переустановить? (нажмите Enter для продолжения или 0 для отмены): " reinstall
+        if [ -z "$NONINTERACTIVE" ]; then
+            read -p "Переустановить? (нажмите Enter для продолжения или 0 для отмены): " reinstall
+        else
+            reinstall=""
+            echo -e "${BLUE}ℹ️  Автоматический режим: продолжаем переустановку${NC}"
+        fi
         if [[ "$reinstall" == "0" ]]; then
             echo -e "${YELLOW}Отменено${NC}"
             return
@@ -4353,7 +4384,7 @@ install_3xui_v3() {
     echo -e "${GREEN}PostgreSQL - для высоких нагрузок и множества узлов${NC}\n"
     
     # Получаем IP сервера для проверки сертификата
-    SERVER_IP=$(curl -s https://api4.ipify.org 2>/dev/null || curl -s https://ipv4.icanhazip.com 2>/dev/null || echo "")
+    SERVER_IP=$(curl -s -4 https://api4.ipify.org 2>/dev/null || curl -s -4 https://ipv4.icanhazip.com 2>/dev/null || curl -s -4 ifconfig.me 2>/dev/null || echo "")
     
     # Проверка существующего SSL сертификата
     USE_EXISTING_CERT=false
@@ -4517,7 +4548,7 @@ install_3xui_v3() {
         fi
         
         # Получение IP сервера
-        SERVER_IP=$(curl -s https://api4.ipify.org 2>/dev/null || curl -s https://ipv4.icanhazip.com 2>/dev/null || echo "YOUR_SERVER_IP")
+        SERVER_IP=$(curl -s -4 https://api4.ipify.org 2>/dev/null || curl -s -4 https://ipv4.icanhazip.com 2>/dev/null || curl -s -4 ifconfig.me 2>/dev/null || echo "YOUR_SERVER_IP")
         
         # Определяем протокол: читаем Access URL из вывода установщика
         # Установщик сам знает был ли настроен SSL
@@ -4689,8 +4720,10 @@ install_3xui_v3() {
         echo -e "${YELLOW}⚠ API Token необходим для работы бота с панелью v3${NC}"
         echo -e "${YELLOW}⚠ Все данные сохранены в файл .env${NC}\n"
         
-        # Вызов меню после установки
-        post_install_menu
+        # Вызов меню после установки (пропускаем в автоматическом режиме)
+        if [ -z "$NONINTERACTIVE" ]; then
+            post_install_menu
+        fi
     else
         echo -e "\n${RED}✗ Ошибка установки 3x-ui v3.x панели${NC}"
         echo -e "${YELLOW}Проверьте логи установки выше${NC}"
@@ -5451,7 +5484,7 @@ while true; do
                     continue
                 fi
             fi
-            install_3xui_v294
+            NONINTERACTIVE=1; install_3xui_v294; unset NONINTERACTIVE
             ;;
         3)
             sync_repository
@@ -5462,7 +5495,7 @@ while true; do
                     continue
                 fi
             fi
-            install_3xui_v3
+            NONINTERACTIVE=1; install_3xui_v3; unset NONINTERACTIVE
             ;;
         4)
             sync_repository
