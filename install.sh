@@ -5136,7 +5136,9 @@ while true; do
                     continue
                 fi
             fi
-            NONINTERACTIVE=1; install_3xui_v3; unset NONINTERACTIVE
+            NONINTERACTIVE=1
+            install_3xui_v3
+            exit 0
             ;;
         4)
             sync_repository
@@ -5323,8 +5325,10 @@ while true; do
             ;;
     esac
     
-    echo -e "\n${YELLOW}Нажмите Enter для продолжения...${NC}"
-    read
+    if [ -z "$NONINTERACTIVE" ]; then
+        echo -e "\n${YELLOW}Нажмите Enter для продолжения...${NC}"
+        read
+    fi
 done
 
 # ============================================
