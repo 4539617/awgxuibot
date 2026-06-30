@@ -17,14 +17,6 @@ WORK_DIR="/opt/awgxuibot"
 DEFAULT_REALITY_SNI="www.nvidia.com"
 DEFAULT_REALITY_FINGERPRINT="edge"  # Варианты: edge, chrome, firefox, safari
 
-# ============================================
-# НАСТРОЙКИ SSL СЕРТИФИКАТА
-# ============================================
-# Включить проверку и переиспользование существующих SSL сертификатов
-# true  - проверять существующие сертификаты и предлагать их использовать (рекомендуется)
-# false - всегда запрашивать новый сертификат при установке 3x-ui (может привести к Rate Limit)
-ENABLE_CERT_REUSE="true"
-# ============================================
 
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}   awgbot + xuibot Installer${NC}"
@@ -3832,158 +3824,6 @@ post_install_menu() {
     done
 }
 # Функция проверки существующего сертификата
-check_existing_certificate() {
-    local server_ip=$1
-    local cert_dir="/root/.acme.sh/${server_ip}_ecc"
-    
-    # Проверяем наличие сертификата
-    if [ -d "$cert_dir" ] && [ -f "$cert_dir/fullchain.cer" ] && [ -f "$cert_dir/${server_ip}.key" ]; then
-        echo -e "${YELLOW}🔍 Найден существующий сертификат для ${server_ip}${NC}"
-        
-        # Проверяем срок действия сертификата
-        local expiry_date=$(openssl x509 -enddate -noout -in "$cert_dir/fullchain.cer" 2>/dev/null | cut -d= -f2)
-        if [ -n "$expiry_date" ]; then
-            local expiry_epoch=$(date -d "$expiry_date" +%s 2>/dev/null)
-            local current_epoch=$(date +%s)
-            local days_left=$(( ($expiry_epoch - $current_epoch) / 86400 ))
-            
-            if [ $days_left -gt 0 ]; then
-                echo -e "${GREEN}✅ Сертификат действителен ещё ${days_left} дней${NC}"
-                echo -e "${BLUE}Срок действия до: ${expiry_date}${NC}"
-                
-                if [ -z "$NONINTERACTIVE" ]; then
-                    read -p "Использовать существующий сертификат? (Enter - да, 0 - запросить новый): " use_existing
-                else
-                    use_existing=""
-                    echo -e "${BLUE}ℹ️  Автоматический режим: используем существующий сертификат${NC}"
-                fi
-                
-                if [[ "$use_existing" != "0" ]]; then
-                    return 0  # Использовать существующий
-                else
-                    return 1  # Запросить новый
-                fi
-            else
-                echo -e "${RED}⚠️  Сертификат истёк ${days_left#-} дней назад${NC}"
-                return 1  # Запросить новый
-            fi
-        else
-            echo -e "${YELLOW}⚠️  Не удалось проверить срок действия сертификата${NC}"
-            return 1
-        fi
-    else
-        echo -e "${YELLOW}ℹ️  Существующий сертификат не найден${NC}"
-        return 1  # Запросить новый
-    fi
-}
-
-# Функция установки существующего сертификата в 3x-ui
-install_existing_certificate() {
-    local server_ip=$1
-    local cert_dir="/root/.acme.sh/${server_ip}_ecc"
-    local target_dir="/root/cert/ip"
-    
-    echo -e "${YELLOW}📦 Установка существующего сертификата...${NC}"
-    
-    # Проверяем что директория с сертификатом существует
-    if [ ! -d "$cert_dir" ]; then
-        echo -e "${RED}❌ Директория с сертификатом не найдена: $cert_dir${NC}"
-        return 1
-    fi
-    
-    # Проверяем что файлы сертификата существуют
-    if [ ! -f "$cert_dir/${server_ip}.key" ]; then
-        echo -e "${RED}❌ Файл ключа не найден: $cert_dir/${server_ip}.key${NC}"
-        return 1
-    fi
-    
-    if [ ! -f "$cert_dir/fullchain.cer" ]; then
-        echo -e "${RED}❌ Файл сертификата не найден: $cert_dir/fullchain.cer${NC}"
-        return 1
-    fi
-    
-    echo -e "${BLUE}📂 Источник: $cert_dir${NC}"
-    echo -e "${BLUE}📂 Назначение: $target_dir${NC}"
-    
-    # Создаём целевую директорию
-    mkdir -p "$target_dir"
-    
-    # Удаляем старые файлы/симлинки если существуют
-    rm -f "$target_dir/privkey.pem" "$target_dir/fullchain.pem"
-    
-    # Создаём символические ссылки вместо копирования
-    echo -e "${YELLOW}🔗 Создание символических ссылок...${NC}"
-    if ln -sf "$cert_dir/${server_ip}.key" "$target_dir/privkey.pem" && \
-       ln -sf "$cert_dir/fullchain.cer" "$target_dir/fullchain.pem"; then
-        
-        echo -e "${GREEN}✅ Символические ссылки созданы${NC}"
-        echo -e "${BLUE}   $target_dir/privkey.pem -> $cert_dir/${server_ip}.key${NC}"
-        echo -e "${BLUE}   $target_dir/fullchain.pem -> $cert_dir/fullchain.cer${NC}"
-        echo -e "${GREEN}ℹ️  Сертификат будет автоматически обновляться через acme.sh${NC}"
-        
-        # Настраиваем пути в 3x-ui через базу данных
-        if [ -f "/etc/x-ui/x-ui.db" ]; then
-            echo -e "${YELLOW}🔧 Настройка путей к сертификатам в панели...${NC}"
-            
-            # Устанавливаем sqlite3 если не установлен
-            if ! command -v sqlite3 &> /dev/null; then
-                apt-get update -qq && apt-get install -y sqlite3 -qq > /dev/null 2>&1
-            fi
-            
-            # Останавливаем панель для безопасной работы с базой
-            systemctl stop x-ui 2>/dev/null || true
-            sleep 1
-            
-            # Добавляем пути к сертификатам с несколькими попытками
-            local max_attempts=3
-            local attempt=1
-            local success=false
-            
-            while [ $attempt -le $max_attempts ]; do
-                # Удаляем старые записи если есть
-                sqlite3 /etc/x-ui/x-ui.db "DELETE FROM settings WHERE key IN ('webCertFile', 'webKeyFile');" 2>/dev/null
-                
-                # Добавляем новые записи
-                sqlite3 /etc/x-ui/x-ui.db "INSERT INTO settings (key, value) VALUES ('webCertFile', '/root/cert/ip/fullchain.pem');" 2>/dev/null
-                sqlite3 /etc/x-ui/x-ui.db "INSERT INTO settings (key, value) VALUES ('webKeyFile', '/root/cert/ip/privkey.pem');" 2>/dev/null
-                
-                # Проверяем что записи добавлены
-                local cert_file=$(sqlite3 /etc/x-ui/x-ui.db "SELECT value FROM settings WHERE key='webCertFile';" 2>/dev/null)
-                local key_file=$(sqlite3 /etc/x-ui/x-ui.db "SELECT value FROM settings WHERE key='webKeyFile';" 2>/dev/null)
-                
-                if [ -n "$cert_file" ] && [ -n "$key_file" ]; then
-                    echo -e "${GREEN}✅ Пути к сертификатам настроены (попытка $attempt)${NC}"
-                    echo -e "${BLUE}   Certificate: $cert_file${NC}"
-                    echo -e "${BLUE}   Private Key: $key_file${NC}"
-                    success=true
-                    break
-                else
-                    echo -e "${YELLOW}⚠️  Попытка $attempt не удалась, повторяю...${NC}"
-                    attempt=$((attempt + 1))
-                    sleep 1
-                fi
-            done
-            
-            if [ "$success" = false ]; then
-                echo -e "${RED}⚠️  Не удалось настроить пути к сертификатам после $max_attempts попыток${NC}"
-                echo -e "${YELLOW}💡 Настройте вручную через веб-интерфейс панели:${NC}"
-                echo -e "${YELLOW}   Certificate: /root/cert/ip/fullchain.pem${NC}"
-                echo -e "${YELLOW}   Private Key: /root/cert/ip/privkey.pem${NC}"
-            fi
-            
-            # Запускаем панель обратно
-            systemctl start x-ui 2>/dev/null || true
-            sleep 2
-        fi
-        
-        echo -e "${GREEN}✅ Существующий сертификат успешно установлен!${NC}"
-        return 0
-    else
-        echo -e "${RED}❌ Ошибка копирования сертификата${NC}"
-        return 1
-    fi
-}
-
 
 # Функция установки 3x-ui панели версии 2.9.4
 install_3xui_v294() {
@@ -4050,70 +3890,13 @@ install_3xui_v294() {
     
     SERVER_IP=$(curl -s -4 https://api4.ipify.org 2>/dev/null || curl -s -4 https://ipv4.icanhazip.com 2>/dev/null || curl -s -4 ifconfig.me 2>/dev/null || echo "")
     
-    # Проверяем существующий сертификат перед установкой (если включено)
-    USE_EXISTING_CERT=false
-    if [ "$ENABLE_CERT_REUSE" = "true" ]; then
-        echo -e "\n${BLUE}═══════════════════════════════════════════${NC}"
-        echo -e "${BLUE}     Проверка SSL сертификата${NC}"
-        echo -e "${BLUE}═══════════════════════════════════════════${NC}\n"
-        
-        if check_existing_certificate "$SERVER_IP"; then
-            USE_EXISTING_CERT=true
-            echo -e "${GREEN}✓ Будет использован существующий сертификат${NC}\n"
-        else
-            echo -e "${YELLOW}ℹ️  Будет запрошен новый сертификат при установке${NC}\n"
-        fi
-    else
-        echo -e "\n${YELLOW}ℹ️  Проверка существующих сертификатов отключена (ENABLE_CERT_REUSE=false)${NC}"
-        echo -e "${YELLOW}ℹ️  Будет запрошен новый сертификат при установке${NC}\n"
-    fi
-    
-    # Очистка поврежденных сертификатов перед установкой
-    if [ "$USE_EXISTING_CERT" = false ] && [ -d "/root/.acme.sh/${SERVER_IP}_ecc" ]; then
-        echo -e "${YELLOW}🧹 Обнаружен поврежденный сертификат, удаляем...${NC}"
-        
-        # Проверяем целостность ключа
-        if [ -f "/root/.acme.sh/${SERVER_IP}_ecc/${SERVER_IP}.key" ]; then
-            if ! openssl rsa -in "/root/.acme.sh/${SERVER_IP}_ecc/${SERVER_IP}.key" -check -noout 2>/dev/null; then
-                echo -e "${YELLOW}⚠️  Приватный ключ поврежден, удаляем директорию сертификата${NC}"
-                rm -rf "/root/.acme.sh/${SERVER_IP}_ecc"
-                echo -e "${GREEN}✓ Поврежденный сертификат удален${NC}"
-            fi
-        else
-            echo -e "${YELLOW}⚠️  Приватный ключ отсутствует, удаляем директорию сертификата${NC}"
-            rm -rf "/root/.acme.sh/${SERVER_IP}_ecc"
-            echo -e "${GREEN}✓ Неполный сертификат удален${NC}"
-        fi
-    fi
-    
     echo -e "${YELLOW}📦 Загрузка и установка 3x-ui v2.9.4...${NC}\n"
     
     # Запускаем установку с выводом на экран и в файл одновременно
     INSTALL_LOG="/tmp/xui_install_$$.log"
     
-    # Если есть существующий сертификат, подготавливаем его для установщика
-    if [ "$USE_EXISTING_CERT" = true ]; then
-        # Создаём символические ссылки на существующий сертификат
-        TARGET_CERT_DIR="/root/cert/ip"
-        mkdir -p "$TARGET_CERT_DIR"
-        
-        CERT_SOURCE="/root/.acme.sh/${SERVER_IP}_ecc"
-        
-        # Удаляем старые файлы/симлинки если существуют
-        rm -f "$TARGET_CERT_DIR/privkey.pem" "$TARGET_CERT_DIR/fullchain.pem"
-        
-        # Создаём символические ссылки
-        ln -sf "$CERT_SOURCE/${SERVER_IP}.key" "$TARGET_CERT_DIR/privkey.pem"
-        ln -sf "$CERT_SOURCE/fullchain.cer" "$TARGET_CERT_DIR/fullchain.pem"
-        
-        echo -e "${GREEN}✓ Символические ссылки на сертификат созданы в $TARGET_CERT_DIR${NC}"
-        echo -e "${GREEN}ℹ️  Сертификат будет автоматически обновляться через acme.sh${NC}"
-        echo -e "${YELLOW}ℹ️  Установщик попытается получить сертификат (получит Rate Limit), затем мы настроим пути${NC}\n"
-    fi
-    
-    # Передаем пустые ответы (Enter) на все вопросы через stdin
-    # Установщик попытается получить сертификат и получит Rate Limit (это нормально)
-    printf '\n\n\n\n\n' | bash <(curl -Ls "https://raw.githubusercontent.com/MHSanaei/3x-ui/v2.9.4/install.sh") v2.9.4 2>&1 | tee "$INSTALL_LOG"
+    # Запускаем официальный установщик без манипуляций с сертификатами
+    bash <(curl -Ls "https://raw.githubusercontent.com/MHSanaei/3x-ui/v2.9.4/install.sh") v2.9.4 2>&1 | tee "$INSTALL_LOG"
     
     # Читаем вывод из лог-файла
     INSTALL_OUTPUT=$(cat "$INSTALL_LOG" 2>/dev/null || echo "")
@@ -4142,63 +3925,6 @@ install_3xui_v294() {
             sleep 2
         fi
         
-        # Проверяем успешность установки SSL сертификата
-        echo -e "\n${YELLOW}🔍 Проверка SSL сертификата...${NC}"
-        
-        # Устанавливаем sqlite3 если не установлен
-        if ! command -v sqlite3 &> /dev/null; then
-            apt-get update -qq && apt-get install -y sqlite3 -qq > /dev/null 2>&1
-        fi
-        
-        # Проверяем наличие сертификата в установщике
-        SSL_SETUP_FAILED=false
-        if echo "$INSTALL_OUTPUT" | grep -q "IP certificate setup failed\|certificate setup failed\|Failed to issue\|rateLimited\|too many certificates\|rate.*limit"; then
-            SSL_SETUP_FAILED=true
-            
-            # Проверяем конкретную причину ошибки
-            if echo "$INSTALL_OUTPUT" | grep -qi "rateLimited\|too many certificates\|rate.*limit"; then
-                echo -e "${YELLOW}⚠️  Достигнут лимит Let's Encrypt (rate limit)${NC}"
-                echo -e "${YELLOW}ℹ️  Панель будет настроена для работы по HTTP${NC}"
-            else
-                echo -e "${YELLOW}⚠️  Установщик не смог получить SSL сертификат${NC}"
-            fi
-        fi
-        
-        # Если использовали существующий сертификат, устанавливаем его
-        if [ "$USE_EXISTING_CERT" = true ]; then
-            echo -e "${GREEN}✓ Установка существующего сертификата...${NC}"
-            
-            if install_existing_certificate "$SERVER_IP"; then
-                echo -e "${GREEN}✓ Существующий сертификат успешно установлен${NC}"
-                SSL_SETUP_FAILED=false
-            else
-                echo -e "${YELLOW}⚠️  Не удалось установить существующий сертификат${NC}"
-                SSL_SETUP_FAILED=true
-            fi
-        fi
-        
-        # Если SSL не удалось настроить, удаляем пути к сертификатам для работы по HTTP
-        if [ "$SSL_SETUP_FAILED" = true ]; then
-            echo -e "${YELLOW}⚠️  Настройка панели для работы по HTTP...${NC}"
-            
-            if [ -f "/etc/x-ui/x-ui.db" ]; then
-                # Останавливаем панель
-                systemctl stop x-ui 2>/dev/null || true
-                sleep 1
-                
-                # Удаляем пути к сертификатам из базы данных
-                sqlite3 /etc/x-ui/x-ui.db "DELETE FROM settings WHERE key IN ('webCertFile', 'webKeyFile');" 2>/dev/null
-                
-                # НЕ сбрасываем webBasePath - оставляем как есть
-                # WebBasePath будет работать и с HTTP
-                
-                # Запускаем панель
-                systemctl start x-ui 2>/dev/null || true
-                sleep 2
-                
-                echo -e "${GREEN}✅ Панель настроена для работы по HTTP${NC}"
-            fi
-        fi
         
         # Проверяем что данные получены от инсталятора
         if [ -z "$XUI_USERNAME" ] || [ -z "$XUI_PASSWORD" ]; then
@@ -4248,21 +3974,28 @@ install_3xui_v294() {
         fi
         
         # Формируем URL для v2.9.4 (БЕЗ /panel в конце)
-        # Используем HTTP если SSL не настроен, иначе HTTPS
-        PROTOCOL="https"
-        if [ "$SSL_SETUP_FAILED" = true ]; then
-            PROTOCOL="http"
-        fi
+        # Определяем протокол из вывода установщика
+        XUI_ACCESS_URL=$(echo "$INSTALL_OUTPUT" | grep -oP 'Access URL:\s+\K\S+' | tail -1 | sed 's/\x1b\[[0-9;]*m//g')
         
-        if [ -z "$XUI_PATH" ] || [ "$XUI_PATH" = "/" ]; then
-            XUI_URL="${PROTOCOL}://$(format_host_for_url "${SERVER_IP}"):${XUI_PORT}"
+        if [ -n "$XUI_ACCESS_URL" ]; then
+            # Используем URL напрямую из установщика
+            XUI_URL="$XUI_ACCESS_URL"
         else
-            # Добавляем leading slash если нужно
-            if [[ "$XUI_PATH" != /* ]]; then
-                XUI_PATH="/${XUI_PATH}"
+            # Fallback: определяем протокол по наличию сертификата
+            local PROTOCOL="http"
+            if [ -f "/root/cert/ip/fullchain.pem" ] && [ -f "/root/cert/ip/privkey.pem" ]; then
+                PROTOCOL="https"
             fi
-            # Используем webBasePath независимо от протокола (HTTP или HTTPS)
-            XUI_URL="${PROTOCOL}://$(format_host_for_url "${SERVER_IP}"):${XUI_PORT}${XUI_PATH}"
+            
+            if [ -z "$XUI_PATH" ] || [ "$XUI_PATH" = "/" ]; then
+                XUI_URL="${PROTOCOL}://$(format_host_for_url "${SERVER_IP}"):${XUI_PORT}"
+            else
+                # Добавляем leading slash если нужно
+                if [[ "$XUI_PATH" != /* ]]; then
+                    XUI_PATH="/${XUI_PATH}"
+                fi
+                XUI_URL="${PROTOCOL}://$(format_host_for_url "${SERVER_IP}"):${XUI_PORT}${XUI_PATH}"
+            fi
         fi
         
         echo -e "\n${GREEN}═══════════════════════════════════════════${NC}"
@@ -4383,94 +4116,18 @@ install_3xui_v3() {
     echo -e "${GREEN}SQLite - для небольших нагрузок (< 500 клиентов)${NC}"
     echo -e "${GREEN}PostgreSQL - для высоких нагрузок и множества узлов${NC}\n"
     
-    # Получаем IP сервера для проверки сертификата
-    SERVER_IP=$(curl -s -4 https://api4.ipify.org 2>/dev/null || curl -s -4 https://ipv4.icanhazip.com 2>/dev/null || curl -s -4 ifconfig.me 2>/dev/null || echo "")
-    
-    # Проверка существующего SSL сертификата
-    USE_EXISTING_CERT=false
-    if [ "$ENABLE_CERT_REUSE" = "true" ] && [ -n "$SERVER_IP" ]; then
-        echo -e "\n${BLUE}═══════════════════════════════════════════${NC}"
-        echo -e "${BLUE}     Проверка SSL сертификата${NC}"
-        echo -e "${BLUE}═══════════════════════════════════════════${NC}\n"
-        
-        if check_existing_certificate "$SERVER_IP"; then
-            USE_EXISTING_CERT=true
-            echo -e "${GREEN}✓ Будет использован существующий сертификат${NC}\n"
-            
-            # Создаём символические ссылки на существующий сертификат
-            TARGET_CERT_DIR="/root/cert/ip"
-            mkdir -p "$TARGET_CERT_DIR"
-            
-            CERT_SOURCE="/root/.acme.sh/${SERVER_IP}_ecc"
-            
-            # Удаляем старые файлы/симлинки если существуют
-            rm -f "$TARGET_CERT_DIR/privkey.pem" "$TARGET_CERT_DIR/fullchain.pem"
-            
-            # Создаём символические ссылки
-            ln -sf "$CERT_SOURCE/${SERVER_IP}.key" "$TARGET_CERT_DIR/privkey.pem"
-            ln -sf "$CERT_SOURCE/fullchain.cer" "$TARGET_CERT_DIR/fullchain.pem"
-            
-            echo -e "${GREEN}✓ Символические ссылки на сертификат созданы в $TARGET_CERT_DIR${NC}"
-            echo -e "${GREEN}ℹ️  Сертификат будет автоматически обновляться через acme.sh${NC}"
-            echo -e "${YELLOW}ℹ️  Установщик попытается получить сертификат (получит Rate Limit), затем мы настроим пути${NC}\n"
-        else
-            echo -e "${YELLOW}ℹ️  Будет запрошен новый сертификат при установке${NC}\n"
-        fi
-    fi
-    
-    # Очистка поврежденных сертификатов перед установкой
-    # Удаляем только если: нет существующего сертификата И директория acme.sh существует
-    # И ключ реально повреждён (не читается ни как EC, ни как RSA)
-    if [ "$USE_EXISTING_CERT" = false ] && [ -n "$SERVER_IP" ] && [ -d "/root/.acme.sh/${SERVER_IP}_ecc" ]; then
-        local KEY_FILE="/root/.acme.sh/${SERVER_IP}_ecc/${SERVER_IP}.key"
-        if [ -f "$KEY_FILE" ]; then
-            # Проверяем как EC (acme.sh с IP использует ECC) и как RSA
-            if openssl ec -in "$KEY_FILE" -check -noout 2>/dev/null || \
-               openssl rsa -in "$KEY_FILE" -check -noout 2>/dev/null; then
-                # Ключ целостный — НЕ удаляем, это валидный сертификат
-                echo -e "${BLUE}ℹ️  Сертификат в acme.sh валиден, оставляем${NC}"
-            else
-                echo -e "${YELLOW}⚠️  Приватный ключ повреждён, удаляем директорию сертификата${NC}"
-                rm -rf "/root/.acme.sh/${SERVER_IP}_ecc"
-                echo -e "${GREEN}✓ Поврежденный сертификат удален${NC}"
-            fi
-        else
-            echo -e "${YELLOW}⚠️  Приватный ключ отсутствует, удаляем директорию сертификата${NC}"
-            rm -rf "/root/.acme.sh/${SERVER_IP}_ecc"
-            echo -e "${GREEN}✓ Неполный сертификат удален${NC}"
-        fi
-    fi
-    
     # Установка через официальный скрипт
     echo -e "${YELLOW}⚠ Запуск установщика 3x-ui...${NC}"
-    echo -e "${YELLOW}⚠ Будет автоматически выбрана база данных SQLite${NC}"
-
-    # Определяем режим SSL через переменную окружения XUI_SSL_MODE
-    # (установщик 3x-ui читает переменные окружения когда stdin не является tty)
-    # "true"  и нет существующего сертификата → ip  (Let's Encrypt для IP, опция 2)
-    # иначе                                   → none (Skip SSL, опция 4)
-    if [ "$ENABLE_CERT_REUSE" = "true" ] && [ "$USE_EXISTING_CERT" = false ]; then
-        XUI_SSL_MODE_VAL="ip"
-        echo -e "${YELLOW}⚠ Будет запрошен SSL сертификат для IP-адреса (XUI_SSL_MODE=ip)${NC}"
-    else
-        XUI_SSL_MODE_VAL="none"
-        echo -e "${YELLOW}⚠ SSL будет пропущен (XUI_SSL_MODE=none)${NC}"
-    fi
+    echo -e "${YELLOW}⚠ Установщик 3x-ui сам управляет SSL сертификатами${NC}"
 
     # Создаем временный файл для сохранения вывода установщика
     INSTALL_LOG_FILE=$(mktemp)
 
-    # Запускаем установщик через переменные окружения.
-    # XUI_NONINTERACTIVE=1 активирует неинтерактивный режим установщика 3x-ui
-    # (строка 48 install.sh: if [[ "${XUI_NONINTERACTIVE:-0}" == "1" ]] || [[ ! -t 0 ]]).
-    # Закрываем stdin (< /dev/null) как второй триггер — [[ ! -t 0 ]] тоже становится true.
-    # XUI_DB_TYPE=sqlite  — выбор БД без вопроса.
-    # XUI_SSL_MODE        — режим SSL без вопроса.
+    # Запускаем официальный установщик 3x-ui
+    # Он сам управляет SSL сертификатами через свой интерактивный процесс
     INSTALLER_TMP=$(mktemp)
     curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh -o "$INSTALLER_TMP"
-    # Передаем переменные напрямую в команду bash для гарантированной передачи в subshell
-    # Запускаем в subshell чтобы < /dev/null не закрыл stdin родительского процесса
-    ( XUI_NONINTERACTIVE=1 XUI_DB_TYPE=sqlite XUI_SSL_MODE="$XUI_SSL_MODE_VAL" bash "$INSTALLER_TMP" < /dev/null ) 2>&1 | tee "$INSTALL_LOG_FILE"
+    bash "$INSTALLER_TMP" 2>&1 | tee "$INSTALL_LOG_FILE"
     rm -f "$INSTALLER_TMP"
 
     # Читаем содержимое лога в переменную для последующего анализа
@@ -4480,37 +4137,6 @@ install_3xui_v3() {
     # Проверка успешности установки
     if systemctl is-active --quiet x-ui; then
         echo -e "\n${GREEN}✓ 3x-ui v3.x установлена успешно${NC}"
-        
-        # Проверяем наличие ошибок SSL в установщике
-        SSL_SETUP_FAILED=false
-        if echo "$INSTALL_OUTPUT" | grep -q "IP certificate setup failed\|certificate setup failed\|Failed to issue\|rateLimited\|too many certificates\|rate.*limit"; then
-            SSL_SETUP_FAILED=true
-            
-            # Проверяем конкретную причину ошибки
-            if echo "$INSTALL_OUTPUT" | grep -qi "rateLimited\|too many certificates\|rate.*limit"; then
-                echo -e "${YELLOW}⚠️  Достигнут лимит Let's Encrypt (rate limit)${NC}"
-            else
-                echo -e "${YELLOW}⚠️  Установщик не смог получить SSL сертификат${NC}"
-            fi
-        fi
-        
-        # Если использовали существующий сертификат, устанавливаем его
-        if [ "$USE_EXISTING_CERT" = true ]; then
-            echo -e "${GREEN}✓ Установка существующего сертификата...${NC}"
-            
-            if install_existing_certificate "$SERVER_IP"; then
-                echo -e "${GREEN}✓ Существующий сертификат успешно установлен${NC}"
-                SSL_SETUP_FAILED=false
-                
-                # Настраиваем пути к сертификату в панели через x-ui CLI
-                x-ui cert -webCert /root/cert/ip/fullchain.pem -webCertKey /root/cert/ip/privkey.pem >/dev/null 2>&1
-                systemctl restart x-ui
-                sleep 2
-            else
-                echo -e "${YELLOW}⚠️  Не удалось установить существующий сертификат${NC}"
-                SSL_SETUP_FAILED=true
-            fi
-        fi
         
         # Ожидание запуска панели
         echo -e "${YELLOW}⚠ Ожидание запуска панели...${NC}"
@@ -4724,7 +4350,7 @@ install_3xui_v3() {
         echo -e "${GREEN}═══════════════════════════════════════════${NC}"
         echo -e "${YELLOW}⚠ ВАЖНО: Сохраните эти данные в безопасном месте!${NC}"
         echo -e "${YELLOW}⚠ API Token необходим для работы бота с панелью v3${NC}"
-        echo -e "${YELLOW}⚠ Все данные сохранены в файл .env${NC}\n"
+        echo -e "${YELLOW}⚠ Все данные сохранены в файл config.yaml${NC}\n"
         
         # Вызов меню после установки (пропускаем в автоматическом режиме)
         if [ -z "$NONINTERACTIVE" ]; then
