@@ -4302,13 +4302,8 @@ install_3xui_v3() {
             echo -e "${YELLOW}ℹ️  Будет запрошен новый сертификат при установке${NC}\n"
         fi
     else
-        if [ "$ENABLE_CERT_REUSE" != "true" ]; then
-            echo -e "\n${YELLOW}ℹ️  Проверка существующих сертификатов отключена (ENABLE_CERT_REUSE не установлен)${NC}"
-            echo -e "${YELLOW}ℹ️  SSL сертификат будет пропущен (можно настроить позже)${NC}\n"
-        else
             echo -e "${YELLOW}ℹ️  Существующий сертификат не найден${NC}"
             echo -e "${YELLOW}ℹ️  Будет запрошен новый SSL сертификат для IP-адреса${NC}\n"
-        fi
     fi
     
     # Очистка поврежденных сертификатов перед установкой
@@ -4332,29 +4327,31 @@ install_3xui_v3() {
     # Установка через официальный скрипт
     echo -e "${YELLOW}⚠ Запуск установщика 3x-ui...${NC}"
     echo -e "${YELLOW}⚠ Будет автоматически выбрана база данных SQLite${NC}"
-    
-    # Создаем временный файл для сохранения вывода установщика
-    INSTALL_OUTPUT=$(mktemp)
-    
-    # Устанавливаем переменную окружения для пропуска SSL
-    export ENABLE_CERT_REUSE="true"
-    
-    # Определяем какую опцию SSL использовать
-    if [ "$ENABLE_CERT_REUSE" = "true" ]; then
-        # 2 - Let's Encrypt for IP Address
+
+    # Определяем опцию SSL на основе глобальной настройки ENABLE_CERT_REUSE (строка 26)
+    # "false" → опция 4 (Skip SSL)
+    # "true"  → опция 2 (Let's Encrypt для IP)
+    if [ "$ENABLE_CERT_REUSE" = "true" ] && [ "$USE_EXISTING_CERT" = false ]; then
         SSL_OPTION="2"
         echo -e "${YELLOW}⚠ Будет запрошен SSL сертификат для IP-адреса (опция 2)${NC}"
     else
-        # 4 - Skip SSL
         SSL_OPTION="4"
         echo -e "${YELLOW}⚠ SSL будет пропущен (опция 4)${NC}"
     fi
-    
-    # Автоматически отвечаем на вопросы установщика:
-    # 1 - выбор SQLite
-    # $SSL_OPTION - выбор SSL (2 для Let's Encrypt IP или 4 для Skip)
-    # Добавляем IP адрес и пустые строки для обработки всех возможных вопросов
-    printf "1\n${SSL_OPTION}\n${SERVER_IP}\n\n\n\n\n\n\n\n\n" | bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh) 2>&1 | tee "$INSTALL_OUTPUT"
+
+    # Создаем временный файл для сохранения вывода установщика
+    INSTALL_LOG_FILE=$(mktemp)
+
+    # Скачиваем установщик во временный файл и запускаем через stdin
+    # (bash <(...) теряет stdin из pipe — поэтому скачиваем отдельно)
+    INSTALLER_TMP=$(mktemp)
+    curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh -o "$INSTALLER_TMP"
+    printf "1\n${SSL_OPTION}\n${SERVER_IP}\n\n\n\n\n\n\n\n\n" | bash "$INSTALLER_TMP" 2>&1 | tee "$INSTALL_LOG_FILE"
+    rm -f "$INSTALLER_TMP"
+
+    # Читаем содержимое лога в переменную для последующего анализа
+    INSTALL_OUTPUT=$(cat "$INSTALL_LOG_FILE" 2>/dev/null || echo "")
+    rm -f "$INSTALL_LOG_FILE"
     
     # Проверка успешности установки
     if systemctl is-active --quiet x-ui; then
@@ -4413,17 +4410,14 @@ install_3xui_v3() {
         echo -e "${YELLOW}⚠ Извлечение учетных данных панели...${NC}"
         
         # Парсим вывод установщика для получения данных и очищаем от ANSI кодов
-        XUI_USERNAME=$(grep -oP 'Username:\s+\K\S+' "$INSTALL_OUTPUT" | tail -1 | sed 's/\x1b\[[0-9;]*m//g')
-        XUI_PASSWORD=$(grep -oP 'Password:\s+\K\S+' "$INSTALL_OUTPUT" | tail -1 | sed 's/\x1b\[[0-9;]*m//g')
-        XUI_PORT=$(grep -oP 'Port:\s+\K\d+' "$INSTALL_OUTPUT" | tail -1 | sed 's/\x1b\[[0-9;]*m//g')
-        XUI_WEB_BASE_PATH=$(grep -oP 'WebBasePath:\s+\K\S+' "$INSTALL_OUTPUT" | tail -1 | sed 's/\x1b\[[0-9;]*m//g')
-        XUI_API_TOKEN=$(grep -oP 'API Token:\s+\K\S+' "$INSTALL_OUTPUT" | tail -1 | sed 's/\x1b\[[0-9;]*m//g')
-        
+        XUI_USERNAME=$(echo "$INSTALL_OUTPUT" | grep -oP 'Username:\s+\K\S+' | tail -1 | sed 's/\x1b\[[0-9;]*m//g')
+        XUI_PASSWORD=$(echo "$INSTALL_OUTPUT" | grep -oP 'Password:\s+\K\S+' | tail -1 | sed 's/\x1b\[[0-9;]*m//g')
+        XUI_PORT=$(echo "$INSTALL_OUTPUT" | grep -oP 'Port:\s+\K\d+' | tail -1 | sed 's/\x1b\[[0-9;]*m//g')
+        XUI_WEB_BASE_PATH=$(echo "$INSTALL_OUTPUT" | grep -oP 'WebBasePath:\s+\K\S+' | tail -1 | sed 's/\x1b\[[0-9;]*m//g')
+        XUI_API_TOKEN=$(echo "$INSTALL_OUTPUT" | grep -oP 'API Token:\s+\K\S+' | tail -1 | sed 's/\x1b\[[0-9;]*m//g')
+
         # Извлекаем версию из вывода установщика (например: "Got x-ui latest version: v3.3.1")
-        XUI_VERSION=$(grep -oP 'Got x-ui latest version:\s*v?\K[\d.]+' "$INSTALL_OUTPUT" | head -1 | sed 's/\x1b\[[0-9;]*m//g')
-        
-        # Удаляем временный файл
-        rm -f "$INSTALL_OUTPUT"
+        XUI_VERSION=$(echo "$INSTALL_OUTPUT" | grep -oP 'Got x-ui latest version:\s*v?\K[\d.]+' | head -1 | sed 's/\x1b\[[0-9;]*m//g')
         
         # Если версия не извлечена из установщика, пробуем через x-ui version
         if [ -z "$XUI_VERSION" ]; then
