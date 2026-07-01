@@ -538,7 +538,9 @@ async def show_my_client_details(callback_query: types.CallbackQuery):
         [InlineKeyboardButton(text="🔙 Назад", callback_data="cmd_myclients")]
     ])
     
-    await callback_query.message.edit_text(
+    # Всегда отправляем новое сообщение для навигации
+    await bot.send_message(
+        callback_query.message.chat.id,
         f"🔑 <b>Информация о ключе</b>\n\n"
         f"Статус: {status_text}\n"
         f"📝 Комментарий: {comment if comment else 'Без комментария'}",
@@ -829,7 +831,13 @@ async def show_all_client_details(callback_query: types.CallbackQuery):
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
         
-        await callback_query.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+        # Всегда отправляем новое сообщение для навигации
+        await bot.send_message(
+            callback_query.message.chat.id,
+            text,
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
         await callback_query.answer()
         
     except Exception as e:
@@ -1177,8 +1185,8 @@ async def refresh_allclients(callback_query: types.CallbackQuery):
         # Показываем уведомление об обновлении
         await callback_query.answer("🔄 Обновление данных...", show_alert=False)
         
-        # Перенаправляем на back_to_allclients для отображения обновленных данных
-        await back_to_allclients(callback_query)
+        # Перенаправляем на back_to_allclients для отображения обновленных данных (с флагом refresh)
+        await back_to_allclients(callback_query, is_refresh=True)
         
     except Exception as e:
         logger.error(f"Ошибка обновления списка ключей: {e}")
@@ -1191,7 +1199,7 @@ async def refresh_allclients(callback_query: types.CallbackQuery):
 
 
 @dp.callback_query(lambda c: c.data == "back_to_allclients")
-async def back_to_allclients(callback_query: types.CallbackQuery):
+async def back_to_allclients(callback_query: types.CallbackQuery, is_refresh: bool = False):
     """Вернуться к списку всех ключей"""
     if not is_admin(callback_query.from_user.id):
         await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
@@ -1238,7 +1246,16 @@ async def back_to_allclients(callback_query: types.CallbackQuery):
             ]
             keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
             
-            await callback_query.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+            # Для refresh обновляем сообщение, для навигации - отправляем новое
+            if is_refresh:
+                await callback_query.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+            else:
+                await bot.send_message(
+                    callback_query.message.chat.id,
+                    text,
+                    reply_markup=keyboard,
+                    parse_mode="HTML"
+                )
             await callback_query.answer()
             return
         
@@ -1336,7 +1353,16 @@ async def back_to_allclients(callback_query: types.CallbackQuery):
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
         
-        await callback_query.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+        # Для refresh обновляем сообщение, для навигации - отправляем новое
+        if is_refresh:
+            await callback_query.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+        else:
+            await bot.send_message(
+                callback_query.message.chat.id,
+                text,
+                reply_markup=keyboard,
+                parse_mode="HTML"
+            )
         await callback_query.answer()
         
     except Exception as e:
@@ -1638,7 +1664,7 @@ async def handle_unknown(message: Message):
 
 
 @dp.callback_query(lambda c: c.data == "server_status")
-async def show_server_status(callback_query: types.CallbackQuery, state: FSMContext):
+async def show_server_status(callback_query: types.CallbackQuery, state: FSMContext, is_refresh: bool = False):
     """Показать состояние сервера (только для администратора)"""
     if not is_admin(callback_query.from_user.id):
         await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
@@ -1736,8 +1762,16 @@ async def show_server_status(callback_query: types.CallbackQuery, state: FSMCont
         
         # Если это обновление существующего сообщения, редактируем его
         # Иначе отправляем новое
-        try:
+        # Для refresh обновляем сообщение, для навигации - отправляем новое
+        if is_refresh:
             await callback_query.message.edit_text(
+                message,
+                parse_mode="HTML",
+                reply_markup=keyboard
+            )
+        else:
+            await bot.send_message(
+                callback_query.message.chat.id,
                 message,
                 parse_mode="HTML",
                 reply_markup=keyboard
@@ -2046,8 +2080,10 @@ async def show_users_list(callback_query: types.CallbackQuery, state: FSMContext
         keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
 
         # Редактируем существующее сообщение
+        # Всегда отправляем новое сообщение для навигации
         try:
-            await callback_query.message.edit_text(
+            await bot.send_message(
+                callback_query.message.chat.id,
                 text,
                 parse_mode="HTML",
                 reply_markup=keyboard
@@ -2145,18 +2181,13 @@ async def back_to_start_menu(callback_query: types.CallbackQuery, state: FSMCont
             f"{panel_info}"
         )
         
-        try:
-            await callback_query.message.edit_text(
-                text,
-                parse_mode="HTML",
-                reply_markup=keyboard
-            )
-        except:
-            await callback_query.message.answer(
-                text,
-                parse_mode="HTML",
-                reply_markup=keyboard
-            )
+        # Всегда отправляем новое сообщение для навигации
+        await bot.send_message(
+            callback_query.message.chat.id,
+            text,
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
     else:
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [
@@ -2181,10 +2212,13 @@ async def back_to_start_menu(callback_query: types.CallbackQuery, state: FSMCont
             f"📱 Выберите действие:"
         )
         
-        try:
-            await callback_query.message.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
-        except:
-            await callback_query.message.answer(text, parse_mode="HTML", reply_markup=keyboard)
+        # Всегда отправляем новое сообщение для навигации
+        await bot.send_message(
+            callback_query.message.chat.id,
+            text,
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
 @dp.callback_query(lambda c: c.data == "cmd_new")
 async def callback_cmd_new(callback_query: types.CallbackQuery, state: FSMContext):
     """Обработчик кнопки 'Создать ключ'"""
@@ -2206,19 +2240,13 @@ async def callback_cmd_new(callback_query: types.CallbackQuery, state: FSMContex
         [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
     ])
     
-    try:
-        await callback_query.message.edit_text(
-            "📝 Введите комментарий к подключению:\n\n",
-            parse_mode="HTML",
-            reply_markup=keyboard
-        )
-    except:
-        await bot.send_message(
-            callback_query.message.chat.id,
-            "📝 Введите комментарий к подключению:\n\n",
-            parse_mode="HTML",
-            reply_markup=keyboard
-        )
+    # Всегда отправляем новое сообщение для навигации
+    await bot.send_message(
+        callback_query.message.chat.id,
+        "📝 Введите комментарий к подключению:\n\n",
+        parse_mode="HTML",
+        reply_markup=keyboard
+    )
     
     await state.set_state(NewClientState.waiting_for_comment)
 
@@ -2243,19 +2271,13 @@ async def callback_cmd_tempkey(callback_query: types.CallbackQuery, state: FSMCo
         [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
     ])
     
-    try:
-        await callback_query.message.edit_text(
-            "📝 Введите комментарий к подключению:\n\n",
-            parse_mode="HTML",
-            reply_markup=keyboard
-        )
-    except:
-        await bot.send_message(
-            callback_query.message.chat.id,
-            "📝 Введите комментарий к подключению:\n\n",
-            parse_mode="HTML",
-            reply_markup=keyboard
-        )
+    # Всегда отправляем новое сообщение для навигации
+    await bot.send_message(
+        callback_query.message.chat.id,
+        "📝 Введите комментарий к подключению:\n\n",
+        parse_mode="HTML",
+        reply_markup=keyboard
+    )
     
     await state.set_state(TempKeyState.waiting_for_comment)
 
@@ -2289,17 +2311,12 @@ async def callback_cmd_myclients(callback_query: types.CallbackQuery, state: FSM
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
             ])
-            try:
-                await callback_query.message.edit_text(
-                    "❌ У вас не установлен username в Telegram.\n\nУстановите username в настройках Telegram для использования бота.",
-                    reply_markup=keyboard
-                )
-            except:
-                await bot.send_message(
-                    callback_query.message.chat.id,
-                    "❌ У вас не установлен username в Telegram.\n\nУстановите username в настройках Telegram для использования бота.",
-                    reply_markup=keyboard
-                )
+            # Всегда отправляем новое сообщение для навигации
+            await bot.send_message(
+                callback_query.message.chat.id,
+                "❌ У вас не установлен username в Telegram.\n\nУстановите username в настройках Telegram для использования бота.",
+                reply_markup=keyboard
+            )
             return
         
         # Получаем ключи пользователя из X-UI по username
@@ -2326,18 +2343,12 @@ async def callback_cmd_myclients(callback_query: types.CallbackQuery, state: FSM
                 [InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_myclients")],
                 [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
             ])
-            try:
-                await callback_query.message.edit_text(
-                    text,
-                    reply_markup=keyboard,
-                    parse_mode="HTML"
-                )
-            except:
-                await bot.send_message(
-                    callback_query.message.chat.id,
-                    text,
-                    reply_markup=keyboard,
-                    parse_mode="HTML"
+            # Всегда отправляем новое сообщение для навигации
+            await bot.send_message(
+                callback_query.message.chat.id,
+                text,
+                reply_markup=keyboard,
+                parse_mode="HTML"
                 )
             return
         
@@ -2385,36 +2396,25 @@ async def callback_cmd_myclients(callback_query: types.CallbackQuery, state: FSM
         text += f"⏰ Просроченных: {expired_count}\n\n"
         text += "Выберите ключ для просмотра:"
         
-        try:
-            await callback_query.message.edit_text(
-                text,
-                reply_markup=keyboard,
-                parse_mode="HTML"
-            )
-        except:
-            await bot.send_message(
-                callback_query.message.chat.id,
-                text,
-                reply_markup=keyboard,
-                parse_mode="HTML"
-            )
+        # Всегда отправляем новое сообщение для навигации
+        await bot.send_message(
+            callback_query.message.chat.id,
+            text,
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
         
     except Exception as e:
         logger.error(f"Ошибка получения списка клиентов: {e}")
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
         ])
-        try:
-            await callback_query.message.edit_text(
-                f"❌ Ошибка: {str(e)}",
-                reply_markup=keyboard
-            )
-        except:
-            await bot.send_message(
-                callback_query.message.chat.id,
-                f"❌ Ошибка: {str(e)}",
-                reply_markup=keyboard
-            )
+        # Всегда отправляем новое сообщение для навигации
+        await bot.send_message(
+            callback_query.message.chat.id,
+            f"❌ Ошибка: {str(e)}",
+            reply_markup=keyboard
+        )
 
 @dp.callback_query(lambda c: c.data == "refresh_myclients")
 async def refresh_myclients(callback_query: types.CallbackQuery, state: FSMContext):
@@ -2798,7 +2798,7 @@ async def process_doremove_user(callback_query: types.CallbackQuery, state: FSMC
 # ============================================
 
 @dp.callback_query(lambda c: c.data == "show_panels")
-async def show_panels_list(callback_query: types.CallbackQuery, state: FSMContext):
+async def show_panels_list(callback_query: types.CallbackQuery, state: FSMContext, is_refresh: bool = False):
     """Показать список всех панелей с их статусами"""
     await callback_query.answer()
     
@@ -2850,13 +2850,24 @@ async def show_panels_list(callback_query: types.CallbackQuery, state: FSMContex
                 f"💡 Файлы в директории: {len(files_in_dir)}"
             )
             
-            await callback_query.message.edit_text(
-                diagnostic_text,
-                parse_mode="HTML",
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_start")]
-                ])
-            )
+            # Для refresh обновляем сообщение, для навигации - отправляем новое
+            if is_refresh:
+                await callback_query.message.edit_text(
+                    diagnostic_text,
+                    parse_mode="HTML",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_start")]
+                    ])
+                )
+            else:
+                await bot.send_message(
+                    callback_query.message.chat.id,
+                    diagnostic_text,
+                    parse_mode="HTML",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_start")]
+                    ])
+                )
             return
         
         # Проверяем статусы всех панелей
@@ -2899,11 +2910,20 @@ async def show_panels_list(callback_query: types.CallbackQuery, state: FSMContex
             ]
         ])
         
-        await callback_query.message.edit_text(
-            text,
-            parse_mode="HTML",
-            reply_markup=keyboard
-        )
+        # Для refresh обновляем сообщение, для навигации - отправляем новое
+        if is_refresh:
+            await callback_query.message.edit_text(
+                text,
+                parse_mode="HTML",
+                reply_markup=keyboard
+            )
+        else:
+            await bot.send_message(
+                callback_query.message.chat.id,
+                text,
+                parse_mode="HTML",
+                reply_markup=keyboard
+            )
         
     except Exception as e:
         logger.error(f"Ошибка отображения панелей: {e}")
@@ -2923,8 +2943,8 @@ async def refresh_panels_status(callback_query: types.CallbackQuery, state: FSMC
     # Перезагружаем config.yaml
     config.reload_config()
     
-    # Показываем обновленный список панелей
-    await show_panels_list(callback_query, state)
+    # Показываем обновленный список панелей (с флагом refresh)
+    await show_panels_list(callback_query, state, is_refresh=True)
 
 
 @dp.callback_query(lambda c: c.data == "select_panel_to_connect")

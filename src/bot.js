@@ -1078,7 +1078,8 @@ export class RouteBot {
         ]
       };
       
-      await this.sendOrEditMessage(
+      // Всегда отправляем новое сообщение для главного меню
+      await this.sendNewMessage(
         chatId,
         `🔐 *Панель администратора*\n\n${statsMessage}Выберите действие:`,
         { parse_mode: 'Markdown', reply_markup: keyboard }
