@@ -93,7 +93,7 @@ export class RouteBot {
         
         if (data.startsWith('awg_select_')) {
           const version = data.replace('awg_select_', '');
-          await this.showClientSelectionMenu(chatId, version);
+          await this.showClientSelectionMenu(chatId, version, false);
         } else if (data.startsWith('awg_gen_next_')) {
           const version = data.replace('awg_gen_next_', '');
           await this.requestVpsLabel(chatId, version);
@@ -108,7 +108,25 @@ export class RouteBot {
           await this.showAwgStats(chatId);
         } else if (data.startsWith('awg_clients_')) {
           const version = data.replace('awg_clients_', '');
-          await this.showAwgClientsList(chatId, version);
+          await this.showAwgClientsList(chatId, version, false);
+        }
+      }
+      // Refresh callbacks (для кнопок "Обновить")
+      else if (data.startsWith('refresh_')) {
+        await this.bot.answerCallbackQuery(query.id);
+        
+        // Verify admin access
+        if (!this.isAdmin(userId)) {
+          logger.warn(`Unauthorized refresh callback from user ${userId}`);
+          return;
+        }
+        
+        if (data.startsWith('refresh_select_')) {
+          const version = data.replace('refresh_select_', '');
+          await this.showClientSelectionMenu(chatId, version, true);
+        } else if (data.startsWith('refresh_clients_')) {
+          const version = data.replace('refresh_clients_', '');
+          await this.showAwgClientsList(chatId, version, true);
         }
       }
       // Resend config callbacks
@@ -609,7 +627,15 @@ export class RouteBot {
    * Отправить или отредактировать сообщение
    * Использует editMessageText если есть сохраненный message_id, иначе sendMessage
    */
-  async sendOrEditMessage(chatId, text, options = {}) {
+  // Метод для отправки нового сообщения (каждый переход в новом окне)
+  async sendNewMessage(chatId, text, options = {}) {
+    const result = await this.bot.sendMessage(chatId, text, options);
+    this.lastMessageIds.set(chatId, result.message_id);
+    return result;
+  }
+
+  // Метод для обновления существующего сообщения (для кнопки "Обновить")
+  async updateMessage(chatId, text, options = {}) {
     const lastMessageId = this.lastMessageIds.get(chatId);
     
     try {
@@ -628,18 +654,26 @@ export class RouteBot {
       this.lastMessageIds.delete(chatId);
     }
     
-    // Отправляем новое сообщение
+    // Отправляем новое сообщение, если редактирование не удалось
     const result = await this.bot.sendMessage(chatId, text, options);
     this.lastMessageIds.set(chatId, result.message_id);
     return result;
   }
 
-  async showClientSelectionMenu(chatId, version) {
+  // Обратная совместимость - по умолчанию отправляем новое сообщение
+  async sendOrEditMessage(chatId, text, options = {}) {
+    return this.sendNewMessage(chatId, text, options);
+  }
+
+  async showClientSelectionMenu(chatId, version, shouldUpdate = false) {
     try {
-      logger.info(`Showing client selection menu for ${version} in chat ${chatId}`);
+      logger.info(`Showing client selection menu for ${version} in chat ${chatId}, shouldUpdate: ${shouldUpdate}`);
       
-      // Показываем индикатор загрузки в текущем сообщении
-      await this.sendOrEditMessage(chatId, '⏳ Загружаю список клиентов...', { parse_mode: 'Markdown' });
+      // Выбираем метод отправки в зависимости от shouldUpdate
+      const sendMethod = shouldUpdate ? this.updateMessage.bind(this) : this.sendNewMessage.bind(this);
+      
+      // Показываем индикатор загрузки
+      await sendMethod(chatId, '⏳ Загружаю список клиентов...', { parse_mode: 'Markdown' });
 
       // Initialize AWG manager if needed
       if (!this.awgManager.initialized) {
@@ -650,7 +684,7 @@ export class RouteBot {
       const container = this.awgManager.availableContainers.find(c => c.version === version);
       
       if (!container) {
-        await this.sendOrEditMessage(
+        await sendMethod(
           chatId,
           `❌ Контейнер версии ${version} не найден`,
           { parse_mode: 'Markdown' }
@@ -692,13 +726,13 @@ export class RouteBot {
             { text: '🔢 Сформировать по номеру', callback_data: `awg_gen_by_number_${version}` }
           ],
           [
-            { text: '🔄 Обновить', callback_data: `awg_select_${version}` },
+            { text: '🔄 Обновить', callback_data: `refresh_select_${version}` },
             { text: '🔙 Назад', callback_data: 'start_menu' }
           ]
         ]
       };
 
-      await this.sendOrEditMessage(chatId, message, {
+      await sendMethod(chatId, message, {
         parse_mode: 'Markdown',
         reply_markup: keyboard
       });
@@ -1058,12 +1092,15 @@ export class RouteBot {
     }
   }
 
-  async showAwgClientsList(chatId, version) {
+  async showAwgClientsList(chatId, version, shouldUpdate = false) {
     try {
-      logger.info(`Showing ${version} clients list for chat ${chatId}`);
+      logger.info(`Showing ${version} clients list for chat ${chatId}, shouldUpdate: ${shouldUpdate}`);
 
-      // Показываем индикатор загрузки в текущем сообщении
-      await this.sendOrEditMessage(chatId, '⏳ Получаю список клиентов...', { parse_mode: 'Markdown' });
+      // Выбираем метод отправки в зависимости от shouldUpdate
+      const sendMethod = shouldUpdate ? this.updateMessage.bind(this) : this.sendNewMessage.bind(this);
+
+      // Показываем индикатор загрузки
+      await sendMethod(chatId, '⏳ Получаю список клиентов...', { parse_mode: 'Markdown' });
 
       // Initialize AWG manager if needed
       if (!this.awgManager.initialized) {
@@ -1074,7 +1111,7 @@ export class RouteBot {
       const container = this.awgManager.availableContainers.find(c => c.version === version);
       
       if (!container) {
-        await this.sendOrEditMessage(
+        await sendMethod(
           chatId,
           `📋 *Подробнее Клиенты ${version.toUpperCase()}*\n\n❌ Контейнер версии ${version} не найден`,
           { parse_mode: 'Markdown' }
@@ -1088,7 +1125,7 @@ export class RouteBot {
       const clientsStats = await this.getClientsStats(container.name, version);
 
       if (clients.length === 0) {
-        await this.sendOrEditMessage(
+        await sendMethod(
           chatId,
           `📋 *Подробнее Клиенты ${version.toUpperCase()}*\n\n📦 Контейнер: \`${container.name}\`\n\nНет активных клиентов`,
           { parse_mode: 'Markdown' }
@@ -1137,11 +1174,11 @@ export class RouteBot {
 
       // Добавляем кнопки "Обновить" и "Назад"
       keyboard.inline_keyboard.push([
-        { text: '🔄 Обновить', callback_data: `awg_clients_${version}` },
+        { text: '🔄 Обновить', callback_data: `refresh_clients_${version}` },
         { text: '🔙 Назад', callback_data: `awg_select_${version}` }
       ]);
 
-      await this.sendOrEditMessage(chatId, clientsMessage, {
+      await sendMethod(chatId, clientsMessage, {
         parse_mode: 'Markdown',
         reply_markup: keyboard
       });
