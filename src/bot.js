@@ -1196,6 +1196,30 @@ export class RouteBot {
       clientsMessage += `📦 Контейнер: \`${container.name}\`${containerStatusMessage}${interfaceMessage}`;
       clientsMessage += `Всего: ${clients.length}\n\n`;
       
+      // Определяем общий статус сервера для отображения
+      let serverStatusIcon = '';
+      let serverAvailable = true;
+      
+      if (containerStatus.restarting) {
+        serverStatusIcon = '🔄';
+        serverAvailable = false;
+      } else if (!containerStatus.running) {
+        serverStatusIcon = '⚠️';
+        serverAvailable = false;
+      } else if (interfaceStatus === 'starting') {
+        serverStatusIcon = '⏳';
+        serverAvailable = false;
+      } else if (interfaceStatus === 'error') {
+        serverStatusIcon = '⚠️';
+        serverAvailable = false;
+      } else if (interfaceStatus === 'ready') {
+        serverStatusIcon = '✅';
+        serverAvailable = true;
+      } else {
+        serverStatusIcon = '❓';
+        serverAvailable = false;
+      }
+      
       // Создаём кнопки для каждого клиента
       const keyboard = {
         inline_keyboard: []
@@ -1206,12 +1230,15 @@ export class RouteBot {
         const lastSeen = stats.lastHandshake || '❌';
         const transfer = stats.transfer || 'нет данных';
         
-        // Если клиент неактивен - показываем только IP и крестик
-        if (lastSeen === '❌') {
-          clientsMessage += `\`${ip}\` ❌\n`;
+        // Если сервер недоступен - показываем статус сервера вместо статуса клиента
+        if (!serverAvailable) {
+          clientsMessage += `${ip} ${serverStatusIcon}\n`;
+        } else if (lastSeen === '❌') {
+          // Сервер доступен, но клиент неактивен
+          clientsMessage += `${ip} ❌\n`;
         } else {
-          // Если активен - показываем IP и детали
-          clientsMessage += `\`${ip}\`\n`;
+          // Сервер доступен и клиент активен - показываем детали
+          clientsMessage += `${ip} ✅\n`;
           clientsMessage += `   └ 🕐 ${lastSeen}\n`;
           if (transfer !== 'нет данных') {
             clientsMessage += `   └ 📊 ${transfer}\n`;
