@@ -4250,21 +4250,63 @@ install_3xui_v3() {
             if [ "$USE_EXISTING_CERTS" = true ] && [[ "$XUI_URL" == http://* ]]; then
                 echo -e "${YELLOW}🔐 Настройка SSL для панели...${NC}"
                 
-                # Останавливаем панель для настройки
-                systemctl stop x-ui
-                sleep 2
-                
-                # Обновляем настройки в базе данных
-                sqlite3 /etc/x-ui/x-ui.db "UPDATE settings SET value='/root/cert/${SERVER_IP}/fullchain.pem' WHERE key='webCertFile';" 2>/dev/null || true
-                sqlite3 /etc/x-ui/x-ui.db "UPDATE settings SET value='/root/cert/${SERVER_IP}/privkey.pem' WHERE key='webKeyFile';" 2>/dev/null || true
-                
-                # Запускаем панель
-                systemctl start x-ui
-                sleep 3
-                
-                # Меняем URL на HTTPS
-                XUI_URL=$(echo "$XUI_URL" | sed 's|^http://|https://|')
-                echo -e "${GREEN}✅ SSL настроен! Новый URL: ${XUI_URL}${NC}"
+                # Проверяем существование сертификатов
+                if [ ! -f "/root/cert/${SERVER_IP}/fullchain.pem" ] || [ ! -f "/root/cert/${SERVER_IP}/privkey.pem" ]; then
+                    echo -e "${RED}❌ Сертификаты не найдены в /root/cert/${SERVER_IP}/${NC}"
+                    echo -e "${YELLOW}⚠️  Панель останется на HTTP${NC}"
+                else
+                    # Останавливаем панель для настройки
+                    systemctl stop x-ui
+                    sleep 2
+                    
+                    # Проверяем структуру таблицы settings
+                    CERT_KEY_EXISTS=$(sqlite3 /etc/x-ui/x-ui.db "SELECT COUNT(*) FROM settings WHERE key='webCertFile';" 2>/dev/null || echo "0")
+                    
+                    if [ "$CERT_KEY_EXISTS" = "0" ]; then
+                        # Вставляем новые записи если их нет
+                        echo -e "${BLUE}📝 Добавление настроек SSL в базу данных...${NC}"
+                        sqlite3 /etc/x-ui/x-ui.db "INSERT INTO settings (key, value) VALUES ('webCertFile', '/root/cert/${SERVER_IP}/fullchain.pem');" 2>/dev/null || true
+                        sqlite3 /etc/x-ui/x-ui.db "INSERT INTO settings (key, value) VALUES ('webKeyFile', '/root/cert/${SERVER_IP}/privkey.pem');" 2>/dev/null || true
+                    else
+                        # Обновляем существующие записи
+                        echo -e "${BLUE}📝 Обновление настроек SSL в базе данных...${NC}"
+                        sqlite3 /etc/x-ui/x-ui.db "UPDATE settings SET value='/root/cert/${SERVER_IP}/fullchain.pem' WHERE key='webCertFile';" 2>/dev/null || true
+                        sqlite3 /etc/x-ui/x-ui.db "UPDATE settings SET value='/root/cert/${SERVER_IP}/privkey.pem' WHERE key='webKeyFile';" 2>/dev/null || true
+                    fi
+                    
+                    # Проверяем что настройки применились
+                    CERT_PATH=$(sqlite3 /etc/x-ui/x-ui.db "SELECT value FROM settings WHERE key='webCertFile';" 2>/dev/null)
+                    KEY_PATH=$(sqlite3 /etc/x-ui/x-ui.db "SELECT value FROM settings WHERE key='webKeyFile';" 2>/dev/null)
+                    
+                    if [ "$CERT_PATH" = "/root/cert/${SERVER_IP}/fullchain.pem" ] && [ "$KEY_PATH" = "/root/cert/${SERVER_IP}/privkey.pem" ]; then
+                        echo -e "${GREEN}✅ SSL настройки успешно применены в БД${NC}"
+                        echo -e "${BLUE}   Cert: ${CERT_PATH}${NC}"
+                        echo -e "${BLUE}   Key:  ${KEY_PATH}${NC}"
+                        
+                        # Запускаем панель
+                        systemctl start x-ui
+                        sleep 5
+                        
+                        # Проверяем что панель запустилась
+                        if systemctl is-active --quiet x-ui; then
+                            # Меняем URL на HTTPS
+                            XUI_URL=$(echo "$XUI_URL" | sed 's|^http://|https://|')
+                            echo -e "${GREEN}✅ SSL настроен! Панель доступна по HTTPS${NC}"
+                            echo -e "${GREEN}   URL: ${XUI_URL}${NC}"
+                        else
+                            echo -e "${RED}❌ Панель не запустилась после настройки SSL${NC}"
+                            echo -e "${YELLOW}⚠️  Возможно проблема с сертификатами${NC}"
+                            # Откатываем изменения
+                            sqlite3 /etc/x-ui/x-ui.db "DELETE FROM settings WHERE key IN ('webCertFile', 'webKeyFile');" 2>/dev/null || true
+                            systemctl start x-ui
+                            echo -e "${YELLOW}⚠️  Панель запущена без SSL${NC}"
+                        fi
+                    else
+                        echo -e "${RED}❌ Не удалось применить настройки SSL в БД${NC}"
+                        systemctl start x-ui
+                        echo -e "${YELLOW}⚠️  Панель запущена без SSL${NC}"
+                    fi
+                fi
             elif [[ "$XUI_URL" == https://* ]]; then
                 echo -e "${GREEN}✅ SSL уже настроен в панели${NC}"
             else
@@ -4285,21 +4327,63 @@ install_3xui_v3() {
             if [ "$USE_EXISTING_CERTS" = true ]; then
                 echo -e "${YELLOW}🔐 Настройка SSL для панели...${NC}"
                 
-                # Останавливаем панель для настройки
-                systemctl stop x-ui
-                sleep 2
-                
-                # Обновляем настройки в базе данных
-                sqlite3 /etc/x-ui/x-ui.db "UPDATE settings SET value='/root/cert/${SERVER_IP}/fullchain.pem' WHERE key='webCertFile';" 2>/dev/null || true
-                sqlite3 /etc/x-ui/x-ui.db "UPDATE settings SET value='/root/cert/${SERVER_IP}/privkey.pem' WHERE key='webKeyFile';" 2>/dev/null || true
-                
-                # Запускаем панель
-                systemctl start x-ui
-                sleep 3
-                
-                # Меняем URL на HTTPS
-                XUI_URL=$(echo "$XUI_URL" | sed 's|^http://|https://|')
-                echo -e "${GREEN}✅ SSL настроен! Новый URL: ${XUI_URL}${NC}"
+                # Проверяем существование сертификатов
+                if [ ! -f "/root/cert/${SERVER_IP}/fullchain.pem" ] || [ ! -f "/root/cert/${SERVER_IP}/privkey.pem" ]; then
+                    echo -e "${RED}❌ Сертификаты не найдены в /root/cert/${SERVER_IP}/${NC}"
+                    echo -e "${YELLOW}⚠️  Панель останется на HTTP${NC}"
+                else
+                    # Останавливаем панель для настройки
+                    systemctl stop x-ui
+                    sleep 2
+                    
+                    # Проверяем структуру таблицы settings
+                    CERT_KEY_EXISTS=$(sqlite3 /etc/x-ui/x-ui.db "SELECT COUNT(*) FROM settings WHERE key='webCertFile';" 2>/dev/null || echo "0")
+                    
+                    if [ "$CERT_KEY_EXISTS" = "0" ]; then
+                        # Вставляем новые записи если их нет
+                        echo -e "${BLUE}📝 Добавление настроек SSL в базу данных...${NC}"
+                        sqlite3 /etc/x-ui/x-ui.db "INSERT INTO settings (key, value) VALUES ('webCertFile', '/root/cert/${SERVER_IP}/fullchain.pem');" 2>/dev/null || true
+                        sqlite3 /etc/x-ui/x-ui.db "INSERT INTO settings (key, value) VALUES ('webKeyFile', '/root/cert/${SERVER_IP}/privkey.pem');" 2>/dev/null || true
+                    else
+                        # Обновляем существующие записи
+                        echo -e "${BLUE}📝 Обновление настроек SSL в базе данных...${NC}"
+                        sqlite3 /etc/x-ui/x-ui.db "UPDATE settings SET value='/root/cert/${SERVER_IP}/fullchain.pem' WHERE key='webCertFile';" 2>/dev/null || true
+                        sqlite3 /etc/x-ui/x-ui.db "UPDATE settings SET value='/root/cert/${SERVER_IP}/privkey.pem' WHERE key='webKeyFile';" 2>/dev/null || true
+                    fi
+                    
+                    # Проверяем что настройки применились
+                    CERT_PATH=$(sqlite3 /etc/x-ui/x-ui.db "SELECT value FROM settings WHERE key='webCertFile';" 2>/dev/null)
+                    KEY_PATH=$(sqlite3 /etc/x-ui/x-ui.db "SELECT value FROM settings WHERE key='webKeyFile';" 2>/dev/null)
+                    
+                    if [ "$CERT_PATH" = "/root/cert/${SERVER_IP}/fullchain.pem" ] && [ "$KEY_PATH" = "/root/cert/${SERVER_IP}/privkey.pem" ]; then
+                        echo -e "${GREEN}✅ SSL настройки успешно применены в БД${NC}"
+                        echo -e "${BLUE}   Cert: ${CERT_PATH}${NC}"
+                        echo -e "${BLUE}   Key:  ${KEY_PATH}${NC}"
+                        
+                        # Запускаем панель
+                        systemctl start x-ui
+                        sleep 5
+                        
+                        # Проверяем что панель запустилась
+                        if systemctl is-active --quiet x-ui; then
+                            # Меняем URL на HTTPS
+                            XUI_URL=$(echo "$XUI_URL" | sed 's|^http://|https://|')
+                            echo -e "${GREEN}✅ SSL настроен! Панель доступна по HTTPS${NC}"
+                            echo -e "${GREEN}   URL: ${XUI_URL}${NC}"
+                        else
+                            echo -e "${RED}❌ Панель не запустилась после настройки SSL${NC}"
+                            echo -e "${YELLOW}⚠️  Возможно проблема с сертификатами${NC}"
+                            # Откатываем изменения
+                            sqlite3 /etc/x-ui/x-ui.db "DELETE FROM settings WHERE key IN ('webCertFile', 'webKeyFile');" 2>/dev/null || true
+                            systemctl start x-ui
+                            echo -e "${YELLOW}⚠️  Панель запущена без SSL${NC}"
+                        fi
+                    else
+                        echo -e "${RED}❌ Не удалось применить настройки SSL в БД${NC}"
+                        systemctl start x-ui
+                        echo -e "${YELLOW}⚠️  Панель запущена без SSL${NC}"
+                    fi
+                fi
             else
                 echo -e "${YELLOW}⚠️  SSL пропущен при установке, панель работает по HTTP${NC}"
             fi
