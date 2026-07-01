@@ -1170,6 +1170,7 @@ export class RouteBot {
 
       // Выбираем метод отправки в зависимости от shouldUpdate
       const sendMethod = shouldUpdate ? this.updateMessage.bind(this) : this.sendNewMessage.bind(this);
+      logger.debug(`Using ${shouldUpdate ? 'updateMessage' : 'sendNewMessage'} method`);
 
       // Initialize AWG manager if needed
       if (!this.awgManager.initialized) {
@@ -1267,7 +1268,22 @@ export class RouteBot {
         }
       }
       
-      clientsMessage += `Всего: ${clients.length}\n\n`;
+      clientsMessage += `Всего: ${clients.length}\n`;
+      
+      // Добавляем временную метку ТОЛЬКО когда сервер доступен
+      // Это позволяет отслеживать состояние по поведению кнопки "Обновить":
+      // - Новое окно = интерфейс не готов (текст не меняется без метки)
+      // - Обновление в том же окне = интерфейс готов (текст меняется с меткой)
+      if (serverAvailable) {
+        const timestamp = new Date().toLocaleTimeString('ru-RU', {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit'
+        });
+        clientsMessage += `🕐 Обновлено: ${timestamp}\n`;
+      }
+      
+      clientsMessage += `\n`;
       
       // Создаём кнопки для каждого клиента
       const keyboard = {
