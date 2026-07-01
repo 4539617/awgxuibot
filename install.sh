@@ -1535,13 +1535,15 @@ update_xuibot() {
     echo -e "${YELLOW}🚀 Запуск обновленного контейнера...${NC}"
     $DOCKER_COMPOSE_CMD -f docker-compose.xuibot.yml up -d
     
-    sleep 5
+    echo -e "\n${YELLOW}⏳ Ожидание запуска контейнера...${NC}"
+    sleep 8
+    
     echo -e "\n${GREEN}✅ XUI Бот обновлен!${NC}"
     echo -e "${GREEN}📊 Статус:${NC}"
     docker ps --filter name=xuibot
     
     echo -e "\n${GREEN}📋 Логи XUI бота (последние 50 строк):${NC}"
-    docker logs --tail 50 xuibot
+    docker logs --tail 50 xuibot 2>&1 || echo -e "${RED}⚠️  Не удалось получить логи. Контейнер может еще запускаться.${NC}"
     
     echo -e "\n${YELLOW}Для просмотра в реальном времени:${NC}"
     echo -e "${YELLOW}docker logs -f xuibot${NC}"
@@ -1962,13 +1964,15 @@ rebuild_xuibot() {
     echo -e "${YELLOW}🚀 Запуск контейнера xuibot...${NC}"
     $DOCKER_COMPOSE_CMD -f docker-compose.xuibot.yml up -d
     
-    sleep 5
+    echo -e "\n${YELLOW}⏳ Ожидание запуска контейнера...${NC}"
+    sleep 8
+    
     echo -e "\n${GREEN}✅ XUI Бот пересобран!${NC}"
     echo -e "${GREEN}📊 Статус:${NC}"
     docker ps --filter name=xuibot
     
     echo -e "\n${GREEN}📋 Логи XUI бота (последние 50 строк):${NC}"
-    docker logs --tail 50 xuibot
+    docker logs --tail 50 xuibot 2>&1 || echo -e "${RED}⚠️  Не удалось получить логи. Контейнер может еще запускаться.${NC}"
     
     echo -e "\n${YELLOW}Для просмотра в реальном времени:${NC}"
     echo -e "${YELLOW}docker logs -f xuibot${NC}"

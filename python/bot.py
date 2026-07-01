@@ -811,7 +811,11 @@ async def show_all_client_details(callback_query: types.CallbackQuery):
         text = f"📋 <b>Информация о ключе</b>\n\n"
         text += f"{status_text}\n"
         text += f"📧 <b>Email:</b> <code>{client['email']}</code>\n"
-        text += f"📝 <b>Комментарий:</b> {client['comment'] if client['comment'] else 'Не указан'}\n"
+        # Убираем слово "Временный" из комментария для отображения
+        display_comment = client['comment'] if client['comment'] else 'Не указан'
+        if display_comment != 'Не указан':
+            display_comment = display_comment.replace('Временный ', '')
+        text += f"📝 <b>Комментарий:</b> {display_comment}\n"
         text += f"📊 <b>Общий трафик:</b> {traffic_text}\n"
         text += f"📅 <b>Срок окончания:</b> {expiry_text}\n"
         
@@ -986,7 +990,11 @@ async def refresh_client_details(callback_query: types.CallbackQuery, client_uui
         text = f"📋 <b>Информация о ключе</b>\n\n"
         text += f"{status_text}\n"
         text += f"📧 <b>Email:</b> <code>{client['email']}</code>\n"
-        text += f"📝 <b>Комментарий:</b> {client['comment'] if client['comment'] else 'Не указан'}\n"
+        # Убираем слово "Временный" из комментария для отображения
+        display_comment = client['comment'] if client['comment'] else 'Не указан'
+        if display_comment != 'Не указан':
+            display_comment = display_comment.replace('Временный ', '')
+        text += f"📝 <b>Комментарий:</b> {display_comment}\n"
         text += f"📊 <b>Общий трафик:</b> {traffic_text}\n"
         text += f"📅 <b>Срок окончания:</b> {expiry_text}\n"
         
