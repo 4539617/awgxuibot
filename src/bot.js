@@ -1436,20 +1436,18 @@ export class RouteBot {
         
         logger.info(`Successfully deleted client ${ip} from ${container.name}`);
         
-        // Создаем кнопки для быстрого перехода к клиентам
+        // Создаем кнопку для перехода в главное меню
         const keyboard = {
           inline_keyboard: [
             [
-              { text: '📋 AWG V1', callback_data: 'awg_select_v1' },
-              { text: '📋 AWG V2', callback_data: 'awg_select_v2' }
+              { text: '🏠 Главное меню', callback_data: 'main_menu' }
             ]
           ]
         };
         
         this.bot.sendMessage(
           chatId,
-          `✅ Клиент \`${ip}\` успешно удалён из ${version.toUpperCase()}\n\n` +
-          `IP адрес освобождён и может быть использован для нового клиента`,
+          `✅ Клиент \`${ip}\` успешно удалён из ${version.toUpperCase()}`,
           {
             parse_mode: 'Markdown',
             reply_markup: keyboard
