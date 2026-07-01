@@ -2574,6 +2574,31 @@ install_3xui_latest() {
     echo -e "${YELLOW}📦 Загрузка и установка 3x-ui (последняя версия)...${NC}"
     echo -e "${BLUE}Будет сгенерирован случайный пароль для панели${NC}\n"
     
+    # Подготовка к получению SSL-сертификата
+    echo -e "${YELLOW}🔧 Подготовка к получению SSL-сертификата...${NC}"
+    
+    # Очищаем старые ключи acme.sh если они есть
+    if [ -d "/root/.acme.sh" ]; then
+        echo -e "${YELLOW}🧹 Очистка старых ключей acme.sh...${NC}"
+        rm -rf /root/.acme.sh/*/
+        echo -e "${GREEN}✅ Старые ключи очищены${NC}"
+    fi
+    
+    # Проверяем что порт 80 свободен
+    if netstat -tuln 2>/dev/null | grep -q ":80 " || ss -tuln 2>/dev/null | grep -q ":80 "; then
+        echo -e "${YELLOW}⚠ Порт 80 занят, освобождаем...${NC}"
+        # Останавливаем возможные сервисы на порту 80
+        systemctl stop nginx 2>/dev/null || true
+        systemctl stop apache2 2>/dev/null || true
+        systemctl stop httpd 2>/dev/null || true
+        sleep 2
+        echo -e "${GREEN}✅ Порт 80 освобожден${NC}"
+    else
+        echo -e "${GREEN}✅ Порт 80 свободен${NC}"
+    fi
+    
+    echo -e "${GREEN}✅ Готово к получению SSL-сертификата${NC}\n"
+    
     # Установка с автоматической генерацией параметров (новая версия установщика)
     # Передаем ответы на все промпты:
     # y - подтверждение установки
