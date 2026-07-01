@@ -147,6 +147,101 @@ install_docker() {
     
     echo -e "${GREEN}✅ Используется: $DOCKER_COMPOSE_CMD${NC}"
 }
+
+# Функция установки Node.js
+install_nodejs() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Установка Node.js${NC}"
+    echo -e "${BLUE}========================================${NC}"
+    
+    # Проверяем, установлен ли Node.js
+    if command -v node &> /dev/null; then
+        NODE_VERSION=$(node --version)
+        echo -e "${GREEN}✅ Node.js уже установлен: ${NODE_VERSION}${NC}"
+        
+        # Проверяем npm
+        if command -v npm &> /dev/null; then
+            NPM_VERSION=$(npm --version)
+            echo -e "${GREEN}✅ npm установлен: v${NPM_VERSION}${NC}"
+        else
+            echo -e "${YELLOW}⚠️  npm не найден, переустановка Node.js...${NC}"
+        fi
+        
+        # Если всё в порядке, выходим
+        if command -v npm &> /dev/null; then
+            return 0
+        fi
+    fi
+    
+    echo -e "${YELLOW}📦 Установка Node.js LTS...${NC}"
+    
+    # Определяем систему
+    if command -v apt-get &> /dev/null; then
+        # Debian/Ubuntu
+        echo -e "${YELLOW}🔍 Обнаружена система на базе Debian/Ubuntu${NC}"
+        
+        # Устанавливаем curl если не установлен
+        if ! command -v curl &> /dev/null; then
+            echo -e "${YELLOW}📦 Установка curl...${NC}"
+            apt-get update -qq && apt-get install -y curl -qq
+        fi
+        
+        # Добавляем репозиторий NodeSource для Node.js 20.x LTS
+        echo -e "${YELLOW}📦 Добавление репозитория NodeSource...${NC}"
+        curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+        
+        # Устанавливаем Node.js
+        echo -e "${YELLOW}📦 Установка Node.js...${NC}"
+        apt-get install -y nodejs
+        
+    elif command -v yum &> /dev/null; then
+        # CentOS/RHEL
+        echo -e "${YELLOW}🔍 Обнаружена система на базе CentOS/RHEL${NC}"
+        
+        # Добавляем репозиторий NodeSource
+        curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -
+        
+        # Устанавливаем Node.js
+        yum install -y nodejs
+        
+    elif command -v dnf &> /dev/null; then
+        # Fedora
+        echo -e "${YELLOW}🔍 Обнаружена система Fedora${NC}"
+        
+        # Добавляем репозиторий NodeSource
+        curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -
+        
+        # Устанавливаем Node.js
+        dnf install -y nodejs
+        
+    else
+        echo -e "${RED}❌ Неподдерживаемая система${NC}"
+        echo -e "${YELLOW}Установите Node.js вручную:${NC}"
+        echo -e "${BLUE}  https://nodejs.org/en/download/${NC}"
+        return 1
+    fi
+    
+    # Проверяем установку
+    if command -v node &> /dev/null && command -v npm &> /dev/null; then
+        NODE_VERSION=$(node --version)
+        NPM_VERSION=$(npm --version)
+        echo -e "${GREEN}✅ Node.js успешно установлен: ${NODE_VERSION}${NC}"
+        echo -e "${GREEN}✅ npm установлен: v${NPM_VERSION}${NC}"
+        
+        # Устанавливаем зависимости проекта если находимся в рабочей директории
+        if [ -f "package.json" ]; then
+            echo -e "${YELLOW}📦 Установка зависимостей проекта...${NC}"
+            npm install
+            echo -e "${GREEN}✅ Зависимости проекта установлены${NC}"
+        fi
+        
+        return 0
+    else
+        echo -e "${RED}❌ Не удалось установить Node.js${NC}"
+        return 1
+    fi
+}
+
 # Функция проверки и установки Git
 check_and_install_git() {
     if ! command -v git &> /dev/null; then
@@ -4737,8 +4832,21 @@ generate_awg_config() {
     # Проверяем наличие Node.js
     if ! command -v node &> /dev/null; then
         echo -e "${RED}❌ Node.js не установлен!${NC}"
-        echo -e "${YELLOW}Установите Node.js для генерации конфигураций${NC}"
-        return 1
+        echo -e "${YELLOW}Для генерации конфигураций требуется Node.js${NC}"
+        echo -e ""
+        read -p "Установить Node.js сейчас? (y/n): " install_choice
+        
+        if [[ "$install_choice" =~ ^[Yy]$ ]]; then
+            install_nodejs
+            if [ $? -ne 0 ]; then
+                echo -e "${RED}❌ Не удалось установить Node.js${NC}"
+                return 1
+            fi
+        else
+            echo -e "${YELLOW}Установка отменена${NC}"
+            echo -e "${YELLOW}Используйте пункт меню '22) Установка Node.js' для установки${NC}"
+            return 1
+        fi
     fi
     
     # Проверяем и устанавливаем зависимости Node.js
@@ -4983,6 +5091,7 @@ show_menu() {
     echo -e "${BLUE}---${NC}"
     echo -e "${YELLOW}Системные утилиты:${NC}"
     echo -e "${GREEN}21)${NC} Анализ диска и памяти"
+    echo -e "${GREEN}22)${NC} Установка Node.js"
     echo -e "${BLUE}---${NC}"
     echo -e "${RED}99)${NC} Удалить ВСЁ (AWG + Боты + 3x-ui)"
     echo -e "${GREEN}0)${NC} Выход"
@@ -5233,6 +5342,17 @@ while true; do
             else
                 echo -e "${RED}❌ Файл disk_analyzer.sh не найден!${NC}"
             fi
+            ;;
+        22)
+            sync_repository
+            if [ $? -ne 0 ]; then
+                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
+                if [[ "$continue_choice" == "0" ]]; then
+                    echo -e "${YELLOW}Операция отменена${NC}"
+                    continue
+                fi
+            fi
+            install_nodejs
             ;;
         99)
             sync_repository
