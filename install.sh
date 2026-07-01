@@ -4220,6 +4220,7 @@ install_3xui_v3() {
         XUI_PORT=$(grep -oP 'Port:\s+\K\d+' "$INSTALL_OUTPUT" | tail -1 | sed 's/\x1b\[[0-9;]*m//g')
         XUI_WEB_BASE_PATH=$(grep -oP 'WebBasePath:\s+\K\S+' "$INSTALL_OUTPUT" | tail -1 | sed 's/\x1b\[[0-9;]*m//g')
         XUI_API_TOKEN=$(grep -oP 'API Token:\s+\K\S+' "$INSTALL_OUTPUT" | tail -1 | sed 's/\x1b\[[0-9;]*m//g')
+        XUI_ACCESS_URL=$(grep -oP 'Access URL:\s+\K\S+' "$INSTALL_OUTPUT" | tail -1 | sed 's/\x1b\[[0-9;]*m//g')
         
         # Извлекаем версию из вывода установщика (например: "Got x-ui latest version: v3.3.1")
         XUI_VERSION=$(grep -oP 'Got x-ui latest version:\s*v?\K[\d.]+' "$INSTALL_OUTPUT" | head -1 | sed 's/\x1b\[[0-9;]*m//g')
@@ -4240,10 +4241,7 @@ install_3xui_v3() {
         # Получение IP сервера
         SERVER_IP=$(curl -s -4 https://api4.ipify.org 2>/dev/null || curl -s -4 https://ipv4.icanhazip.com 2>/dev/null || curl -s -4 ifconfig.me 2>/dev/null || echo "YOUR_SERVER_IP")
         
-        # Определяем протокол: читаем Access URL из вывода установщика
-        # Установщик сам знает был ли настроен SSL
-        XUI_ACCESS_URL=$(echo "$INSTALL_OUTPUT" | grep -oP 'Access URL:\s+\K\S+' | tail -1 | sed 's/\x1b\[[0-9;]*m//g')
-        
+        # Формируем URL из извлеченных данных
         if [ -n "$XUI_ACCESS_URL" ]; then
             # Используем URL напрямую из установщика
             XUI_URL="$XUI_ACCESS_URL"
