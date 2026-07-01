@@ -646,7 +646,8 @@ export class RouteBot {
           message_id: lastMessageId,
           ...options
         });
-        return { message_id: lastMessageId };
+        // Успешно обновили в том же окне - уведомление НЕ показываем
+        return { message_id: lastMessageId, isNewWindow: false };
       }
     } catch (error) {
       // Если не удалось отредактировать (сообщение слишком старое или удалено)
@@ -657,7 +658,11 @@ export class RouteBot {
     // Отправляем новое сообщение, если редактирование не удалось
     const result = await this.bot.sendMessage(chatId, text, options);
     this.lastMessageIds.set(chatId, result.message_id);
-    return result;
+    
+    // Показываем уведомление о новом окне
+    await this.bot.sendMessage(chatId, '⚠️ Интерфейс еще не готов');
+    
+    return { ...result, isNewWindow: true };
   }
 
   // Обратная совместимость - по умолчанию отправляем новое сообщение
