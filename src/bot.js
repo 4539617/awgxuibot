@@ -113,20 +113,21 @@ export class RouteBot {
       }
       // Refresh callbacks (для кнопок "Обновить")
       else if (data.startsWith('refresh_')) {
-        await this.bot.answerCallbackQuery(query.id);
+        // НЕ вызываем answerCallbackQuery здесь, так как это будет сделано в методах
         
         // Verify admin access
         if (!this.isAdmin(userId)) {
           logger.warn(`Unauthorized refresh callback from user ${userId}`);
+          await this.bot.answerCallbackQuery(query.id);
           return;
         }
         
         if (data.startsWith('refresh_select_')) {
           const version = data.replace('refresh_select_', '');
-          await this.showClientSelectionMenu(chatId, version, true);
+          await this.showClientSelectionMenu(chatId, version, true, query.id);
         } else if (data.startsWith('refresh_clients_')) {
           const version = data.replace('refresh_clients_', '');
-          await this.showAwgClientsList(chatId, version, true);
+          await this.showAwgClientsList(chatId, version, true, query.id);
         }
       }
       // Resend config callbacks
@@ -635,7 +636,7 @@ export class RouteBot {
   }
 
   // Метод для обновления существующего сообщения (для кнопки "Обновить")
-  async updateMessage(chatId, text, options = {}) {
+  async updateMessage(chatId, text, options = {}, callbackQueryId = null) {
     const lastMessageId = this.lastMessageIds.get(chatId);
     
     try {
@@ -659,8 +660,17 @@ export class RouteBot {
     const result = await this.bot.sendMessage(chatId, text, options);
     this.lastMessageIds.set(chatId, result.message_id);
     
-    // Показываем уведомление о новом окне
-    await this.bot.sendMessage(chatId, '⚠️ Интерфейс еще не готов');
+    // Показываем popup уведомление о новом окне если передан callbackQueryId
+    if (callbackQueryId) {
+      try {
+        await this.bot.answerCallbackQuery(callbackQueryId, {
+          text: '⚠️ Интерфейс еще не готов',
+          show_alert: true
+        });
+      } catch (error) {
+        logger.warn(`Failed to show popup notification: ${error.message}`);
+      }
+    }
     
     return { ...result, isNewWindow: true };
   }
@@ -670,13 +680,10 @@ export class RouteBot {
     return this.sendNewMessage(chatId, text, options);
   }
 
-  async showClientSelectionMenu(chatId, version, shouldUpdate = false) {
+  async showClientSelectionMenu(chatId, version, shouldUpdate = false, callbackQueryId = null) {
     try {
       logger.info(`Showing client selection menu for ${version} in chat ${chatId}, shouldUpdate: ${shouldUpdate}`);
       
-      // Выбираем метод отправки в зависимости от shouldUpdate
-      const sendMethod = shouldUpdate ? this.updateMessage.bind(this) : this.sendNewMessage.bind(this);
-
       // Initialize AWG manager if needed
       if (!this.awgManager.initialized) {
         await this.awgManager.initialize();
@@ -686,11 +693,20 @@ export class RouteBot {
       const container = this.awgManager.availableContainers.find(c => c.version === version);
       
       if (!container) {
-        await sendMethod(
-          chatId,
-          `❌ Контейнер версии ${version} не найден`,
-          { parse_mode: 'Markdown' }
-        );
+        if (shouldUpdate) {
+          await this.updateMessage(
+            chatId,
+            `❌ Контейнер версии ${version} не найден`,
+            { parse_mode: 'Markdown' },
+            callbackQueryId
+          );
+        } else {
+          await this.sendNewMessage(
+            chatId,
+            `❌ Контейнер версии ${version} не найден`,
+            { parse_mode: 'Markdown' }
+          );
+        }
         return;
       }
 
@@ -734,10 +750,29 @@ export class RouteBot {
         ]
       };
 
-      await sendMethod(chatId, message, {
-        parse_mode: 'Markdown',
-        reply_markup: keyboard
-      });
+      // Выбираем метод отправки в зависимости от shouldUpdate
+      if (shouldUpdate) {
+        // При обновлении передаем callbackQueryId для показа popup при создании нового окна
+        await this.updateMessage(chatId, message, {
+          parse_mode: 'Markdown',
+          reply_markup: keyboard
+        }, callbackQueryId);
+        
+        // Если сообщение было успешно обновлено в том же окне, отвечаем на callback
+        if (callbackQueryId) {
+          try {
+            await this.bot.answerCallbackQuery(callbackQueryId);
+          } catch (error) {
+            // Игнорируем ошибку, если уже ответили
+          }
+        }
+      } else {
+        // При первом открытии используем sendNewMessage
+        await this.sendNewMessage(chatId, message, {
+          parse_mode: 'Markdown',
+          reply_markup: keyboard
+        });
+      }
 
     } catch (error) {
       logger.error(`Error showing client selection menu for chat ${chatId}:`, error);
@@ -1169,13 +1204,9 @@ export class RouteBot {
     }
   }
 
-  async showAwgClientsList(chatId, version, shouldUpdate = false) {
+  async showAwgClientsList(chatId, version, shouldUpdate = false, callbackQueryId = null) {
     try {
       logger.info(`Showing ${version} clients list for chat ${chatId}, shouldUpdate: ${shouldUpdate}`);
-
-      // Выбираем метод отправки в зависимости от shouldUpdate
-      const sendMethod = shouldUpdate ? this.updateMessage.bind(this) : this.sendNewMessage.bind(this);
-      logger.debug(`Using ${shouldUpdate ? 'updateMessage' : 'sendNewMessage'} method`);
 
       // Initialize AWG manager if needed
       if (!this.awgManager.initialized) {
@@ -1186,11 +1217,20 @@ export class RouteBot {
       const container = this.awgManager.availableContainers.find(c => c.version === version);
       
       if (!container) {
-        await sendMethod(
-          chatId,
-          `📋 *Подробнее Клиенты ${version.toUpperCase()}*\n\n❌ Контейнер версии ${version} не найден`,
-          { parse_mode: 'Markdown' }
-        );
+        if (shouldUpdate) {
+          await this.updateMessage(
+            chatId,
+            `📋 *Подробнее Клиенты ${version.toUpperCase()}*\n\n❌ Контейнер версии ${version} не найден`,
+            { parse_mode: 'Markdown' },
+            callbackQueryId
+          );
+        } else {
+          await this.sendNewMessage(
+            chatId,
+            `📋 *Подробнее Клиенты ${version.toUpperCase()}*\n\n❌ Контейнер версии ${version} не найден`,
+            { parse_mode: 'Markdown' }
+          );
+        }
         return;
       }
 
@@ -1250,11 +1290,20 @@ export class RouteBot {
       }
 
       if (clients.length === 0) {
-        await sendMethod(
-          chatId,
-          `📋 *Подробнее Клиенты ${version.toUpperCase()}*\n\n📦 Контейнер: \`${container.name}\`${containerStatusMessage}${interfaceMessage}\n\nНет активных клиентов`,
-          { parse_mode: 'Markdown' }
-        );
+        if (shouldUpdate) {
+          await this.updateMessage(
+            chatId,
+            `📋 *Подробнее Клиенты ${version.toUpperCase()}*\n\n📦 Контейнер: \`${container.name}\`${containerStatusMessage}${interfaceMessage}\n\nНет активных клиентов`,
+            { parse_mode: 'Markdown' },
+            callbackQueryId
+          );
+        } else {
+          await this.sendNewMessage(
+            chatId,
+            `📋 *Подробнее Клиенты ${version.toUpperCase()}*\n\n📦 Контейнер: \`${container.name}\`${containerStatusMessage}${interfaceMessage}\n\nНет активных клиентов`,
+            { parse_mode: 'Markdown' }
+          );
+        }
         return;
       }
 
@@ -1347,10 +1396,28 @@ export class RouteBot {
         { text: '🔙 Назад', callback_data: `awg_select_${version}` }
       ]);
 
-      await sendMethod(chatId, clientsMessage, {
-        parse_mode: 'Markdown',
-        reply_markup: keyboard
-      });
+      if (shouldUpdate) {
+        // При обновлении передаем callbackQueryId для показа popup при создании нового окна
+        await this.updateMessage(chatId, clientsMessage, {
+          parse_mode: 'Markdown',
+          reply_markup: keyboard
+        }, callbackQueryId);
+        
+        // Если сообщение было успешно обновлено в том же окне, отвечаем на callback
+        if (callbackQueryId) {
+          try {
+            await this.bot.answerCallbackQuery(callbackQueryId);
+          } catch (error) {
+            // Игнорируем ошибку, если уже ответили
+          }
+        }
+      } else {
+        // При первом открытии используем sendNewMessage
+        await this.sendNewMessage(chatId, clientsMessage, {
+          parse_mode: 'Markdown',
+          reply_markup: keyboard
+        });
+      }
 
     } catch (error) {
       logger.error(`Error showing ${version} clients list for chat ${chatId}:`, error);
