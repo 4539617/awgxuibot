@@ -1254,9 +1254,14 @@ export class RouteBot {
       }
 
       let clientsMessage = `📋 *Подробнее Клиенты ${version.toUpperCase()}*\n\n`;
-      clientsMessage += `📦 Контейнер: \`${container.name}\`${containerStatusMessage}${interfaceMessage}`;
       
-      // Добавляем информацию о состоянии сервера
+      // Новый формат статуса сервера
+      clientsMessage += `📦 *Состояние сервера:*\n`;
+      clientsMessage += `├ Контейнер: ${containerStatus.running ? '✅' : '❌'}\n`;
+      clientsMessage += `├ Интерфейс: ${interfaceStatus === 'ready' ? '✅' : interfaceStatus === 'starting' ? '⏳' : '❌'}\n`;
+      clientsMessage += `└ WireGuard: ${serverAvailable ? '✅ Готов' : interfaceStatus === 'starting' ? '⏳ Запускается' : '❌ Недоступен'}\n`;
+      
+      // Добавляем предупреждения если сервер недоступен
       if (!serverAvailable) {
         if (interfaceStatus === 'starting') {
           clientsMessage += `\n⏳ *Сервер перезапускается...*\n`;
@@ -1268,7 +1273,7 @@ export class RouteBot {
         }
       }
       
-      clientsMessage += `Всего: ${clients.length}\n`;
+      clientsMessage += `\nВсего: ${clients.length}\n`;
       
       // Добавляем временную метку ТОЛЬКО когда сервер доступен
       // Это позволяет отслеживать состояние по поведению кнопки "Обновить":
@@ -1604,8 +1609,7 @@ export class RouteBot {
         const keyboard = {
           inline_keyboard: [
             [
-              { text: '🏠 Главное меню', callback_data: 'start_menu' },
-              { text: '📊 Статистика', callback_data: 'awg_stats' }
+              { text: '🏠 Главное меню', callback_data: 'start_menu' }
             ]
           ]
         };
