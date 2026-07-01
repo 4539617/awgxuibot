@@ -1146,11 +1146,16 @@ export class RouteBot {
       // Проверяем статус контейнера
       const containerStatus = await this.awgManager.checkContainer(container.name);
       let containerStatusMessage = '';
+      let serverStatusEmoji = '';
       
       if (containerStatus.restarting) {
-        containerStatusMessage = '\n🔄 *Статус:* Контейнер перезапускается...\n';
+        containerStatusMessage = '\n🔄 *Статус контейнера:* Перезапускается\n';
+        serverStatusEmoji = '🔄';
       } else if (!containerStatus.running) {
-        containerStatusMessage = '\n⚠️ *Статус:* Контейнер остановлен\n';
+        containerStatusMessage = '\n⚠️ *Статус контейнера:* Остановлен\n';
+        serverStatusEmoji = '⚠️';
+      } else {
+        serverStatusEmoji = '✅';
       }
 
       const clients = await this.awgManager.getClients(container.name);
@@ -1164,18 +1169,22 @@ export class RouteBot {
         try {
           await execAsync(`docker exec ${container.name} wg show ${configFile} 2>&1`);
           interfaceStatus = 'ready';
+          interfaceMessage = '\n✅ *Статус интерфейса:* Работает\n';
         } catch (error) {
           const errorMsg = error.message || error.toString();
           
           if (errorMsg.includes('does not exist') || errorMsg.includes('No such device')) {
             interfaceStatus = 'starting';
-            interfaceMessage = '\n⏳ *Статус интерфейса:* Перезапускается...\n';
+            interfaceMessage = '\n⏳ *Статус интерфейса:* Запускается\n';
+            serverStatusEmoji = '⏳';
           } else if (errorMsg.includes('Unable to access interface')) {
             interfaceStatus = 'error';
             interfaceMessage = '\n⚠️ *Статус интерфейса:* Ошибка\n';
+            serverStatusEmoji = '⚠️';
           } else {
             interfaceStatus = 'unknown';
             interfaceMessage = '\n❓ *Статус интерфейса:* Неизвестно\n';
+            serverStatusEmoji = '❓';
           }
         }
       }
@@ -1196,29 +1205,8 @@ export class RouteBot {
       clientsMessage += `📦 Контейнер: \`${container.name}\`${containerStatusMessage}${interfaceMessage}`;
       clientsMessage += `Всего: ${clients.length}\n\n`;
       
-      // Определяем общий статус сервера для отображения
-      let serverStatusIcon = '';
-      let serverAvailable = true;
-      
-      if (containerStatus.restarting) {
-        serverStatusIcon = '🔄';
-        serverAvailable = false;
-      } else if (!containerStatus.running) {
-        serverStatusIcon = '⚠️';
-        serverAvailable = false;
-      } else if (interfaceStatus === 'starting') {
-        serverStatusIcon = '⏳';
-        serverAvailable = false;
-      } else if (interfaceStatus === 'error') {
-        serverStatusIcon = '⚠️';
-        serverAvailable = false;
-      } else if (interfaceStatus === 'ready') {
-        serverStatusIcon = '✅';
-        serverAvailable = true;
-      } else {
-        serverStatusIcon = '❓';
-        serverAvailable = false;
-      }
+      // Определяем доступность сервера
+      const serverAvailable = (containerStatus.running && interfaceStatus === 'ready');
       
       // Создаём кнопки для каждого клиента
       const keyboard = {
@@ -1230,12 +1218,12 @@ export class RouteBot {
         const lastSeen = stats.lastHandshake || '❌';
         const transfer = stats.transfer || 'нет данных';
         
-        // Если сервер недоступен - показываем статус сервера вместо статуса клиента
+        // Если сервер недоступен - показываем статус сервера
         if (!serverAvailable) {
-          clientsMessage += `${ip} ${serverStatusIcon}\n`;
+          clientsMessage += `${ip} ${serverStatusEmoji} (сервер недоступен)\n`;
         } else if (lastSeen === '❌') {
           // Сервер доступен, но клиент неактивен
-          clientsMessage += `${ip} ❌\n`;
+          clientsMessage += `${ip} ❌ (клиент неактивен)\n`;
         } else {
           // Сервер доступен и клиент активен - показываем детали
           clientsMessage += `${ip} ✅\n`;
