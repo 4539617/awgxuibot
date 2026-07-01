@@ -4248,23 +4248,62 @@ install_3xui_v3() {
             # Используем URL напрямую из установщика
             XUI_URL="$XUI_ACCESS_URL"
             
-            # ВАЖНО: Мы пропускаем SSL (выбор 4), поэтому принудительно используем HTTP
-            # Если установщик вернул https, меняем на http
-            if [[ "$XUI_URL" == https://* ]]; then
-                XUI_URL=$(echo "$XUI_URL" | sed 's|^https://|http://|')
-                echo -e "${YELLOW}⚠️  SSL пропущен при установке, URL изменен на HTTP: ${XUI_URL}${NC}"
+            # Настраиваем SSL после установки если есть сертификаты
+            if [ "$USE_EXISTING_CERTS" = true ] && [[ "$XUI_URL" == http://* ]]; then
+                echo -e "${YELLOW}🔐 Настройка SSL для панели...${NC}"
+                
+                # Останавливаем панель для настройки
+                systemctl stop x-ui
+                sleep 2
+                
+                # Обновляем настройки в базе данных
+                sqlite3 /etc/x-ui/x-ui.db "UPDATE settings SET value='/root/cert/${SERVER_IP}/fullchain.pem' WHERE key='webCertFile';" 2>/dev/null || true
+                sqlite3 /etc/x-ui/x-ui.db "UPDATE settings SET value='/root/cert/${SERVER_IP}/privkey.pem' WHERE key='webKeyFile';" 2>/dev/null || true
+                
+                # Запускаем панель
+                systemctl start x-ui
+                sleep 3
+                
+                # Меняем URL на HTTPS
+                XUI_URL=$(echo "$XUI_URL" | sed 's|^http://|https://|')
+                echo -e "${GREEN}✅ SSL настроен! Новый URL: ${XUI_URL}${NC}"
+            elif [[ "$XUI_URL" == https://* ]]; then
+                echo -e "${GREEN}✅ SSL уже настроен в панели${NC}"
+            else
+                echo -e "${YELLOW}⚠️  SSL пропущен при установке, панель работает по HTTP${NC}"
             fi
         else
-            # Fallback: используем HTTP так как мы пропустили SSL при установке
-            local PROTOCOL="http"
-            
+            # Fallback: формируем URL вручную
             if [ -n "$XUI_WEB_BASE_PATH" ] && [ "$XUI_WEB_BASE_PATH" != "/" ]; then
                 if [[ "$XUI_WEB_BASE_PATH" != /* ]]; then
                     XUI_WEB_BASE_PATH="/${XUI_WEB_BASE_PATH}"
                 fi
-                XUI_URL="${PROTOCOL}://$(format_host_for_url "${SERVER_IP}"):${XUI_PORT}${XUI_WEB_BASE_PATH}"
+                XUI_URL="http://$(format_host_for_url "${SERVER_IP}"):${XUI_PORT}${XUI_WEB_BASE_PATH}"
             else
-                XUI_URL="${PROTOCOL}://$(format_host_for_url "${SERVER_IP}"):${XUI_PORT}"
+                XUI_URL="http://$(format_host_for_url "${SERVER_IP}"):${XUI_PORT}"
+            fi
+            
+            # Настраиваем SSL после установки если есть сертификаты
+            if [ "$USE_EXISTING_CERTS" = true ]; then
+                echo -e "${YELLOW}🔐 Настройка SSL для панели...${NC}"
+                
+                # Останавливаем панель для настройки
+                systemctl stop x-ui
+                sleep 2
+                
+                # Обновляем настройки в базе данных
+                sqlite3 /etc/x-ui/x-ui.db "UPDATE settings SET value='/root/cert/${SERVER_IP}/fullchain.pem' WHERE key='webCertFile';" 2>/dev/null || true
+                sqlite3 /etc/x-ui/x-ui.db "UPDATE settings SET value='/root/cert/${SERVER_IP}/privkey.pem' WHERE key='webKeyFile';" 2>/dev/null || true
+                
+                # Запускаем панель
+                systemctl start x-ui
+                sleep 3
+                
+                # Меняем URL на HTTPS
+                XUI_URL=$(echo "$XUI_URL" | sed 's|^http://|https://|')
+                echo -e "${GREEN}✅ SSL настроен! Новый URL: ${XUI_URL}${NC}"
+            else
+                echo -e "${YELLOW}⚠️  SSL пропущен при установке, панель работает по HTTP${NC}"
             fi
         fi
         
