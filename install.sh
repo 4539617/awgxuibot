@@ -4816,6 +4816,70 @@ generate_awg_config() {
         echo -e "\n${RED}❌ Ошибка генерации конфигурации${NC}"
     fi
 }
+# Функция запуска AWG v1
+start_awg_v1() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Запуск AWG v1${NC}"
+    echo -e "${BLUE}========================================${NC}"
+    
+    local container_name="amnezia-awg"
+    
+    # Проверяем существование контейнера
+    if ! docker ps -a --format '{{.Names}}' | grep -q "^${container_name}$"; then
+        echo -e "${RED}❌ Контейнер ${container_name} не найден!${NC}"
+        echo -e "${YELLOW}AWG v1 не установлен${NC}"
+        return 1
+    fi
+    
+    # Проверяем запущен ли контейнер
+    if docker ps --format '{{.Names}}' | grep -q "^${container_name}$"; then
+        echo -e "${YELLOW}⚠️  Контейнер ${container_name} уже запущен${NC}"
+        return 0
+    fi
+    
+    # Запускаем контейнер
+    echo -e "${YELLOW}🚀 Запуск контейнера ${container_name}...${NC}"
+    if docker start "${container_name}" 2>/dev/null; then
+        echo -e "${GREEN}✅ AWG v1 успешно запущен${NC}"
+        return 0
+    else
+        echo -e "${RED}❌ Ошибка запуска контейнера${NC}"
+        return 1
+    fi
+}
+
+# Функция запуска AWG v2
+start_awg_v2() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Запуск AWG v2${NC}"
+    echo -e "${BLUE}========================================${NC}"
+    
+    local container_name="amnezia-awg2"
+    
+    # Проверяем существование контейнера
+    if ! docker ps -a --format '{{.Names}}' | grep -q "^${container_name}$"; then
+        echo -e "${RED}❌ Контейнер ${container_name} не найден!${NC}"
+        echo -e "${YELLOW}AWG v2 не установлен${NC}"
+        return 1
+    fi
+    
+    # Проверяем запущен ли контейнер
+    if docker ps --format '{{.Names}}' | grep -q "^${container_name}$"; then
+        echo -e "${YELLOW}⚠️  Контейнер ${container_name} уже запущен${NC}"
+        return 0
+    fi
+    
+    # Запускаем контейнер
+    echo -e "${YELLOW}🚀 Запуск контейнера ${container_name}...${NC}"
+    if docker start "${container_name}" 2>/dev/null; then
+        echo -e "${GREEN}✅ AWG v2 успешно запущен${NC}"
+        return 0
+    else
+        echo -e "${RED}❌ Ошибка запуска контейнера${NC}"
+        return 1
+    fi
+}
+
 # Функция остановки AWG v1
 stop_awg_v1() {
     echo -e "\n${BLUE}========================================${NC}"
@@ -4900,23 +4964,25 @@ show_menu() {
     echo -e "${GREEN}6)${NC} Удаление AWG"
     echo -e "${GREEN}7)${NC} Сформировать конфигурацию AWG v1"
     echo -e "${GREEN}8)${NC} Сформировать конфигурацию AWG v2"
-    echo -e "${GREEN}9)${NC} Остановить AWG v1"
-    echo -e "${GREEN}10)${NC} Остановить AWG v2"
+    echo -e "${GREEN}9)${NC} Запустить AWG v1"
+    echo -e "${GREEN}10)${NC} Запустить AWG v2"
+    echo -e "${GREEN}11)${NC} Остановить AWG v1"
+    echo -e "${GREEN}12)${NC} Остановить AWG v2"
     echo -e "${BLUE}---${NC}"
     echo -e "${YELLOW}XUIBOT:${NC}"
-    echo -e "${GREEN}11)${NC} Установка XUIBOT"
-    echo -e "${GREEN}12)${NC} Логи XUIBOT"
-    echo -e "${GREEN}13)${NC} Пересборка XUIBOT"
-    echo -e "${GREEN}14)${NC} Удаление XUIBOT"
+    echo -e "${GREEN}13)${NC} Установка XUIBOT"
+    echo -e "${GREEN}14)${NC} Логи XUIBOT"
+    echo -e "${GREEN}15)${NC} Пересборка XUIBOT"
+    echo -e "${GREEN}16)${NC} Удаление XUIBOT"
     echo -e "${BLUE}---${NC}"
     echo -e "${YELLOW}AWGBOT:${NC}"
-    echo -e "${GREEN}15)${NC} Установка AWGBOT"
-    echo -e "${GREEN}16)${NC} Логи AWGBOT"
-    echo -e "${GREEN}17)${NC} Пересборка AWGBOT"
-    echo -e "${GREEN}18)${NC} Удаление AWGBOT"
+    echo -e "${GREEN}17)${NC} Установка AWGBOT"
+    echo -e "${GREEN}18)${NC} Логи AWGBOT"
+    echo -e "${GREEN}19)${NC} Пересборка AWGBOT"
+    echo -e "${GREEN}20)${NC} Удаление AWGBOT"
     echo -e "${BLUE}---${NC}"
     echo -e "${YELLOW}Системные утилиты:${NC}"
-    echo -e "${GREEN}19)${NC} Анализ диска и памяти"
+    echo -e "${GREEN}21)${NC} Анализ диска и памяти"
     echo -e "${BLUE}---${NC}"
     echo -e "${RED}99)${NC} Удалить ВСЁ (AWG + Боты + 3x-ui)"
     echo -e "${GREEN}0)${NC} Выход"
@@ -5030,7 +5096,7 @@ while true; do
                     continue
                 fi
             fi
-            stop_awg_v1
+            start_awg_v1
             ;;
         10)
             sync_repository
@@ -5041,7 +5107,7 @@ while true; do
                     continue
                 fi
             fi
-            stop_awg_v2
+            start_awg_v2
             ;;
         11)
             sync_repository
@@ -5052,7 +5118,7 @@ while true; do
                     continue
                 fi
             fi
-            install_xuibot
+            stop_awg_v1
             ;;
         12)
             sync_repository
@@ -5063,7 +5129,7 @@ while true; do
                     continue
                 fi
             fi
-            show_xuibot_logs
+            stop_awg_v2
             ;;
         13)
             sync_repository
@@ -5074,7 +5140,7 @@ while true; do
                     continue
                 fi
             fi
-            update_xuibot
+            install_xuibot
             ;;
         14)
             sync_repository
@@ -5085,7 +5151,7 @@ while true; do
                     continue
                 fi
             fi
-            remove_xuibot
+            show_xuibot_logs
             ;;
         15)
             sync_repository
@@ -5096,7 +5162,7 @@ while true; do
                     continue
                 fi
             fi
-            install_awgbot
+            update_xuibot
             ;;
         16)
             sync_repository
@@ -5107,7 +5173,7 @@ while true; do
                     continue
                 fi
             fi
-            show_awgbot_logs
+            remove_xuibot
             ;;
         17)
             sync_repository
@@ -5118,7 +5184,7 @@ while true; do
                     continue
                 fi
             fi
-            update_awgbot
+            install_awgbot
             ;;
         18)
             sync_repository
@@ -5129,9 +5195,31 @@ while true; do
                     continue
                 fi
             fi
-            remove_awgbot
+            show_awgbot_logs
             ;;
         19)
+            sync_repository
+            if [ $? -ne 0 ]; then
+                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
+                if [[ "$continue_choice" == "0" ]]; then
+                    echo -e "${YELLOW}Операция отменена${NC}"
+                    continue
+                fi
+            fi
+            update_awgbot
+            ;;
+        20)
+            sync_repository
+            if [ $? -ne 0 ]; then
+                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
+                if [[ "$continue_choice" == "0" ]]; then
+                    echo -e "${YELLOW}Операция отменена${NC}"
+                    continue
+                fi
+            fi
+            remove_awgbot
+            ;;
+        21)
             sync_repository
             if [ $? -ne 0 ]; then
                 read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
