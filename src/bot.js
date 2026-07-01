@@ -1126,20 +1126,43 @@ export class RouteBot {
 
       const clients = await this.awgManager.getClients(container.name);
 
+      // Проверяем статус WireGuard интерфейса
+      const configFile = version === 'v2' ? 'awg0' : 'wg0';
+      let interfaceStatus = 'unknown';
+      let interfaceMessage = '';
+      
+      try {
+        await execAsync(`docker exec ${container.name} wg show ${configFile} 2>&1`);
+        interfaceStatus = 'ready';
+      } catch (error) {
+        const errorMsg = error.message || error.toString();
+        
+        if (errorMsg.includes('does not exist') || errorMsg.includes('No such device')) {
+          interfaceStatus = 'starting';
+          interfaceMessage = '\n⏳ *Статус:* Интерфейс перезапускается...\n';
+        } else if (errorMsg.includes('Unable to access interface')) {
+          interfaceStatus = 'error';
+          interfaceMessage = '\n⚠️ *Статус:* Ошибка интерфейса\n';
+        } else {
+          interfaceStatus = 'unknown';
+          interfaceMessage = '\n❓ *Статус:* Неизвестно\n';
+        }
+      }
+
       // Получаем статистику клиентов (последнее соединение, трафик)
       const clientsStats = await this.getClientsStats(container.name, version);
 
       if (clients.length === 0) {
         await sendMethod(
           chatId,
-          `📋 *Подробнее Клиенты ${version.toUpperCase()}*\n\n📦 Контейнер: \`${container.name}\`\n\nНет активных клиентов`,
+          `📋 *Подробнее Клиенты ${version.toUpperCase()}*\n\n📦 Контейнер: \`${container.name}\`${interfaceMessage}\n\nНет активных клиентов`,
           { parse_mode: 'Markdown' }
         );
         return;
       }
 
       let clientsMessage = `📋 *Подробнее Клиенты ${version.toUpperCase()}*\n\n`;
-      clientsMessage += `📦 Контейнер: \`${container.name}\`\n`;
+      clientsMessage += `📦 Контейнер: \`${container.name}\`${interfaceMessage}`;
       clientsMessage += `Всего: ${clients.length}\n\n`;
       
       // Создаём кнопки для каждого клиента
@@ -1436,6 +1459,49 @@ export class RouteBot {
         
         logger.info(`Successfully deleted client ${ip} from ${container.name}`);
         
+        // Ожидаем готовности интерфейса и определяем его состояние
+        let interfaceStatus = 'unknown';
+        let attempts = 0;
+        const maxAttempts = 10;
+        let peerCount = 0;
+        
+        while (interfaceStatus === 'unknown' && attempts < maxAttempts) {
+          try {
+            // Проверяем статус интерфейса
+            const { stdout: wgOutput } = await execAsync(`docker exec ${container.name} wg show ${configName} 2>&1`);
+            
+            // Подсчитываем количество пиров
+            const peerMatches = wgOutput.match(/peer:/g);
+            peerCount = peerMatches ? peerMatches.length : 0;
+            
+            interfaceStatus = 'ready';
+            logger.info(`Interface ${configName} is ready with ${peerCount} peers`);
+          } catch (error) {
+            attempts++;
+            
+            // Проверяем причину ошибки
+            const errorMsg = error.message || error.toString();
+            
+            if (errorMsg.includes('does not exist') || errorMsg.includes('No such device')) {
+              interfaceStatus = 'starting';
+              logger.info(`Interface ${configName} is starting (attempt ${attempts}/${maxAttempts})`);
+            } else if (errorMsg.includes('Unable to access interface')) {
+              interfaceStatus = 'error';
+              logger.error(`Interface ${configName} has error: ${errorMsg}`);
+              break;
+            }
+            
+            if (attempts < maxAttempts && interfaceStatus !== 'error') {
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+          }
+        }
+        
+        // Если после всех попыток статус неизвестен, считаем что интерфейс запускается
+        if (interfaceStatus === 'unknown') {
+          interfaceStatus = 'starting';
+        }
+        
         // Создаем кнопку для перехода в главное меню
         const keyboard = {
           inline_keyboard: [
@@ -1445,9 +1511,27 @@ export class RouteBot {
           ]
         };
         
+        let statusMessage = `✅ Клиент \`${ip}\` успешно удалён из ${version.toUpperCase()}`;
+        
+        // Добавляем информацию о состоянии интерфейса
+        if (interfaceStatus === 'ready') {
+          const remainingClients = peerCount;
+          if (remainingClients > 0) {
+            statusMessage += `\n\n📊 Активных клиентов: ${remainingClients}`;
+          } else {
+            statusMessage += `\n\n📊 Клиентов не осталось`;
+          }
+        } else if (interfaceStatus === 'starting') {
+          statusMessage += `\n\n⏳ Интерфейс WireGuard перезапускается...`;
+          statusMessage += `\nСтатус клиентов будет доступен через несколько секунд`;
+        } else if (interfaceStatus === 'error') {
+          statusMessage += `\n\n⚠️ Ошибка при проверке интерфейса WireGuard`;
+          statusMessage += `\nПроверьте логи контейнера`;
+        }
+        
         this.bot.sendMessage(
           chatId,
-          `✅ Клиент \`${ip}\` успешно удалён из ${version.toUpperCase()}`,
+          statusMessage,
           {
             parse_mode: 'Markdown',
             reply_markup: keyboard
