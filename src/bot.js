@@ -1189,8 +1189,14 @@ export class RouteBot {
         }
       }
 
-      // Получаем статистику клиентов (последнее соединение, трафик)
-      const clientsStats = await this.getClientsStats(container.name, version);
+      // Определяем доступность сервера
+      const serverAvailable = (containerStatus.running && interfaceStatus === 'ready');
+      
+      // Получаем статистику клиентов только если сервер доступен
+      let clientsStats = {};
+      if (serverAvailable) {
+        clientsStats = await this.getClientsStats(container.name, version);
+      }
 
       if (clients.length === 0) {
         await sendMethod(
@@ -1204,9 +1210,6 @@ export class RouteBot {
       let clientsMessage = `📋 *Подробнее Клиенты ${version.toUpperCase()}*\n\n`;
       clientsMessage += `📦 Контейнер: \`${container.name}\`${containerStatusMessage}${interfaceMessage}`;
       clientsMessage += `Всего: ${clients.length}\n\n`;
-      
-      // Определяем доступность сервера
-      const serverAvailable = (containerStatus.running && interfaceStatus === 'ready');
       
       // Создаём кнопки для каждого клиента
       const keyboard = {
