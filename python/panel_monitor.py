@@ -276,12 +276,13 @@ class PanelMonitor:
         
         # Все панели недоступны
         logger.critical("🚨 ВСЕ ПАНЕЛИ НЕДОСТУПНЫ!")
-        await self._notify_admins(
-            f"🚨 <b>КРИТИЧЕСКАЯ ОШИБКА</b>\n\n"
-            f"❌ Все панели недоступны!\n"
-            f"⚠️ Требуется немедленное вмешательство.\n\n"
-            f"⏰ Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-        )
+        # Notification disabled by user request
+        # await self._notify_admins(
+        #     f"🚨 <b>КРИТИЧЕСКАЯ ОШИБКА</b>\n\n"
+        #     f"❌ Все панели недоступны!\n"
+        #     f"⚠️ Требуется немедленное вмешательство.\n\n"
+        #     f"⏰ Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        # )
     
     async def _switch_to_panel(self, target_panel_id: str, from_panel_id: str) -> bool:
         """
