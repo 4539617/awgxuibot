@@ -1037,11 +1037,30 @@ export class RouteBot {
           
           // Контейнер найден - показываем реальный статус
           statsMessage += `*AWG ${version.toUpperCase()}:*\n`;
-          statsMessage += `${container.running ? '✅ Запущен' : '⚠️ Остановлен'}\n`;
+          
+          // Определяем статус контейнера
+          if (container.restarting) {
+            statsMessage += `🔄 Перезапускается...\n`;
+          } else if (container.running) {
+            statsMessage += `✅ Запущен\n`;
+          } else if (container.stopped) {
+            statsMessage += `⚠️ Остановлен\n`;
+          } else {
+            statsMessage += `❓ Неизвестно\n`;
+          }
+          
           statsMessage += `📦 Контейнер: \`${container.name}\`\n`;
           statsMessage += `👥 Клиентов: ${container.clients}\n`;
           statsMessage += `🔌 Порт: ${container.port}\n`;
-          statsMessage += `👤 Активных: ${activeClients}\n\n`;
+          
+          // Показываем активных клиентов только если контейнер работает
+          if (container.running) {
+            statsMessage += `👤 Активных: ${activeClients}\n`;
+          } else if (container.restarting) {
+            statsMessage += `⏳ Ожидание запуска...\n`;
+          }
+          
+          statsMessage += '\n';
         } else {
           // Контейнер не найден
           statsMessage += `*AWG ${version.toUpperCase()}:*\n`;
@@ -1124,28 +1143,40 @@ export class RouteBot {
         return;
       }
 
+      // Проверяем статус контейнера
+      const containerStatus = await this.awgManager.checkContainer(container.name);
+      let containerStatusMessage = '';
+      
+      if (containerStatus.restarting) {
+        containerStatusMessage = '\n🔄 *Статус:* Контейнер перезапускается...\n';
+      } else if (!containerStatus.running) {
+        containerStatusMessage = '\n⚠️ *Статус:* Контейнер остановлен\n';
+      }
+
       const clients = await this.awgManager.getClients(container.name);
 
-      // Проверяем статус WireGuard интерфейса
+      // Проверяем статус WireGuard интерфейса только если контейнер работает
       const configFile = version === 'v2' ? 'awg0' : 'wg0';
       let interfaceStatus = 'unknown';
       let interfaceMessage = '';
       
-      try {
-        await execAsync(`docker exec ${container.name} wg show ${configFile} 2>&1`);
-        interfaceStatus = 'ready';
-      } catch (error) {
-        const errorMsg = error.message || error.toString();
-        
-        if (errorMsg.includes('does not exist') || errorMsg.includes('No such device')) {
-          interfaceStatus = 'starting';
-          interfaceMessage = '\n⏳ *Статус:* Интерфейс перезапускается...\n';
-        } else if (errorMsg.includes('Unable to access interface')) {
-          interfaceStatus = 'error';
-          interfaceMessage = '\n⚠️ *Статус:* Ошибка интерфейса\n';
-        } else {
-          interfaceStatus = 'unknown';
-          interfaceMessage = '\n❓ *Статус:* Неизвестно\n';
+      if (containerStatus.running) {
+        try {
+          await execAsync(`docker exec ${container.name} wg show ${configFile} 2>&1`);
+          interfaceStatus = 'ready';
+        } catch (error) {
+          const errorMsg = error.message || error.toString();
+          
+          if (errorMsg.includes('does not exist') || errorMsg.includes('No such device')) {
+            interfaceStatus = 'starting';
+            interfaceMessage = '\n⏳ *Статус интерфейса:* Перезапускается...\n';
+          } else if (errorMsg.includes('Unable to access interface')) {
+            interfaceStatus = 'error';
+            interfaceMessage = '\n⚠️ *Статус интерфейса:* Ошибка\n';
+          } else {
+            interfaceStatus = 'unknown';
+            interfaceMessage = '\n❓ *Статус интерфейса:* Неизвестно\n';
+          }
         }
       }
 
@@ -1155,14 +1186,14 @@ export class RouteBot {
       if (clients.length === 0) {
         await sendMethod(
           chatId,
-          `📋 *Подробнее Клиенты ${version.toUpperCase()}*\n\n📦 Контейнер: \`${container.name}\`${interfaceMessage}\n\nНет активных клиентов`,
+          `📋 *Подробнее Клиенты ${version.toUpperCase()}*\n\n📦 Контейнер: \`${container.name}\`${containerStatusMessage}${interfaceMessage}\n\nНет активных клиентов`,
           { parse_mode: 'Markdown' }
         );
         return;
       }
 
       let clientsMessage = `📋 *Подробнее Клиенты ${version.toUpperCase()}*\n\n`;
-      clientsMessage += `📦 Контейнер: \`${container.name}\`${interfaceMessage}`;
+      clientsMessage += `📦 Контейнер: \`${container.name}\`${containerStatusMessage}${interfaceMessage}`;
       clientsMessage += `Всего: ${clients.length}\n\n`;
       
       // Создаём кнопки для каждого клиента

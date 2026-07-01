@@ -265,14 +265,34 @@ export class AWGManager {
 
   /**
    * Проверить доступность контейнера
+   * Возвращает объект с детальным статусом
    */
   async checkContainer(containerName) {
     try {
-      const { stdout } = await execAsync(`docker ps --filter "name=${containerName}" --format "{{.Status}}"`);
-      return stdout.includes('Up');
+      const { stdout } = await execAsync(`docker ps -a --filter "name=${containerName}" --format "{{.Status}}"`);
+      const status = stdout.trim();
+      
+      // Определяем состояние контейнера
+      const isUp = status.includes('Up');
+      const isRestarting = status.toLowerCase().includes('restarting');
+      const isExited = status.toLowerCase().includes('exited');
+      
+      return {
+        running: isUp && !isRestarting,
+        restarting: isRestarting,
+        stopped: isExited,
+        status: status,
+        available: isUp && !isRestarting
+      };
     } catch (error) {
       logger.error(`Error checking container ${containerName}:`, error);
-      return false;
+      return {
+        running: false,
+        restarting: false,
+        stopped: true,
+        status: 'unknown',
+        available: false
+      };
     }
   }
 
@@ -541,8 +561,11 @@ PersistentKeepalive = 25
     logger.info(`Generating ${container.version} config using ${container.name}${vpsLabel ? ` with label: ${vpsLabel}` : ''}`);
 
     // Проверяем контейнер
-    const isRunning = await this.checkContainer(container.name);
-    if (!isRunning) {
+    const containerStatus = await this.checkContainer(container.name);
+    if (!containerStatus.available) {
+      if (containerStatus.restarting) {
+        throw new Error(`Container ${container.name} is restarting. Please wait...`);
+      }
       throw new Error(`Container ${container.name} is not running`);
     }
 
@@ -599,8 +622,11 @@ PersistentKeepalive = 25
     logger.info(`Generating ${container.version} config for IP ${targetIP}${vpsLabel ? ` with label: ${vpsLabel}` : ''}`);
 
     // Проверяем контейнер
-    const isRunning = await this.checkContainer(container.name);
-    if (!isRunning) {
+    const containerStatus = await this.checkContainer(container.name);
+    if (!containerStatus.available) {
+      if (containerStatus.restarting) {
+        throw new Error(`Container ${container.name} is restarting. Please wait...`);
+      }
       throw new Error(`Container ${container.name} is not running`);
     }
 
@@ -667,12 +693,12 @@ PersistentKeepalive = 25
     for (const container of this.availableContainers) {
       try {
         // Проверяем статус контейнера в реальном времени
-        const isRunning = await this.checkContainer(container.name);
+        const containerStatus = await this.checkContainer(container.name);
         
         let clients = 0;
         let actualPort = container.port;
         
-        if (isRunning) {
+        if (containerStatus.available) {
           try {
             // Получаем количество клиентов
             const { stdout } = await execAsync(
@@ -702,7 +728,10 @@ PersistentKeepalive = 25
           version: container.version,
           port: actualPort,
           endpoint: `${this.serverIP}:${actualPort}`,
-          running: isRunning,
+          running: containerStatus.running,
+          restarting: containerStatus.restarting,
+          stopped: containerStatus.stopped,
+          status: containerStatus.status,
           clients
         });
       } catch (error) {

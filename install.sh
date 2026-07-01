@@ -1501,38 +1501,6 @@ update_xuibot() {
     
     echo -e "${YELLOW}🔄 Обновление XUI бота...${NC}"
     
-    # Переходим в рабочую директорию
-    cd /opt/awgxuibot || {
-        echo -e "${RED}❌ Ошибка: не удалось перейти в /opt/awgxuibot${NC}"
-        return 1
-    }
-    
-    # Проверка наличия git и обновление кода
-    if command -v git &> /dev/null; then
-        echo -e "${YELLOW}📥 Получение обновлений из репозитория...${NC}"
-        
-        # Сохраняем текущую ветку
-        CURRENT_BRANCH=$(git branch --show-current 2>/dev/null || echo "main")
-        
-        # Проверяем есть ли изменения
-        if git status --porcelain | grep -q .; then
-            echo -e "${YELLOW}⚠️  Обнаружены локальные изменения${NC}"
-            echo -e "${YELLOW}Создаем резервную копию...${NC}"
-            git stash push -m "Auto-stash before update $(date +%Y%m%d_%H%M%S)" 2>/dev/null || true
-        fi
-        
-        # Выполняем git pull
-        if git pull origin "$CURRENT_BRANCH" 2>&1 | tee /tmp/git-pull.log; then
-            echo -e "${GREEN}✅ Код успешно обновлен${NC}"
-        else
-            echo -e "${YELLOW}⚠️  Не удалось обновить код из репозитория${NC}"
-            echo -e "${YELLOW}Продолжаем с текущей версией...${NC}"
-        fi
-    else
-        echo -e "${YELLOW}⚠️  Git не установлен, пропускаем обновление кода${NC}"
-        echo -e "${YELLOW}Пересобираем с текущей версией...${NC}"
-    fi
-    
     # Обновляем SERVER_ADDRESS и TLS_SNI из XUI_URL (ПОСЛЕ git pull, чтобы всегда выполнялось)
     echo ""
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -1833,32 +1801,6 @@ update_awgbot() {
     echo -e "${BLUE}========================================${NC}\n"
     
     echo -e "${YELLOW}🔄 Пересборка AWG бота...${NC}"
-    
-    # Проверка наличия git
-    if command -v git &> /dev/null; then
-        echo -e "${YELLOW}📥 Получение обновлений из репозитория...${NC}"
-        
-        # Сохраняем текущую ветку
-        CURRENT_BRANCH=$(git branch --show-current 2>/dev/null || echo "main")
-        
-        # Проверяем есть ли изменения
-        if git status --porcelain | grep -q .; then
-            echo -e "${YELLOW}⚠️  Обнаружены локальные изменения${NC}"
-            echo -e "${YELLOW}Создаем резервную копию...${NC}"
-            git stash push -m "Auto-stash before update $(date +%Y%m%d_%H%M%S)" 2>/dev/null || true
-        fi
-        
-        # Выполняем git pull
-        if git pull origin "$CURRENT_BRANCH" 2>&1 | tee /tmp/git-pull.log; then
-            echo -e "${GREEN}✅ Код успешно обновлен${NC}"
-        else
-            echo -e "${YELLOW}⚠️  Не удалось обновить код из репозитория${NC}"
-            echo -e "${YELLOW}Продолжаем с текущей версией...${NC}"
-        fi
-    else
-        echo -e "${YELLOW}⚠️  Git не установлен, пропускаем обновление кода${NC}"
-        echo -e "${YELLOW}Пересобираем с текущей версией...${NC}"
-    fi
     
     # Проверка и добавление ALLOW_USER_DNS_QUERIES если его нет
     echo -e "\n${BLUE}📋 Проверка параметра ALLOW_USER_DNS_QUERIES${NC}"
