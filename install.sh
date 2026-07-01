@@ -4844,7 +4844,7 @@ generate_awg_config() {
             fi
         else
             echo -e "${YELLOW}Установка отменена${NC}"
-            echo -e "${YELLOW}Используйте пункт меню '22) Установка Node.js' для установки${NC}"
+            echo -e "${YELLOW}Node.js не установлен. Установите его вручную для работы AWGBOT${NC}"
             return 1
         fi
     fi
@@ -5091,7 +5091,6 @@ show_menu() {
     echo -e "${BLUE}---${NC}"
     echo -e "${YELLOW}Системные утилиты:${NC}"
     echo -e "${GREEN}21)${NC} Анализ диска и памяти"
-    echo -e "${GREEN}22)${NC} Установка Node.js"
     echo -e "${BLUE}---${NC}"
     echo -e "${RED}99)${NC} Удалить ВСЁ (AWG + Боты + 3x-ui)"
     echo -e "${GREEN}0)${NC} Выход"
@@ -5342,17 +5341,6 @@ while true; do
             else
                 echo -e "${RED}❌ Файл disk_analyzer.sh не найден!${NC}"
             fi
-            ;;
-        22)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            install_nodejs
             ;;
         99)
             sync_repository
