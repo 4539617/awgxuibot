@@ -27,9 +27,9 @@ export class AWGManager {
     
     logger.info('Initializing AWG Manager...');
     
-    // Получаем внешний IP сервера
+    // Получаем внешний IP сервера (только IPv4)
     try {
-      const { stdout } = await execAsync('curl -s ifconfig.me');
+      const { stdout } = await execAsync('curl -4 -s ifconfig.me');
       this.serverIP = stdout.trim();
       logger.info(`Server IP: ${this.serverIP}`);
     } catch (error) {
