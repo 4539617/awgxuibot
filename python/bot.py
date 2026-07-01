@@ -1760,26 +1760,25 @@ async def show_server_status(callback_query: types.CallbackQuery, state: FSMCont
             ]
         ])
         
-        # Если это обновление существующего сообщения, редактируем его
-        # Иначе отправляем новое
         # Для refresh обновляем сообщение, для навигации - отправляем новое
         if is_refresh:
-            await callback_query.message.edit_text(
-                message,
-                parse_mode="HTML",
-                reply_markup=keyboard
-            )
+            try:
+                await callback_query.message.edit_text(
+                    message,
+                    parse_mode="HTML",
+                    reply_markup=keyboard
+                )
+            except:
+                # Если не удалось отредактировать (например, сообщение слишком старое),
+                # отправляем новое
+                await callback_query.message.answer(
+                    message,
+                    parse_mode="HTML",
+                    reply_markup=keyboard
+                )
         else:
             await bot.send_message(
                 callback_query.message.chat.id,
-                message,
-                parse_mode="HTML",
-                reply_markup=keyboard
-            )
-        except:
-            # Если не удалось отредактировать (например, сообщение слишком старое),
-            # отправляем новое
-            await callback_query.message.answer(
                 message,
                 parse_mode="HTML",
                 reply_markup=keyboard
