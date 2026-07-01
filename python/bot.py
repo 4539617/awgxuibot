@@ -801,12 +801,20 @@ async def show_all_client_details(callback_query: types.CallbackQuery):
         else:  # expired
             status_text = "⏰ Просрочен"
         
-        # Форматируем трафик
-        total_gb = client['totalGB']
-        if total_gb > 0:
-            traffic_text = f"{total_gb / (1024**3):.2f} GB"
-        else:
-            traffic_text = "Безлимит"
+        # Форматируем скачанный трафик (up + down)
+        downloaded_traffic = client.get('up', 0) + client.get('down', 0)
+        
+        def format_traffic(bytes_value):
+            if bytes_value < 1024:
+                return f"{bytes_value} B"
+            elif bytes_value < 1024**2:
+                return f"{bytes_value / 1024:.2f} KB"
+            elif bytes_value < 1024**3:
+                return f"{bytes_value / (1024**2):.2f} MB"
+            else:
+                return f"{bytes_value / (1024**3):.2f} GB"
+        
+        traffic_text = format_traffic(downloaded_traffic)
         
         # Форматируем срок окончания
         expiry_time = client['expiryTime']
@@ -826,7 +834,7 @@ async def show_all_client_details(callback_query: types.CallbackQuery):
         if display_comment != 'Не указан':
             display_comment = display_comment.replace('Временный ', '')
         text += f"📝 <b>Комментарий:</b> {display_comment}\n"
-        text += f"📊 <b>Общий трафик:</b> {traffic_text}\n"
+        text += f"📊 <b>Скачано:</b> {traffic_text}\n"
         text += f"📅 <b>Срок окончания:</b> {expiry_text}\n"
         
         # Создаем кнопки управления

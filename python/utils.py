@@ -1021,10 +1021,11 @@ class XUIClient:
                     # Бессрочный ключ с префиксом панели: prefix_username_random
                     # Префикс - это первые 5 символов алиаса панели
                     # Поиск пользователя осуществляется после префикса и служебного символа
-                    elif len(parts) >= 3 and parts[1] == username_lower:
+                    elif len(parts) >= 3 and parts[0] != 'temp' and parts[1] == username_lower:
                         user_clients.append(client)
                     # Старый формат без префикса: username_random
-                    elif len(parts) >= 2 and parts[0] == username_lower:
+                    # Проверяем что это именно старый формат (ровно 2 части)
+                    elif len(parts) == 2 and parts[0] == username_lower:
                         user_clients.append(client)
                 elif email == username_lower:
                     # Если email совпадает полностью с username
