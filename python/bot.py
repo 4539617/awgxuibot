@@ -277,8 +277,12 @@ async def process_new_comment(message: Message, state: FSMContext):
     if not username:
         username = message.from_user.first_name.lower().replace(" ", "_")
 
+    # Получаем префикс из алиаса панели (первые 5 символов)
+    current_panel = config.get_current_panel()
+    panel_prefix = current_panel.alias[:5].lower() if current_panel and current_panel.alias else "panel"
+    
     random_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
-    email = f"{username}_{random_suffix}"
+    email = f"{panel_prefix}_{username}_{random_suffix}"
 
     status_msg = await message.answer(f"🔄 Ожидайте...")
 

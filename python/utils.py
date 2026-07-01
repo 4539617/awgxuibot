@@ -1004,21 +1004,27 @@ class XUIClient:
             all_clients = await self.get_all_clients()
             
             # Фильтруем клиенты по username в email
-            # Поддерживаем два формата:
-            # 1. username_random (обычные ключи)
-            # 2. temp_username_random (временные ключи)
+            # Поддерживаем форматы:
+            # 1. prefix_username_random (бессрочные ключи с префиксом панели)
+            # 2. username_random (старые бессрочные ключи без префикса)
+            # 3. temp_username_random (временные ключи)
             user_clients = []
             for client in all_clients:
                 email = client.get('email', '').lower()
                 
-                # Проверяем формат: username_random
                 if '_' in email:
                     parts = email.split('_')
-                    # Первая часть должна быть username
-                    if parts[0] == username_lower:
+                    
+                    # Временный ключ: temp_username_random
+                    if len(parts) >= 3 and parts[0] == 'temp' and parts[1] == username_lower:
                         user_clients.append(client)
-                    # Или это временный ключ: temp_username_random
-                    elif len(parts) >= 2 and parts[0] == 'temp' and parts[1] == username_lower:
+                    # Бессрочный ключ с префиксом панели: prefix_username_random
+                    # Префикс - это первые 5 символов алиаса панели
+                    # Поиск пользователя осуществляется после префикса и служебного символа
+                    elif len(parts) >= 3 and parts[1] == username_lower:
+                        user_clients.append(client)
+                    # Старый формат без префикса: username_random
+                    elif len(parts) >= 2 and parts[0] == username_lower:
                         user_clients.append(client)
                 elif email == username_lower:
                     # Если email совпадает полностью с username
