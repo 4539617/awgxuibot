@@ -4157,6 +4157,9 @@ install_3xui_v3() {
     echo -e "${GREEN}SQLite - для небольших нагрузок (< 500 клиентов)${NC}"
     echo -e "${GREEN}PostgreSQL - для высоких нагрузок и множества узлов${NC}\n"
     
+    # Получаем IP сервера для путей к сертификатам
+    local SERVER_IP=$(curl -s -4 https://api4.ipify.org 2>/dev/null || curl -s -4 https://ipv4.icanhazip.com 2>/dev/null || curl -s -4 ifconfig.me 2>/dev/null || echo "")
+    
     # Проверяем наличие сохраненных SSL сертификатов
     local USE_EXISTING_CERTS=false
     if check_and_offer_existing_certs; then
@@ -4175,9 +4178,10 @@ install_3xui_v3() {
     # Автоматически отвечаем на вопросы установщика:
     # 1 - выбор SQLite
     if [ "$USE_EXISTING_CERTS" = true ]; then
-        # 5 - использовать существующие пути к сертификатам
+        # 3 - использовать существующие пути к сертификатам (Custom SSL Certificate)
         echo -e "${GREEN}✓ Используем существующие SSL сертификаты${NC}"
-        printf '1\n5\n/root/cert/ip/fullchain.pem\n/root/cert/ip/privkey.pem\n\n\n\n\n\n\n' | bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh) 2>&1 | tee "$INSTALL_OUTPUT"
+        echo -e "${BLUE}📁 Путь к сертификатам: /root/cert/${SERVER_IP}/${NC}"
+        printf '1\n3\n/root/cert/%s/fullchain.pem\n/root/cert/%s/privkey.pem\n\n\n\n\n\n\n' "$SERVER_IP" "$SERVER_IP" | bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh) 2>&1 | tee "$INSTALL_OUTPUT"
     else
         # 2 - Let's Encrypt для IP (запросить новый сертификат)
         # y - подтверждение получения SSL
