@@ -1061,6 +1061,9 @@ export class RouteBot {
     try {
       logger.info(`Showing main menu for chat ${chatId}`);
       
+      // Показываем сообщение о загрузке
+      const loadingMsg = await this.bot.sendMessage(chatId, '⏳ Загружаю...', { parse_mode: 'Markdown' });
+      
       // Получаем статистику
       let statsMessage = '';
       try {
@@ -1078,7 +1081,14 @@ export class RouteBot {
         ]
       };
       
-      // Всегда отправляем новое сообщение для главного меню
+      // Удаляем сообщение о загрузке
+      try {
+        await this.bot.deleteMessage(chatId, loadingMsg.message_id);
+      } catch (error) {
+        logger.warn(`Failed to delete loading message: ${error.message}`);
+      }
+      
+      // Отправляем главное меню
       await this.sendNewMessage(
         chatId,
         `🔐 *Панель администратора*\n\n${statsMessage}Выберите действие:`,
