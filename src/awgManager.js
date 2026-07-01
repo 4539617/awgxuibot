@@ -455,6 +455,7 @@ export class AWGManager {
 
   /**
    * Добавить пира в конфиг контейнера
+   * Теперь с проверкой здоровья после добавления
    */
   async addPeer(container, publicKey, ip) {
     const peerConfig = `
@@ -471,10 +472,27 @@ AllowedIPs = ${ip}/32
       );
 
       // Перезапускаем контейнер
+      logger.info(`Restarting container ${container.name} after adding peer...`);
       await execAsync(`docker restart ${container.name}`);
 
       logger.info(`Added peer to ${container.name}: ${ip} (${publicKey})`);
-      return true;
+      
+      // Проверяем здоровье сервера после перезапуска
+      logger.info(`Checking server health after adding peer...`);
+      const healthStatus = await this.checkServerHealthAfterChange(container.name, 15, 1000);
+      
+      if (!healthStatus.healthy) {
+        logger.warn(`⚠️ Server health check shows issues after adding peer ${ip}`);
+        logger.warn(`Container running: ${healthStatus.containerRunning}`);
+        logger.warn(`Interface ready: ${healthStatus.interfaceReady}`);
+      } else {
+        logger.info(`✅ Server is healthy after adding peer ${ip}`);
+      }
+      
+      return {
+        success: true,
+        healthStatus
+      };
     } catch (error) {
       logger.error(`Error adding peer to ${container.name}:`, error);
       throw error;
@@ -575,8 +593,8 @@ PersistentKeepalive = 25
     // Получаем следующий свободный IP
     const ip = await this.getNextIP(container);
 
-    // Добавляем пира на сервер
-    await this.addPeer(container, keys.publicKey, ip);
+    // Добавляем пира на сервер (теперь возвращает healthStatus)
+    const addPeerResult = await this.addPeer(container, keys.publicKey, ip);
 
     // Создаем клиентский конфиг
     const configContent = this.createClientConfig(container, keys.privateKey, ip);
@@ -600,7 +618,8 @@ PersistentKeepalive = 25
       ip,
       publicKey: keys.publicKey,
       version: container.version,
-      containerName: container.name
+      containerName: container.name,
+      healthStatus: addPeerResult.healthStatus
     };
   }
 
@@ -648,8 +667,8 @@ PersistentKeepalive = 25
       // Генерируем ключи
       const keys = await this.generateKeys();
 
-      // Добавляем пира на сервер с указанным IP
-      await this.addPeer(container, keys.publicKey, targetIP);
+      // Добавляем пира на сервер с указанным IP (теперь возвращает healthStatus)
+      const addPeerResult = await this.addPeer(container, keys.publicKey, targetIP);
 
       // Создаем клиентский конфиг
       const configContent = this.createClientConfig(container, keys.privateKey, targetIP);
@@ -674,7 +693,8 @@ PersistentKeepalive = 25
         publicKey: keys.publicKey,
         version: container.version,
         containerName: container.name,
-        isNew: true
+        isNew: true,
+        healthStatus: addPeerResult.healthStatus
       };
     }
   }
@@ -873,6 +893,139 @@ PersistentKeepalive = 25
       logger.error(`Error regenerating config for ${clientIP}:`, error);
       throw error;
     }
+  }
+
+  /**
+   * Полная проверка состояния сервера после изменений конфигурации
+   * Возвращает детальную информацию о состоянии контейнера и интерфейса
+   */
+  async checkServerHealthAfterChange(containerName, maxAttempts = 15, delayMs = 1000) {
+    logger.info(`Starting health check for ${containerName}...`);
+    
+    const container = this.availableContainers.find(c => c.name === containerName);
+    if (!container) {
+      throw new Error(`Container ${containerName} not found`);
+    }
+    
+    const interfaceName = container.version === 'v2' ? 'awg0' : 'wg0';
+    const healthStatus = {
+      containerRunning: false,
+      interfaceUp: false,
+      interfaceReady: false,
+      peerCount: 0,
+      attempts: 0,
+      errors: [],
+      warnings: [],
+      timestamp: new Date().toISOString()
+    };
+    
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      healthStatus.attempts = attempt;
+      
+      try {
+        // 1. Проверка состояния контейнера Docker
+        const containerStatus = await this.checkContainer(containerName);
+        healthStatus.containerRunning = containerStatus.running;
+        
+        if (!containerStatus.running) {
+          healthStatus.warnings.push(`Container is not running (status: ${containerStatus.status})`);
+          
+          if (containerStatus.restarting) {
+            logger.info(`Attempt ${attempt}/${maxAttempts}: Container is restarting...`);
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+            continue;
+          } else {
+            healthStatus.errors.push('Container stopped unexpectedly');
+            break;
+          }
+        }
+        
+        // 2. Проверка существования интерфейса WireGuard
+        try {
+          const { stdout: ifaceCheck } = await execAsync(
+            `docker exec ${containerName} ip link show ${interfaceName} 2>&1`
+          );
+          
+          if (ifaceCheck.includes('does not exist')) {
+            healthStatus.warnings.push(`Interface ${interfaceName} does not exist yet`);
+            logger.info(`Attempt ${attempt}/${maxAttempts}: Interface ${interfaceName} not ready...`);
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+            continue;
+          }
+          
+          healthStatus.interfaceUp = ifaceCheck.includes('state UP') || ifaceCheck.includes('UNKNOWN');
+          
+        } catch (error) {
+          healthStatus.warnings.push(`Cannot check interface: ${error.message}`);
+          logger.info(`Attempt ${attempt}/${maxAttempts}: Interface check failed...`);
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+          continue;
+        }
+        
+        // 3. Проверка состояния WireGuard через wg show
+        try {
+          const { stdout: wgOutput } = await execAsync(
+            `docker exec ${containerName} wg show ${interfaceName} 2>&1`
+          );
+          
+          // Подсчитываем количество пиров
+          const peerMatches = wgOutput.match(/peer:/g);
+          healthStatus.peerCount = peerMatches ? peerMatches.length : 0;
+          
+          // Проверяем наличие listening port (признак готовности)
+          const hasListeningPort = wgOutput.includes('listening port:');
+          
+          if (hasListeningPort) {
+            healthStatus.interfaceReady = true;
+            logger.info(`✅ Interface ${interfaceName} is ready with ${healthStatus.peerCount} peer(s)`);
+            break; // Успешная проверка
+          } else {
+            healthStatus.warnings.push('Interface exists but no listening port yet');
+            logger.info(`Attempt ${attempt}/${maxAttempts}: Interface starting...`);
+          }
+          
+        } catch (error) {
+          const errorMsg = error.message || error.toString();
+          
+          if (errorMsg.includes('does not exist') || errorMsg.includes('No such device')) {
+            healthStatus.warnings.push(`Interface ${interfaceName} not created yet`);
+            logger.info(`Attempt ${attempt}/${maxAttempts}: Waiting for interface...`);
+          } else {
+            healthStatus.errors.push(`WireGuard error: ${errorMsg}`);
+            logger.error(`Interface error: ${errorMsg}`);
+          }
+        }
+        
+        // Ожидание перед следующей попыткой
+        if (attempt < maxAttempts) {
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+        
+      } catch (error) {
+        healthStatus.errors.push(`Health check error: ${error.message}`);
+        logger.error(`Health check attempt ${attempt} failed:`, error);
+        
+        if (attempt < maxAttempts) {
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+      }
+    }
+    
+    // Финальная оценка состояния
+    healthStatus.healthy = healthStatus.containerRunning &&
+                          healthStatus.interfaceUp &&
+                          healthStatus.interfaceReady;
+    
+    if (!healthStatus.healthy) {
+      logger.warn(`⚠️ Health check completed with issues after ${healthStatus.attempts} attempts`);
+      logger.warn(`Container running: ${healthStatus.containerRunning}`);
+      logger.warn(`Interface up: ${healthStatus.interfaceUp}`);
+      logger.warn(`Interface ready: ${healthStatus.interfaceReady}`);
+    } else {
+      logger.info(`✅ Health check passed: ${healthStatus.peerCount} peer(s) active`);
+    }
+    
+    return healthStatus;
   }
 
   /**

@@ -940,8 +940,29 @@ export class RouteBot {
       // Delete processing message
       await this.bot.deleteMessage(chatId, processingMsg.message_id);
 
-      // Send config file
+      // Send config file with status info
       await this.bot.sendDocument(chatId, result.filepath);
+      
+      // Send status message if health check was performed
+      if (result.healthStatus) {
+        const health = result.healthStatus;
+        let statusMsg = `✅ Конфигурация создана: \`${result.ip}\`\n\n`;
+        statusMsg += `📦 *Состояние сервера:*\n`;
+        statusMsg += `├ Контейнер: ${health.containerRunning ? '✅' : '❌'}\n`;
+        statusMsg += `├ Интерфейс: ${health.interfaceUp ? '✅' : '❌'}\n`;
+        statusMsg += `└ WireGuard: ${health.interfaceReady ? '✅ Готов' : '⏳ Запускается'}\n`;
+        
+        if (health.interfaceReady) {
+          statusMsg += `\n📊 Всего клиентов: ${health.peerCount}`;
+        }
+        
+        if (!health.healthy) {
+          statusMsg += `\n\n⚠️ Обнаружены проблемы, проверьте статус`;
+        }
+        
+        await this.bot.sendMessage(chatId, statusMsg, { parse_mode: 'Markdown' });
+      }
+      
       logger.info(`Sent ${version} config to chat ${chatId}: ${result.filename}`);
 
     } catch (error) {
@@ -985,8 +1006,32 @@ export class RouteBot {
       // Delete processing message
       await this.bot.deleteMessage(chatId, processingMsg.message_id);
 
-      // Send config file
+      // Send config file with status info
       await this.bot.sendDocument(chatId, result.filepath);
+      
+      // Send status message if health check was performed
+      if (result.healthStatus) {
+        const health = result.healthStatus;
+        let statusMsg = result.isNew
+          ? `✅ Новая конфигурация создана: \`${result.ip}\`\n\n`
+          : `✅ Конфигурация восстановлена: \`${result.ip}\`\n\n`;
+        
+        statusMsg += `📦 *Состояние сервера:*\n`;
+        statusMsg += `├ Контейнер: ${health.containerRunning ? '✅' : '❌'}\n`;
+        statusMsg += `├ Интерфейс: ${health.interfaceUp ? '✅' : '❌'}\n`;
+        statusMsg += `└ WireGuard: ${health.interfaceReady ? '✅ Готов' : '⏳ Запускается'}\n`;
+        
+        if (health.interfaceReady) {
+          statusMsg += `\n📊 Всего клиентов: ${health.peerCount}`;
+        }
+        
+        if (!health.healthy) {
+          statusMsg += `\n\n⚠️ Обнаружены проблемы, проверьте статус`;
+        }
+        
+        await this.bot.sendMessage(chatId, statusMsg, { parse_mode: 'Markdown' });
+      }
+      
       logger.info(`Sent ${version} config to chat ${chatId}: ${result.filename}`);
 
     } catch (error) {
@@ -1209,6 +1254,19 @@ export class RouteBot {
 
       let clientsMessage = `📋 *Подробнее Клиенты ${version.toUpperCase()}*\n\n`;
       clientsMessage += `📦 Контейнер: \`${container.name}\`${containerStatusMessage}${interfaceMessage}`;
+      
+      // Добавляем информацию о состоянии сервера
+      if (!serverAvailable) {
+        if (interfaceStatus === 'starting') {
+          clientsMessage += `\n⏳ *Сервер перезапускается...*\n`;
+          clientsMessage += `Статус клиентов будет доступен через несколько секунд\n`;
+        } else if (interfaceStatus === 'error') {
+          clientsMessage += `\n⚠️ *Требуется проверка сервера*\n`;
+        } else if (!containerStatus.running) {
+          clientsMessage += `\n⚠️ *Контейнер остановлен*\n`;
+        }
+      }
+      
       clientsMessage += `Всего: ${clients.length}\n\n`;
       
       // Создаём кнопки для каждого клиента
@@ -1221,9 +1279,17 @@ export class RouteBot {
         const lastSeen = stats.lastHandshake || '❌';
         const transfer = stats.transfer || 'нет данных';
         
-        // Если сервер недоступен - показываем статус сервера
+        // Если сервер недоступен - показываем причину
         if (!serverAvailable) {
-          clientsMessage += `${ip} ${serverStatusEmoji} (сервер недоступен)\n`;
+          if (interfaceStatus === 'starting') {
+            clientsMessage += `${ip} ⏳ (интерфейс запускается)\n`;
+          } else if (interfaceStatus === 'error') {
+            clientsMessage += `${ip} ⚠️ (ошибка интерфейса)\n`;
+          } else if (!containerStatus.running) {
+            clientsMessage += `${ip} ⚠️ (контейнер остановлен)\n`;
+          } else {
+            clientsMessage += `${ip} ${serverStatusEmoji} (сервер недоступен)\n`;
+          }
         } else if (lastSeen === '❌') {
           // Сервер доступен, но клиент неактивен
           clientsMessage += `${ip} ❌ (клиент неактивен)\n`;
@@ -1503,79 +1569,73 @@ export class RouteBot {
         // Restart WireGuard interface
         const configName = configFile.replace('.conf', '');
         const fullConfigPath = `/etc/amnezia/amneziawg/${configFile}`;
+        
+        logger.info(`Restarting WireGuard interface ${configName}...`);
         await execAsync(`docker exec ${container.name} wg-quick down ${fullConfigPath} || true`);
         await execAsync(`docker exec ${container.name} wg-quick up ${fullConfigPath}`);
         
         logger.info(`Successfully deleted client ${ip} from ${container.name}`);
         
-        // Ожидаем готовности интерфейса и определяем его состояние
-        let interfaceStatus = 'unknown';
-        let attempts = 0;
-        const maxAttempts = 10;
-        let peerCount = 0;
-        
-        while (interfaceStatus === 'unknown' && attempts < maxAttempts) {
-          try {
-            // Проверяем статус интерфейса
-            const { stdout: wgOutput } = await execAsync(`docker exec ${container.name} wg show ${configName} 2>&1`);
-            
-            // Подсчитываем количество пиров
-            const peerMatches = wgOutput.match(/peer:/g);
-            peerCount = peerMatches ? peerMatches.length : 0;
-            
-            interfaceStatus = 'ready';
-            logger.info(`Interface ${configName} is ready with ${peerCount} peers`);
-          } catch (error) {
-            attempts++;
-            
-            // Проверяем причину ошибки
-            const errorMsg = error.message || error.toString();
-            
-            if (errorMsg.includes('does not exist') || errorMsg.includes('No such device')) {
-              interfaceStatus = 'starting';
-              logger.info(`Interface ${configName} is starting (attempt ${attempts}/${maxAttempts})`);
-            } else if (errorMsg.includes('Unable to access interface')) {
-              interfaceStatus = 'error';
-              logger.error(`Interface ${configName} has error: ${errorMsg}`);
-              break;
-            }
-            
-            if (attempts < maxAttempts && interfaceStatus !== 'error') {
-              await new Promise(resolve => setTimeout(resolve, 1000));
-            }
-          }
-        }
-        
-        // Если после всех попыток статус неизвестен, считаем что интерфейс запускается
-        if (interfaceStatus === 'unknown') {
-          interfaceStatus = 'starting';
-        }
+        // Используем новую функцию полной проверки здоровья сервера
+        logger.info(`Starting comprehensive health check...`);
+        const healthStatus = await this.awgManager.checkServerHealthAfterChange(
+          container.name,
+          15,  // maxAttempts
+          1000 // delayMs
+        );
         
         // Создаем кнопку для перехода в главное меню
         const keyboard = {
           inline_keyboard: [
             [
-              { text: '🏠 Главное меню', callback_data: 'start_menu' }
+              { text: '🏠 Главное меню', callback_data: 'start_menu' },
+              { text: '📊 Статистика', callback_data: 'awg_stats' }
             ]
           ]
         };
         
-        let statusMessage = `✅ Клиент \`${ip}\` успешно удалён из ${version.toUpperCase()}`;
+        let statusMessage = `✅ Клиент \`${ip}\` успешно удалён из ${version.toUpperCase()}\n`;
         
-        // Добавляем информацию о состоянии интерфейса
-        if (interfaceStatus === 'ready') {
-          const remainingClients = peerCount;
-          if (remainingClients > 0) {
-            statusMessage += `\n\n📊 Активных клиентов: ${remainingClients}`;
+        // Детальная информация о состоянии сервера
+        statusMessage += `\n📦 *Состояние сервера:*\n`;
+        statusMessage += `├ Контейнер: ${healthStatus.containerRunning ? '✅' : '❌'} ${healthStatus.containerRunning ? 'Работает' : 'Остановлен'}\n`;
+        statusMessage += `├ Интерфейс: ${healthStatus.interfaceUp ? '✅' : '❌'} ${healthStatus.interfaceUp ? 'Поднят' : 'Не активен'}\n`;
+        statusMessage += `├ WireGuard: ${healthStatus.interfaceReady ? '✅' : '⏳'} ${healthStatus.interfaceReady ? 'Готов' : 'Инициализация'}\n`;
+        statusMessage += `└ Проверок: ${healthStatus.attempts}/15\n`;
+        
+        // Информация о клиентах
+        if (healthStatus.interfaceReady) {
+          statusMessage += `\n📊 *Клиенты:*\n`;
+          if (healthStatus.peerCount > 0) {
+            statusMessage += `└ Активных: ${healthStatus.peerCount}`;
           } else {
-            statusMessage += `\n\n📊 Клиентов не осталось`;
+            statusMessage += `└ Клиентов не осталось`;
           }
-        } else if (interfaceStatus === 'starting') {
-          statusMessage += `\n\n⏳ Интерфейс WireGuard перезапускается...`;
-          statusMessage += `\nСтатус клиентов будет доступен через несколько секунд`;
-        } else if (interfaceStatus === 'error') {
-          statusMessage += `\n\n⚠️ Ошибка при проверке интерфейса WireGuard`;
-          statusMessage += `\nПроверьте логи контейнера`;
+        } else if (healthStatus.interfaceUp && !healthStatus.interfaceReady) {
+          statusMessage += `\n⏳ *Интерфейс запускается...*\n`;
+          statusMessage += `└ Статус клиентов будет доступен через несколько секунд`;
+        }
+        
+        // Предупреждения
+        if (healthStatus.warnings.length > 0) {
+          statusMessage += `\n\n⚠️ *Предупреждения:*\n`;
+          healthStatus.warnings.slice(0, 2).forEach(warning => {
+            statusMessage += `└ ${warning}\n`;
+          });
+        }
+        
+        // Ошибки
+        if (healthStatus.errors.length > 0) {
+          statusMessage += `\n\n❌ *Ошибки:*\n`;
+          healthStatus.errors.slice(0, 2).forEach(error => {
+            statusMessage += `└ ${error}\n`;
+          });
+          statusMessage += `\n💡 Проверьте логи: \`docker logs ${container.name}\``;
+        }
+        
+        // Общий статус
+        if (!healthStatus.healthy) {
+          statusMessage += `\n\n⚠️ Сервер требует внимания`;
         }
         
         this.bot.sendMessage(
