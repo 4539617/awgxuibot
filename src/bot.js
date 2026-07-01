@@ -671,9 +671,6 @@ export class RouteBot {
       
       // Выбираем метод отправки в зависимости от shouldUpdate
       const sendMethod = shouldUpdate ? this.updateMessage.bind(this) : this.sendNewMessage.bind(this);
-      
-      // Показываем индикатор загрузки
-      await sendMethod(chatId, '⏳ Загружаю список клиентов...', { parse_mode: 'Markdown' });
 
       // Initialize AWG manager if needed
       if (!this.awgManager.initialized) {
@@ -1098,9 +1095,6 @@ export class RouteBot {
 
       // Выбираем метод отправки в зависимости от shouldUpdate
       const sendMethod = shouldUpdate ? this.updateMessage.bind(this) : this.sendNewMessage.bind(this);
-
-      // Показываем индикатор загрузки
-      await sendMethod(chatId, '⏳ Получаю список клиентов...', { parse_mode: 'Markdown' });
 
       // Initialize AWG manager if needed
       if (!this.awgManager.initialized) {
