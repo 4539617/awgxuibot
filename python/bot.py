@@ -2952,7 +2952,6 @@ async def show_panels_list(callback_query: types.CallbackQuery, state: FSMContex
         
         # Формируем текст со списком панелей
         text = "🔧 <b>Управление панелями</b>\n\n"
-        text += "📋 <b>Список панелей:</b>\n\n"
         
         for panel_id, panel_config in panels.items():
             alias = getattr(panel_config, 'alias', panel_id)
