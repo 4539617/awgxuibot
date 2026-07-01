@@ -308,9 +308,11 @@ async def process_new_comment(message: Message, state: FSMContext):
             [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")]
         ])
         
+        # Убираем слово "Временный" из комментария для отображения
+        display_comment = comment.replace('Временный ', '')
         await message.answer(
             f"🔑 <b>Бессрочный ключ</b>\n\n"
-            f"📝 Комментарий: {comment}",
+            f"📝 Комментарий: {display_comment}",
             parse_mode="HTML",
             reply_markup=keyboard
         )
@@ -433,9 +435,11 @@ async def process_tempkey_comment(message: Message, state: FSMContext):
             [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")]
         ])
         
+        # Убираем слово "Временный" из комментария для отображения
+        display_comment = comment.replace('Временный ', '')
         await message.answer(
             f"⏰ <b>Временный ключ на {duration_text}</b>\n\n"
-            f"📝 Комментарий: {comment}",
+            f"📝 Комментарий: {display_comment}",
             parse_mode="HTML",
             reply_markup=keyboard
         )
@@ -476,7 +480,9 @@ async def cmd_my_clients(message: Message):
         
         # Формируем текст кнопки
         if comment:
-            display_text = f"{comment[:25]}"
+            # Убираем слово "Временный" из комментария для кнопки
+            display_comment = comment.replace('Временный ', '')
+            display_text = f"{display_comment[:25]}"
         else:
             display_text = f"{email[:25]}"
         
@@ -543,11 +549,13 @@ async def show_my_client_details(callback_query: types.CallbackQuery):
     ])
     
     # Всегда отправляем новое сообщение для навигации
+    # Убираем слово "Временный" из комментария для отображения
+    display_comment = comment.replace('Временный ', '') if comment else 'Без комментария'
     await bot.send_message(
         callback_query.message.chat.id,
         f"🔑 <b>Информация о ключе</b>\n\n"
         f"Статус: {status_text}\n"
-        f"📝 Комментарий: {comment if comment else 'Без комментария'}",
+        f"📝 Комментарий: {display_comment}",
         parse_mode="HTML",
         reply_markup=keyboard
     )
@@ -712,7 +720,9 @@ async def cmd_all_clients(message: Message):
             
             # Формируем текст кнопки (короче для двух колонок)
             if comment:
-                button_text = f"{email[:10]}-{comment[:10]}"
+                # Убираем слово "Временный" из комментария для кнопки
+                display_comment = comment.replace('Временный ', '')
+                button_text = f"{email[:10]}-{display_comment[:10]}"
             else:
                 button_text = email[:20]
             
@@ -1161,7 +1171,7 @@ async def show_qr_code(callback_query: types.CallbackQuery):
 🔑 <b>VLESS-ссылка:</b>
 <code>{vless_link}</code>
 
-💬 <b>Комментарий:</b> {comment}"""
+💬 <b>Комментарий:</b> {comment.replace('Временный ', '')}"""
         
         # Добавляем кнопку "В главное меню"
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -1324,7 +1334,9 @@ async def back_to_allclients(callback_query: types.CallbackQuery, is_refresh: bo
             
             # Формируем текст кнопки (короче для двух колонок)
             if comment:
-                button_text = f"{email[:10]}-{comment[:10]}"
+                # Убираем слово "Временный" из комментария для кнопки
+                display_comment = comment.replace('Временный ', '')
+                button_text = f"{email[:10]}-{display_comment[:10]}"
             else:
                 button_text = email[:20]
             
@@ -2410,7 +2422,9 @@ async def callback_cmd_myclients(callback_query: types.CallbackQuery, state: FSM
             
             # Формируем текст кнопки
             if comment:
-                display_text = f"{comment[:25]}"
+                # Убираем слово "Временный" из комментария для кнопки
+                display_comment = comment.replace('Временный ', '')
+                display_text = f"{display_comment[:25]}"
             else:
                 display_text = f"{email[:25]}"
             
@@ -2534,7 +2548,9 @@ async def refresh_myclients(callback_query: types.CallbackQuery, state: FSMConte
             
             # Формируем текст кнопки
             if comment:
-                display_text = f"{comment[:25]}"
+                # Убираем слово "Временный" из комментария для кнопки
+                display_comment = comment.replace('Временный ', '')
+                display_text = f"{display_comment[:25]}"
             else:
                 display_text = f"{email[:25]}"
             
