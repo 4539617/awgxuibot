@@ -2545,6 +2545,204 @@ select_xui_version() {
     esac
 }
 
+# ============================================
+# SSL Certificate Management Functions
+# ============================================
+
+# Директория для бэкапа сертификатов
+CERT_BACKUP_DIR="${WORK_DIR}/backup/certs"
+
+# Функция проверки валидности SSL сертификата
+check_cert_validity() {
+    local cert_path="$1"
+    local min_days="${2:-1}"  # Минимум дней до истечения (по умолчанию 1)
+    
+    if [ ! -f "$cert_path" ]; then
+        return 1
+    fi
+    
+    # Проверяем срок действия (минимум min_days дней)
+    local seconds=$((min_days * 86400))
+    if openssl x509 -in "$cert_path" -noout -checkend "$seconds" 2>/dev/null; then
+        return 0  # Сертификат валиден
+    else
+        return 1  # Сертификат истек или истечет скоро
+    fi
+}
+
+# Функция получения информации о сертификате
+get_cert_info() {
+    local cert_path="$1"
+    
+    if [ ! -f "$cert_path" ]; then
+        echo "Сертификат не найден"
+        return 1
+    fi
+    
+    local not_after=$(openssl x509 -in "$cert_path" -noout -enddate 2>/dev/null | cut -d= -f2)
+    local subject=$(openssl x509 -in "$cert_path" -noout -subject 2>/dev/null | cut -d= -f2-)
+    
+    echo "Действителен до: $not_after"
+    echo "Subject: $subject"
+}
+
+# Функция сохранения SSL сертификатов
+backup_ssl_certs() {
+    echo -e "${YELLOW}🔐 Проверка SSL сертификатов...${NC}"
+    
+    local cert_found=false
+    local cert_valid=false
+    
+    # Проверяем наличие сертификатов в /root/cert/ip/
+    if [ -f "/root/cert/ip/fullchain.pem" ] && [ -f "/root/cert/ip/privkey.pem" ]; then
+        cert_found=true
+        echo -e "${GREEN}✓ Найдены сертификаты в /root/cert/ip/${NC}"
+        
+        # Проверяем валидность (минимум 1 день)
+        if check_cert_validity "/root/cert/ip/fullchain.pem" 1; then
+            cert_valid=true
+            echo -e "${GREEN}✓ Сертификат валиден${NC}"
+            get_cert_info "/root/cert/ip/fullchain.pem"
+        else
+            echo -e "${YELLOW}⚠ Сертификат истек или истечет в течение 24 часов${NC}"
+        fi
+    fi
+    
+    # Если сертификат найден и валиден - сохраняем
+    if [ "$cert_found" = true ] && [ "$cert_valid" = true ]; then
+        echo -e "${YELLOW}💾 Сохранение сертификатов...${NC}"
+        
+        # Создаем директорию для бэкапа
+        mkdir -p "$CERT_BACKUP_DIR"
+        
+        # Копируем сертификаты
+        cp -f /root/cert/ip/fullchain.pem "$CERT_BACKUP_DIR/" 2>/dev/null || true
+        cp -f /root/cert/ip/privkey.pem "$CERT_BACKUP_DIR/" 2>/dev/null || true
+        
+        # Сохраняем информацию о сертификате
+        cat > "$CERT_BACKUP_DIR/cert_info.txt" << EOF
+Backup Date: $(date)
+Certificate Info:
+$(get_cert_info "/root/cert/ip/fullchain.pem")
+EOF
+        
+        # Копируем конфигурацию acme.sh если есть
+        if [ -d "/root/.acme.sh" ]; then
+            echo -e "${YELLOW}📦 Сохранение конфигурации acme.sh...${NC}"
+            mkdir -p "$CERT_BACKUP_DIR/acme_backup"
+            
+            # Копируем account
+            if [ -d "/root/.acme.sh/account" ]; then
+                cp -r /root/.acme.sh/account "$CERT_BACKUP_DIR/acme_backup/" 2>/dev/null || true
+            fi
+            
+            # Копируем конфигурацию для IP
+            local server_ip=$(curl -s -4 https://api4.ipify.org 2>/dev/null || echo "")
+            if [ -n "$server_ip" ] && [ -d "/root/.acme.sh/${server_ip}_ecc" ]; then
+                cp -r "/root/.acme.sh/${server_ip}_ecc" "$CERT_BACKUP_DIR/acme_backup/" 2>/dev/null || true
+            fi
+        fi
+        
+        echo -e "${GREEN}✅ Сертификаты сохранены в ${CERT_BACKUP_DIR}${NC}"
+        return 0
+    else
+        if [ "$cert_found" = false ]; then
+            echo -e "${YELLOW}ℹ️  SSL сертификаты не найдены${NC}"
+        else
+            echo -e "${YELLOW}ℹ️  Сертификаты не сохранены (истекли или скоро истекут)${NC}"
+        fi
+        return 1
+    fi
+}
+
+# Функция восстановления SSL сертификатов
+restore_ssl_certs() {
+    echo -e "${YELLOW}🔐 Восстановление SSL сертификатов...${NC}"
+    
+    if [ ! -f "$CERT_BACKUP_DIR/fullchain.pem" ] || [ ! -f "$CERT_BACKUP_DIR/privkey.pem" ]; then
+        echo -e "${RED}❌ Сохраненные сертификаты не найдены${NC}"
+        return 1
+    fi
+    
+    # Проверяем валидность сохраненных сертификатов
+    if ! check_cert_validity "$CERT_BACKUP_DIR/fullchain.pem" 1; then
+        echo -e "${RED}❌ Сохраненные сертификаты истекли${NC}"
+        return 1
+    fi
+    
+    echo -e "${GREEN}✓ Сохраненные сертификаты валидны${NC}"
+    get_cert_info "$CERT_BACKUP_DIR/fullchain.pem"
+    
+    # Создаем директорию для сертификатов
+    mkdir -p /root/cert/ip
+    
+    # Восстанавливаем сертификаты
+    cp -f "$CERT_BACKUP_DIR/fullchain.pem" /root/cert/ip/ 2>/dev/null || true
+    cp -f "$CERT_BACKUP_DIR/privkey.pem" /root/cert/ip/ 2>/dev/null || true
+    
+    # Устанавливаем правильные права
+    chmod 644 /root/cert/ip/fullchain.pem
+    chmod 600 /root/cert/ip/privkey.pem
+    
+    # Восстанавливаем конфигурацию acme.sh если есть
+    if [ -d "$CERT_BACKUP_DIR/acme_backup" ]; then
+        echo -e "${YELLOW}📦 Восстановление конфигурации acme.sh...${NC}"
+        
+        # Создаем директорию acme.sh если не существует
+        mkdir -p /root/.acme.sh
+        
+        # Восстанавливаем account
+        if [ -d "$CERT_BACKUP_DIR/acme_backup/account" ]; then
+            cp -r "$CERT_BACKUP_DIR/acme_backup/account" /root/.acme.sh/ 2>/dev/null || true
+        fi
+        
+        # Восстанавливаем конфигурацию для IP
+        local server_ip=$(curl -s -4 https://api4.ipify.org 2>/dev/null || echo "")
+        if [ -n "$server_ip" ] && [ -d "$CERT_BACKUP_DIR/acme_backup/${server_ip}_ecc" ]; then
+            cp -r "$CERT_BACKUP_DIR/acme_backup/${server_ip}_ecc" /root/.acme.sh/ 2>/dev/null || true
+        fi
+    fi
+    
+    echo -e "${GREEN}✅ Сертификаты восстановлены${NC}"
+    return 0
+}
+
+# Функция проверки и предложения использования существующих сертификатов
+check_and_offer_existing_certs() {
+    # Проверяем наличие сохраненных сертификатов
+    if [ ! -f "$CERT_BACKUP_DIR/fullchain.pem" ] || [ ! -f "$CERT_BACKUP_DIR/privkey.pem" ]; then
+        return 1  # Нет сохраненных сертификатов
+    fi
+    
+    # Проверяем валидность
+    if ! check_cert_validity "$CERT_BACKUP_DIR/fullchain.pem" 1; then
+        echo -e "${YELLOW}ℹ️  Найдены сохраненные сертификаты, но они истекли${NC}"
+        return 1
+    fi
+    
+    echo -e "\n${GREEN}✓ Найдены валидные сохраненные SSL сертификаты!${NC}"
+    echo -e "${BLUE}════════════════════════════════════════${NC}"
+    get_cert_info "$CERT_BACKUP_DIR/fullchain.pem"
+    echo -e "${BLUE}════════════════════════════════════════${NC}\n"
+    
+    if [ -z "$NONINTERACTIVE" ]; then
+        read -p "Использовать существующие сертификаты? (Enter - Да, 0 - Запросить новый): " use_existing
+    else
+        use_existing=""
+        echo -e "${BLUE}ℹ️  Автоматический режим: используем существующие сертификаты${NC}"
+    fi
+    
+    if [[ "$use_existing" == "0" ]]; then
+        echo -e "${YELLOW}⚠ Будет запрошен новый SSL сертификат${NC}"
+        echo -e "${YELLOW}⚠ Старые сертификаты будут удалены${NC}"
+        rm -rf "$CERT_BACKUP_DIR"
+        return 1  # Запросить новый сертификат
+    else
+        echo -e "${GREEN}✓ Используем существующие сертификаты${NC}"
+        return 0  # Использовать существующие
+    fi
+}
+
 # Функция установки последней версии 3x-ui панели
 install_3xui_latest() {
     echo -e "\n${BLUE}========================================${NC}"
@@ -2604,6 +2802,7 @@ install_3xui_latest() {
     # y - подтверждение установки
     # 1 - SQLite база данных
     # 2 - Let's Encrypt для IP
+    # y - подтверждение получения SSL для IP
     # (пусто) - IPv6 address (skip)
     # (пусто) - Port для ACME (default 80)
     
@@ -2612,6 +2811,7 @@ install_3xui_latest() {
 y
 1
 2
+y
 
 
 EOF
@@ -4015,6 +4215,14 @@ install_3xui_v3() {
     echo -e "${GREEN}SQLite - для небольших нагрузок (< 500 клиентов)${NC}"
     echo -e "${GREEN}PostgreSQL - для высоких нагрузок и множества узлов${NC}\n"
     
+    # Проверяем наличие сохраненных SSL сертификатов
+    local USE_EXISTING_CERTS=false
+    if check_and_offer_existing_certs; then
+        USE_EXISTING_CERTS=true
+        # Восстанавливаем сертификаты перед установкой
+        restore_ssl_certs
+    fi
+    
     # Установка через официальный скрипт
     echo -e "${YELLOW}⚠ Запуск установщика 3x-ui...${NC}"
     echo -e "${YELLOW}⚠ Будет автоматически выбрана база данных SQLite${NC}"
@@ -4024,9 +4232,16 @@ install_3xui_v3() {
 
     # Автоматически отвечаем на вопросы установщика:
     # 1 - выбор SQLite
-    # 4 - пропуск SSL (Skip SSL)
-    # Добавляем больше пустых строк для обработки всех возможных вопросов
-    printf '1\n4\n\n\n\n\n\n\n\n\n\n' | bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh) 2>&1 | tee "$INSTALL_OUTPUT"
+    if [ "$USE_EXISTING_CERTS" = true ]; then
+        # 5 - использовать существующие пути к сертификатам
+        echo -e "${GREEN}✓ Используем существующие SSL сертификаты${NC}"
+        printf '1\n5\n/root/cert/ip/fullchain.pem\n/root/cert/ip/privkey.pem\n\n\n\n\n\n\n' | bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh) 2>&1 | tee "$INSTALL_OUTPUT"
+    else
+        # 2 - Let's Encrypt для IP (запросить новый сертификат)
+        # y - подтверждение получения SSL
+        echo -e "${YELLOW}⚠ Запрос нового SSL сертификата...${NC}"
+        printf '1\n2\ny\n\n\n\n\n\n\n\n\n' | bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh) 2>&1 | tee "$INSTALL_OUTPUT"
+    fi
     
     # Проверка успешности установки
     if systemctl is-active --quiet x-ui; then
@@ -4277,6 +4492,9 @@ remove_3xui() {
     fi
     
     echo -e "${YELLOW}🗑️  Удаление 3x-ui панели...${NC}"
+    
+    # Сохранение SSL сертификатов перед удалением
+    backup_ssl_certs
     
     # Остановка сервиса
     systemctl stop x-ui 2>/dev/null || true
