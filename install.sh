@@ -1892,8 +1892,8 @@ update_awgbot() {
     echo -e "${GREEN}📊 Статус:${NC}"
     docker ps --filter name=awgbot
     
-    echo -e "\n${GREEN}📋 Логи AWG бота (последние 50 строк):${NC}"
-    docker logs --tail 50 awgbot
+    echo -e "\n${GREEN}📋 Логи AWG бота:${NC}"
+    docker logs --tail 100 awgbot 2>&1 | grep -E '^\[' | tail -n 50
     
     echo -e "\n${YELLOW}Для просмотра в реальном времени:${NC}"
     echo -e "${YELLOW}docker logs -f awgbot${NC}"

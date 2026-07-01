@@ -1440,7 +1440,7 @@ export class RouteBot {
         const keyboard = {
           inline_keyboard: [
             [
-              { text: '🏠 Главное меню', callback_data: 'main_menu' }
+              { text: '🏠 Главное меню', callback_data: 'start_menu' }
             ]
           ]
         };
