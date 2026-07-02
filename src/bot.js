@@ -18,6 +18,7 @@ import { AWGManager } from './awgManager.js';
 import { logger } from './logger.js';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 
 export class RouteBot {
   constructor() {
@@ -1097,6 +1098,41 @@ export class RouteBot {
     }
   }
 
+  getServerIp() {
+    try {
+      const interfaces = os.networkInterfaces();
+      
+      // Приоритет интерфейсов для поиска IP
+      const priorityInterfaces = ['eth0', 'ens3', 'ens5', 'enp0s3', 'wlan0', 'en0'];
+      
+      // Сначала пробуем найти IP в приоритетных интерфейсах
+      for (const ifaceName of priorityInterfaces) {
+        if (interfaces[ifaceName]) {
+          for (const iface of interfaces[ifaceName]) {
+            // Ищем IPv4 адрес, который не является localhost
+            if (iface.family === 'IPv4' && !iface.internal) {
+              return iface.address;
+            }
+          }
+        }
+      }
+      
+      // Если не нашли в приоритетных, ищем в любых интерфейсах
+      for (const ifaceName in interfaces) {
+        for (const iface of interfaces[ifaceName]) {
+          if (iface.family === 'IPv4' && !iface.internal) {
+            return iface.address;
+          }
+        }
+      }
+      
+      return 'N/A';
+    } catch (error) {
+      logger.error('Error getting server IP:', error);
+      return 'N/A';
+    }
+  }
+
   async showAwgStats(chatId) {
     try {
       logger.info(`Getting stats for chat ${chatId}`);
@@ -1109,7 +1145,8 @@ export class RouteBot {
         statsMap.set(container.version, container);
       });
 
-      let statsMessage = '📊 *Серверы*\n\n';
+      const serverIp = this.getServerIp();
+      let statsMessage = `📊 *Сервер:* \`${serverIp}\`\n\n`;
       
       // Показываем статус для обеих версий
       const versions = ['v1', 'v2'];
@@ -1671,35 +1708,16 @@ export class RouteBot {
         
         let statusMessage = `✅ Клиент \`${ip}\` успешно удалён из ${version.toUpperCase()}\n`;
         
-        // Детальная информация о состоянии сервера
-        statusMessage += `\n📦 *Состояние сервера:*\n`;
-        statusMessage += `├ Контейнер: ${healthStatus.containerRunning ? '✅' : '❌'} ${healthStatus.containerRunning ? 'Работает' : 'Остановлен'}\n`;
-        statusMessage += `├ Интерфейс: ${healthStatus.interfaceUp ? '✅' : '❌'} ${healthStatus.interfaceUp ? 'Поднят' : 'Не активен'}\n`;
-        statusMessage += `├ WireGuard: ${healthStatus.interfaceReady ? '✅' : '⏳'} ${healthStatus.interfaceReady ? 'Готов' : 'Инициализация'}\n`;
-        statusMessage += `└ Проверок: ${healthStatus.attempts}/15\n`;
-        
         // Информация о клиентах
         if (healthStatus.interfaceReady) {
-          statusMessage += `\n📊 *Клиенты:*\n`;
           if (healthStatus.peerCount > 0) {
-            statusMessage += `└ Активных: ${healthStatus.peerCount}`;
+            statusMessage += `\n📊 Активных клиентов: ${healthStatus.peerCount}`;
           } else {
-            statusMessage += `└ Клиентов не осталось`;
+            statusMessage += `\n📊 Клиентов не осталось`;
           }
-        } else if (healthStatus.interfaceUp && !healthStatus.interfaceReady) {
-          statusMessage += `\n⏳ *Интерфейс запускается...*\n`;
-          statusMessage += `└ Статус клиентов будет доступен через несколько секунд`;
         }
         
-        // Предупреждения
-        if (healthStatus.warnings.length > 0) {
-          statusMessage += `\n\n⚠️ *Предупреждения:*\n`;
-          healthStatus.warnings.slice(0, 2).forEach(warning => {
-            statusMessage += `└ ${warning}\n`;
-          });
-        }
-        
-        // Ошибки
+        // Ошибки (если есть критические проблемы)
         if (healthStatus.errors.length > 0) {
           statusMessage += `\n\n❌ *Ошибки:*\n`;
           healthStatus.errors.slice(0, 2).forEach(error => {
@@ -1708,7 +1726,7 @@ export class RouteBot {
           statusMessage += `\n💡 Проверьте логи: \`docker logs ${container.name}\``;
         }
         
-        // Общий статус
+        // Общий статус (только если есть проблемы)
         if (!healthStatus.healthy) {
           statusMessage += `\n\n⚠️ Сервер требует внимания`;
         }
