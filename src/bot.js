@@ -763,7 +763,10 @@ export class RouteBot {
           try {
             await this.bot.answerCallbackQuery(callbackQueryId);
           } catch (error) {
-            // Игнорируем ошибку, если уже ответили
+            // Игнорируем ошибки устаревших callback query (при перезапуске бота)
+            if (!error.message || !error.message.includes('query is too old')) {
+              logger.warn(`Failed to answer callback query in showClientSelectionMenu: ${error.message}`);
+            }
           }
         }
       } else {
@@ -1376,7 +1379,10 @@ export class RouteBot {
           try {
             await this.bot.answerCallbackQuery(callbackQueryId);
           } catch (error) {
-            // Игнорируем ошибку, если уже ответили
+            // Игнорируем ошибки устаревших callback query (при перезапуске бота)
+            if (!error.message || !error.message.includes('query is too old')) {
+              logger.warn(`Failed to answer callback query in showAwgClientsList: ${error.message}`);
+            }
           }
         }
       } else {
