@@ -61,7 +61,7 @@ export class RouteBot {
       const data = query.data;
 
       // Start menu callbacks
-      if (data.startsWith('start_')) {
+      if (data.startsWith('start_') || data === 'main_menu') {
         await this.bot.answerCallbackQuery(query.id);
         
         // Verify admin access
@@ -70,7 +70,7 @@ export class RouteBot {
           return;
         }
         
-        if (data === 'start_menu') {
+        if (data === 'start_menu' || data === 'main_menu') {
           // Показываем главное меню
           await this.showMainMenu(chatId);
         }
@@ -990,20 +990,25 @@ export class RouteBot {
       if (result.healthStatus) {
         const health = result.healthStatus;
         let statusMsg = `✅ Конфигурация создана: \`${result.ip}\`\n\n`;
-        statusMsg += `📦 *Состояние сервера:*\n`;
-        statusMsg += `├ Контейнер: ${health.containerRunning ? '✅' : '❌'}\n`;
-        statusMsg += `├ Интерфейс: ${health.interfaceUp ? '✅' : '❌'}\n`;
-        statusMsg += `└ WireGuard: ${health.interfaceReady ? '✅ Готов' : '⏳ Запускается'}\n`;
         
         if (health.interfaceReady) {
-          statusMsg += `\n📊 Всего клиентов: ${health.peerCount}`;
+          statusMsg += `📊 Всего клиентов: ${health.peerCount}`;
         }
         
         if (!health.healthy) {
           statusMsg += `\n\n⚠️ Обнаружены проблемы, проверьте статус`;
         }
         
-        await this.bot.sendMessage(chatId, statusMsg, { parse_mode: 'Markdown' });
+        const keyboard = {
+          inline_keyboard: [
+            [{ text: '🏠 Главное меню', callback_data: 'main_menu' }]
+          ]
+        };
+        
+        await this.bot.sendMessage(chatId, statusMsg, {
+          parse_mode: 'Markdown',
+          reply_markup: keyboard
+        });
       }
       
       logger.info(`Sent ${version} config to chat ${chatId}: ${result.filename}`);
@@ -1059,20 +1064,24 @@ export class RouteBot {
           ? `✅ Новая конфигурация создана: \`${result.ip}\`\n\n`
           : `✅ Конфигурация восстановлена: \`${result.ip}\`\n\n`;
         
-        statusMsg += `📦 *Состояние сервера:*\n`;
-        statusMsg += `├ Контейнер: ${health.containerRunning ? '✅' : '❌'}\n`;
-        statusMsg += `├ Интерфейс: ${health.interfaceUp ? '✅' : '❌'}\n`;
-        statusMsg += `└ WireGuard: ${health.interfaceReady ? '✅ Готов' : '⏳ Запускается'}\n`;
-        
         if (health.interfaceReady) {
-          statusMsg += `\n📊 Всего клиентов: ${health.peerCount}`;
+          statusMsg += `📊 Всего клиентов: ${health.peerCount}`;
         }
         
         if (!health.healthy) {
           statusMsg += `\n\n⚠️ Обнаружены проблемы, проверьте статус`;
         }
         
-        await this.bot.sendMessage(chatId, statusMsg, { parse_mode: 'Markdown' });
+        const keyboard = {
+          inline_keyboard: [
+            [{ text: '🏠 Главное меню', callback_data: 'main_menu' }]
+          ]
+        };
+        
+        await this.bot.sendMessage(chatId, statusMsg, {
+          parse_mode: 'Markdown',
+          reply_markup: keyboard
+        });
       }
       
       logger.info(`Sent ${version} config to chat ${chatId}: ${result.filename}`);
