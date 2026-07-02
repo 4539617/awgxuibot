@@ -18,7 +18,7 @@ import { AWGManager } from './awgManager.js';
 import { logger } from './logger.js';
 import fs from 'fs';
 import path from 'path';
-import os from 'os';
+import yaml from 'js-yaml';
 
 export class RouteBot {
   constructor() {
@@ -1098,54 +1098,51 @@ export class RouteBot {
     }
   }
 
-  async getServerIp() {
+  getServerIp() {
     try {
-      // Пробуем получить IP через hostname -I (показывает IP хоста, а не контейнера)
-      try {
-        const { stdout } = await execAsync('hostname -I 2>/dev/null');
-        const ips = stdout.trim().split(/\s+/);
+      // Получаем IP из AWG Manager (который получает его через curl ifconfig.me)
+      if (this.awgManager && this.awgManager.serverIP) {
+        return this.awgManager.serverIP;
+      }
+      
+      // Fallback: читаем config.yaml и получаем server_ip из local_panel
+      const configPath = path.join(process.cwd(), 'config.yaml');
+      
+      if (!fs.existsSync(configPath)) {
+        logger.warn('config.yaml not found');
+        return 'N/A';
+      }
+      
+      const fileContents = fs.readFileSync(configPath, 'utf8');
+      const data = yaml.load(fileContents);
+      
+      // Ищем локальную панель
+      if (data && data.panels) {
+        // Сначала пробуем найти local_panel
+        if (data.panels.local_panel && data.panels.local_panel.server_ip) {
+          return data.panels.local_panel.server_ip;
+        }
         
-        // Ищем первый публичный IPv4 адрес
-        for (const ip of ips) {
-          if (/^(\d{1,3}\.){3}\d{1,3}$/.test(ip)) {
-            const parts = ip.split('.');
-            const first = parseInt(parts[0]);
-            const second = parseInt(parts[1]);
-            
-            // Пропускаем приватные диапазоны
-            if (first === 127) continue; // localhost
-            if (first === 10) continue; // 10.0.0.0/8
-            if (first === 172 && second >= 16 && second <= 31) continue; // 172.16.0.0/12 (Docker)
-            if (first === 192 && second === 168) continue; // 192.168.0.0/16
-            
-            return ip;
+        // Если нет local_panel, ищем любую панель с is_local: true
+        for (const panelId in data.panels) {
+          const panel = data.panels[panelId];
+          if (panel.is_local && panel.server_ip) {
+            return panel.server_ip;
           }
         }
-      } catch (error) {
-        logger.debug('Failed to get IP via hostname -I:', error.message);
-      }
-
-      // Если hostname -I не сработал, пробуем через ip route
-      try {
-        const { stdout } = await execAsync('ip route get 1 2>/dev/null | awk \'{print $7; exit}\'');
-        const ip = stdout.trim();
-        if (ip && /^(\d{1,3}\.){3}\d{1,3}$/.test(ip)) {
-          const parts = ip.split('.');
-          const first = parseInt(parts[0]);
-          const second = parseInt(parts[1]);
-          
-          // Проверяем, что это не Docker IP
-          if (!(first === 172 && second >= 16 && second <= 31)) {
-            return ip;
+        
+        // Если нет локальной панели, берем server_ip из первой доступной панели
+        for (const panelId in data.panels) {
+          const panel = data.panels[panelId];
+          if (panel.server_ip) {
+            return panel.server_ip;
           }
         }
-      } catch (error) {
-        logger.debug('Failed to get IP via ip route:', error.message);
       }
-
+      
       return 'N/A';
     } catch (error) {
-      logger.error('Error getting server IP:', error);
+      logger.error('Error getting server IP from config:', error);
       return 'N/A';
     }
   }
@@ -1162,7 +1159,7 @@ export class RouteBot {
         statsMap.set(container.version, container);
       });
 
-      const serverIp = await this.getServerIp();
+      const serverIp = this.getServerIp();
       let statsMessage = `📊 *Сервер:* \`${serverIp}\`\n\n`;
       
       // Показываем статус для обеих версий
