@@ -1167,15 +1167,15 @@ PersistentKeepalive = 25
       
       logger.info(`Starting container ${containerName}...`);
       
-      // Проверяем существование контейнера
-      const { stdout: allContainers } = await execAsync('docker ps -a --format "{{.Names}}"');
-      if (!allContainers.includes(containerName)) {
+      // Используем checkContainer для точной проверки статуса
+      const containerStatus = await this.checkContainer(containerName);
+      
+      if (containerStatus.status === 'not found') {
         throw new Error(`Container ${containerName} not found. AWG ${version} is not installed.`);
       }
       
       // Проверяем, запущен ли контейнер
-      const { stdout: runningContainers } = await execAsync('docker ps --format "{{.Names}}"');
-      if (runningContainers.includes(containerName)) {
+      if (containerStatus.running) {
         logger.info(`Container ${containerName} is already running`);
         return {
           success: true,
