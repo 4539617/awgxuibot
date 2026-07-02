@@ -880,7 +880,9 @@ export class RouteBot {
       } else {
         clients.forEach((client) => {
           const peerName = peerNames[client.ip];
-          const displayName = peerName ? `\`${client.ip}\` (${peerName})` : `\`${client.ip}\``;
+          // Экранируем специальные символы Markdown в имени пира
+          const escapedPeerName = peerName ? peerName.replace(/[_*[\]()~`>#+=|{}.!-]/g, '\\$&') : null;
+          const displayName = escapedPeerName ? `\`${client.ip}\` (${escapedPeerName})` : `\`${client.ip}\``;
           
           if (client.active) {
             // Для активных показываем время последнего соединения
@@ -1766,8 +1768,11 @@ export class RouteBot {
         const transfer = stats.transfer || 'нет данных';
         const peerName = peerNames[ip];
         
+        // Экранируем специальные символы Markdown в имени пира
+        const escapedPeerName = peerName ? peerName.replace(/[_*[\]()~`>#+=|{}.!-]/g, '\\$&') : null;
+        
         // Формируем отображение IP с именем
-        const displayName = peerName ? `${ip} (${peerName})` : ip;
+        const displayName = escapedPeerName ? `${ip} (${escapedPeerName})` : ip;
         
         // Если сервер недоступен - показываем причину
         if (!serverAvailable) {
