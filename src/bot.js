@@ -1120,10 +1120,15 @@ export class RouteBot {
       // Удаляем сообщение о процессе
       await this.bot.deleteMessage(chatId, processingMsg.message_id);
       
+      // Экранируем специальные символы Markdown в имени пира
+      const escapedPeerName = finalPeerName
+        ? finalPeerName.replace(/[_*[\]()~`>#+=|{}.!-]/g, '\\$&')
+        : null;
+      
       // Отправляем результат
-      let statusMsg = finalPeerName 
-        ? `✅ Пир ${ip} переименован в "${finalPeerName}"\n\n`
-        : `✅ Имя пира ${ip} удалено\n\n`;
+      let statusMsg = escapedPeerName
+        ? `✅ Пир \`${ip}\` переименован в "${escapedPeerName}"\n\n`
+        : `✅ Имя пира \`${ip}\` удалено\n\n`;
       
       if (result.healthStatus && result.healthStatus.interfaceReady) {
         statusMsg += `📊 Всего клиентов: ${result.healthStatus.peerCount}`;
