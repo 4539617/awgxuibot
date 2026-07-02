@@ -1098,34 +1098,51 @@ export class RouteBot {
     }
   }
 
-  getServerIp() {
+  async getServerIp() {
     try {
-      const interfaces = os.networkInterfaces();
-      
-      // Приоритет интерфейсов для поиска IP
-      const priorityInterfaces = ['eth0', 'ens3', 'ens5', 'enp0s3', 'wlan0', 'en0'];
-      
-      // Сначала пробуем найти IP в приоритетных интерфейсах
-      for (const ifaceName of priorityInterfaces) {
-        if (interfaces[ifaceName]) {
-          for (const iface of interfaces[ifaceName]) {
-            // Ищем IPv4 адрес, который не является localhost
-            if (iface.family === 'IPv4' && !iface.internal) {
-              return iface.address;
-            }
+      // Пробуем получить IP через hostname -I (показывает IP хоста, а не контейнера)
+      try {
+        const { stdout } = await execAsync('hostname -I 2>/dev/null');
+        const ips = stdout.trim().split(/\s+/);
+        
+        // Ищем первый публичный IPv4 адрес
+        for (const ip of ips) {
+          if (/^(\d{1,3}\.){3}\d{1,3}$/.test(ip)) {
+            const parts = ip.split('.');
+            const first = parseInt(parts[0]);
+            const second = parseInt(parts[1]);
+            
+            // Пропускаем приватные диапазоны
+            if (first === 127) continue; // localhost
+            if (first === 10) continue; // 10.0.0.0/8
+            if (first === 172 && second >= 16 && second <= 31) continue; // 172.16.0.0/12 (Docker)
+            if (first === 192 && second === 168) continue; // 192.168.0.0/16
+            
+            return ip;
           }
         }
+      } catch (error) {
+        logger.debug('Failed to get IP via hostname -I:', error.message);
       }
-      
-      // Если не нашли в приоритетных, ищем в любых интерфейсах
-      for (const ifaceName in interfaces) {
-        for (const iface of interfaces[ifaceName]) {
-          if (iface.family === 'IPv4' && !iface.internal) {
-            return iface.address;
+
+      // Если hostname -I не сработал, пробуем через ip route
+      try {
+        const { stdout } = await execAsync('ip route get 1 2>/dev/null | awk \'{print $7; exit}\'');
+        const ip = stdout.trim();
+        if (ip && /^(\d{1,3}\.){3}\d{1,3}$/.test(ip)) {
+          const parts = ip.split('.');
+          const first = parseInt(parts[0]);
+          const second = parseInt(parts[1]);
+          
+          // Проверяем, что это не Docker IP
+          if (!(first === 172 && second >= 16 && second <= 31)) {
+            return ip;
           }
         }
+      } catch (error) {
+        logger.debug('Failed to get IP via ip route:', error.message);
       }
-      
+
       return 'N/A';
     } catch (error) {
       logger.error('Error getting server IP:', error);
@@ -1145,7 +1162,7 @@ export class RouteBot {
         statsMap.set(container.version, container);
       });
 
-      const serverIp = this.getServerIp();
+      const serverIp = await this.getServerIp();
       let statsMessage = `📊 *Сервер:* \`${serverIp}\`\n\n`;
       
       // Показываем статус для обеих версий
