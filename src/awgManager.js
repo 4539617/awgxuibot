@@ -37,10 +37,12 @@ export class AWGManager {
       this.serverIP = '0.0.0.0';
     }
 
-    // Ищем запущенные контейнеры AWG
+    // Ищем запущенные контейнеры AWG (только запущенные)
     try {
       const { stdout } = await execAsync('docker ps --filter "name=amnezia" --format "{{.Names}}"');
       const containerNames = stdout.trim().split('\n').filter(name => name);
+      
+      logger.info(`Found running containers: ${containerNames.join(', ') || 'none'}`);
       
       for (const containerName of containerNames) {
         try {
@@ -269,8 +271,21 @@ export class AWGManager {
    */
   async checkContainer(containerName) {
     try {
-      const { stdout } = await execAsync(`docker ps -a --filter "name=${containerName}" --format "{{.Status}}"`);
+      // Используем ^name$ для точного совпадения имени контейнера
+      const { stdout } = await execAsync(`docker ps -a --filter "name=^${containerName}$" --format "{{.Status}}"`);
       const status = stdout.trim();
+      
+      // Если статус пустой, контейнер не найден
+      if (!status) {
+        logger.warn(`Container ${containerName} not found`);
+        return {
+          running: false,
+          restarting: false,
+          stopped: true,
+          status: 'not found',
+          available: false
+        };
+      }
       
       // Определяем состояние контейнера
       const isUp = status.includes('Up');
@@ -410,7 +425,7 @@ export class AWGManager {
   /**
    * Сгенерировать пару ключей WireGuard
    */
-  async generateKeys() {
+  async generateKeys(containerName = null) {
     try {
       // Пробуем использовать wg на хосте
       try {
@@ -427,18 +442,37 @@ export class AWGManager {
         // Если на хосте нет wg, используем из контейнера
         logger.info('wg not found on host, using container...');
         
-        if (!this.availableContainers.length) {
-          throw new Error('No AWG containers available and wg not installed on host');
+        // Если передан конкретный контейнер, используем его
+        let targetContainer = containerName;
+        
+        // Если контейнер не указан, ищем любой доступный
+        if (!targetContainer) {
+          if (!this.availableContainers.length) {
+            // Пробуем найти любой запущенный amnezia контейнер
+            try {
+              const { stdout } = await execAsync('docker ps --filter "name=amnezia" --format "{{.Names}}" | head -n 1');
+              targetContainer = stdout.trim();
+              if (!targetContainer) {
+                throw new Error('No running AWG containers found');
+              }
+              logger.info(`Found running container: ${targetContainer}`);
+            } catch (findError) {
+              throw new Error('No AWG containers available and wg not installed on host');
+            }
+          } else {
+            targetContainer = this.availableContainers[0].name;
+          }
         }
         
-        const container = this.availableContainers[0];
+        // Генерируем ключи через контейнер
+        logger.info(`Generating keys using container: ${targetContainer}`);
         const { stdout: privateKey } = await execAsync(
-          `docker exec ${container.name} wg genkey`
+          `docker exec ${targetContainer} wg genkey`
         );
         const privKey = privateKey.trim();
         
         const { stdout: publicKey } = await execAsync(
-          `docker exec ${container.name} sh -c "echo '${privKey}' | wg pubkey"`
+          `docker exec ${targetContainer} sh -c "echo '${privKey}' | wg pubkey"`
         );
         const pubKey = publicKey.trim();
         
@@ -587,8 +621,8 @@ PersistentKeepalive = 25
       throw new Error(`Container ${container.name} is not running`);
     }
 
-    // Генерируем ключи
-    const keys = await this.generateKeys();
+    // Генерируем ключи, передаем имя контейнера
+    const keys = await this.generateKeys(container.name);
 
     // Получаем следующий свободный IP
     const ip = await this.getNextIP(container);
@@ -665,7 +699,7 @@ PersistentKeepalive = 25
       logger.info(`IP ${targetIP} does not exist, creating new config`);
       
       // Генерируем ключи
-      const keys = await this.generateKeys();
+      const keys = await this.generateKeys(container.name);
 
       // Добавляем пира на сервер с указанным IP (теперь возвращает healthStatus)
       const addPeerResult = await this.addPeer(container, keys.publicKey, targetIP);
