@@ -362,12 +362,26 @@ export class AWGManager {
    */
   async getNextIP(container) {
     try {
-      const { stdout } = await execAsync(
-        `docker exec ${container.name} cat ${container.configPath}`
-      );
+      // Проверяем статус контейнера
+      const containerStatus = await this.checkContainer(container.name);
+      
+      let configContent;
+      if (containerStatus.available) {
+        const { stdout } = await execAsync(
+          `docker exec ${container.name} cat ${container.configPath}`
+        );
+        configContent = stdout;
+      } else {
+        // Для остановленного контейнера используем docker cp
+        const tempFile = `/tmp/${container.name}_config_nextip.conf`;
+        await execAsync(`docker cp ${container.name}:${container.configPath} ${tempFile}`);
+        const { stdout } = await execAsync(`cat ${tempFile}`);
+        configContent = stdout;
+        await execAsync(`rm -f ${tempFile}`);
+      }
 
       // Найти все IP из AllowedIPs
-      const ipMatches = stdout.matchAll(/AllowedIPs\s*=\s*(\d+\.\d+\.\d+\.\d+)\/32/g);
+      const ipMatches = configContent.matchAll(/AllowedIPs\s*=\s*(\d+\.\d+\.\d+\.\d+)\/32/g);
       const ips = Array.from(ipMatches, m => m[1]);
 
       if (ips.length === 0) {
@@ -409,18 +423,36 @@ export class AWGManager {
         throw new Error(`Container ${containerName} not found`);
       }
 
-      const { stdout: configContent } = await execAsync(
-        `docker exec ${containerName} cat ${container.configPath}`
-      );
+      // Проверяем статус контейнера
+      const containerStatus = await this.checkContainer(containerName);
+      
+      let configContent;
+      if (containerStatus.available) {
+        const { stdout } = await execAsync(
+          `docker exec ${containerName} cat ${container.configPath}`
+        );
+        configContent = stdout;
+      } else {
+        // Для остановленного контейнера используем docker cp
+        const tempFile = `/tmp/${containerName}_config_status.conf`;
+        await execAsync(`docker cp ${containerName}:${container.configPath} ${tempFile}`);
+        const { stdout } = await execAsync(`cat ${tempFile}`);
+        configContent = stdout;
+        await execAsync(`rm -f ${tempFile}`);
+      }
 
       // Извлекаем все IP из AllowedIPs
       const ipMatches = configContent.matchAll(/AllowedIPs\s*=\s*(\d+\.\d+\.\d+\.\d+)\/32/g);
       const allIPs = Array.from(ipMatches, m => m[1]);
 
-      // Получаем статистику handshake через wg show
-      const { stdout: wgShow } = await execAsync(
-        `docker exec ${containerName} wg show ${interfaceName} 2>/dev/null || echo ""`
-      );
+      // Получаем статистику handshake через wg show только если контейнер запущен
+      let wgShow = '';
+      if (containerStatus.available) {
+        const { stdout } = await execAsync(
+          `docker exec ${containerName} wg show ${interfaceName} 2>/dev/null || echo ""`
+        );
+        wgShow = stdout;
+      }
 
       // Парсим wg show для получения информации о handshake
       const handshakeMap = new Map();
