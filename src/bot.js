@@ -851,23 +851,11 @@ export class RouteBot {
 
       // Выбираем метод отправки в зависимости от shouldUpdate
       if (shouldUpdate) {
-        // При обновлении передаем callbackQueryId для показа popup при создании нового окна
-        const result = await this.updateMessage(chatId, message, {
+        // При обновлении передаем callbackQueryId - updateMessage сам обработает ответ на callback
+        await this.updateMessage(chatId, message, {
           parse_mode: 'Markdown',
           reply_markup: keyboard
         }, callbackQueryId);
-        
-        // Если сообщение было успешно обновлено в том же окне (не новое окно), отвечаем на callback
-        if (callbackQueryId && !result.isNewWindow) {
-          try {
-            await this.bot.answerCallbackQuery(callbackQueryId);
-          } catch (error) {
-            // Игнорируем ошибки устаревших callback query (при перезапуске бота)
-            if (!error.message || !error.message.includes('query is too old')) {
-              logger.warn(`Failed to answer callback query in showClientSelectionMenu: ${error.message}`);
-            }
-          }
-        }
       } else {
         // При первом открытии используем sendNewMessage
         await this.sendNewMessage(chatId, message, {
@@ -1548,23 +1536,11 @@ export class RouteBot {
 
       // Выбираем метод отправки в зависимости от shouldUpdate
       if (shouldUpdate) {
-        // При обновлении передаем callbackQueryId для показа popup при создании нового окна
-        const result = await this.updateMessage(chatId, clientsMessage, {
+        // При обновлении передаем callbackQueryId - updateMessage сам обработает ответ на callback
+        await this.updateMessage(chatId, clientsMessage, {
           parse_mode: 'Markdown',
           reply_markup: keyboard
         }, callbackQueryId);
-        
-        // Если сообщение было успешно обновлено в том же окне (не новое окно), отвечаем на callback
-        if (callbackQueryId && !result.isNewWindow) {
-          try {
-            await this.bot.answerCallbackQuery(callbackQueryId);
-          } catch (error) {
-            // Игнорируем ошибки устаревших callback query (при перезапуске бота)
-            if (!error.message || !error.message.includes('query is too old')) {
-              logger.warn(`Failed to answer callback query in showAwgClientsList: ${error.message}`);
-            }
-          }
-        }
       } else {
         // При первом открытии используем sendNewMessage
         await this.sendNewMessage(chatId, clientsMessage, {
