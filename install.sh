@@ -1737,8 +1737,8 @@ install_awgbot() {
             echo -e "${RED}❌ Неверный формат! Используйте только латиницу и цифры, до 5 символов${NC}"
             read -p "Введите метку сервера: " server_label
         done
-        check_yq && yq eval -i ".common.server_label = \"${server_label}\"" config.yaml
-        echo -e "${GREEN}✅ Метка сервера сохранена: ${server_label}${NC}\n"
+        check_yq && yq eval -i ".common.server_label = \"${server_label^^}\"" config.yaml
+        echo -e "${GREEN}✅ Метка сервера сохранена: ${server_label^^}${NC}\n"
     fi
     
     # Остановка старых контейнеров
@@ -5234,13 +5234,15 @@ generate_awg_config() {
         server_label=$(yq eval '.common.server_label' config.yaml 2>/dev/null)
         if [ "$server_label" = "null" ] || [ -z "$server_label" ]; then
             server_label=""
+        else
+            server_label="${server_label^^}"
         fi
     fi
     
     # Создаем временный Node.js скрипт для генерации конфигурации
     echo -e "${YELLOW}⏳ Генерирую конфигурацию ${version}...${NC}"
     if [ -n "$server_label" ]; then
-        echo -e "${BLUE}📝 Используется метка сервера: ${server_label}${NC}"
+        echo -e "${BLUE}📝 Используется метка сервера: ${server_label^^}${NC}"
     fi
     
     # Устанавливаем STANDALONE_MODE для работы без бота

@@ -31,7 +31,7 @@ function loadConfig() {
       adminIds: data.common.admin_ids || [],
       
       // Server Label
-      serverLabel: data.common.server_label || '',
+      serverLabel: (data.common.server_label || '').toUpperCase(),
       
       // Output directory
       outputDir: './output',
