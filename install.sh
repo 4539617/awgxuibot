@@ -2161,6 +2161,21 @@ show_status() {
             echo -e "  Версия: ${xui_version}"
             echo -e "  Состояние: ${GREEN}Запущена${NC}"
             echo -e "  Всего ключей: ${total_keys}"
+            
+            # Получаем данные подключения из local_panel
+            local xui_url=$(grep -A 20 "local_panel:" config.yaml | grep "xui_url:" | head -1 | awk '{print $2}')
+            local xui_username=$(grep -A 20 "local_panel:" config.yaml | grep "xui_username:" | head -1 | awk '{print $2}')
+            local xui_password=$(grep -A 20 "local_panel:" config.yaml | grep "xui_password:" | head -1 | awk '{print $2}')
+            local xui_api_token=$(grep -A 20 "local_panel:" config.yaml | grep "xui_api_token:" | head -1 | awk '{print $2}')
+            
+            # Выводим данные подключения если они есть
+            if [ -n "$xui_url" ]; then
+                echo -e "\n  ${BOLD}Данные подключения:${NC}"
+                echo -e "  • URL: ${xui_url}"
+                [ -n "$xui_username" ] && echo -e "  • Username: ${xui_username}"
+                [ -n "$xui_password" ] && echo -e "  • Password: ${xui_password}"
+                [ -n "$xui_api_token" ] && echo -e "  • API Token: ${xui_api_token}"
+            fi
         else
             echo -e "  ${GREEN}✅ Установлена${NC}"
             echo -e "  Версия: ${xui_version}"
