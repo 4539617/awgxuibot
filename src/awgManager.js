@@ -67,6 +67,10 @@ export class AWGManager {
    * Определить конфигурацию контейнера
    */
   async detectContainerConfig(containerName) {
+    // Проверяем статус контейнера
+    const containerStatus = await this.checkContainer(containerName);
+    const isRunning = containerStatus.running;
+    
     // Ищем конфиг файл в разных возможных путях
     const possiblePaths = [
       { dir: '/opt/amnezia/amneziawg', files: ['awg0.conf', 'wg0.conf'] },  // Новый путь
@@ -81,12 +85,29 @@ export class AWGManager {
       for (const confFile of pathInfo.files) {
         try {
           const fullPath = `${pathInfo.dir}/${confFile}`;
-          const { stdout } = await execAsync(
-            `docker exec ${containerName} cat ${fullPath}`
-          );
+          
+          if (isRunning) {
+            // Для запущенного контейнера используем docker exec
+            const { stdout } = await execAsync(
+              `docker exec ${containerName} cat ${fullPath}`
+            );
+            configContent = stdout;
+          } else {
+            // Для остановленного контейнера используем docker cp
+            const tempFile = `/tmp/${containerName}_${confFile}`;
+            try {
+              await execAsync(`docker cp ${containerName}:${fullPath} ${tempFile} 2>&1`);
+              const { stdout } = await execAsync(`cat ${tempFile}`);
+              configContent = stdout;
+              await execAsync(`rm -f ${tempFile}`);
+            } catch (cpError) {
+              logger.debug(`Failed to copy ${fullPath} from stopped container: ${cpError.message}`);
+              continue;
+            }
+          }
+          
           configPath = fullPath;
-          configContent = stdout;
-          logger.info(`Found config at ${fullPath} for ${containerName}`);
+          logger.info(`Found config at ${fullPath} for ${containerName} (${isRunning ? 'running' : 'stopped'})`);
           break;
         } catch (error) {
           continue;
@@ -127,9 +148,19 @@ export class AWGManager {
     
     for (const keyPath of keyPaths) {
       try {
-        const { stdout: pubKey } = await execAsync(
-          `docker exec ${containerName} cat ${keyPath}/wireguard_server_public_key.key`
-        );
+        let pubKey;
+        if (isRunning) {
+          const { stdout } = await execAsync(
+            `docker exec ${containerName} cat ${keyPath}/wireguard_server_public_key.key`
+          );
+          pubKey = stdout;
+        } else {
+          const tempFile = `/tmp/${containerName}_pubkey.key`;
+          await execAsync(`docker cp ${containerName}:${keyPath}/wireguard_server_public_key.key ${tempFile}`);
+          const { stdout } = await execAsync(`cat ${tempFile}`);
+          pubKey = stdout;
+          await execAsync(`rm -f ${tempFile}`);
+        }
         serverPublicKey = pubKey.trim();
         logger.info(`Found public key at ${keyPath} for ${containerName}`);
         break;
@@ -140,9 +171,19 @@ export class AWGManager {
     
     for (const keyPath of keyPaths) {
       try {
-        const { stdout: psk } = await execAsync(
-          `docker exec ${containerName} cat ${keyPath}/wireguard_psk.key`
-        );
+        let psk;
+        if (isRunning) {
+          const { stdout } = await execAsync(
+            `docker exec ${containerName} cat ${keyPath}/wireguard_psk.key`
+          );
+          psk = stdout;
+        } else {
+          const tempFile = `/tmp/${containerName}_psk.key`;
+          await execAsync(`docker cp ${containerName}:${keyPath}/wireguard_psk.key ${tempFile}`);
+          const { stdout } = await execAsync(`cat ${tempFile}`);
+          psk = stdout;
+          await execAsync(`rm -f ${tempFile}`);
+        }
         presharedKey = psk.trim();
         logger.info(`Found PSK at ${keyPath} for ${containerName}`);
         break;
@@ -158,27 +199,32 @@ export class AWGManager {
 
     // КРИТИЧЕСКАЯ ПРОВЕРКА: Получаем актуальный PublicKey из запущенного интерфейса
     // Основано на amneziawg-installer v5.16.1
-    try {
-      const interfaceName = configPath.includes('awg0') ? 'awg0' : 'wg0';
-      const { stdout: wgShow } = await execAsync(
-        `docker exec ${containerName} wg show ${interfaceName} public-key 2>/dev/null || echo ""`
-      );
-      const actualPublicKey = wgShow.trim();
-      
-      if (actualPublicKey && actualPublicKey !== serverPublicKey) {
-        logger.warn(`⚠️  PublicKey mismatch обнаружен для ${containerName}!`);
-        logger.warn(`   Ключ из файла: ${serverPublicKey}`);
-        logger.warn(`   Реальный ключ:  ${actualPublicKey}`);
-        logger.info(`✅ Используем реальный ключ из запущенного интерфейса`);
-        serverPublicKey = actualPublicKey;
-      } else if (actualPublicKey) {
-        logger.info(`✅ PublicKey проверен и совпадает: ${actualPublicKey.substring(0, 16)}...`);
-      } else {
-        logger.warn(`⚠️  Не удалось получить PublicKey из интерфейса, используем ключ из файла`);
+    // Только для запущенных контейнеров
+    if (isRunning) {
+      try {
+        const interfaceName = configPath.includes('awg0') ? 'awg0' : 'wg0';
+        const { stdout: wgShow } = await execAsync(
+          `docker exec ${containerName} wg show ${interfaceName} public-key 2>/dev/null || echo ""`
+        );
+        const actualPublicKey = wgShow.trim();
+        
+        if (actualPublicKey && actualPublicKey !== serverPublicKey) {
+          logger.warn(`⚠️  PublicKey mismatch обнаружен для ${containerName}!`);
+          logger.warn(`   Ключ из файла: ${serverPublicKey}`);
+          logger.warn(`   Реальный ключ:  ${actualPublicKey}`);
+          logger.info(`✅ Используем реальный ключ из запущенного интерфейса`);
+          serverPublicKey = actualPublicKey;
+        } else if (actualPublicKey) {
+          logger.info(`✅ PublicKey проверен и совпадает: ${actualPublicKey.substring(0, 16)}...`);
+        } else {
+          logger.warn(`⚠️  Не удалось получить PublicKey из интерфейса, используем ключ из файла`);
+        }
+      } catch (error) {
+        logger.warn(`⚠️  Ошибка проверки PublicKey из интерфейса: ${error.message}`);
+        logger.warn(`   Используем ключ из файла (может быть устаревшим)`);
       }
-    } catch (error) {
-      logger.warn(`⚠️  Ошибка проверки PublicKey из интерфейса: ${error.message}`);
-      logger.warn(`   Используем ключ из файла (может быть устаревшим)`);
+    } else {
+      logger.info(`ℹ️  Контейнер остановлен, используем ключ из файла`);
     }
 
     return {
