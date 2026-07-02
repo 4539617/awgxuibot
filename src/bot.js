@@ -705,16 +705,7 @@ export class RouteBot {
           message_id: lastMessageId,
           ...options
         });
-        // Успешно обновили в том же окне - показываем временное уведомление
-        if (callbackQueryId) {
-          try {
-            await this.bot.answerCallbackQuery(callbackQueryId, {
-              text: '✅ Обновлено'
-            });
-          } catch (error) {
-            logger.warn(`Failed to show notification: ${error.message}`);
-          }
-        }
+        // Успешно обновили в том же окне - НЕ показываем уведомление
         return { message_id: lastMessageId, isNewWindow: false };
       }
     } catch (error) {
@@ -727,11 +718,11 @@ export class RouteBot {
     const result = await this.bot.sendMessage(chatId, text, options);
     this.lastMessageIds.set(chatId, result.message_id);
     
-    // Показываем временное уведомление о новом окне если передан callbackQueryId
+    // Показываем уведомление ТОЛЬКО при создании нового окна
     if (callbackQueryId) {
       try {
         await this.bot.answerCallbackQuery(callbackQueryId, {
-          text: '✅ Обновлено'
+          text: 'Попробуйте позже или убедитесь что сервер запущен'
         });
       } catch (error) {
         logger.warn(`Failed to show notification: ${error.message}`);
