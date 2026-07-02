@@ -753,13 +753,13 @@ export class RouteBot {
       // Выбираем метод отправки в зависимости от shouldUpdate
       if (shouldUpdate) {
         // При обновлении передаем callbackQueryId для показа popup при создании нового окна
-        await this.updateMessage(chatId, message, {
+        const result = await this.updateMessage(chatId, message, {
           parse_mode: 'Markdown',
           reply_markup: keyboard
         }, callbackQueryId);
         
-        // Если сообщение было успешно обновлено в том же окне, отвечаем на callback
-        if (callbackQueryId) {
+        // Если сообщение было успешно обновлено в том же окне (не новое окно), отвечаем на callback
+        if (callbackQueryId && !result.isNewWindow) {
           try {
             await this.bot.answerCallbackQuery(callbackQueryId);
           } catch (error) {
@@ -1366,13 +1366,13 @@ export class RouteBot {
       // Выбираем метод отправки в зависимости от shouldUpdate
       if (shouldUpdate) {
         // При обновлении передаем callbackQueryId для показа popup при создании нового окна
-        await this.updateMessage(chatId, clientsMessage, {
+        const result = await this.updateMessage(chatId, clientsMessage, {
           parse_mode: 'Markdown',
           reply_markup: keyboard
         }, callbackQueryId);
         
-        // Если сообщение было успешно обновлено в том же окне, отвечаем на callback
-        if (callbackQueryId) {
+        // Если сообщение было успешно обновлено в том же окне (не новое окно), отвечаем на callback
+        if (callbackQueryId && !result.isNewWindow) {
           try {
             await this.bot.answerCallbackQuery(callbackQueryId);
           } catch (error) {
