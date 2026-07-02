@@ -1756,6 +1756,9 @@ async def show_server_status(callback_query: types.CallbackQuery, state: FSMCont
         xray_state = xray.get('state', 'unknown')
         xray_version = xray.get('version', 'unknown')
         
+        # Статус Xray с эмодзи
+        xray_emoji = "✅" if xray_state == "running" else "❌"
+        
         # TCP connections
         tcp_count = status.get('tcpCount', 0)
         
@@ -1769,7 +1772,7 @@ async def show_server_status(callback_query: types.CallbackQuery, state: FSMCont
         
         # Информация о 3X-UI панели
         message += "<b>3X-UI PANEL:</b>\n"
-        if current_panel and current_panel.is_local:
+        if current_panel:
             message += f"  ✅ Установлена\n"
             message += f"  Версия: v{current_panel.xui_version}\n"
             message += f"  Состояние: {xray_emoji} {'Запущена' if xray_state == 'running' else 'Остановлена'}\n"
@@ -1782,18 +1785,16 @@ async def show_server_status(callback_query: types.CallbackQuery, state: FSMCont
             except:
                 message += f"  Всего ключей: N/A\n\n"
             
-            # Добавляем данные из local_panel
-            message += f"  <b>Данные подключения:</b>\n"
-            message += f"  • URL: <code>{current_panel.xui_url}</code>\n"
-            message += f"  • Username: <code>{current_panel.xui_username}</code>\n"
-            message += f"  • Password: <code>{current_panel.xui_password}</code>\n"
-            if current_panel.xui_api_token:
-                message += f"  • API Token: <code>{current_panel.xui_api_token[:20]}...</code>\n"
+            # Добавляем данные из local_panel (показываем для всех панелей)
+            if current_panel.is_local or current_panel.panel_id == 'local_panel':
+                message += f"  <b>Данные подключения:</b>\n"
+                message += f"  • URL: <code>{current_panel.xui_url}</code>\n"
+                message += f"  • Username: <code>{current_panel.xui_username}</code>\n"
+                message += f"  • Password: <code>{current_panel.xui_password}</code>\n"
+                if current_panel.xui_api_token:
+                    message += f"  • API Token: <code>{current_panel.xui_api_token}</code>\n"
         else:
-            message += f"  ℹ️ Удаленная панель\n"
-            if current_panel:
-                message += f"  Версия: v{current_panel.xui_version}\n"
-                message += f"  Alias: {current_panel.alias}\n"
+            message += f"  ❌ Панель не настроена\n"
         
         message += "\n<b>🖥️ Сервер</b>\n\n"
         
