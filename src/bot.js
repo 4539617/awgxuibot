@@ -1451,18 +1451,47 @@ export class RouteBot {
       }
 
       if (clients.length === 0) {
+        // Создаём клавиатуру с кнопками управления даже если нет клиентов
+        const keyboard = {
+          inline_keyboard: []
+        };
+        
+        // Добавляем кнопки управления контейнером
+        const controlButtons = [];
+        if (containerStatus.running) {
+          controlButtons.push({ text: `⏹ Остановить AWG ${version.toUpperCase()}`, callback_data: `awg_stop_${version}` });
+        } else if (containerStatus.stopped) {
+          controlButtons.push({ text: `▶️ Запустить AWG ${version.toUpperCase()}`, callback_data: `awg_start_${version}` });
+        }
+        
+        if (controlButtons.length > 0) {
+          keyboard.inline_keyboard.push(controlButtons);
+        }
+        
+        // Добавляем кнопки "Обновить" и "Назад"
+        keyboard.inline_keyboard.push([
+          { text: '🔄 Обновить', callback_data: `refresh_clients_${version}` },
+          { text: '🔙 Назад', callback_data: `awg_select_${version}` }
+        ]);
+        
         if (shouldUpdate) {
           await this.updateMessage(
             chatId,
             `📋 *Подробнее Клиенты ${version.toUpperCase()}*\n\n📦 Контейнер: \`${container.name}\`${containerStatusMessage}${interfaceMessage}\n\nНет активных клиентов`,
-            { parse_mode: 'Markdown' },
+            {
+              parse_mode: 'Markdown',
+              reply_markup: keyboard
+            },
             callbackQueryId
           );
         } else {
           await this.sendNewMessage(
             chatId,
             `📋 *Подробнее Клиенты ${version.toUpperCase()}*\n\n📦 Контейнер: \`${container.name}\`${containerStatusMessage}${interfaceMessage}\n\nНет активных клиентов`,
-            { parse_mode: 'Markdown' }
+            {
+              parse_mode: 'Markdown',
+              reply_markup: keyboard
+            }
           );
         }
         return;

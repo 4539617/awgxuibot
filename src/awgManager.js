@@ -805,6 +805,13 @@ PersistentKeepalive = 25
       throw new Error(`Container ${containerName} not found`);
     }
     
+    // Проверяем статус контейнера перед попыткой чтения
+    const containerStatus = await this.checkContainer(container.name);
+    if (!containerStatus.available) {
+      logger.info(`Container ${container.name} is not available, returning empty client list`);
+      return [];
+    }
+    
     try {
       const { stdout } = await execAsync(
         `docker exec ${container.name} grep "AllowedIPs" ${container.configPath}`
