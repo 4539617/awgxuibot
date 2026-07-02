@@ -569,8 +569,15 @@ export class AWGManager {
    * Добавить пира в конфиг контейнера
    * Теперь с проверкой здоровья после добавления
    */
-  async addPeer(container, publicKey, ip) {
+  async addPeer(container, publicKey, ip, peerName = null) {
+    // Формируем комментарий с именем пира и датой создания
+    const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
+    const comment = peerName
+      ? `# Peer: ${peerName} | IP: ${ip} | Created: ${timestamp}`
+      : `# IP: ${ip} | Created: ${timestamp}`;
+    
     const peerConfig = `
+${comment}
 [Peer]
 PublicKey = ${publicKey}
 PresharedKey = ${container.presharedKey}
