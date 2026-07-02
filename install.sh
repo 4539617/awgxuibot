@@ -5251,7 +5251,7 @@ generate_awg_config() {
         
         try {
             await awgManager.initialize();
-            const serverLabel = '${server_label}' || null;
+            const serverLabel = '${server_label}' ? '${server_label}' : null;
             const result = await awgManager.generateClientConfig('${version}', serverLabel);
             
             console.log('');

@@ -713,7 +713,7 @@ PersistentKeepalive = 25
 
     // Сохраняем конфиг в файл с меткой VPS если указана
     let filename;
-    if (vpsLabel) {
+    if (vpsLabel && vpsLabel.trim() !== '') {
       filename = `${vpsLabel}_AWG${container.version}_${ip.replace(/\./g, '_')}.conf`;
     } else {
       filename = `AWG${container.version}_${ip.replace(/\./g, '_')}.conf`;
@@ -787,7 +787,7 @@ PersistentKeepalive = 25
 
       // Сохраняем конфиг в файл с меткой VPS если указана
       let filename;
-      if (vpsLabel) {
+      if (vpsLabel && vpsLabel.trim() !== '') {
         filename = `${vpsLabel}_AWG${container.version}_${targetIP.replace(/\./g, '_')}.conf`;
       } else {
         filename = `AWG${container.version}_${targetIP.replace(/\./g, '_')}.conf`;
@@ -988,7 +988,7 @@ PersistentKeepalive = 25
       
       // Сохраняем конфиг в файл с меткой VPS если указана
       let filename;
-      if (vpsLabel) {
+      if (vpsLabel && vpsLabel.trim() !== '') {
         filename = `${vpsLabel}_AWG${container.version}_${clientIP.replace(/\./g, '_')}_RESENT.conf`;
       } else {
         filename = `AWG${container.version}_${clientIP.replace(/\./g, '_')}_RESENT.conf`;
