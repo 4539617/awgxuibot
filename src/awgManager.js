@@ -37,12 +37,12 @@ export class AWGManager {
       this.serverIP = '0.0.0.0';
     }
 
-    // Ищем запущенные контейнеры AWG (только запущенные)
+    // Ищем все контейнеры AWG (запущенные и остановленные)
     try {
-      const { stdout } = await execAsync('docker ps --filter "name=amnezia" --format "{{.Names}}"');
+      const { stdout } = await execAsync('docker ps -a --filter "name=amnezia" --format "{{.Names}}"');
       const containerNames = stdout.trim().split('\n').filter(name => name);
       
-      logger.info(`Found running containers: ${containerNames.join(', ') || 'none'}`);
+      logger.info(`Found containers: ${containerNames.join(', ') || 'none'}`);
       
       for (const containerName of containerNames) {
         try {
