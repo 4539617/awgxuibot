@@ -719,8 +719,8 @@ export class RouteBot {
         { parse_mode: 'Markdown' }
       );
       
-      // Обновляем главное меню
-      await this.showMainMenu(chatId);
+      // Обновляем окно списка клиентов для этой версии
+      await this.showAwgClientsList(chatId, version, false);
       
     } catch (error) {
       logger.error(`Error starting AWG ${version} for chat ${chatId}:`, error);
@@ -764,8 +764,8 @@ export class RouteBot {
         { parse_mode: 'Markdown' }
       );
       
-      // Обновляем главное меню
-      await this.showMainMenu(chatId);
+      // Обновляем окно списка клиентов для этой версии
+      await this.showAwgClientsList(chatId, version, false);
       
     } catch (error) {
       logger.error(`Error stopping AWG ${version} for chat ${chatId}:`, error);
@@ -1258,11 +1258,6 @@ export class RouteBot {
       const serverIp = this.getServerIp();
       let statsMessage = `📊 *Сервер:* \`${serverIp}\`\n\n`;
       
-      // Создаем клавиатуру с кнопками управления
-      const keyboard = {
-        inline_keyboard: []
-      };
-      
       // Показываем статус для обеих версий
       const versions = ['v1', 'v2'];
       
@@ -1310,18 +1305,6 @@ export class RouteBot {
           }
           
           statsMessage += '\n';
-          
-          // Добавляем кнопки управления для этой версии
-          const buttons = [];
-          if (container.running) {
-            buttons.push({ text: `⏹ Остановить AWG ${version.toUpperCase()}`, callback_data: `awg_stop_${version}` });
-          } else if (container.stopped) {
-            buttons.push({ text: `▶️ Запустить AWG ${version.toUpperCase()}`, callback_data: `awg_start_${version}` });
-          }
-          
-          if (buttons.length > 0) {
-            keyboard.inline_keyboard.push(buttons);
-          }
         } else {
           // Контейнер не найден
           statsMessage += `📋 *AWG ${version.toUpperCase()}*\n`;
@@ -1329,7 +1312,7 @@ export class RouteBot {
         }
       }
 
-      return { message: statsMessage, keyboard };
+      return statsMessage;
 
     } catch (error) {
       logger.error(`Error getting stats for chat ${chatId}:`, error);
@@ -1346,23 +1329,22 @@ export class RouteBot {
       
       // Получаем статистику
       let statsMessage = '';
-      let statsKeyboard = {
-        inline_keyboard: []
-      };
       
       try {
-        const statsResult = await this.showAwgStats(chatId);
-        statsMessage = statsResult.message;
-        statsKeyboard = statsResult.keyboard;
+        statsMessage = await this.showAwgStats(chatId);
       } catch (error) {
         statsMessage = '❌ Ошибка при получении статистики\n\n';
       }
       
-      // Добавляем основные кнопки выбора версии
-      statsKeyboard.inline_keyboard.push([
-        { text: '📝 V1', callback_data: 'awg_select_v1' },
-        { text: '📝 V2', callback_data: 'awg_select_v2' }
-      ]);
+      // Создаем клавиатуру с основными кнопками выбора версии
+      const keyboard = {
+        inline_keyboard: [
+          [
+            { text: '📝 V1', callback_data: 'awg_select_v1' },
+            { text: '📝 V2', callback_data: 'awg_select_v2' }
+          ]
+        ]
+      };
       
       // Удаляем сообщение о загрузке
       try {
@@ -1375,7 +1357,7 @@ export class RouteBot {
       await this.sendNewMessage(
         chatId,
         `🔐 *Панель администратора*\n\n${statsMessage}Выберите действие:`,
-        { parse_mode: 'Markdown', reply_markup: statsKeyboard }
+        { parse_mode: 'Markdown', reply_markup: keyboard }
       );
     } catch (error) {
       logger.error(`Error showing main menu for chat ${chatId}:`, error);
@@ -1536,6 +1518,18 @@ export class RouteBot {
         ]);
       });
 
+      // Добавляем кнопки управления контейнером
+      const controlButtons = [];
+      if (containerStatus.running) {
+        controlButtons.push({ text: `⏹ Остановить AWG ${version.toUpperCase()}`, callback_data: `awg_stop_${version}` });
+      } else if (containerStatus.stopped) {
+        controlButtons.push({ text: `▶️ Запустить AWG ${version.toUpperCase()}`, callback_data: `awg_start_${version}` });
+      }
+      
+      if (controlButtons.length > 0) {
+        keyboard.inline_keyboard.push(controlButtons);
+      }
+      
       // Добавляем кнопки "Обновить" и "Назад"
       keyboard.inline_keyboard.push([
         { text: '🔄 Обновить', callback_data: `refresh_clients_${version}` },
