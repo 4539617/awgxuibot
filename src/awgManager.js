@@ -712,8 +712,8 @@ PersistentKeepalive = 25
     // Получаем следующий свободный IP
     const ip = await this.getNextIP(container);
 
-    // Добавляем пира на сервер (теперь возвращает healthStatus)
-    const addPeerResult = await this.addPeer(container, keys.publicKey, ip);
+    // Добавляем пира на сервер с именем (теперь возвращает healthStatus)
+    const addPeerResult = await this.addPeer(container, keys.publicKey, ip, peerName);
 
     // Создаем клиентский конфиг
     const configContent = this.createClientConfig(container, keys.privateKey, ip);
@@ -786,8 +786,8 @@ PersistentKeepalive = 25
       // Генерируем ключи
       const keys = await this.generateKeys(container.name);
 
-      // Добавляем пира на сервер с указанным IP (теперь возвращает healthStatus)
-      const addPeerResult = await this.addPeer(container, keys.publicKey, targetIP);
+      // Добавляем пира на сервер с указанным IP и именем (теперь возвращает healthStatus)
+      const addPeerResult = await this.addPeer(container, keys.publicKey, targetIP, peerName);
 
       // Создаем клиентский конфиг
       const configContent = this.createClientConfig(container, keys.privateKey, targetIP);
