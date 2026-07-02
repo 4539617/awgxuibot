@@ -687,7 +687,7 @@ PersistentKeepalive = 25
   /**
    * Сгенерировать новый клиентский конфиг
    */
-  async generateClientConfig(version = null, vpsLabel = null) {
+  async generateClientConfig(version = null, vpsLabel = null, peerName = null) {
     // Инициализируем если еще не сделали
     if (!this.initialized) {
       await this.initialize();
@@ -695,7 +695,7 @@ PersistentKeepalive = 25
 
     // Получаем контейнер
     const container = this.getContainer(version);
-    logger.info(`Generating ${container.version} config using ${container.name}${vpsLabel ? ` with label: ${vpsLabel}` : ''}`);
+    logger.info(`Generating ${container.version} config using ${container.name}${vpsLabel ? ` with label: ${vpsLabel}` : ''}${peerName ? ` for peer: ${peerName}` : ''}`);
 
     // Проверяем контейнер
     const containerStatus = await this.checkContainer(container.name);
