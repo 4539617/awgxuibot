@@ -1759,8 +1759,43 @@ async def show_server_status(callback_query: types.CallbackQuery, state: FSMCont
         # TCP connections
         tcp_count = status.get('tcpCount', 0)
         
+        # Получаем информацию о текущей панели
+        current_panel = config.get_current_panel()
+        
         # Формируем сообщение
-        message = "🖥️ <b>Сервер</b>\n\n"
+        message = "========================================\n"
+        message += "   <b>СТАТУС СИСТЕМЫ</b>\n"
+        message += "========================================\n\n"
+        
+        # Информация о 3X-UI панели
+        message += "<b>3X-UI PANEL:</b>\n"
+        if current_panel and current_panel.is_local:
+            message += f"  ✅ Установлена\n"
+            message += f"  Версия: v{current_panel.xui_version}\n"
+            message += f"  Состояние: {xray_emoji} {'Запущена' if xray_state == 'running' else 'Остановлена'}\n"
+            
+            # Получаем количество ключей
+            try:
+                all_clients = await xui_client.get_clients()
+                total_keys = len(all_clients) if all_clients else 0
+                message += f"  Всего ключей: {total_keys}\n\n"
+            except:
+                message += f"  Всего ключей: N/A\n\n"
+            
+            # Добавляем данные из local_panel
+            message += f"  <b>Данные подключения:</b>\n"
+            message += f"  • URL: <code>{current_panel.xui_url}</code>\n"
+            message += f"  • Username: <code>{current_panel.xui_username}</code>\n"
+            message += f"  • Password: <code>{current_panel.xui_password}</code>\n"
+            if current_panel.xui_api_token:
+                message += f"  • API Token: <code>{current_panel.xui_api_token[:20]}...</code>\n"
+        else:
+            message += f"  ℹ️ Удаленная панель\n"
+            if current_panel:
+                message += f"  Версия: v{current_panel.xui_version}\n"
+                message += f"  Alias: {current_panel.alias}\n"
+        
+        message += "\n<b>🖥️ Сервер</b>\n\n"
         
         message += f"💻 <b>CPU:</b> {cpu:.1f}%\n\n"
         
