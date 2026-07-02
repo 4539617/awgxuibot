@@ -1661,8 +1661,8 @@ export class RouteBot {
         return;
       }
       
-      // Regenerate config
-      const result = await this.awgManager.regenerateClientConfig(container.name, ip);
+      // Regenerate config with server label
+      const result = await this.awgManager.regenerateClientConfig(container.name, ip, config.serverLabel);
       
       // Delete processing message
       await this.bot.deleteMessage(chatId, processingMsg.message_id);
