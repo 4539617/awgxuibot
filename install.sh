@@ -1726,6 +1726,21 @@ install_awgbot() {
         update_config_value "ADMIN_IDS" "$admin_ids"
     fi
     
+    # Проверка SERVER_LABEL
+    SERVER_LABEL=$(get_config_value "SERVER_LABEL")
+    if [ -z "$SERVER_LABEL" ] || [ "$SERVER_LABEL" = "null" ]; then
+        echo -e "${YELLOW}📝 Настройка метки сервера${NC}\n"
+        echo -e "${BLUE}Метка сервера используется для идентификации конфигураций (до 5 символов латиницей)${NC}"
+        read -p "Введите метку сервера (например: srv01, vps1, main): " server_label
+        # Валидация: только латиница и цифры, до 5 символов
+        while [[ ! "$server_label" =~ ^[a-zA-Z0-9]{1,5}$ ]]; do
+            echo -e "${RED}❌ Неверный формат! Используйте только латиницу и цифры, до 5 символов${NC}"
+            read -p "Введите метку сервера: " server_label
+        done
+        check_yq && yq eval -i ".common.server_label = \"${server_label}\"" config.yaml
+        echo -e "${GREEN}✅ Метка сервера сохранена: ${server_label}${NC}\n"
+    fi
+    
     # Остановка старых контейнеров
     echo -e "\n${YELLOW}🛑 Остановка старых контейнеров...${NC}"
     docker stop awgbot 2>/dev/null || true
@@ -5213,8 +5228,20 @@ generate_awg_config() {
     
     echo -e "${GREEN}✅ Контейнер ${container_name} найден${NC}"
     
+    # Получаем server_label из config.yaml
+    local server_label=""
+    if [ -f "config.yaml" ] && check_yq; then
+        server_label=$(yq eval '.common.server_label' config.yaml 2>/dev/null)
+        if [ "$server_label" = "null" ] || [ -z "$server_label" ]; then
+            server_label=""
+        fi
+    fi
+    
     # Создаем временный Node.js скрипт для генерации конфигурации
     echo -e "${YELLOW}⏳ Генерирую конфигурацию ${version}...${NC}"
+    if [ -n "$server_label" ]; then
+        echo -e "${BLUE}📝 Используется метка сервера: ${server_label}${NC}"
+    fi
     
     # Устанавливаем STANDALONE_MODE для работы без бота
     STANDALONE_MODE=true node -e "
@@ -5224,7 +5251,8 @@ generate_awg_config() {
         
         try {
             await awgManager.initialize();
-            const result = await awgManager.generateClientConfig('${version}');
+            const serverLabel = '${server_label}' || null;
+            const result = await awgManager.generateClientConfig('${version}', serverLabel);
             
             console.log('');
             console.log('✅ Конфигурация успешно создана!');

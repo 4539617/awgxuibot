@@ -2,6 +2,7 @@ common:
   xui_bot_token: ""
   awg_bot_token: ""
   admin_ids: []
+  server_label: ""
   server_port: 443
   api_timeout: 30
   xhttp_mode: "auto"

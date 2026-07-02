@@ -30,6 +30,9 @@ function loadConfig() {
       // Admin IDs
       adminIds: data.common.admin_ids || [],
       
+      // Server Label
+      serverLabel: data.common.server_label || '',
+      
       // Output directory
       outputDir: './output',
       

@@ -97,14 +97,14 @@ export class RouteBot {
           await this.showClientSelectionMenu(chatId, version, false);
         } else if (data.startsWith('awg_gen_next_')) {
           const version = data.replace('awg_gen_next_', '');
-          await this.requestVpsLabel(chatId, version);
+          await this.generateAwgConfig(chatId, version, config.serverLabel);
         } else if (data.startsWith('awg_gen_by_number_')) {
           const version = data.replace('awg_gen_by_number_', '');
           await this.requestIpNumber(chatId, version);
         } else if (data === 'awg_gen_v1') {
-          await this.requestVpsLabel(chatId, 'v1');
+          await this.generateAwgConfig(chatId, 'v1', config.serverLabel);
         } else if (data === 'awg_gen_v2') {
-          await this.requestVpsLabel(chatId, 'v2');
+          await this.generateAwgConfig(chatId, 'v2', config.serverLabel);
         } else if (data === 'awg_stats') {
           await this.showAwgStats(chatId);
         } else if (data.startsWith('awg_clients_')) {
@@ -285,14 +285,8 @@ export class RouteBot {
         return; // Silently ignore for non-admins
       }
 
-      // Check if user is in VPS label input mode
-      const vpsSession = this.vpsLabelSessions.get(userId);
-      if (vpsSession && vpsSession.waitingForLabel) {
-        await this.handleVpsLabelInput(chatId, userId, text, vpsSession.version, vpsSession.mode);
-        return;
-      }
-
       // Check if user is in IP number input mode
+      const vpsSession = this.vpsLabelSessions.get(userId);
       if (vpsSession && vpsSession.waitingForIpNumber) {
         await this.handleIpNumberInput(chatId, userId, text, vpsSession.version);
         return;
@@ -1028,29 +1022,8 @@ export class RouteBot {
       
       logger.info(`IP number accepted: ${ipNumber} for ${version} from chat ${chatId}`);
       
-      // Запрашиваем метку VPS
-      this.vpsLabelSessions.set(chatId, {
-        waitingForLabel: true,
-        version: version,
-        mode: 'by_number',
-        ipNumber: ipNumber
-      });
-      
-      await this.sendOrEditMessage(
-        chatId,
-        `📝 *Введите метку сервера*\n\n` +
-        `Например: \`VPS3\`, \`SERVER1\`\n\n` +
-        `Эта метка будет добавлена к имени файла конфигурации для IP \`10.8.1.${ipNumber}\`\n` +
-        `Пример: \`VPS3_AWGv${version === 'v1' ? '1' : '2'}_10_8_1_${ipNumber}.conf\``,
-        {
-          parse_mode: 'Markdown',
-          reply_markup: {
-            inline_keyboard: [[
-              { text: '🔙 Назад', callback_data: `awg_select_${version}` }
-            ]]
-          }
-        }
-      );
+      // Генерируем конфигурацию с меткой сервера из config
+      await this.generateAwgConfigByNumber(chatId, version, ipNumber, config.serverLabel);
       
     } catch (error) {
       logger.error(`Error handling IP number input for chat ${chatId}:`, error);
