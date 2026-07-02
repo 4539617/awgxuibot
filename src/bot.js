@@ -110,6 +110,12 @@ export class RouteBot {
         } else if (data.startsWith('awg_clients_')) {
           const version = data.replace('awg_clients_', '');
           await this.showAwgClientsList(chatId, version, false);
+        } else if (data.startsWith('awg_start_')) {
+          const version = data.replace('awg_start_', '');
+          await this.handleAwgStart(chatId, version);
+        } else if (data.startsWith('awg_stop_')) {
+          const version = data.replace('awg_stop_', '');
+          await this.handleAwgStop(chatId, version);
         }
       }
       // Refresh callbacks (для кнопок "Обновить")
@@ -681,6 +687,96 @@ export class RouteBot {
     return this.sendNewMessage(chatId, text, options);
   }
 
+  /**
+   * Обработчик запуска AWG контейнера
+   */
+  async handleAwgStart(chatId, version) {
+    try {
+      logger.info(`Starting AWG ${version} for chat ${chatId}`);
+      
+      // Показываем сообщение о процессе
+      const processingMsg = await this.bot.sendMessage(
+        chatId,
+        `⏳ Запускаю AWG ${version.toUpperCase()}...`,
+        { parse_mode: 'Markdown' }
+      );
+      
+      // Запускаем контейнер
+      const result = await this.awgManager.startContainer(version);
+      
+      // Удаляем сообщение о процессе
+      try {
+        await this.bot.deleteMessage(chatId, processingMsg.message_id);
+      } catch (error) {
+        logger.warn(`Failed to delete processing message: ${error.message}`);
+      }
+      
+      // Показываем результат
+      const emoji = result.alreadyRunning ? '✅' : '🚀';
+      await this.bot.sendMessage(
+        chatId,
+        `${emoji} ${result.message}`,
+        { parse_mode: 'Markdown' }
+      );
+      
+      // Обновляем главное меню
+      await this.showMainMenu(chatId);
+      
+    } catch (error) {
+      logger.error(`Error starting AWG ${version} for chat ${chatId}:`, error);
+      await this.bot.sendMessage(
+        chatId,
+        `❌ ${error.message}`,
+        { parse_mode: 'Markdown' }
+      );
+    }
+  }
+
+  /**
+   * Обработчик остановки AWG контейнера
+   */
+  async handleAwgStop(chatId, version) {
+    try {
+      logger.info(`Stopping AWG ${version} for chat ${chatId}`);
+      
+      // Показываем сообщение о процессе
+      const processingMsg = await this.bot.sendMessage(
+        chatId,
+        `⏳ Останавливаю AWG ${version.toUpperCase()}...`,
+        { parse_mode: 'Markdown' }
+      );
+      
+      // Останавливаем контейнер
+      const result = await this.awgManager.stopContainer(version);
+      
+      // Удаляем сообщение о процессе
+      try {
+        await this.bot.deleteMessage(chatId, processingMsg.message_id);
+      } catch (error) {
+        logger.warn(`Failed to delete processing message: ${error.message}`);
+      }
+      
+      // Показываем результат
+      const emoji = result.alreadyStopped ? '✅' : '⏹';
+      await this.bot.sendMessage(
+        chatId,
+        `${emoji} ${result.message}`,
+        { parse_mode: 'Markdown' }
+      );
+      
+      // Обновляем главное меню
+      await this.showMainMenu(chatId);
+      
+    } catch (error) {
+      logger.error(`Error stopping AWG ${version} for chat ${chatId}:`, error);
+      await this.bot.sendMessage(
+        chatId,
+        `❌ ${error.message}`,
+        { parse_mode: 'Markdown' }
+      );
+    }
+  }
+
   async showClientSelectionMenu(chatId, version, shouldUpdate = false, callbackQueryId = null) {
     try {
       logger.info(`Showing client selection menu for ${version} in chat ${chatId}, shouldUpdate: ${shouldUpdate}`);
@@ -1162,6 +1258,11 @@ export class RouteBot {
       const serverIp = this.getServerIp();
       let statsMessage = `📊 *Сервер:* \`${serverIp}\`\n\n`;
       
+      // Создаем клавиатуру с кнопками управления
+      const keyboard = {
+        inline_keyboard: []
+      };
+      
       // Показываем статус для обеих версий
       const versions = ['v1', 'v2'];
       
@@ -1184,7 +1285,7 @@ export class RouteBot {
           }
           
           // Контейнер найден - показываем реальный статус
-          statsMessage += `*AWG ${version.toUpperCase()}:*\n`;
+          statsMessage += `📋 *AWG ${version.toUpperCase()}*\n`;
           
           // Определяем статус контейнера
           if (container.restarting) {
@@ -1209,14 +1310,26 @@ export class RouteBot {
           }
           
           statsMessage += '\n';
+          
+          // Добавляем кнопки управления для этой версии
+          const buttons = [];
+          if (container.running) {
+            buttons.push({ text: `⏹ Остановить AWG ${version.toUpperCase()}`, callback_data: `awg_stop_${version}` });
+          } else if (container.stopped) {
+            buttons.push({ text: `▶️ Запустить AWG ${version.toUpperCase()}`, callback_data: `awg_start_${version}` });
+          }
+          
+          if (buttons.length > 0) {
+            keyboard.inline_keyboard.push(buttons);
+          }
         } else {
           // Контейнер не найден
-          statsMessage += `*AWG ${version.toUpperCase()}:*\n`;
+          statsMessage += `📋 *AWG ${version.toUpperCase()}*\n`;
           statsMessage += `❌ Не установлен\n\n`;
         }
       }
 
-      return statsMessage;
+      return { message: statsMessage, keyboard };
 
     } catch (error) {
       logger.error(`Error getting stats for chat ${chatId}:`, error);
@@ -1233,20 +1346,23 @@ export class RouteBot {
       
       // Получаем статистику
       let statsMessage = '';
+      let statsKeyboard = {
+        inline_keyboard: []
+      };
+      
       try {
-        statsMessage = await this.showAwgStats(chatId);
+        const statsResult = await this.showAwgStats(chatId);
+        statsMessage = statsResult.message;
+        statsKeyboard = statsResult.keyboard;
       } catch (error) {
         statsMessage = '❌ Ошибка при получении статистики\n\n';
       }
       
-      const keyboard = {
-        inline_keyboard: [
-          [
-            { text: 'V1', callback_data: 'awg_select_v1' },
-            { text: 'V2', callback_data: 'awg_select_v2' }
-          ]
-        ]
-      };
+      // Добавляем основные кнопки выбора версии
+      statsKeyboard.inline_keyboard.push([
+        { text: '📝 V1', callback_data: 'awg_select_v1' },
+        { text: '📝 V2', callback_data: 'awg_select_v2' }
+      ]);
       
       // Удаляем сообщение о загрузке
       try {
@@ -1259,7 +1375,7 @@ export class RouteBot {
       await this.sendNewMessage(
         chatId,
         `🔐 *Панель администратора*\n\n${statsMessage}Выберите действие:`,
-        { parse_mode: 'Markdown', reply_markup: keyboard }
+        { parse_mode: 'Markdown', reply_markup: statsKeyboard }
       );
     } catch (error) {
       logger.error(`Error showing main menu for chat ${chatId}:`, error);

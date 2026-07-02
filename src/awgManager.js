@@ -1038,4 +1038,92 @@ PersistentKeepalive = 25
       port: c.port
     }));
   }
+
+  /**
+   * Запустить контейнер AWG
+   */
+  async startContainer(version) {
+    try {
+      const containerName = version === 'v1' ? 'amnezia-awg' : 'amnezia-awg2';
+      
+      logger.info(`Starting container ${containerName}...`);
+      
+      // Проверяем существование контейнера
+      const { stdout: allContainers } = await execAsync('docker ps -a --format "{{.Names}}"');
+      if (!allContainers.includes(containerName)) {
+        throw new Error(`Container ${containerName} not found. AWG ${version} is not installed.`);
+      }
+      
+      // Проверяем, запущен ли контейнер
+      const { stdout: runningContainers } = await execAsync('docker ps --format "{{.Names}}"');
+      if (runningContainers.includes(containerName)) {
+        logger.info(`Container ${containerName} is already running`);
+        return {
+          success: true,
+          message: `AWG ${version} уже запущен`,
+          alreadyRunning: true
+        };
+      }
+      
+      // Запускаем контейнер
+      await execAsync(`docker start ${containerName}`);
+      logger.info(`Container ${containerName} started successfully`);
+      
+      // Обновляем информацию о контейнерах
+      await this.initialize();
+      
+      return {
+        success: true,
+        message: `AWG ${version} успешно запущен`,
+        alreadyRunning: false
+      };
+    } catch (error) {
+      logger.error(`Error starting container for ${version}:`, error);
+      throw new Error(`Ошибка запуска AWG ${version}: ${error.message}`);
+    }
+  }
+
+  /**
+   * Остановить контейнер AWG
+   */
+  async stopContainer(version) {
+    try {
+      const containerName = version === 'v1' ? 'amnezia-awg' : 'amnezia-awg2';
+      
+      logger.info(`Stopping container ${containerName}...`);
+      
+      // Проверяем существование контейнера
+      const { stdout: allContainers } = await execAsync('docker ps -a --format "{{.Names}}"');
+      if (!allContainers.includes(containerName)) {
+        throw new Error(`Container ${containerName} not found. AWG ${version} is not installed.`);
+      }
+      
+      // Проверяем, запущен ли контейнер
+      const { stdout: runningContainers } = await execAsync('docker ps --format "{{.Names}}"');
+      if (!runningContainers.includes(containerName)) {
+        logger.info(`Container ${containerName} is already stopped`);
+        return {
+          success: true,
+          message: `AWG ${version} уже остановлен`,
+          alreadyStopped: true
+        };
+      }
+      
+      // Останавливаем контейнер
+      await execAsync(`docker stop ${containerName}`);
+      logger.info(`Container ${containerName} stopped successfully`);
+      
+      // Обновляем информацию о контейнерах
+      await this.initialize();
+      
+      return {
+        success: true,
+        message: `AWG ${version} успешно остановлен`,
+        alreadyStopped: false
+      };
+    } catch (error) {
+      logger.error(`Error stopping container for ${version}:`, error);
+      throw new Error(`Ошибка остановки AWG ${version}: ${error.message}`);
+    }
+  }
 }
