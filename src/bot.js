@@ -869,6 +869,9 @@ export class RouteBot {
       // Get clients with status
       const clients = await this.awgManager.getClientsWithStatus(container.name, version);
 
+      // Get peer names
+      const peerNames = await this.awgManager.getPeerNames(container.name);
+
       // Build message
       let message = `📋 *AWG ${version.toUpperCase()}*\n\n`;
       
@@ -876,12 +879,15 @@ export class RouteBot {
         message += 'Нет клиентов\n\n';
       } else {
         clients.forEach((client) => {
+          const peerName = peerNames[client.ip];
+          const displayName = peerName ? `\`${client.ip}\` (${peerName})` : `\`${client.ip}\``;
+          
           if (client.active) {
             // Для активных показываем время последнего соединения
-            message += `\`${client.ip}\` - ✅ ${client.lastHandshake || 'активен'}\n`;
+            message += `${displayName} - ✅ ${client.lastHandshake || 'активен'}\n`;
           } else {
             // Для неактивных просто крестик
-            message += `\`${client.ip}\` - ❌\n`;
+            message += `${displayName} - ❌\n`;
           }
         });
         message += '\n';
@@ -1695,6 +1701,9 @@ export class RouteBot {
         clientsStats = await this.getClientsStats(container.name, version);
       }
 
+      // Получаем имена пиров
+      const peerNames = await this.awgManager.getPeerNames(container.name);
+
       if (clients.length === 0) {
         // Создаём клавиатуру с кнопками управления даже если нет клиентов
         const keyboard = {
@@ -1755,24 +1764,28 @@ export class RouteBot {
         const stats = clientsStats[ip] || {};
         const lastSeen = stats.lastHandshake || '❌';
         const transfer = stats.transfer || 'нет данных';
+        const peerName = peerNames[ip];
+        
+        // Формируем отображение IP с именем
+        const displayName = peerName ? `${ip} (${peerName})` : ip;
         
         // Если сервер недоступен - показываем причину
         if (!serverAvailable) {
           if (interfaceStatus === 'starting') {
-            clientsMessage += `${ip} ⏳ (интерфейс запускается)\n`;
+            clientsMessage += `${displayName} ⏳ (интерфейс запускается)\n`;
           } else if (interfaceStatus === 'error') {
-            clientsMessage += `${ip} ⚠️ (ошибка интерфейса)\n`;
+            clientsMessage += `${displayName} ⚠️ (ошибка интерфейса)\n`;
           } else if (!containerStatus.running) {
-            clientsMessage += `${ip} ⚠️ (контейнер остановлен)\n`;
+            clientsMessage += `${displayName} ⚠️ (контейнер остановлен)\n`;
           } else {
-            clientsMessage += `${ip} ${serverStatusEmoji} (сервер недоступен)\n`;
+            clientsMessage += `${displayName} ${serverStatusEmoji} (сервер недоступен)\n`;
           }
         } else if (lastSeen === '❌') {
           // Сервер доступен, но клиент неактивен
-          clientsMessage += `${ip} ❌ (клиент неактивен)\n`;
+          clientsMessage += `${displayName} ❌ (клиент неактивен)\n`;
         } else {
           // Сервер доступен и клиент активен - показываем детали
-          clientsMessage += `${ip} ✅\n`;
+          clientsMessage += `${displayName} ✅\n`;
           clientsMessage += `   └ 🕐 ${lastSeen}\n`;
           if (transfer !== 'нет данных') {
             clientsMessage += `   └ 📊 ${transfer}\n`;

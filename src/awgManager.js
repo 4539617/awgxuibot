@@ -913,6 +913,59 @@ PersistentKeepalive = 25
   }
 
   /**
+   * Получить имена пиров из комментариев в конфигурации
+   */
+  async getPeerNames(containerName) {
+    const container = this.availableContainers.find(c => c.name === containerName);
+    if (!container) {
+      throw new Error(`Container ${containerName} not found`);
+    }
+    
+    // Проверяем статус контейнера
+    const containerStatus = await this.checkContainer(container.name);
+    if (!containerStatus.available) {
+      logger.info(`Container ${container.name} is not available, returning empty peer names`);
+      return {};
+    }
+    
+    try {
+      // Читаем полную конфигурацию
+      const { stdout: configContent } = await execAsync(
+        `docker exec ${container.name} cat ${container.configPath}`
+      );
+      
+      const peerNames = {};
+      const lines = configContent.split('\n');
+      
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        
+        // Ищем комментарий с именем пира
+        // Формат: # Peer: <имя> | IP: <ip> | Created/Updated: <дата>
+        const commentMatch = line.match(/^#\s*Peer:\s*(.+?)\s*\|\s*IP:\s*(\d+\.\d+\.\d+\.\d+)/);
+        if (commentMatch) {
+          const peerName = commentMatch[1].trim();
+          const ip = commentMatch[2].trim();
+          peerNames[ip] = peerName;
+        }
+        // Также ищем старый формат без имени: # IP: <ip> | Created: <дата>
+        else {
+          const ipOnlyMatch = line.match(/^#\s*IP:\s*(\d+\.\d+\.\d+\.\d+)/);
+          if (ipOnlyMatch) {
+            const ip = ipOnlyMatch[1].trim();
+            peerNames[ip] = null; // Нет имени
+          }
+        }
+      }
+      
+      return peerNames;
+    } catch (error) {
+      logger.error(`Error getting peer names for ${container.name}:`, error);
+      return {};
+    }
+  }
+
+  /**
    * Переименовать пира (обновить комментарий в конфигурации)
    */
   async renamePeer(containerName, clientIP, newPeerName) {
