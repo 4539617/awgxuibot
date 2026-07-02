@@ -1309,40 +1309,7 @@ export class RouteBot {
 
       let clientsMessage = `📋 *Подробнее Клиенты ${version.toUpperCase()}*\n\n`;
       
-      // Новый формат статуса сервера
-      clientsMessage += `📦 *Состояние сервера:*\n`;
-      clientsMessage += `├ Контейнер: ${containerStatus.running ? '✅' : '❌'}\n`;
-      clientsMessage += `├ Интерфейс: ${interfaceStatus === 'ready' ? '✅' : interfaceStatus === 'starting' ? '⏳' : '❌'}\n`;
-      clientsMessage += `└ WireGuard: ${serverAvailable ? '✅ Готов' : interfaceStatus === 'starting' ? '⏳ Запускается' : '❌ Недоступен'}\n`;
-      
-      // Добавляем предупреждения если сервер недоступен
-      if (!serverAvailable) {
-        if (interfaceStatus === 'starting') {
-          clientsMessage += `\n⏳ *Сервер перезапускается...*\n`;
-          clientsMessage += `Статус клиентов будет доступен через несколько секунд\n`;
-        } else if (interfaceStatus === 'error') {
-          clientsMessage += `\n⚠️ *Требуется проверка сервера*\n`;
-        } else if (!containerStatus.running) {
-          clientsMessage += `\n⚠️ *Контейнер остановлен*\n`;
-        }
-      }
-      
-      clientsMessage += `\nВсего: ${clients.length}\n`;
-      
-      // Добавляем временную метку ТОЛЬКО когда сервер доступен
-      // Это позволяет отслеживать состояние по поведению кнопки "Обновить":
-      // - Новое окно = интерфейс не готов (текст не меняется без метки)
-      // - Обновление в том же окне = интерфейс готов (текст меняется с меткой)
-      if (serverAvailable) {
-        const timestamp = new Date().toLocaleTimeString('ru-RU', {
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit'
-        });
-        clientsMessage += `🕐 Обновлено: ${timestamp}\n`;
-      }
-      
-      clientsMessage += `\n`;
+      clientsMessage += `Всего: ${clients.length}\n\n`;
       
       // Создаём кнопки для каждого клиента
       const keyboard = {
@@ -1396,6 +1363,7 @@ export class RouteBot {
         { text: '🔙 Назад', callback_data: `awg_select_${version}` }
       ]);
 
+      // Выбираем метод отправки в зависимости от shouldUpdate
       if (shouldUpdate) {
         // При обновлении передаем callbackQueryId для показа popup при создании нового окна
         await this.updateMessage(chatId, clientsMessage, {
