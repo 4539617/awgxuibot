@@ -913,6 +913,79 @@ PersistentKeepalive = 25
   }
 
   /**
+   * Переименовать пира (обновить комментарий в конфигурации)
+   */
+  async renamePeer(containerName, clientIP, newPeerName) {
+    const container = this.availableContainers.find(c => c.name === containerName);
+    if (!container) {
+      throw new Error(`Container ${containerName} not found`);
+    }
+    
+    logger.info(`Renaming peer ${clientIP} to "${newPeerName}" in ${containerName}`);
+    
+    try {
+      // Получаем конфигурацию сервера из контейнера
+      const { stdout: serverConfig } = await execAsync(
+        `docker exec ${container.name} cat ${container.configPath}`
+      );
+      
+      // Ищем секцию [Peer] для этого IP
+      const peerRegex = new RegExp(
+        `(#[^\\n]*\\n)?\\[Peer\\][\\s\\S]*?AllowedIPs\\s*=\\s*${clientIP.replace(/\./g, '\\.')}\\/32`,
+        'g'
+      );
+      
+      const peerMatch = serverConfig.match(peerRegex);
+      if (!peerMatch || peerMatch.length === 0) {
+        throw new Error(`Client with IP ${clientIP} not found in server config`);
+      }
+      
+      const oldPeerSection = peerMatch[0];
+      
+      // Создаем новый комментарий
+      const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
+      const newComment = `# Peer: ${newPeerName} | IP: ${clientIP} | Updated: ${timestamp}`;
+      
+      // Удаляем старый комментарий если есть
+      const peerSectionWithoutComment = oldPeerSection.replace(/^#[^\n]*\n/, '');
+      
+      // Создаем новую секцию с новым комментарием
+      const newPeerSection = `${newComment}\n${peerSectionWithoutComment}`;
+      
+      // Заменяем в конфигурации
+      const newConfig = serverConfig.replace(oldPeerSection, newPeerSection);
+      
+      // Сохраняем обновленную конфигурацию во временный файл
+      const tempFile = `/tmp/${containerName}_rename_${Date.now()}.conf`;
+      await execAsync(`echo '${newConfig.replace(/'/g, "'\\''")}' > ${tempFile}`);
+      
+      // Копируем обновленную конфигурацию в контейнер
+      await execAsync(`docker cp ${tempFile} ${container.name}:${container.configPath}`);
+      
+      // Удаляем временный файл
+      await execAsync(`rm -f ${tempFile}`);
+      
+      // Перезапускаем контейнер для применения изменений
+      logger.info(`Restarting container ${container.name} after renaming peer...`);
+      await execAsync(`docker restart ${container.name}`);
+      
+      logger.info(`Successfully renamed peer ${clientIP} to "${newPeerName}"`);
+      
+      // Проверяем здоровье сервера после перезапуска
+      const healthStatus = await this.checkServerHealthAfterChange(container.name, 15, 1000);
+      
+      return {
+        success: true,
+        healthStatus
+      };
+      
+    } catch (error) {
+      logger.error(`Error renaming peer ${clientIP} in ${containerName}:`, error);
+      throw error;
+    }
+  }
+
+  /**
    * Восстановить конфигурацию клиента по IP
    */
   async regenerateClientConfig(containerName, clientIP, vpsLabel = null) {

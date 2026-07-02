@@ -97,7 +97,7 @@ export class RouteBot {
           await this.showClientSelectionMenu(chatId, version, false);
         } else if (data.startsWith('awg_gen_next_')) {
           const version = data.replace('awg_gen_next_', '');
-          await this.generateAwgConfig(chatId, version, config.serverLabel);
+          await this.requestPeerName(chatId, version, null, 'next');
         } else if (data.startsWith('awg_gen_by_number_')) {
           const version = data.replace('awg_gen_by_number_', '');
           await this.requestIpNumber(chatId, version);
@@ -154,6 +154,23 @@ export class RouteBot {
         
         await this.resendClientConfig(chatId, version, ip);
       }
+      // Rename client callbacks
+      else if (data.startsWith('rename_')) {
+        await this.bot.answerCallbackQuery(query.id);
+        
+        // Verify admin access
+        if (!this.isAdmin(userId)) {
+          logger.warn(`Unauthorized rename callback from user ${userId}`);
+          return;
+        }
+        
+        // Parse: rename_v1_10.8.1.1
+        const parts = data.split('_');
+        const version = parts[1];
+        const ip = parts.slice(2).join('.');
+        
+        await this.requestPeerRename(chatId, version, ip);
+      }
       // Delete client callbacks
       else if (data.startsWith('delete_')) {
         await this.bot.answerCallbackQuery(query.id);
@@ -187,6 +204,34 @@ export class RouteBot {
         const ip = parts.slice(1).join('.');
         
         await this.confirmDeleteClient(chatId, version, ip);
+      }
+      // Skip peer name callbacks
+      else if (data.startsWith('skip_peer_name_')) {
+        await this.bot.answerCallbackQuery(query.id);
+        
+        // Verify admin access
+        if (!this.isAdmin(userId)) {
+          logger.warn(`Unauthorized skip peer name callback from user ${userId}`);
+          return;
+        }
+        
+        // Parse: skip_peer_name_v1_next_next or skip_peer_name_v1_by_number_5
+        const parts = data.replace('skip_peer_name_', '').split('_');
+        const version = parts[0];
+        const mode = parts[1];
+        const ipNumberOrNext = parts[2];
+        
+        // Очищаем сессию
+        if (this.vpsLabelSessions.has(chatId)) {
+          this.vpsLabelSessions.delete(chatId);
+        }
+        
+        if (mode === 'next') {
+          await this.generateAwgConfig(chatId, version, config.serverLabel, null);
+        } else if (mode === 'by' && parts[2] === 'number') {
+          const ipNumber = parseInt(parts[3]);
+          await this.generateAwgConfigByNumber(chatId, version, ipNumber, config.serverLabel, null);
+        }
       }
     });
 
@@ -289,6 +334,18 @@ export class RouteBot {
       const vpsSession = this.vpsLabelSessions.get(userId);
       if (vpsSession && vpsSession.waitingForIpNumber) {
         await this.handleIpNumberInput(chatId, userId, text, vpsSession.version);
+        return;
+      }
+
+      // Check if user is in peer name input mode
+      if (vpsSession && vpsSession.waitingForPeerName) {
+        await this.handlePeerNameInput(chatId, userId, text, vpsSession.version, vpsSession.ipNumber, vpsSession.mode);
+        return;
+      }
+
+      // Check if user is in peer rename input mode
+      if (vpsSession && vpsSession.waitingForPeerRename) {
+        await this.handlePeerRenameInput(chatId, userId, text, vpsSession.version, vpsSession.ip);
         return;
       }
 
@@ -935,6 +992,165 @@ export class RouteBot {
     }
   }
 
+  async requestPeerName(chatId, version, ipNumber = null, mode = 'next') {
+    try {
+      logger.info(`Requesting peer name for ${version} from chat ${chatId}, mode: ${mode}, ipNumber: ${ipNumber}`);
+      
+      // Сохраняем сессию
+      this.vpsLabelSessions.set(chatId, {
+        waitingForPeerName: true,
+        version: version,
+        ipNumber: ipNumber,
+        mode: mode
+      });
+      
+      const ipInfo = ipNumber ? ` для IP \`10.8.1.${ipNumber}\`` : '';
+      
+      await this.sendOrEditMessage(
+        chatId,
+        `👤 *Введите имя пира*${ipInfo}\n\n` +
+        `Это имя будет добавлено в комментарий на сервере для идентификации.\n\n` +
+        `Примеры:\n` +
+        `• \`John iPhone\`\n` +
+        `• \`Maria Laptop\`\n` +
+        `• \`Office PC\`\n\n` +
+        `Или отправьте \`-\` чтобы пропустить`,
+        {
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [[
+              { text: '⏭️ Пропустить', callback_data: `skip_peer_name_${version}_${mode}_${ipNumber || 'next'}` },
+              { text: '🔙 Назад', callback_data: `awg_select_${version}` }
+            ]]
+          }
+        }
+      );
+    } catch (error) {
+      logger.error(`Error requesting peer name for chat ${chatId}:`, error);
+      this.bot.sendMessage(chatId, `❌ Ошибка: ${error.message}`);
+    }
+  }
+
+  async requestPeerRename(chatId, version, ip) {
+    try {
+      logger.info(`Requesting peer rename for ${ip} (${version}) from chat ${chatId}`);
+      
+      // Сохраняем сессию
+      this.vpsLabelSessions.set(chatId, {
+        waitingForPeerRename: true,
+        version: version,
+        ip: ip
+      });
+      
+      await this.sendOrEditMessage(
+        chatId,
+        `✏️ *Переименование пира*\n\n` +
+        `IP: \`${ip}\`\n` +
+        `Версия: ${version.toUpperCase()}\n\n` +
+        `Введите новое имя для этого пира:\n\n` +
+        `Примеры:\n` +
+        `• \`John iPhone\`\n` +
+        `• \`Maria Laptop\`\n` +
+        `• \`Office PC\`\n\n` +
+        `Или отправьте \`-\` чтобы удалить имя`,
+        {
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [[
+              { text: '🔙 Назад', callback_data: `awg_clients_${version}` }
+            ]]
+          }
+        }
+      );
+    } catch (error) {
+      logger.error(`Error requesting peer rename for chat ${chatId}:`, error);
+      this.bot.sendMessage(chatId, `❌ Ошибка: ${error.message}`);
+    }
+  }
+
+  async handlePeerRenameInput(chatId, userId, text, version, ip) {
+    try {
+      // Очищаем сессию
+      this.vpsLabelSessions.delete(userId);
+      
+      // Валидация имени
+      const newPeerName = text.trim();
+      
+      // Если пользователь ввел "-", удаляем имя (оставляем только IP)
+      const finalPeerName = (newPeerName === '-') ? null : newPeerName;
+      
+      if (finalPeerName && finalPeerName.length === 0) {
+        await this.bot.sendMessage(
+          chatId,
+          `❌ Имя не может быть пустым. Введите имя или \`-\` чтобы удалить имя.\n\n` +
+          `Попробуйте снова через /start → Конфигурации`
+        );
+        return;
+      }
+      
+      if (finalPeerName && finalPeerName.length > 50) {
+        await this.bot.sendMessage(
+          chatId,
+          `❌ Имя слишком длинное (максимум 50 символов).\n\n` +
+          `Попробуйте снова через /start → Конфигурации`
+        );
+        return;
+      }
+      
+      logger.info(`Renaming peer ${ip} to "${finalPeerName || 'no name'}" for ${version} from chat ${chatId}`);
+      
+      // Показываем сообщение о процессе
+      const processingMsg = await this.bot.sendMessage(
+        chatId,
+        `⏳ Переименовываю пира ${ip}...\n` +
+        `Это может занять несколько секунд...`
+      );
+      
+      // Получаем контейнер
+      const container = this.awgManager.availableContainers.find(c => c.version === version);
+      if (!container) {
+        await this.bot.deleteMessage(chatId, processingMsg.message_id);
+        await this.bot.sendMessage(chatId, `❌ Контейнер ${version} не найден`);
+        return;
+      }
+      
+      // Переименовываем пира
+      const result = await this.awgManager.renamePeer(container.name, ip, finalPeerName || ip);
+      
+      // Удаляем сообщение о процессе
+      await this.bot.deleteMessage(chatId, processingMsg.message_id);
+      
+      // Отправляем результат
+      let statusMsg = finalPeerName 
+        ? `✅ Пир ${ip} переименован в "${finalPeerName}"\n\n`
+        : `✅ Имя пира ${ip} удалено\n\n`;
+      
+      if (result.healthStatus && result.healthStatus.interfaceReady) {
+        statusMsg += `📊 Всего клиентов: ${result.healthStatus.peerCount}`;
+      }
+      
+      if (result.healthStatus && !result.healthStatus.healthy) {
+        statusMsg += `\n\n⚠️ Обнаружены проблемы, проверьте статус`;
+      }
+      
+      const keyboard = {
+        inline_keyboard: [
+          [{ text: '📋 Список клиентов', callback_data: `awg_clients_${version}` }],
+          [{ text: '🏠 Главное меню', callback_data: 'main_menu' }]
+        ]
+      };
+      
+      await this.bot.sendMessage(chatId, statusMsg, {
+        parse_mode: 'Markdown',
+        reply_markup: keyboard
+      });
+      
+    } catch (error) {
+      logger.error(`Error handling peer rename input for chat ${chatId}:`, error);
+      this.bot.sendMessage(chatId, `❌ Ошибка при переименовании: ${error.message}`);
+    }
+  }
+
   async handleVpsLabelInput(chatId, userId, label, version, mode = 'next') {
     try {
       // Получаем сессию для проверки ipNumber
@@ -982,9 +1198,6 @@ export class RouteBot {
 
   async handleIpNumberInput(chatId, userId, text, version) {
     try {
-      // Очищаем сессию
-      this.vpsLabelSessions.delete(userId);
-      
       // Валидация номера
       const ipNumber = parseInt(text.trim());
       
@@ -994,6 +1207,8 @@ export class RouteBot {
           `❌ Некорректный номер. Введите число от 1 до 254.\n\n` +
           `Попробуйте снова через /start → Конфигурации`
         );
+        // Очищаем сессию
+        this.vpsLabelSessions.delete(userId);
         return;
       }
       
@@ -1005,23 +1220,79 @@ export class RouteBot {
           `Используйте номера от 2 до 254.\n` +
           `Попробуйте снова через /start → Конфигурации`
         );
+        // Очищаем сессию
+        this.vpsLabelSessions.delete(userId);
         return;
       }
       
       logger.info(`IP number accepted: ${ipNumber} for ${version} from chat ${chatId}`);
       
-      // Генерируем конфигурацию с меткой сервера из config
-      await this.generateAwgConfigByNumber(chatId, version, ipNumber, config.serverLabel);
+      // Запрашиваем имя пира
+      await this.requestPeerName(chatId, version, ipNumber, 'by_number');
       
     } catch (error) {
       logger.error(`Error handling IP number input for chat ${chatId}:`, error);
       this.bot.sendMessage(chatId, `❌ Ошибка: ${error.message}`);
+      // Очищаем сессию
+      this.vpsLabelSessions.delete(userId);
     }
   }
 
-  async generateAwgConfig(chatId, version, vpsLabel = null) {
+  async handlePeerNameInput(chatId, userId, text, version, ipNumber, mode) {
     try {
-      logger.info(`Generating ${version} config for chat ${chatId}`);
+      // Очищаем сессию
+      this.vpsLabelSessions.delete(userId);
+      
+      // Валидация имени
+      const peerName = text.trim();
+      
+      // Если пользователь ввел "-", пропускаем имя
+      if (peerName === '-') {
+        logger.info(`Peer name skipped for ${version} from chat ${chatId}`);
+        if (mode === 'by_number' && ipNumber) {
+          await this.generateAwgConfigByNumber(chatId, version, ipNumber, config.serverLabel, null);
+        } else {
+          await this.generateAwgConfig(chatId, version, config.serverLabel, null);
+        }
+        return;
+      }
+      
+      if (!peerName || peerName.length === 0) {
+        await this.bot.sendMessage(
+          chatId,
+          `❌ Имя не может быть пустым. Введите имя или \`-\` чтобы пропустить.\n\n` +
+          `Попробуйте снова через /start → Конфигурации`
+        );
+        return;
+      }
+      
+      if (peerName.length > 50) {
+        await this.bot.sendMessage(
+          chatId,
+          `❌ Имя слишком длинное (максимум 50 символов).\n\n` +
+          `Попробуйте снова через /start → Конфигурации`
+        );
+        return;
+      }
+      
+      logger.info(`Peer name accepted: "${peerName}" for ${version} from chat ${chatId}, mode: ${mode}, ipNumber: ${ipNumber}`);
+      
+      // Генерируем конфигурацию с именем пира
+      if (mode === 'by_number' && ipNumber) {
+        await this.generateAwgConfigByNumber(chatId, version, ipNumber, config.serverLabel, peerName);
+      } else {
+        await this.generateAwgConfig(chatId, version, config.serverLabel, peerName);
+      }
+      
+    } catch (error) {
+      logger.error(`Error handling peer name input for chat ${chatId}:`, error);
+      this.bot.sendMessage(chatId, `❌ Ошибка: ${error.message}`);
+    }
+  }
+
+  async generateAwgConfig(chatId, version, vpsLabel = null, peerName = null) {
+    try {
+      logger.info(`Generating ${version} config for chat ${chatId}${peerName ? ` with peer name: ${peerName}` : ''}`);
       
       // Check anti-flood
       const userId = chatId;
@@ -1044,7 +1315,7 @@ export class RouteBot {
       );
 
       // Generate config
-      const result = await this.awgManager.generateClientConfig(version, vpsLabel);
+      const result = await this.awgManager.generateClientConfig(version, vpsLabel, peerName);
 
       // Delete processing message
       await this.bot.deleteMessage(chatId, processingMsg.message_id);
@@ -1090,9 +1361,9 @@ export class RouteBot {
     }
   }
 
-  async generateAwgConfigByNumber(chatId, version, ipNumber, vpsLabel = null) {
+  async generateAwgConfigByNumber(chatId, version, ipNumber, vpsLabel = null, peerName = null) {
     try {
-      logger.info(`Generating ${version} config by number ${ipNumber} for chat ${chatId}`);
+      logger.info(`Generating ${version} config by number ${ipNumber} for chat ${chatId}${peerName ? ` with peer name: ${peerName}` : ''}`);
       
       // Check anti-flood
       const userId = chatId;
@@ -1115,7 +1386,7 @@ export class RouteBot {
       );
 
       // Generate config by number
-      const result = await this.awgManager.generateClientConfigByNumber(version, ipNumber, vpsLabel);
+      const result = await this.awgManager.generateClientConfigByNumber(version, ipNumber, vpsLabel, peerName);
 
       // Delete processing message
       await this.bot.deleteMessage(chatId, processingMsg.message_id);
@@ -1508,6 +1779,10 @@ export class RouteBot {
           {
             text: `📤 ${ip}`,
             callback_data: `resend_${version}_${ip}`
+          },
+          {
+            text: `✏️ ${ip}`,
+            callback_data: `rename_${version}_${ip}`
           },
           {
             text: `🗑️ ${ip}`,
