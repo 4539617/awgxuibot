@@ -77,6 +77,10 @@ data/
 *.sqlite
 *.sqlite3
 
+# Panel configurations (contains sensitive credentials)
+panels.yaml
+config.yaml
+
 # Backup files
 *.bak
 *.backup

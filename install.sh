@@ -5,26 +5,14 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+BOLD='\033[1m'
 NC='\033[0m'
 
 # Константы
 WORK_DIR="/opt/awgxuibot"
-
-# ============================================
-# НАСТРОЙКИ REALITY ПО УМОЛЧАНИЮ
-# Измените эти значения перед установкой
-# ============================================
 DEFAULT_REALITY_SNI="www.nvidia.com"
 DEFAULT_REALITY_FINGERPRINT="edge"  # Варианты: edge, chrome, firefox, safari
 
-# ============================================
-# НАСТРОЙКИ SSL СЕРТИФИКАТА
-# ============================================
-# Включить проверку и переиспользование существующих SSL сертификатов
-# true  - проверять существующие сертификаты и предлагать их использовать (рекомендуется)
-# false - всегда запрашивать новый сертификат при установке 3x-ui (может привести к Rate Limit)
-ENABLE_CERT_REUSE="true"
-# ============================================
 
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}   awgbot + xuibot Installer${NC}"
@@ -160,6 +148,101 @@ install_docker() {
     
     echo -e "${GREEN}✅ Используется: $DOCKER_COMPOSE_CMD${NC}"
 }
+
+# Функция установки Node.js
+install_nodejs() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Установка Node.js${NC}"
+    echo -e "${BLUE}========================================${NC}"
+    
+    # Проверяем, установлен ли Node.js
+    if command -v node &> /dev/null; then
+        NODE_VERSION=$(node --version)
+        echo -e "${GREEN}✅ Node.js уже установлен: ${NODE_VERSION}${NC}"
+        
+        # Проверяем npm
+        if command -v npm &> /dev/null; then
+            NPM_VERSION=$(npm --version)
+            echo -e "${GREEN}✅ npm установлен: v${NPM_VERSION}${NC}"
+        else
+            echo -e "${YELLOW}⚠️  npm не найден, переустановка Node.js...${NC}"
+        fi
+        
+        # Если всё в порядке, выходим
+        if command -v npm &> /dev/null; then
+            return 0
+        fi
+    fi
+    
+    echo -e "${YELLOW}📦 Установка Node.js LTS...${NC}"
+    
+    # Определяем систему
+    if command -v apt-get &> /dev/null; then
+        # Debian/Ubuntu
+        echo -e "${YELLOW}🔍 Обнаружена система на базе Debian/Ubuntu${NC}"
+        
+        # Устанавливаем curl если не установлен
+        if ! command -v curl &> /dev/null; then
+            echo -e "${YELLOW}📦 Установка curl...${NC}"
+            apt-get update -qq && apt-get install -y curl -qq
+        fi
+        
+        # Добавляем репозиторий NodeSource для Node.js 20.x LTS
+        echo -e "${YELLOW}📦 Добавление репозитория NodeSource...${NC}"
+        curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+        
+        # Устанавливаем Node.js
+        echo -e "${YELLOW}📦 Установка Node.js...${NC}"
+        apt-get install -y nodejs
+        
+    elif command -v yum &> /dev/null; then
+        # CentOS/RHEL
+        echo -e "${YELLOW}🔍 Обнаружена система на базе CentOS/RHEL${NC}"
+        
+        # Добавляем репозиторий NodeSource
+        curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -
+        
+        # Устанавливаем Node.js
+        yum install -y nodejs
+        
+    elif command -v dnf &> /dev/null; then
+        # Fedora
+        echo -e "${YELLOW}🔍 Обнаружена система Fedora${NC}"
+        
+        # Добавляем репозиторий NodeSource
+        curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -
+        
+        # Устанавливаем Node.js
+        dnf install -y nodejs
+        
+    else
+        echo -e "${RED}❌ Неподдерживаемая система${NC}"
+        echo -e "${YELLOW}Установите Node.js вручную:${NC}"
+        echo -e "${BLUE}  https://nodejs.org/en/download/${NC}"
+        return 1
+    fi
+    
+    # Проверяем установку
+    if command -v node &> /dev/null && command -v npm &> /dev/null; then
+        NODE_VERSION=$(node --version)
+        NPM_VERSION=$(npm --version)
+        echo -e "${GREEN}✅ Node.js успешно установлен: ${NODE_VERSION}${NC}"
+        echo -e "${GREEN}✅ npm установлен: v${NPM_VERSION}${NC}"
+        
+        # Устанавливаем зависимости проекта если находимся в рабочей директории
+        if [ -f "package.json" ]; then
+            echo -e "${YELLOW}📦 Установка зависимостей проекта...${NC}"
+            npm install
+            echo -e "${GREEN}✅ Зависимости проекта установлены${NC}"
+        fi
+        
+        return 0
+    else
+        echo -e "${RED}❌ Не удалось установить Node.js${NC}"
+        return 1
+    fi
+}
+
 # Функция проверки и установки Git
 check_and_install_git() {
     if ! command -v git &> /dev/null; then
@@ -193,136 +276,442 @@ create_directories() {
     mkdir -p output logs data
 }
 
-# Функция создания .env если не существует
-create_env_if_not_exists() {
-    if [ ! -f ".env" ]; then
-        echo -e "${YELLOW}📝 Создание .env файла с дефолтными значениями...${NC}"
+# Функция создания config.yaml если не существует
+create_config_if_not_exists() {
+    if [ ! -f "config.yaml" ]; then
+        echo -e "${YELLOW}📝 Создание config.yaml из примера...${NC}"
+        
+        if [ ! -f "config.yaml.example" ]; then
+            echo -e "${RED}❌ config.yaml.example не найден${NC}"
+            return 1
+        fi
+        
+        # Копируем пример
+        cp config.yaml.example config.yaml
         
         # Получаем IP сервера
-        SERVER_IP=$(curl -s ifconfig.me)
+        SERVER_IP=$(curl -s -4 https://api4.ipify.org 2>/dev/null || curl -s -4 https://ipv4.icanhazip.com 2>/dev/null || curl -s -4 ifconfig.me 2>/dev/null || echo "")
         
-        cat > .env << EOF
-# Server Configuration
-SERVER_PORT=443
-
-# 3x-ui Panel Configuration
-API_TIMEOUT=30
-
-# Transport Configuration
-XHTTP_MODE=auto
-
-# TLS Configuration
-TLS_FINGERPRINT=${DEFAULT_REALITY_FINGERPRINT}
-TLS_ALPN=http/1.1
-
-# Traffic Limits
-MAX_TRAFFIC_GB=1000
-MAX_DAYS=3650
-MIN_DAYS=1
-DEFAULT_TRAFFIC_GB=100
-DEFAULT_DAYS=30
-
-# Database Configuration
-DB_PATH=/app/data/bot_users.db
-DB_BACKUP_ENABLED=true
-DB_BACKUP_INTERVAL=24
-
-# Logging Configuration
-LOG_LEVEL=INFO
-LOG_FILE_ENABLED=true
-LOG_FILE_PATH=/app/logs/bot.log
-LOG_MAX_SIZE_MB=10
-LOG_BACKUP_COUNT=5
-
-# Dynamic parameters
-XUI_BOT_TOKEN=
-AWG_BOT_TOKEN=
-ADMIN_IDS=
-XUI_URL=
-XUI_USERNAME=
-XUI_PASSWORD=
-XUI_DB_PATH=/etc/x-ui/x-ui.db
-XUI_VERSION=
-REALITY_PUBLIC_KEY=
-REALITY_PRIVATE_KEY=
-REALITY_SHORT_ID=
-REALITY_SNI=${DEFAULT_REALITY_SNI}
-REALITY_FINGERPRINT=${DEFAULT_REALITY_FINGERPRINT}
-TRANSPORT=
-SECURITY=reality
-TLS_SNI=
-INBOUND_ID=1
-ALLOW_USER_DNS_QUERIES=true
-SERVER_ADDRESS=${SERVER_IP}
-SERVER_IP=${SERVER_IP}
-
-EOF
-        echo -e "${GREEN}✅ .env файл создан с дефолтными значениями${NC}"
-    fi
-}
-
-# Функция обновления значения в .env
-update_env_value() {
-    local key=$1
-    local value=$2
-    
-    if grep -q "^${key}=" .env 2>/dev/null; then
-        # Обновляем существующее значение
-        sed -i "s|^${key}=.*|${key}=${value}|" .env
-    else
-        # Убеждаемся, что файл заканчивается переносом строки
-        [ -n "$(tail -c1 .env)" ] && echo "" >> .env
-        # Добавляем новое значение без лишнего переноса
-        printf "%s=%s\n" "${key}" "${value}" >> .env
-    fi
-    
-    # Если обновляется XUI_URL, автоматически обновляем SERVER_ADDRESS и TLS_SNI
-    if [ "$key" = "XUI_URL" ] && [ -n "$value" ]; then
-        # Извлекаем домен/IP из URL (например: https://websrvinfo.run:48531/path -> websrvinfo.run)
-        local domain=$(echo "$value" | sed -E 's|^https?://([^:/]+).*|\1|')
+        # Обновляем server_address и server_ip в локальной панели
+        check_yq || return 1
         
-        if [ -n "$domain" ] && [ "$domain" != "localhost" ] && [ "$domain" != "127.0.0.1" ]; then
-            # Проверяем, является ли это доменом (не IP адресом)
-            # IP адрес содержит только цифры и точки
-            if [[ ! "$domain" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-                # Это домен, обновляем SERVER_ADDRESS и TLS_SNI
-                echo -e "${YELLOW}🔄 Обнаружен домен в XUI_URL: ${domain}${NC}"
-                
-                # Получаем текущий SERVER_ADDRESS
-                local current_server_address=$(get_env_value "SERVER_ADDRESS")
-                
-                # Обновляем SERVER_ADDRESS если он отличается от домена
-                if [ "$current_server_address" != "$domain" ]; then
-                    echo -e "${YELLOW}🔄 Обновление SERVER_ADDRESS: ${current_server_address} -> ${domain}${NC}"
-                    if grep -q "^SERVER_ADDRESS=" .env 2>/dev/null; then
-                        sed -i "s|^SERVER_ADDRESS=.*|SERVER_ADDRESS=${domain}|" .env
-                    else
-                        echo "SERVER_ADDRESS=${domain}" >> .env
-                    fi
-                fi
-                
-                # Обновляем TLS_SNI если он пустой или отличается
-                local current_tls_sni=$(get_env_value "TLS_SNI")
-                if [ -z "$current_tls_sni" ] || [ "$current_tls_sni" != "$domain" ]; then
-                    echo -e "${YELLOW}🔄 Обновление TLS_SNI: ${current_tls_sni} -> ${domain}${NC}"
-                    if grep -q "^TLS_SNI=" .env 2>/dev/null; then
-                        sed -i "s|^TLS_SNI=.*|TLS_SNI=${domain}|" .env
-                    else
-                        echo "TLS_SNI=${domain}" >> .env
-                    fi
-                fi
-            else
-                # Это IP адрес, не обновляем
-                echo -e "${BLUE}ℹ️  Обнаружен IP адрес в XUI_URL: ${domain}, SERVER_ADDRESS и TLS_SNI не изменяются${NC}"
-            fi
+        local panel_id=$(get_local_panel_id)
+        if [ -n "$panel_id" ]; then
+            yq eval -i ".panels.${panel_id}.server_address = \"${SERVER_IP}\"" config.yaml
+            yq eval -i ".panels.${panel_id}.server_ip = \"${SERVER_IP}\"" config.yaml
+            echo -e "${GREEN}✅ config.yaml создан с IP сервера: ${SERVER_IP}${NC}"
+        else
+            echo -e "${GREEN}✅ config.yaml создан из примера${NC}"
         fi
     fi
 }
 
-# Функция получения значения из .env
-get_env_value() {
+
+# ============================================
+# ФУНКЦИИ ДЛЯ РАБОТЫ С CONFIG.YAML
+# ============================================
+
+# Проверка наличия yq (YAML processor)
+check_yq() {
+    if ! command -v yq &> /dev/null; then
+        echo -e "${YELLOW}📦 Установка yq (YAML processor)...${NC}"
+        
+        # Определяем архитектуру
+        ARCH=$(uname -m)
+        case $ARCH in
+            x86_64)
+                YQ_ARCH="amd64"
+                ;;
+            aarch64|arm64)
+                YQ_ARCH="arm64"
+                ;;
+            armv7l)
+                YQ_ARCH="arm"
+                ;;
+            *)
+                echo -e "${RED}❌ Неподдерживаемая архитектура: $ARCH${NC}"
+                return 1
+                ;;
+        esac
+        
+        # Скачиваем и устанавливаем yq
+        YQ_VERSION="v4.35.1"
+        wget -q "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_${YQ_ARCH}" -O /usr/local/bin/yq
+        chmod +x /usr/local/bin/yq
+        
+        if command -v yq &> /dev/null; then
+            echo -e "${GREEN}✅ yq установлен${NC}"
+        else
+            echo -e "${RED}❌ Не удалось установить yq${NC}"
+            return 1
+        fi
+    fi
+    return 0
+}
+
+# Получить ID локальной панели из config.yaml
+get_local_panel_id() {
+    if [ ! -f "config.yaml" ]; then
+        echo ""
+        return 1
+    fi
+    
+    check_yq || return 1
+    
+    # Ищем панель с is_local: true
+    local panel_id=$(yq eval '.panels | to_entries | .[] | select(.value.is_local == true) | .key' config.yaml 2>/dev/null | head -1)
+    
+    # ВАЖНО: НЕ используем default_panel как fallback!
+    # Инсталлятор должен работать ТОЛЬКО с локальной панелью
+    if [ -z "$panel_id" ]; then
+        echo -e "${YELLOW}⚠️  Локальная (is_local: true) не найдена в config.yaml${NC}" >&2
+        echo ""
+        return 1
+    fi
+    
+    echo "$panel_id"
+}
+
+# Оборачивает IP в скобки если это IPv6, чтобы URL был валидным (RFC 3986)
+format_host_for_url() {
+    local ip="$1"
+    if [[ "$ip" == *:* ]]; then
+        echo "[${ip}]"
+    else
+        echo "$ip"
+    fi
+}
+
+# Добавить локальную панель в config.yaml
+add_local_panel_to_config() {
+    local xui_version=$1
+    local xui_url=$2
+    local xui_username=$3
+    local xui_password=$4
+    local server_ip=$5
+    
+    # Проверяем наличие config.yaml
+    if [ ! -f "config.yaml" ]; then
+        echo -e "${YELLOW}⚠️  config.yaml не найден, создаем из примера...${NC}"
+        if [ -f "config.yaml.example" ]; then
+            cp config.yaml.example config.yaml
+        else
+            echo -e "${RED}❌ config.yaml.example не найден${NC}"
+            return 1
+        fi
+    fi
+    
+    check_yq || return 1
+    
+    # Проверяем, есть ли уже локальная панель
+    local existing_panel=$(get_local_panel_id 2>/dev/null)
+    
+    if [ -n "$existing_panel" ]; then
+        echo -e "${YELLOW}ℹ️  Локальная панель уже существует: ${existing_panel}${NC}"
+        echo -e "${YELLOW}ℹ️  Обновляем данные существующей панели${NC}"
+        return 0
+    fi
+    
+    # Генерируем уникальный ID для новой панели
+    local panel_id="local_panel"
+    local counter=1
+    
+    # Проверяем, существует ли панель с таким ID
+    while yq eval ".panels.${panel_id}" config.yaml 2>/dev/null | grep -qv "null"; do
+        panel_id="local_panel${counter}"
+        counter=$((counter + 1))
+    done
+    
+    echo -e "${GREEN}✅ Создание новой локальной панели: ${panel_id}${NC}"
+    
+    # Добавляем новую панель в config.yaml
+    yq eval -i ".panels.${panel_id}.alias = \"Локальная\"" config.yaml
+    yq eval -i ".panels.${panel_id}.enabled = true" config.yaml
+    yq eval -i ".panels.${panel_id}.is_local = true" config.yaml
+    yq eval -i ".panels.${panel_id}.xui_version = \"${xui_version}\"" config.yaml
+    yq eval -i ".panels.${panel_id}.xui_url = \"${xui_url}\"" config.yaml
+    yq eval -i ".panels.${panel_id}.xui_username = \"${xui_username}\"" config.yaml
+    yq eval -i ".panels.${panel_id}.xui_password = \"${xui_password}\"" config.yaml
+    yq eval -i ".panels.${panel_id}.xui_api_token = \"\"" config.yaml
+    yq eval -i ".panels.${panel_id}.xui_db_path = \"/etc/x-ui/x-ui.db\"" config.yaml
+    yq eval -i ".panels.${panel_id}.inbound_id = \"1\"" config.yaml
+    yq eval -i ".panels.${panel_id}.server_address = \"${server_ip}\"" config.yaml
+    yq eval -i ".panels.${panel_id}.server_ip = \"${server_ip}\"" config.yaml
+    yq eval -i ".panels.${panel_id}.transport = \"tcp\"" config.yaml
+    yq eval -i ".panels.${panel_id}.security = \"reality\"" config.yaml
+    yq eval -i ".panels.${panel_id}.tls_sni = \"\"" config.yaml
+    yq eval -i ".panels.${panel_id}.tls_fingerprint = \"chrome\"" config.yaml
+    yq eval -i ".panels.${panel_id}.reality_sni = \"www.nvidia.com\"" config.yaml
+    yq eval -i ".panels.${panel_id}.reality_fingerprint = \"edge\"" config.yaml
+    yq eval -i ".panels.${panel_id}.reality_public_key = \"\"" config.yaml
+    yq eval -i ".panels.${panel_id}.reality_private_key = \"\"" config.yaml
+    yq eval -i ".panels.${panel_id}.reality_short_id = \"\"" config.yaml
+    
+    # Устанавливаем эту панель как default_panel если default_panel не установлен
+    local current_default=$(yq eval ".default_panel" config.yaml 2>/dev/null)
+    if [ -z "$current_default" ] || [ "$current_default" = "null" ]; then
+        yq eval -i ".default_panel = \"${panel_id}\"" config.yaml
+        echo -e "${GREEN}✅ Панель ${panel_id} установлена как default_panel${NC}"
+    fi
+    
+    echo -e "${GREEN}✅ Локальная панель ${panel_id} успешно добавлена в config.yaml${NC}"
+    return 0
+}
+
+# Обновить значение в config.yaml для локальной панели
+update_config_yaml_value() {
     local key=$1
-    grep "^${key}=" .env 2>/dev/null | cut -d'=' -f2 | head -1
+    local value=$2
+    
+    # Проверяем наличие config.yaml
+    if [ ! -f "config.yaml" ]; then
+        echo -e "${YELLOW}⚠️  config.yaml не найден, создаем из примера...${NC}"
+        if [ -f "config.yaml.example" ]; then
+            cp config.yaml.example config.yaml
+        else
+            echo -e "${RED}❌ config.yaml.example не найден${NC}"
+            return 1
+        fi
+    fi
+    
+    check_yq || return 1
+    
+    # Получаем ID локальной панели
+    local panel_id=$(get_local_panel_id)
+    
+    if [ -z "$panel_id" ]; then
+        echo -e "${RED}❌ Локальная панель не найдена в config.yaml${NC}"
+        return 1
+    fi
+    
+    # Обновляем значение для локальной панели
+    yq eval -i ".panels.${panel_id}.${key} = \"${value}\"" config.yaml
+    
+    echo -e "${GREEN}✅ Обновлено: panels.${panel_id}.${key} = ${value}${NC}"
+}
+
+# Получить значение из config.yaml для локальной панели
+get_config_yaml_value() {
+    local key=$1
+    
+    if [ ! -f "config.yaml" ]; then
+        echo ""
+        return 1
+    fi
+    
+    check_yq || return 1
+    
+    # Получаем ID локальной панели
+    local panel_id=$(get_local_panel_id)
+    
+    if [ -z "$panel_id" ]; then
+        echo ""
+        return 1
+    fi
+    
+    # Получаем значение
+    yq eval ".panels.${panel_id}.${key}" config.yaml 2>/dev/null
+}
+
+# Универсальная функция обновления конфигурации
+update_config_value() {
+    local key=$1
+    local value=$2
+    
+    # Проверяем наличие config.yaml
+    if [ -f "config.yaml" ]; then
+        # Используем config.yaml
+        local panel_id=$(get_local_panel_id)
+        
+        if [ -n "$panel_id" ]; then
+            # Маппинг ключей для config.yaml
+            local yaml_key="$key"
+            case "$key" in
+                # Параметры панели
+                "XUI_VERSION") yaml_key="xui_version" ;;
+                "XUI_URL") yaml_key="xui_url" ;;
+                "XUI_USERNAME") yaml_key="xui_username" ;;
+                "XUI_PASSWORD") yaml_key="xui_password" ;;
+                "XUI_API_TOKEN") yaml_key="xui_api_token" ;;
+                "XUI_DB_PATH") yaml_key="xui_db_path" ;;
+                "INBOUND_ID") yaml_key="inbound_id" ;;
+                "SERVER_ADDRESS") yaml_key="server_address" ;;
+                "SERVER_IP") yaml_key="server_ip" ;;
+                "TRANSPORT") yaml_key="transport" ;;
+                "SECURITY") yaml_key="security" ;;
+                "TLS_SNI") yaml_key="tls_sni" ;;
+                "TLS_FINGERPRINT") yaml_key="tls_fingerprint" ;;
+                "TLS_ALPN") yaml_key="tls_alpn" ;;
+                "REALITY_SNI") yaml_key="reality_sni" ;;
+                "REALITY_FINGERPRINT") yaml_key="reality_fingerprint" ;;
+                "REALITY_PUBLIC_KEY") yaml_key="reality_public_key" ;;
+                "REALITY_PRIVATE_KEY") yaml_key="reality_private_key" ;;
+                "REALITY_SHORT_ID") yaml_key="reality_short_id" ;;
+                
+                # Параметры common (сохраняются в common секцию)
+                "XUI_BOT_TOKEN")
+                    check_yq && yq eval -i ".common.xui_bot_token = \"${value}\"" config.yaml
+                    echo -e "${GREEN}✅ Обновлено: common.xui_bot_token${NC}"
+                    return 0
+                    ;;
+                "AWG_BOT_TOKEN")
+                    check_yq && yq eval -i ".common.awg_bot_token = \"${value}\"" config.yaml
+                    echo -e "${GREEN}✅ Обновлено: common.awg_bot_token${NC}"
+                    return 0
+                    ;;
+                "ADMIN_IDS")
+                    check_yq && yq eval -i ".common.admin_ids = [$(echo $value | sed 's/,/, /g')]" config.yaml
+                    echo -e "${GREEN}✅ Обновлено: common.admin_ids${NC}"
+                    return 0
+                    ;;
+                "SERVER_PORT")
+                    check_yq && yq eval -i ".common.server_port = ${value}" config.yaml
+                    echo -e "${GREEN}✅ Обновлено: common.server_port${NC}"
+                    return 0
+                    ;;
+                "API_TIMEOUT")
+                    check_yq && yq eval -i ".common.api_timeout = ${value}" config.yaml
+                    echo -e "${GREEN}✅ Обновлено: common.api_timeout${NC}"
+                    return 0
+                    ;;
+                "XHTTP_MODE")
+                    check_yq && yq eval -i ".common.xhttp_mode = \"${value}\"" config.yaml
+                    echo -e "${GREEN}✅ Обновлено: common.xhttp_mode${NC}"
+                    return 0
+                    ;;
+                "MAX_TRAFFIC_GB")
+                    check_yq && yq eval -i ".common.max_traffic_gb = ${value}" config.yaml
+                    echo -e "${GREEN}✅ Обновлено: common.max_traffic_gb${NC}"
+                    return 0
+                    ;;
+                "MAX_DAYS")
+                    check_yq && yq eval -i ".common.max_days = ${value}" config.yaml
+                    echo -e "${GREEN}✅ Обновлено: common.max_days${NC}"
+                    return 0
+                    ;;
+                "MIN_DAYS")
+                    check_yq && yq eval -i ".common.min_days = ${value}" config.yaml
+                    echo -e "${GREEN}✅ Обновлено: common.min_days${NC}"
+                    return 0
+                    ;;
+                "DEFAULT_TRAFFIC_GB")
+                    check_yq && yq eval -i ".common.default_traffic_gb = ${value}" config.yaml
+                    echo -e "${GREEN}✅ Обновлено: common.default_traffic_gb${NC}"
+                    return 0
+                    ;;
+                "DEFAULT_DAYS")
+                    check_yq && yq eval -i ".common.default_days = ${value}" config.yaml
+                    echo -e "${GREEN}✅ Обновлено: common.default_days${NC}"
+                    return 0
+                    ;;
+                "DB_PATH")
+                    check_yq && yq eval -i ".common.db_path = \"${value}\"" config.yaml
+                    echo -e "${GREEN}✅ Обновлено: common.db_path${NC}"
+                    return 0
+                    ;;
+                "DB_BACKUP_ENABLED")
+                    check_yq && yq eval -i ".common.db_backup_enabled = ${value}" config.yaml
+                    echo -e "${GREEN}✅ Обновлено: common.db_backup_enabled${NC}"
+                    return 0
+                    ;;
+                "DB_BACKUP_INTERVAL")
+                    check_yq && yq eval -i ".common.db_backup_interval = ${value}" config.yaml
+                    echo -e "${GREEN}✅ Обновлено: common.db_backup_interval${NC}"
+                    return 0
+                    ;;
+                "LOG_LEVEL")
+                    check_yq && yq eval -i ".common.log_level = \"${value}\"" config.yaml
+                    echo -e "${GREEN}✅ Обновлено: common.log_level${NC}"
+                    return 0
+                    ;;
+                "LOG_FILE_ENABLED")
+                    check_yq && yq eval -i ".common.log_file_enabled = ${value}" config.yaml
+                    echo -e "${GREEN}✅ Обновлено: common.log_file_enabled${NC}"
+                    return 0
+                    ;;
+                "LOG_FILE_PATH")
+                    check_yq && yq eval -i ".common.log_file_path = \"${value}\"" config.yaml
+                    echo -e "${GREEN}✅ Обновлено: common.log_file_path${NC}"
+                    return 0
+                    ;;
+                "LOG_MAX_SIZE_MB")
+                    check_yq && yq eval -i ".common.log_max_size_mb = ${value}" config.yaml
+                    echo -e "${GREEN}✅ Обновлено: common.log_max_size_mb${NC}"
+                    return 0
+                    ;;
+                "LOG_BACKUP_COUNT")
+                    check_yq && yq eval -i ".common.log_backup_count = ${value}" config.yaml
+                    echo -e "${GREEN}✅ Обновлено: common.log_backup_count${NC}"
+                    return 0
+                    ;;
+            esac
+            
+            # Обновляем значение в config.yaml
+            update_config_yaml_value "$yaml_key" "$value"
+        else
+            echo -e "${YELLOW}⚠️  Локальная панель не найдена в config.yaml${NC}"
+            echo -e "${YELLOW}⚠️  Параметр ${key} не будет сохранен${NC}"
+        fi
+    else
+        echo -e "${YELLOW}⚠️  config.yaml не найден${NC}"
+        echo -e "${YELLOW}⚠️  Параметр ${key} не будет сохранен${NC}"
+    fi
+}
+
+# Универсальная функция получения значения конфигурации
+get_config_value() {
+    local key=$1
+    
+    # Проверяем наличие config.yaml
+    if [ ! -f "config.yaml" ]; then
+        echo -e "${RED}❌ config.yaml не найден${NC}"
+        return 1
+    fi
+    
+    local panel_id=$(get_local_panel_id)
+    
+    if [ -z "$panel_id" ]; then
+        echo -e "${YELLOW}⚠️  Локальная панель не найдена в config.yaml${NC}"
+        return 1
+    fi
+    
+    # Маппинг ключей
+    local yaml_key="$key"
+    case "$key" in
+        "XUI_VERSION") yaml_key="xui_version" ;;
+        "XUI_URL") yaml_key="xui_url" ;;
+        "XUI_USERNAME") yaml_key="xui_username" ;;
+        "XUI_PASSWORD") yaml_key="xui_password" ;;
+        "XUI_API_TOKEN") yaml_key="xui_api_token" ;;
+        "XUI_DB_PATH") yaml_key="xui_db_path" ;;
+        "INBOUND_ID") yaml_key="inbound_id" ;;
+        "SERVER_ADDRESS") yaml_key="server_address" ;;
+        "SERVER_IP") yaml_key="server_ip" ;;
+        "TRANSPORT") yaml_key="transport" ;;
+        "SECURITY") yaml_key="security" ;;
+        "TLS_SNI") yaml_key="tls_sni" ;;
+        "REALITY_SNI") yaml_key="reality_sni" ;;
+        "REALITY_FINGERPRINT") yaml_key="reality_fingerprint" ;;
+        "REALITY_PUBLIC_KEY") yaml_key="reality_public_key" ;;
+        "REALITY_PRIVATE_KEY") yaml_key="reality_private_key" ;;
+        "REALITY_SHORT_ID") yaml_key="reality_short_id" ;;
+        "XUI_BOT_TOKEN")
+            check_yq && yq eval ".common.xui_bot_token" config.yaml 2>/dev/null
+            return 0
+            ;;
+        "AWG_BOT_TOKEN")
+            check_yq && yq eval ".common.awg_bot_token" config.yaml 2>/dev/null
+            return 0
+            ;;
+        "ADMIN_IDS")
+            check_yq && yq eval ".common.admin_ids | join(\",\")" config.yaml 2>/dev/null
+            return 0
+            ;;
+    esac
+    
+    # Получаем значение из config.yaml
+    get_config_yaml_value "$yaml_key"
+}
 
 # Функция генерации Reality ключей через API панели 3x-ui
 generate_reality_keys_via_api() {
@@ -374,10 +763,18 @@ generate_reality_keys_via_api() {
     echo -e "${YELLOW}⚠️  Не удалось сгенерировать ключи через API (HTTP: $http_code)${NC}"
     return 1
 }
-}
+
 # Функция извлечения параметров из существующего инбаунда панели
 extract_inbound_params() {
     echo -e "${YELLOW}🔍 Извлечение параметров из панели...${NC}"
+    
+    # Проверяем is_local для panel1
+    local IS_LOCAL=$(yq eval '.panels.panel1.is_local' config.yaml 2>/dev/null)
+    if [ "$IS_LOCAL" = "false" ]; then
+        echo -e "${BLUE}ℹ️  Панель удаленная (is_local: false)${NC}"
+        echo -e "${BLUE}ℹ️  Параметры будут обновлены ботом через API при подключении${NC}"
+        return 0
+    fi
     
     # Проверка наличия базы данных
     if [ ! -f "/etc/x-ui/x-ui.db" ]; then
@@ -385,8 +782,16 @@ extract_inbound_params() {
         return 1
     fi
     
-    # Получаем ID первого инбаунда
-    local INBOUND_ID=$(sqlite3 /etc/x-ui/x-ui.db "SELECT id FROM inbounds ORDER BY id ASC LIMIT 1;" 2>/dev/null)
+    # Получаем INBOUND_ID из config.yaml (если указан)
+    local INBOUND_ID=$(yq eval '.panels.panel1.inbound_id' config.yaml 2>/dev/null)
+    
+    # Если не указан или пустой, берем первый
+    if [ -z "$INBOUND_ID" ] || [ "$INBOUND_ID" = "null" ]; then
+        echo -e "${BLUE}  INBOUND_ID не указан в config.yaml, ищем первый...${NC}"
+        INBOUND_ID=$(sqlite3 /etc/x-ui/x-ui.db "SELECT id FROM inbounds ORDER BY id ASC LIMIT 1;" 2>/dev/null)
+    else
+        echo -e "${BLUE}  Используем INBOUND_ID из config.yaml: ${INBOUND_ID}${NC}"
+    fi
     
     if [ -z "$INBOUND_ID" ]; then
         echo -e "${YELLOW}⚠️  Инбаунды не найдены в панели${NC}"
@@ -404,9 +809,9 @@ extract_inbound_params() {
         echo -e "${BLUE}  Безопасность: ${SECURITY}${NC}"
         
         # Обновляем базовые параметры
-        update_env_value "INBOUND_ID" "${INBOUND_ID}"
-        update_env_value "TRANSPORT" "${TRANSPORT}"
-        update_env_value "SECURITY" "${SECURITY}"
+        update_config_value "INBOUND_ID" "${INBOUND_ID}"
+        update_config_value "TRANSPORT" "${TRANSPORT}"
+        update_config_value "SECURITY" "${SECURITY}"
     fi
     
     # Если Reality - извлекаем ключи
@@ -420,27 +825,27 @@ extract_inbound_params() {
         local REALITY_FINGERPRINT=$(sqlite3 /etc/x-ui/x-ui.db "SELECT json_extract(stream_settings, '$.realitySettings.settings.fingerprint') FROM inbounds WHERE id=${INBOUND_ID};" 2>/dev/null)
         
         if [ -n "$REALITY_PUBLIC" ]; then
-            update_env_value "REALITY_PUBLIC_KEY" "${REALITY_PUBLIC}"
+            update_config_value "REALITY_PUBLIC_KEY" "${REALITY_PUBLIC}"
             echo -e "${GREEN}  ✓ Public Key обновлен${NC}"
         fi
         
         if [ -n "$REALITY_PRIVATE" ]; then
-            update_env_value "REALITY_PRIVATE_KEY" "${REALITY_PRIVATE}"
+            update_config_value "REALITY_PRIVATE_KEY" "${REALITY_PRIVATE}"
             echo -e "${GREEN}  ✓ Private Key обновлен${NC}"
         fi
         
         if [ -n "$REALITY_SHORT" ]; then
-            update_env_value "REALITY_SHORT_ID" "${REALITY_SHORT}"
+            update_config_value "REALITY_SHORT_ID" "${REALITY_SHORT}"
             echo -e "${GREEN}  ✓ Short ID обновлен${NC}"
         fi
         
         if [ -n "$REALITY_SNI" ]; then
-            update_env_value "REALITY_SNI" "${REALITY_SNI}"
+            update_config_value "REALITY_SNI" "${REALITY_SNI}"
             echo -e "${GREEN}  ✓ SNI обновлен: ${REALITY_SNI}${NC}"
         fi
         
         if [ -n "$REALITY_FINGERPRINT" ]; then
-            update_env_value "REALITY_FINGERPRINT" "${REALITY_FINGERPRINT}"
+            update_config_value "REALITY_FINGERPRINT" "${REALITY_FINGERPRINT}"
             echo -e "${GREEN}  ✓ Fingerprint обновлен: ${REALITY_FINGERPRINT}${NC}"
         fi
     fi
@@ -454,17 +859,17 @@ extract_inbound_params() {
         local TLS_SNI=$(sqlite3 /etc/x-ui/x-ui.db "SELECT json_extract(stream_settings, '$.tlsSettings.serverName') FROM inbounds WHERE id=${INBOUND_ID};" 2>/dev/null)
         
         if [ -n "$TLS_FINGERPRINT" ]; then
-            update_env_value "TLS_FINGERPRINT" "${TLS_FINGERPRINT}"
+            update_config_value "TLS_FINGERPRINT" "${TLS_FINGERPRINT}"
             echo -e "${GREEN}  ✓ TLS Fingerprint обновлен: ${TLS_FINGERPRINT}${NC}"
         fi
         
         if [ -n "$TLS_ALPN" ]; then
-            update_env_value "TLS_ALPN" "${TLS_ALPN}"
+            update_config_value "TLS_ALPN" "${TLS_ALPN}"
             echo -e "${GREEN}  ✓ TLS ALPN обновлен: ${TLS_ALPN}${NC}"
         fi
         
         if [ -n "$TLS_SNI" ] && [ "$TLS_SNI" != "null" ]; then
-            update_env_value "TLS_SNI" "${TLS_SNI}"
+            update_config_value "TLS_SNI" "${TLS_SNI}"
             echo -e "${GREEN}  ✓ TLS SNI обновлен: ${TLS_SNI}${NC}"
         fi
     fi
@@ -479,41 +884,41 @@ create_static_params() {
     echo -e "${YELLOW}📋 Создание статических параметров...${NC}"
     
     # 3x-ui Panel статические параметры
-    update_env_value "XUI_DB_PATH" "/etc/x-ui/x-ui.db"
-    update_env_value "API_TIMEOUT" "30"
+    update_config_value "XUI_DB_PATH" "/etc/x-ui/x-ui.db"
+    update_config_value "API_TIMEOUT" "30"
     
     # VPN Server статические параметры
-    update_env_value "SERVER_PORT" "443"
+    update_config_value "SERVER_PORT" "443"
     
     # TLS статические параметры
-    update_env_value "TLS_FINGERPRINT" "${DEFAULT_REALITY_FINGERPRINT}"
-    update_env_value "TLS_ALPN" "http/1.1"
+    update_config_value "TLS_FINGERPRINT" "${DEFAULT_REALITY_FINGERPRINT}"
+    update_config_value "TLS_ALPN" "http/1.1"
     
     # Reality статические параметры
-    update_env_value "REALITY_SNI" "${DEFAULT_REALITY_SNI}"
-    update_env_value "REALITY_FINGERPRINT" "${DEFAULT_REALITY_FINGERPRINT}"
+    update_config_value "REALITY_SNI" "${DEFAULT_REALITY_SNI}"
+    update_config_value "REALITY_FINGERPRINT" "${DEFAULT_REALITY_FINGERPRINT}"
     
     # xHTTP статические параметры
-    update_env_value "XHTTP_MODE" "auto"
+    update_config_value "XHTTP_MODE" "auto"
     
     # Лимиты
-    update_env_value "MAX_TRAFFIC_GB" "1000"
-    update_env_value "MAX_DAYS" "3650"
-    update_env_value "MIN_DAYS" "1"
-    update_env_value "DEFAULT_TRAFFIC_GB" "100"
-    update_env_value "DEFAULT_DAYS" "30"
+    update_config_value "MAX_TRAFFIC_GB" "1000"
+    update_config_value "MAX_DAYS" "3650"
+    update_config_value "MIN_DAYS" "1"
+    update_config_value "DEFAULT_TRAFFIC_GB" "100"
+    update_config_value "DEFAULT_DAYS" "30"
     
     # База данных
-    update_env_value "DB_PATH" "/app/data/bot_users.db"
-    update_env_value "DB_BACKUP_ENABLED" "true"
-    update_env_value "DB_BACKUP_INTERVAL" "24"
+    update_config_value "DB_PATH" "/app/data/bot_users.db"
+    update_config_value "DB_BACKUP_ENABLED" "true"
+    update_config_value "DB_BACKUP_INTERVAL" "24"
     
     # Логирование
-    update_env_value "LOG_LEVEL" "INFO"
-    update_env_value "LOG_FILE_ENABLED" "true"
-    update_env_value "LOG_FILE_PATH" "/app/logs/bot.log"
-    update_env_value "LOG_MAX_SIZE_MB" "10"
-    update_env_value "LOG_BACKUP_COUNT" "5"
+    update_config_value "LOG_LEVEL" "INFO"
+    update_config_value "LOG_FILE_ENABLED" "true"
+    update_config_value "LOG_FILE_PATH" "/app/logs/bot.log"
+    update_config_value "LOG_MAX_SIZE_MB" "10"
+    update_config_value "LOG_BACKUP_COUNT" "5"
     
     echo -e "${GREEN}✅ Статические параметры созданы${NC}"
 }
@@ -524,29 +929,30 @@ interactive_setup() {
     echo -e "${BLUE}   Настройка Параметров Бота${NC}"
     echo -e "${BLUE}========================================${NC}\n"
     
-    create_env_if_not_exists
+    # Создаем config.yaml если не существует
+    create_config_if_not_exists
     
     # Создаем статические параметры
     create_static_params
     
     # Получаем IP сервера
-    SERVER_IP=$(curl -s ifconfig.me)
+    SERVER_IP=$(curl -s -4 https://api4.ipify.org 2>/dev/null || curl -s -4 https://ipv4.icanhazip.com 2>/dev/null || curl -s -4 ifconfig.me 2>/dev/null || echo "")
     
     # ==================== Telegram Bot ====================
     echo -e "\n${GREEN}📱 Настройка Telegram Bot${NC}\n"
     
-    XUI_BOT_TOKEN=$(get_env_value "XUI_BOT_TOKEN")
+    XUI_BOT_TOKEN=$(get_config_value "XUI_BOT_TOKEN" | tr -d '"')
     if [ -z "$XUI_BOT_TOKEN" ]; then
         read -p "Введите XUI_BOT_TOKEN: " XUI_BOT_TOKEN
-        update_env_value "XUI_BOT_TOKEN" "$XUI_BOT_TOKEN"
+        update_config_value "XUI_BOT_TOKEN" "$XUI_BOT_TOKEN"
     else
         echo -e "XUI_BOT_TOKEN: ${XUI_BOT_TOKEN:0:10}... ${GREEN}✓${NC}"
     fi
     
-    ADMIN_IDS=$(get_env_value "ADMIN_IDS")
+    ADMIN_IDS=$(get_config_value "ADMIN_IDS")
     if [ -z "$ADMIN_IDS" ]; then
         read -p "Введите ADMIN_IDS (ID администраторов через запятую): " ADMIN_IDS
-        update_env_value "ADMIN_IDS" "$ADMIN_IDS"
+        update_config_value "ADMIN_IDS" "$ADMIN_IDS"
     else
         echo -e "ADMIN_IDS: $ADMIN_IDS ${GREEN}✓${NC}"
     fi
@@ -555,15 +961,15 @@ interactive_setup() {
     echo -e "\n${GREEN}🔧 Автоматическое заполнение параметров...${NC}"
     
     # IP сервера
-    update_env_value "SERVER_ADDRESS" "$SERVER_IP"
-    update_env_value "SERVER_IP" "$SERVER_IP"
+    update_config_value "SERVER_ADDRESS" "$SERVER_IP"
+    update_config_value "SERVER_IP" "$SERVER_IP"
     
     # ==================== Проверка данных 3x-ui ====================
-    XUI_URL=$(get_env_value "XUI_URL")
-    XUI_USERNAME=$(get_env_value "XUI_USERNAME")
-    XUI_PASSWORD=$(get_env_value "XUI_PASSWORD")
-    REALITY_PUBLIC_KEY=$(get_env_value "REALITY_PUBLIC_KEY")
-    REALITY_SHORT_ID=$(get_env_value "REALITY_SHORT_ID")
+    XUI_URL=$(get_config_value "XUI_URL")
+    XUI_USERNAME=$(get_config_value "XUI_USERNAME")
+    XUI_PASSWORD=$(get_config_value "XUI_PASSWORD")
+    REALITY_PUBLIC_KEY=$(get_config_value "REALITY_PUBLIC_KEY")
+    REALITY_SHORT_ID=$(get_config_value "REALITY_SHORT_ID")
     
     if [ -z "$XUI_URL" ] || [ -z "$REALITY_PUBLIC_KEY" ]; then
         echo -e "\n${RED}❌ Данные 3x-ui панели не найдены!${NC}"
@@ -594,19 +1000,19 @@ install_bot() {
     interactive_setup
     
     # Обновляем SERVER_ADDRESS и TLS_SNI из XUI_URL если он установлен
-    XUI_URL=$(get_env_value "XUI_URL")
+    XUI_URL=$(get_config_value "XUI_URL")
     if [ -n "$XUI_URL" ]; then
         DOMAIN=$(echo "$XUI_URL" | sed -E 's|^https?://([^:/]+).*|\1|')
         if [ -n "$DOMAIN" ] && [[ ! "$DOMAIN" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo -e "${YELLOW}🔄 Обнаружен домен в XUI_URL: ${DOMAIN}${NC}"
-            CURRENT_SERVER=$(get_env_value "SERVER_ADDRESS")
+            CURRENT_SERVER=$(get_config_value "SERVER_ADDRESS")
             if [ "$CURRENT_SERVER" != "$DOMAIN" ]; then
-                update_env_value "SERVER_ADDRESS" "$DOMAIN"
+                update_config_value "SERVER_ADDRESS" "$DOMAIN"
                 echo -e "${GREEN}✅ SERVER_ADDRESS обновлён: ${DOMAIN}${NC}"
             fi
-            CURRENT_TLS_SNI=$(get_env_value "TLS_SNI")
+            CURRENT_TLS_SNI=$(get_config_value "TLS_SNI")
             if [ "$CURRENT_TLS_SNI" != "$DOMAIN" ]; then
-                update_env_value "TLS_SNI" "$DOMAIN"
+                update_config_value "TLS_SNI" "$DOMAIN"
                 echo -e "${GREEN}✅ TLS_SNI обновлён: ${DOMAIN}${NC}"
             fi
         fi
@@ -829,32 +1235,35 @@ install_xuibot() {
         return
     fi
     
-    # Создание .env файла если не существует
-    create_env_if_not_exists
+    # Создание config.yaml если не существует
+    create_config_if_not_exists
     
     # Проверка XUI_URL, XUI_USERNAME, XUI_PASSWORD
     echo -e "\n${YELLOW}🔍 Проверка параметров 3x-ui панели...${NC}"
     
-    if ! grep -q "^XUI_URL=.\+" .env; then
+    XUI_URL=$(get_config_value "XUI_URL")
+    if [ -z "$XUI_URL" ]; then
         echo -e "${YELLOW}📝 Настройка параметров 3x-ui панели${NC}\n"
         read -p "Введите XUI_URL: " xui_url
-        update_env_value "XUI_URL" "$xui_url"
+        update_config_value "XUI_URL" "$xui_url"
+        XUI_URL="$xui_url"
     fi
     
-    if ! grep -q "^XUI_USERNAME=.\+" .env; then
+    XUI_USERNAME=$(get_config_value "XUI_USERNAME")
+    if [ -z "$XUI_USERNAME" ]; then
         read -p "Введите XUI_USERNAME: " xui_username
-        update_env_value "XUI_USERNAME" "$xui_username"
+        update_config_value "XUI_USERNAME" "$xui_username"
     fi
     
-    if ! grep -q "^XUI_PASSWORD=.\+" .env; then
+    XUI_PASSWORD=$(get_config_value "XUI_PASSWORD")
+    if [ -z "$XUI_PASSWORD" ]; then
         read -p "Введите XUI_PASSWORD: " xui_password
-        update_env_value "XUI_PASSWORD" "$xui_password"
+        update_config_value "XUI_PASSWORD" "$xui_password"
     fi
     
     echo -e "${GREEN}✅ Параметры 3x-ui панели настроены${NC}\n"
     
     # Обновляем SERVER_ADDRESS и TLS_SNI из XUI_URL если он уже установлен
-    XUI_URL=$(get_env_value "XUI_URL")
     if [ -n "$XUI_URL" ]; then
         # Извлекаем домен/IP из URL
         DOMAIN=$(echo "$XUI_URL" | sed -E 's|^https?://([^:/]+).*|\1|')
@@ -864,16 +1273,16 @@ install_xuibot() {
             echo -e "${YELLOW}🔄 Обнаружен домен в XUI_URL: ${DOMAIN}${NC}"
             
             # Обновляем SERVER_ADDRESS
-            CURRENT_SERVER=$(get_env_value "SERVER_ADDRESS")
+            CURRENT_SERVER=$(get_config_value "SERVER_ADDRESS")
             if [ "$CURRENT_SERVER" != "$DOMAIN" ]; then
-                update_env_value "SERVER_ADDRESS" "$DOMAIN"
+                update_config_value "SERVER_ADDRESS" "$DOMAIN"
                 echo -e "${GREEN}✅ SERVER_ADDRESS обновлён: ${DOMAIN}${NC}"
             fi
             
             # Обновляем TLS_SNI
-            CURRENT_TLS_SNI=$(get_env_value "TLS_SNI")
+            CURRENT_TLS_SNI=$(get_config_value "TLS_SNI")
             if [ "$CURRENT_TLS_SNI" != "$DOMAIN" ]; then
-                update_env_value "TLS_SNI" "$DOMAIN"
+                update_config_value "TLS_SNI" "$DOMAIN"
                 echo -e "${GREEN}✅ TLS_SNI обновлён: ${DOMAIN}${NC}"
             fi
         fi
@@ -894,9 +1303,9 @@ install_xuibot() {
         echo -e "${BLUE}Транспорт: ${TRANSPORT}, Безопасность: ${SECURITY}${NC}"
         
         # Сохраняем INBOUND_ID, TRANSPORT и SECURITY
-        update_env_value "INBOUND_ID" "${FIRST_INBOUND_ID}"
-        update_env_value "TRANSPORT" "${TRANSPORT}"
-        update_env_value "SECURITY" "${SECURITY}"
+        update_config_value "INBOUND_ID" "${FIRST_INBOUND_ID}"
+        update_config_value "TRANSPORT" "${TRANSPORT}"
+        update_config_value "SECURITY" "${SECURITY}"
         
         # Если security = reality - извлекаем все Reality параметры
         if [ "$SECURITY" = "reality" ]; then
@@ -912,21 +1321,21 @@ install_xuibot() {
                 echo -e "${GREEN}✅ Reality параметры извлечены из инбаунда${NC}"
                 
                 # Сохраняем все Reality параметры
-                update_env_value "REALITY_PUBLIC_KEY" "${REALITY_PUBLIC}"
-                update_env_value "REALITY_PRIVATE_KEY" "${REALITY_PRIVATE}"
-                update_env_value "REALITY_SHORT_ID" "${REALITY_SHORT}"
+                update_config_value "REALITY_PUBLIC_KEY" "${REALITY_PUBLIC}"
+                update_config_value "REALITY_PRIVATE_KEY" "${REALITY_PRIVATE}"
+                update_config_value "REALITY_SHORT_ID" "${REALITY_SHORT}"
                 
                 echo -e "${BLUE}  Public Key: ${REALITY_PUBLIC:0:20}...${NC}"
                 echo -e "${BLUE}  Short ID: ${REALITY_SHORT}${NC}"
                 
                 # Сохраняем SNI и Fingerprint (обязательно)
                 if [ -n "$REALITY_SNI" ]; then
-                    update_env_value "REALITY_SNI" "${REALITY_SNI}"
+                    update_config_value "REALITY_SNI" "${REALITY_SNI}"
                     echo -e "${BLUE}  SNI: ${REALITY_SNI}${NC}"
                 fi
                 
                 if [ -n "$REALITY_FINGERPRINT" ]; then
-                    update_env_value "REALITY_FINGERPRINT" "${REALITY_FINGERPRINT}"
+                    update_config_value "REALITY_FINGERPRINT" "${REALITY_FINGERPRINT}"
                     echo -e "${BLUE}  Fingerprint: ${REALITY_FINGERPRINT}${NC}"
                 fi
             else
@@ -935,9 +1344,9 @@ install_xuibot() {
                 read -p "Введите REALITY_PRIVATE_KEY: " reality_priv
                 read -p "Введите REALITY_SHORT_ID: " reality_short
                 
-                update_env_value "REALITY_PUBLIC_KEY" "${reality_pub}"
-                update_env_value "REALITY_PRIVATE_KEY" "${reality_priv}"
-                update_env_value "REALITY_SHORT_ID" "${reality_short}"
+                update_config_value "REALITY_PUBLIC_KEY" "${reality_pub}"
+                update_config_value "REALITY_PRIVATE_KEY" "${reality_priv}"
+                update_config_value "REALITY_SHORT_ID" "${reality_short}"
             fi
         fi
         
@@ -950,17 +1359,17 @@ install_xuibot() {
             TLS_SNI=$(sqlite3 /etc/x-ui/x-ui.db "SELECT json_extract(stream_settings, '$.tlsSettings.serverName') FROM inbounds WHERE id=${FIRST_INBOUND_ID};" 2>/dev/null)
             
             if [ -n "$TLS_FINGERPRINT" ] && [ "$TLS_FINGERPRINT" != "null" ]; then
-                update_env_value "TLS_FINGERPRINT" "${TLS_FINGERPRINT}"
+                update_config_value "TLS_FINGERPRINT" "${TLS_FINGERPRINT}"
                 echo -e "${GREEN}✅ TLS Fingerprint: ${TLS_FINGERPRINT}${NC}"
             fi
             
             if [ -n "$TLS_ALPN" ] && [ "$TLS_ALPN" != "null" ]; then
-                update_env_value "TLS_ALPN" "${TLS_ALPN}"
+                update_config_value "TLS_ALPN" "${TLS_ALPN}"
                 echo -e "${GREEN}✅ TLS ALPN: ${TLS_ALPN}${NC}"
             fi
             
             if [ -n "$TLS_SNI" ] && [ "$TLS_SNI" != "null" ]; then
-                update_env_value "TLS_SNI" "${TLS_SNI}"
+                update_config_value "TLS_SNI" "${TLS_SNI}"
                 echo -e "${GREEN}✅ TLS SNI: ${TLS_SNI}${NC}"
             fi
         fi
@@ -971,16 +1380,18 @@ install_xuibot() {
     echo ""
     
     # Проверка XUI_BOT_TOKEN
-    if ! grep -q "^XUI_BOT_TOKEN=.\+" .env; then
+    XUI_BOT_TOKEN=$(get_config_value "XUI_BOT_TOKEN" | tr -d '"')
+    if [ -z "$XUI_BOT_TOKEN" ]; then
         echo -e "${YELLOW}📱 Настройка Telegram Bot для XUI${NC}\n"
         read -p "Введите XUI_BOT_TOKEN для XUI бота: " xui_token
-        update_env_value "XUI_BOT_TOKEN" "$xui_token"
+        update_config_value "XUI_BOT_TOKEN" "$xui_token"
     fi
     
     # Проверка ADMIN_IDS
-    if ! grep -q "^ADMIN_IDS=.\+" .env; then
+    ADMIN_IDS=$(get_config_value "ADMIN_IDS")
+    if [ -z "$ADMIN_IDS" ]; then
         read -p "Введите ADMIN_IDS (через запятую): " admin_ids
-        update_env_value "ADMIN_IDS" "$admin_ids"
+        update_config_value "ADMIN_IDS" "$admin_ids"
     fi
     
     # Определяем и сохраняем версию панели
@@ -1003,14 +1414,14 @@ install_xuibot() {
         fi
     fi
     
-    # Сохраняем в .env
+    # Сохраняем в config.yaml
     if [ -n "$XUI_VERSION" ]; then
-        echo -e "${YELLOW}📝 Сохранение версии в .env...${NC}"
-        update_env_value "XUI_VERSION" "${XUI_VERSION}"
+        echo -e "${YELLOW}📝 Сохранение версии в config.yaml...${NC}"
+        update_config_value "XUI_VERSION" "${XUI_VERSION}"
         echo -e "${GREEN}✅ XUI_VERSION обновлён: ${XUI_VERSION}${NC}"
     else
         echo -e "${YELLOW}⚠️  Не удалось определить версию панели${NC}"
-        echo -e "${BLUE}ℹ️  Будет использоваться значение из .env или 'latest'${NC}"
+        echo -e "${BLUE}ℹ️  Будет использоваться значение из config.yaml или 'latest'${NC}"
     fi
     echo ""
     
@@ -1091,43 +1502,11 @@ update_xuibot() {
     
     echo -e "${YELLOW}🔄 Обновление XUI бота...${NC}"
     
-    # Переходим в рабочую директорию
-    cd /opt/awgxuibot || {
-        echo -e "${RED}❌ Ошибка: не удалось перейти в /opt/awgxuibot${NC}"
-        return 1
-    }
-    
-    # Проверка наличия git и обновление кода
-    if command -v git &> /dev/null; then
-        echo -e "${YELLOW}📥 Получение обновлений из репозитория...${NC}"
-        
-        # Сохраняем текущую ветку
-        CURRENT_BRANCH=$(git branch --show-current 2>/dev/null || echo "main")
-        
-        # Проверяем есть ли изменения
-        if git status --porcelain | grep -q .; then
-            echo -e "${YELLOW}⚠️  Обнаружены локальные изменения${NC}"
-            echo -e "${YELLOW}Создаем резервную копию...${NC}"
-            git stash push -m "Auto-stash before update $(date +%Y%m%d_%H%M%S)" 2>/dev/null || true
-        fi
-        
-        # Выполняем git pull
-        if git pull origin "$CURRENT_BRANCH" 2>&1 | tee /tmp/git-pull.log; then
-            echo -e "${GREEN}✅ Код успешно обновлен${NC}"
-        else
-            echo -e "${YELLOW}⚠️  Не удалось обновить код из репозитория${NC}"
-            echo -e "${YELLOW}Продолжаем с текущей версией...${NC}"
-        fi
-    else
-        echo -e "${YELLOW}⚠️  Git не установлен, пропускаем обновление кода${NC}"
-        echo -e "${YELLOW}Пересобираем с текущей версией...${NC}"
-    fi
-    
     # Обновляем SERVER_ADDRESS и TLS_SNI из XUI_URL (ПОСЛЕ git pull, чтобы всегда выполнялось)
     echo ""
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${BLUE}📋 Шаг 1: Чтение XUI_URL из .env${NC}"
-    XUI_URL=$(get_env_value "XUI_URL")
+    echo -e "${BLUE}📋 Шаг 1: Чтение XUI_URL из config.yaml${NC}"
+    XUI_URL=$(get_config_value "XUI_URL")
     echo -e "${GREEN}✓ XUI_URL прочитан: ${XUI_URL}${NC}"
     
     if [ -n "$XUI_URL" ]; then
@@ -1141,32 +1520,26 @@ update_xuibot() {
             echo -e "${YELLOW}🔄 Будут обновлены SERVER_ADDRESS и TLS_SNI${NC}"
             
             echo -e "\n${BLUE}📋 Шаг 4: Обновление SERVER_ADDRESS${NC}"
-            CURRENT_SERVER=$(get_env_value "SERVER_ADDRESS")
+            CURRENT_SERVER=$(get_config_value "SERVER_ADDRESS")
             echo -e "${YELLOW}  Текущее значение: ${CURRENT_SERVER}${NC}"
             echo -e "${YELLOW}  Новое значение: ${DOMAIN}${NC}"
-            sed -i "s|^SERVER_ADDRESS=.*|SERVER_ADDRESS=${DOMAIN}|" .env
-            NEW_SERVER=$(get_env_value "SERVER_ADDRESS")
+            update_config_value "SERVER_ADDRESS" "${DOMAIN}"
+            NEW_SERVER=$(get_config_value "SERVER_ADDRESS")
             echo -e "${GREEN}✅ SERVER_ADDRESS обновлён: ${NEW_SERVER}${NC}"
             
             echo -e "\n${BLUE}📋 Шаг 5: Обновление TLS_SNI${NC}"
-            CURRENT_TLS_SNI=$(get_env_value "TLS_SNI")
+            CURRENT_TLS_SNI=$(get_config_value "TLS_SNI")
             echo -e "${YELLOW}  Текущее значение: ${CURRENT_TLS_SNI:-<пусто>}${NC}"
             echo -e "${YELLOW}  Новое значение: ${DOMAIN}${NC}"
-            if grep -q "^TLS_SNI=" .env 2>/dev/null; then
-                sed -i "s|^TLS_SNI=.*|TLS_SNI=${DOMAIN}|" .env
-                echo -e "${GREEN}✓ Строка TLS_SNI обновлена${NC}"
-            else
-                echo "TLS_SNI=${DOMAIN}" >> .env
-                echo -e "${GREEN}✓ Строка TLS_SNI добавлена${NC}"
-            fi
-            NEW_TLS_SNI=$(get_env_value "TLS_SNI")
+            update_config_value "TLS_SNI" "${DOMAIN}"
+            NEW_TLS_SNI=$(get_config_value "TLS_SNI")
             echo -e "${GREEN}✅ TLS_SNI обновлён: ${NEW_TLS_SNI}${NC}"
         else
             echo -e "${YELLOW}⚠️  Это IP АДРЕС (не домен)${NC}"
             echo -e "${BLUE}ℹ️  SERVER_ADDRESS и TLS_SNI НЕ изменяются${NC}"
         fi
     else
-        echo -e "${RED}❌ XUI_URL не найден в .env${NC}"
+        echo -e "${RED}❌ XUI_URL не найден в config.yaml${NC}"
     fi
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
     
@@ -1202,14 +1575,14 @@ update_xuibot() {
         fi
     fi
     
-    # Если версия определена, сохраняем в .env
+    # Если версия определена, сохраняем в config.yaml
     if [ -n "$XUI_VERSION" ]; then
-        echo -e "${YELLOW}📝 Сохранение версии в .env...${NC}"
-        update_env_value "XUI_VERSION" "${XUI_VERSION}"
+        echo -e "${YELLOW}📝 Сохранение версии в config.yaml...${NC}"
+        update_config_value "XUI_VERSION" "${XUI_VERSION}"
         echo -e "${GREEN}✅ XUI_VERSION обновлён: ${XUI_VERSION}${NC}"
     else
         echo -e "${YELLOW}⚠️  Не удалось определить версию панели${NC}"
-        echo -e "${BLUE}ℹ️  Будет использоваться значение из .env или 'latest'${NC}"
+        echo -e "${BLUE}ℹ️  Будет использоваться значение из config.yaml или 'latest'${NC}"
     fi
     echo ""
     
@@ -1226,13 +1599,15 @@ update_xuibot() {
     echo -e "${YELLOW}🚀 Запуск обновленного контейнера...${NC}"
     $DOCKER_COMPOSE_CMD -f docker-compose.xuibot.yml up -d
     
-    sleep 5
+    echo -e "\n${YELLOW}⏳ Ожидание запуска контейнера...${NC}"
+    sleep 8
+    
     echo -e "\n${GREEN}✅ XUI Бот обновлен!${NC}"
     echo -e "${GREEN}📊 Статус:${NC}"
     docker ps --filter name=xuibot
     
     echo -e "\n${GREEN}📋 Логи XUI бота (последние 50 строк):${NC}"
-    docker logs --tail 50 xuibot
+    docker logs --tail 50 xuibot 2>&1 || echo -e "${RED}⚠️  Не удалось получить логи. Контейнер может еще запускаться.${NC}"
     
     echo -e "\n${YELLOW}Для просмотра в реальном времени:${NC}"
     echo -e "${YELLOW}docker logs -f xuibot${NC}"
@@ -1262,38 +1637,26 @@ remove_xuibot() {
     echo -e "${YELLOW}🗑️  Удаление образа...${NC}"
     docker rmi awgxuibot-xuibot 2>/dev/null || true
     
-    # Очистка XUI_BOT_TOKEN и XUI credentials из .env
-    if [ -f ".env" ]; then
-        echo -e "${YELLOW}🧹 Очистка XUI настроек из .env...${NC}"
+    # Очистка XUI_BOT_TOKEN и XUI credentials из config.yaml
+    if [ -f "config.yaml" ]; then
+        echo -e "${YELLOW}🧹 Очистка XUI настроек из config.yaml...${NC}"
         
-        # Удаляем XUI_BOT_TOKEN
-        if grep -q "^XUI_BOT_TOKEN=" .env; then
-            sed -i '/^XUI_BOT_TOKEN=/d' .env
-            echo -e "${GREEN}✅ XUI_BOT_TOKEN удален из .env${NC}"
-        fi
-        
-        # Также удаляем старый TELEGRAM_BOT_TOKEN если он есть (для обратной совместимости)
-        if grep -q "^TELEGRAM_BOT_TOKEN=" .env; then
-            sed -i '/^TELEGRAM_BOT_TOKEN=/d' .env
-            echo -e "${GREEN}✅ TELEGRAM_BOT_TOKEN удален из .env${NC}"
-        fi
-        
-        # Очищаем XUI credentials
-        if grep -q "^XUI_URL=" .env; then
-            sed -i 's/^XUI_URL=.*/XUI_URL=/' .env
-            echo -e "${GREEN}✅ XUI_URL очищен${NC}"
-        fi
-        
-        if grep -q "^XUI_USERNAME=" .env; then
-            sed -i 's/^XUI_USERNAME=.*/XUI_USERNAME=/' .env
-            echo -e "${GREEN}✅ XUI_USERNAME очищен${NC}"
-        fi
-        
-        if grep -q "^XUI_PASSWORD=" .env; then
-            sed -i 's/^XUI_PASSWORD=.*/XUI_PASSWORD=/' .env
-            echo -e "${GREEN}✅ XUI_PASSWORD очищен${NC}"
+        if check_yq; then
+            # Очищаем XUI_BOT_TOKEN из common
+            yq eval -i '.common.xui_bot_token = ""' config.yaml
+            echo -e "${GREEN}✅ XUI_BOT_TOKEN очищен${NC}"
+            
+            # Очищаем credentials локальной панели
+            local panel_id=$(get_local_panel_id)
+            if [ -n "$panel_id" ]; then
+                yq eval -i ".panels.${panel_id}.xui_url = \"\"" config.yaml
+                yq eval -i ".panels.${panel_id}.xui_username = \"\"" config.yaml
+                yq eval -i ".panels.${panel_id}.xui_password = \"\"" config.yaml
+                echo -e "${GREEN}✅ XUI credentials очищены${NC}"
+            fi
         fi
     fi
+    
     
     echo -e "${GREEN}✅ XUI Бот удален!${NC}"
 }
@@ -1345,28 +1708,37 @@ install_awgbot() {
     
     echo -e "\n${GREEN}✅ AWG сервер найден, продолжаем установку AWGBOT...${NC}\n"
     
-    # Проверка наличия .env
-    if [ ! -f ".env" ]; then
-        create_env_if_not_exists
-    fi
+    # Создание config.yaml если не существует
+    create_config_if_not_exists
     
     # Проверка AWG_BOT_TOKEN
-    if ! grep -q "^AWG_BOT_TOKEN=.\+" .env; then
+    AWG_BOT_TOKEN=$(get_config_value "AWG_BOT_TOKEN" | tr -d '"')
+    if [ -z "$AWG_BOT_TOKEN" ]; then
         echo -e "${YELLOW}📱 Настройка Telegram Bot для AWG${NC}\n"
         read -p "Введите AWG_BOT_TOKEN для AWG бота: " awg_token
-        
-        # Добавляем AWG_BOT_TOKEN если его нет
-        if ! grep -q "^AWG_BOT_TOKEN=" .env; then
-            echo "AWG_BOT_TOKEN=$awg_token" >> .env
-        else
-            update_env_value "AWG_BOT_TOKEN" "$awg_token"
-        fi
+        update_config_value "AWG_BOT_TOKEN" "$awg_token"
     fi
     
     # Проверка ADMIN_IDS
-    if ! grep -q "^ADMIN_IDS=.\+" .env; then
+    ADMIN_IDS=$(get_config_value "ADMIN_IDS")
+    if [ -z "$ADMIN_IDS" ]; then
         read -p "Введите ADMIN_IDS (через запятую): " admin_ids
-        update_env_value "ADMIN_IDS" "$admin_ids"
+        update_config_value "ADMIN_IDS" "$admin_ids"
+    fi
+    
+    # Проверка SERVER_LABEL
+    SERVER_LABEL=$(get_config_value "SERVER_LABEL")
+    if [ -z "$SERVER_LABEL" ] || [ "$SERVER_LABEL" = "null" ]; then
+        echo -e "${YELLOW}📝 Настройка метки сервера${NC}\n"
+        echo -e "${BLUE}Метка сервера используется для идентификации конфигураций (до 5 символов латиницей)${NC}"
+        read -p "Введите метку сервера (например: srv01, vps1, main): " server_label
+        # Валидация: только латиница и цифры, до 5 символов
+        while [[ ! "$server_label" =~ ^[a-zA-Z0-9]{1,5}$ ]]; do
+            echo -e "${RED}❌ Неверный формат! Используйте только латиницу и цифры, до 5 символов${NC}"
+            read -p "Введите метку сервера: " server_label
+        done
+        check_yq && yq eval -i ".common.server_label = \"${server_label^^}\"" config.yaml
+        echo -e "${GREEN}✅ Метка сервера сохранена: ${server_label^^}${NC}\n"
     fi
     
     # Остановка старых контейнеров
@@ -1446,43 +1818,18 @@ update_awgbot() {
     
     echo -e "${YELLOW}🔄 Пересборка AWG бота...${NC}"
     
-    # Проверка наличия git
-    if command -v git &> /dev/null; then
-        echo -e "${YELLOW}📥 Получение обновлений из репозитория...${NC}"
-        
-        # Сохраняем текущую ветку
-        CURRENT_BRANCH=$(git branch --show-current 2>/dev/null || echo "main")
-        
-        # Проверяем есть ли изменения
-        if git status --porcelain | grep -q .; then
-            echo -e "${YELLOW}⚠️  Обнаружены локальные изменения${NC}"
-            echo -e "${YELLOW}Создаем резервную копию...${NC}"
-            git stash push -m "Auto-stash before update $(date +%Y%m%d_%H%M%S)" 2>/dev/null || true
-        fi
-        
-        # Выполняем git pull
-        if git pull origin "$CURRENT_BRANCH" 2>&1 | tee /tmp/git-pull.log; then
-            echo -e "${GREEN}✅ Код успешно обновлен${NC}"
-        else
-            echo -e "${YELLOW}⚠️  Не удалось обновить код из репозитория${NC}"
-            echo -e "${YELLOW}Продолжаем с текущей версией...${NC}"
-        fi
-    else
-        echo -e "${YELLOW}⚠️  Git не установлен, пропускаем обновление кода${NC}"
-        echo -e "${YELLOW}Пересобираем с текущей версией...${NC}"
-    fi
-    
     # Проверка и добавление ALLOW_USER_DNS_QUERIES если его нет
     echo -e "\n${BLUE}📋 Проверка параметра ALLOW_USER_DNS_QUERIES${NC}"
-    if grep -q "^ALLOW_USER_DNS_QUERIES=" .env 2>/dev/null; then
-        CURRENT_VALUE=$(get_env_value "ALLOW_USER_DNS_QUERIES")
-        echo -e "${GREEN}✓ Параметр уже существует: ${CURRENT_VALUE}${NC}"
-        echo -e "${BLUE}ℹ️  Оставляем текущее значение без изменений${NC}"
-    else
-        echo -e "${YELLOW}⚠️  Параметр ALLOW_USER_DNS_QUERIES не найден${NC}"
-        echo -e "${YELLOW}🔧 Добавляем с значением по умолчанию: true${NC}"
-        echo "ALLOW_USER_DNS_QUERIES=true" >> .env
-        echo -e "${GREEN}✅ Параметр ALLOW_USER_DNS_QUERIES добавлен: true${NC}"
+    if [ -f "config.yaml" ]; then
+        CURRENT_VALUE=$(yq eval '.common.allow_user_dns_queries' config.yaml 2>/dev/null)
+        if [ "$CURRENT_VALUE" != "null" ] && [ -n "$CURRENT_VALUE" ]; then
+            echo -e "${GREEN}✓ Параметр уже существует: ${CURRENT_VALUE}${NC}"
+            echo -e "${BLUE}ℹ️  Оставляем текущее значение без изменений${NC}"
+        else
+            echo -e "${YELLOW}⚠️  Параметр ALLOW_USER_DNS_QUERIES не найден${NC}"
+            echo -e "${YELLOW}🔧 Добавляем с значением по умолчанию: true${NC}"
+            update_config_value "ALLOW_USER_DNS_QUERIES" "true"
+        fi
     fi
     
     # Остановка контейнера
@@ -1503,8 +1850,8 @@ update_awgbot() {
     echo -e "${GREEN}📊 Статус:${NC}"
     docker ps --filter name=awgbot
     
-    echo -e "\n${GREEN}📋 Логи AWG бота (последние 50 строк):${NC}"
-    docker logs --tail 50 awgbot
+    echo -e "\n${GREEN}📋 Логи AWG бота:${NC}"
+    docker logs --tail 100 awgbot 2>&1 | grep -E '^\[' | tail -n 50
     
     echo -e "\n${YELLOW}Для просмотра в реальном времени:${NC}"
     echo -e "${YELLOW}docker logs -f awgbot${NC}"
@@ -1534,12 +1881,12 @@ remove_awgbot() {
     echo -e "${YELLOW}🗑️  Удаление образа...${NC}"
     docker rmi awgxuibot-awgbot 2>/dev/null || true
     
-    # Очистка AWG_BOT_TOKEN из .env
-    if [ -f ".env" ]; then
-        echo -e "${YELLOW}🧹 Очистка AWG_BOT_TOKEN из .env...${NC}"
-        if grep -q "^AWG_BOT_TOKEN=" .env; then
-            sed -i '/^AWG_BOT_TOKEN=/d' .env
-            echo -e "${GREEN}✅ AWG_BOT_TOKEN удален из .env${NC}"
+    # Очистка AWG_BOT_TOKEN из config.yaml
+    if [ -f "config.yaml" ]; then
+        echo -e "${YELLOW}🧹 Очистка AWG_BOT_TOKEN из config.yaml...${NC}"
+        if check_yq; then
+            yq eval -i '.common.awg_bot_token = ""' config.yaml
+            echo -e "${GREEN}✅ AWG_BOT_TOKEN очищен${NC}"
         fi
     fi
     
@@ -1670,13 +2017,15 @@ rebuild_xuibot() {
     echo -e "${YELLOW}🚀 Запуск контейнера xuibot...${NC}"
     $DOCKER_COMPOSE_CMD -f docker-compose.xuibot.yml up -d
     
-    sleep 5
+    echo -e "\n${YELLOW}⏳ Ожидание запуска контейнера...${NC}"
+    sleep 8
+    
     echo -e "\n${GREEN}✅ XUI Бот пересобран!${NC}"
     echo -e "${GREEN}📊 Статус:${NC}"
     docker ps --filter name=xuibot
     
     echo -e "\n${GREEN}📋 Логи XUI бота (последние 50 строк):${NC}"
-    docker logs --tail 50 xuibot
+    docker logs --tail 50 xuibot 2>&1 || echo -e "${RED}⚠️  Не удалось получить логи. Контейнер может еще запускаться.${NC}"
     
     echo -e "\n${YELLOW}Для просмотра в реальном времени:${NC}"
     echo -e "${YELLOW}docker logs -f xuibot${NC}"
@@ -1789,9 +2138,9 @@ show_status() {
             [ -n "$xui_version" ] && xui_version="v${xui_version}"
         fi
         
-        # Способ 2: Из .env файла
-        if [ -z "$xui_version" ] && [ -f ".env" ]; then
-            xui_version=$(grep "^XUI_VERSION=" .env 2>/dev/null | cut -d'=' -f2)
+        # Способ 2: Из config.yaml
+        if [ -z "$xui_version" ] && [ -f "config.yaml" ]; then
+            xui_version=$(get_config_value "XUI_VERSION" 2>/dev/null)
             # Добавляем v если его нет
             [[ -n "$xui_version" && ! "$xui_version" =~ ^v ]] && xui_version="v${xui_version}"
         fi
@@ -1805,19 +2154,12 @@ show_status() {
         # Если ничего не нашли
         [ -z "$xui_version" ] && xui_version="Unknown"
         
-        # Получаем данные из .env
-        if [ -f ".env" ]; then
-            local xui_url=$(grep "^XUI_URL=" .env 2>/dev/null | cut -d'=' -f2)
-            local xui_user=$(grep "^XUI_USERNAME=" .env 2>/dev/null | cut -d'=' -f2)
-            local xui_pass=$(grep "^XUI_PASSWORD=" .env 2>/dev/null | cut -d'=' -f2)
-            local transport=$(grep "^TRANSPORT=" .env 2>/dev/null | cut -d'=' -f2)
-            local security=$(grep "^SECURITY=" .env 2>/dev/null | cut -d'=' -f2)
-            local inbound_id=$(grep "^INBOUND_ID=" .env 2>/dev/null | cut -d'=' -f2)
-            local xui_db_path=$(grep "^XUI_DB_PATH=" .env 2>/dev/null | cut -d'=' -f2)
+        # Получаем данные из config.yaml
+        if [ -f "config.yaml" ]; then
+            local inbound_id=$(get_config_value "INBOUND_ID" 2>/dev/null)
+            local xui_db_path=$(get_config_value "XUI_DB_PATH" 2>/dev/null)
             
             # Значения по умолчанию
-            [ -z "$transport" ] && transport="tcp"
-            [ -z "$security" ] && security="tls"
             [ -z "$inbound_id" ] && inbound_id="1"
             [ -z "$xui_db_path" ] && xui_db_path="/etc/x-ui/x-ui.db"
             
@@ -1835,6 +2177,21 @@ show_status() {
             echo -e "  Версия: ${xui_version}"
             echo -e "  Состояние: ${GREEN}Запущена${NC}"
             echo -e "  Всего ключей: ${total_keys}"
+            
+            # Получаем данные подключения из local_panel
+            local xui_url=$(grep -A 20 "local_panel:" config.yaml | grep "xui_url:" | head -1 | awk '{print $2}')
+            local xui_username=$(grep -A 20 "local_panel:" config.yaml | grep "xui_username:" | head -1 | awk '{print $2}')
+            local xui_password=$(grep -A 20 "local_panel:" config.yaml | grep "xui_password:" | head -1 | awk '{print $2}')
+            local xui_api_token=$(grep -A 20 "local_panel:" config.yaml | grep "xui_api_token:" | head -1 | awk '{print $2}')
+            
+            # Выводим данные подключения если они есть
+            if [ -n "$xui_url" ]; then
+                echo -e "\n  ${BOLD}Данные подключения:${NC}"
+                echo -e "  • URL: ${xui_url}"
+                [ -n "$xui_username" ] && echo -e "  • Username: ${xui_username}"
+                [ -n "$xui_password" ] && echo -e "  • Password: ${xui_password}"
+                [ -n "$xui_api_token" ] && echo -e "  • API Token: ${xui_api_token}"
+            fi
         else
             echo -e "  ${GREEN}✅ Установлена${NC}"
             echo -e "  Версия: ${xui_version}"
@@ -1897,16 +2254,16 @@ show_status() {
     echo -e "\n${YELLOW}${BOLD}XUIBOT:${NC}"
     
     if docker ps --filter name=xuibot --format "{{.Names}}" | grep -q xuibot; then
-        local xui_token=$(grep "^XUI_BOT_TOKEN=" .env 2>/dev/null | cut -d'=' -f2)
+        local xui_token=$(get_config_value "XUI_BOT_TOKEN" | tr -d '"')
         local xui_bot_username=$(get_bot_username "$xui_token" "xuibot")
-        local db_path=$(grep "^DB_PATH=" .env 2>/dev/null | cut -d'=' -f2)
+        local db_path=$(get_config_value "DB_PATH")
         
         # Значение по умолчанию для DB_PATH
         [ -z "$db_path" ] && db_path="/app/data/bot_users.db"
         
         # Получаем количество пользователей из базы данных
         local user_count=0
-        local admin_ids=$(grep "^ADMIN_IDS=" .env 2>/dev/null | cut -d'=' -f2)
+        local admin_ids=$(get_config_value "ADMIN_IDS")
         local main_admin=$(echo "$admin_ids" | cut -d',' -f1)
         
         # Проверяем базу данных внутри контейнера
@@ -1923,7 +2280,7 @@ show_status() {
         # Проверка автозагрузки
         local xui_restart_policy=$(docker inspect xuibot --format='{{.HostConfig.RestartPolicy.Name}}' 2>/dev/null)
         if [ "$xui_restart_policy" = "always" ]; then
-            echo -e "  Автозагрузка: ${GREEN}✅ Включена${NC} (always - всегда перезапускается)"
+            echo -e "  Автозагрузка: ${GREEN}✅ Включена${NC}"
         elif [ "$xui_restart_policy" = "unless-stopped" ]; then
             echo -e "  Автозагрузка: ${GREEN}✅ Включена${NC} (unless-stopped - кроме ручной остановки)"
         else
@@ -1939,7 +2296,7 @@ show_status() {
     echo -e "\n${YELLOW}${BOLD}AWGBOT:${NC}"
     
     if docker ps --filter name=awgbot --format "{{.Names}}" | grep -q awgbot; then
-        local awg_token=$(grep "^AWG_BOT_TOKEN=" .env 2>/dev/null | cut -d'=' -f2)
+        local awg_token=$(get_config_value "AWG_BOT_TOKEN" | tr -d '"')
         local awg_bot_username=$(get_bot_username "$awg_token" "awgbot")
         
         if [ "$awg_bot_username" != "Unknown" ]; then
@@ -1950,7 +2307,7 @@ show_status() {
         # Проверка автозагрузки
         local awg_restart_policy=$(docker inspect awgbot --format='{{.HostConfig.RestartPolicy.Name}}' 2>/dev/null)
         if [ "$awg_restart_policy" = "always" ]; then
-            echo -e "  Автозагрузка: ${GREEN}✅ Включена${NC} (always - всегда перезапускается)"
+            echo -e "  Автозагрузка: ${GREEN}✅ Включена${NC}"
         elif [ "$awg_restart_policy" = "unless-stopped" ]; then
             echo -e "  Автозагрузка: ${GREEN}✅ Включена${NC} (unless-stopped - кроме ручной остановки)"
         else
@@ -1960,34 +2317,6 @@ show_status() {
         echo -e "  AWG Bot: ${RED}❌ Не установлен${NC}"
     fi
     
-    # ============================================
-    # DYNAMIC PARAMETERS
-    # ============================================
-    if [ -f ".env" ]; then
-        echo -e "\n${YELLOW}${BOLD}DYNAMIC PARAMETERS (.env):${NC}"
-        
-        # Извлекаем все параметры из секции "# Dynamic parameters"
-        local in_dynamic_section=false
-        while IFS= read -r line; do
-            # Начало секции Dynamic parameters
-            if [[ "$line" =~ ^#.*Dynamic\ parameters ]]; then
-                in_dynamic_section=true
-                continue
-            fi
-            
-            # Конец секции (следующий комментарий или пустая строка после параметров)
-            if [ "$in_dynamic_section" = true ] && [[ "$line" =~ ^# ]] && [[ ! "$line" =~ ^#.*Dynamic\ parameters ]]; then
-                break
-            fi
-            
-            # Выводим параметры из секции
-            if [ "$in_dynamic_section" = true ] && [[ "$line" =~ ^[A-Z_]+= ]]; then
-                local param_name=$(echo "$line" | cut -d'=' -f1)
-                local param_value=$(echo "$line" | cut -d'=' -f2-)
-                [ -n "$param_value" ] && echo -e "  ${param_name}: ${param_value}"
-            fi
-        done < .env
-    fi
     
     # ============================================
     # SYSTEM AUTOSTART
@@ -2110,7 +2439,7 @@ detect_xui_version() {
     
     if [ -z "$version" ]; then
         # Альтернативный метод - проверяем структуру API
-        local xui_url=$(get_env_value "XUI_URL" 2>/dev/null)
+        local xui_url=$(get_config_value "XUI_URL" 2>/dev/null)
         if [ -n "$xui_url" ]; then
             # Проверяем наличие /panel/ в URL (характерно для v3.x)
             if echo "$xui_url" | grep -q "/panel"; then
@@ -2136,9 +2465,14 @@ select_xui_version() {
     echo -e "\n${BLUE}Рекомендации:${NC}"
     echo -e "  ${YELLOW}v2.9.4${NC} - работает через прямой доступ к БД"
     echo -e "  ${YELLOW}v3.x${NC}   - работает через API (требуется API токен)"
-    echo -e "\n${YELLOW}Выберите версию для установки [1]:${NC} "
-    read -p "" version_choice
-    version_choice=${version_choice:-1}
+    if [ -n "$NONINTERACTIVE" ]; then
+        version_choice="${XUI_VERSION_CHOICE:-3}"
+        echo -e "${BLUE}ℹ️  Автоматический режим: выбрана версия ${version_choice}${NC}"
+    else
+        echo -e "\n${YELLOW}Выберите версию для установки [3]:${NC} "
+        read -p "" version_choice
+        version_choice=${version_choice:-3}
+    fi
     
     case $version_choice in
         1)
@@ -2148,30 +2482,238 @@ select_xui_version() {
             echo -e "\n${RED}⚠️  ВНИМАНИЕ!${NC}"
             echo -e "${YELLOW}Последняя версия v2.x может быть нестабильной!${NC}"
             echo -e "${YELLOW}Рекомендуется использовать v2.9.4 или v3.x${NC}"
-            read -p "Вы уверены что хотите продолжить? (нажмите Enter для подтверждения или 0 для отмены): " confirm_latest
+            if [ -z "$NONINTERACTIVE" ]; then
+                read -p "Вы уверены что хотите продолжить? (нажмите Enter для подтверждения или 0 для отмены): " confirm_latest
+            else
+                confirm_latest=""
+            fi
             if [[ "$confirm_latest" != "0" ]]; then
                 install_3xui_latest
             else
-                echo -e "${GREEN}Отменено. Устанавливаем v2.9.4...${NC}"
-                install_3xui_v294
+                echo -e "${GREEN}Отменено. Устанавливаем v3.x...${NC}"
+                NONINTERACTIVE=1
+                install_3xui_v3
+                return
             fi
             ;;
         3)
             echo -e "\n${GREEN}✓ Установка 3x-ui v3.x с поддержкой API${NC}"
             echo -e "${YELLOW}Эта версия полностью поддерживается ботом через API${NC}"
             echo -e "${YELLOW}API токен будет автоматически извлечен и сохранен${NC}\n"
+            NONINTERACTIVE=1
             install_3xui_v3
+            return
             ;;
         0)
             echo -e "${YELLOW}Отменено${NC}"
             return
             ;;
         *)
-            echo -e "${YELLOW}Неверный выбор. Устанавливаем v2.9.4 по умолчанию...${NC}"
+            echo -e "${YELLOW}Неверный выбор. Устанавливаем v3.x по умолчанию...${NC}"
             sleep 2
-            install_3xui_v294
+            NONINTERACTIVE=1
+            install_3xui_v3
+            return
             ;;
     esac
+}
+
+# ============================================
+# SSL Certificate Management Functions
+# ============================================
+
+# Директория для бэкапа сертификатов
+CERT_BACKUP_DIR="${WORK_DIR}/backup/certs"
+
+# Функция проверки валидности SSL сертификата
+check_cert_validity() {
+    local cert_path="$1"
+    local min_days="${2:-1}"  # Минимум дней до истечения (по умолчанию 1)
+    
+    if [ ! -f "$cert_path" ]; then
+        return 1
+    fi
+    
+    # Проверяем срок действия (минимум min_days дней)
+    local seconds=$((min_days * 86400))
+    if openssl x509 -in "$cert_path" -noout -checkend "$seconds" 2>/dev/null; then
+        return 0  # Сертификат валиден
+    else
+        return 1  # Сертификат истек или истечет скоро
+    fi
+}
+
+# Функция получения информации о сертификате
+get_cert_info() {
+    local cert_path="$1"
+    
+    if [ ! -f "$cert_path" ]; then
+        echo "Сертификат не найден"
+        return 1
+    fi
+    
+    local not_after=$(openssl x509 -in "$cert_path" -noout -enddate 2>/dev/null | cut -d= -f2)
+    local subject=$(openssl x509 -in "$cert_path" -noout -subject 2>/dev/null | cut -d= -f2-)
+    
+    echo "Действителен до: $not_after"
+    echo "Subject: $subject"
+}
+
+# Функция сохранения SSL сертификатов
+backup_ssl_certs() {
+    echo -e "${YELLOW}🔐 Проверка SSL сертификатов...${NC}"
+    
+    local cert_found=false
+    local cert_valid=false
+    
+    # Проверяем наличие сертификатов в /root/cert/ip/
+    if [ -f "/root/cert/ip/fullchain.pem" ] && [ -f "/root/cert/ip/privkey.pem" ]; then
+        cert_found=true
+        echo -e "${GREEN}✓ Найдены сертификаты в /root/cert/ip/${NC}"
+        
+        # Проверяем валидность (минимум 1 день)
+        if check_cert_validity "/root/cert/ip/fullchain.pem" 1; then
+            cert_valid=true
+            echo -e "${GREEN}✓ Сертификат валиден${NC}"
+            get_cert_info "/root/cert/ip/fullchain.pem"
+        else
+            echo -e "${YELLOW}⚠ Сертификат истек или истечет в течение 24 часов${NC}"
+        fi
+    fi
+    
+    # Если сертификат найден и валиден - сохраняем
+    if [ "$cert_found" = true ] && [ "$cert_valid" = true ]; then
+        echo -e "${YELLOW}💾 Сохранение сертификатов...${NC}"
+        
+        # Создаем директорию для бэкапа
+        mkdir -p "$CERT_BACKUP_DIR"
+        
+        # Копируем сертификаты
+        cp -f /root/cert/ip/fullchain.pem "$CERT_BACKUP_DIR/" 2>/dev/null || true
+        cp -f /root/cert/ip/privkey.pem "$CERT_BACKUP_DIR/" 2>/dev/null || true
+        
+        # Сохраняем информацию о сертификате
+        cat > "$CERT_BACKUP_DIR/cert_info.txt" << EOF
+Backup Date: $(date)
+Certificate Info:
+$(get_cert_info "/root/cert/ip/fullchain.pem")
+EOF
+        
+        # Копируем конфигурацию acme.sh если есть
+        if [ -d "/root/.acme.sh" ]; then
+            echo -e "${YELLOW}📦 Сохранение конфигурации acme.sh...${NC}"
+            mkdir -p "$CERT_BACKUP_DIR/acme_backup"
+            
+            # Копируем account
+            if [ -d "/root/.acme.sh/account" ]; then
+                cp -r /root/.acme.sh/account "$CERT_BACKUP_DIR/acme_backup/" 2>/dev/null || true
+            fi
+            
+            # Копируем конфигурацию для IP
+            local server_ip=$(curl -s -4 https://api4.ipify.org 2>/dev/null || echo "")
+            if [ -n "$server_ip" ] && [ -d "/root/.acme.sh/${server_ip}_ecc" ]; then
+                cp -r "/root/.acme.sh/${server_ip}_ecc" "$CERT_BACKUP_DIR/acme_backup/" 2>/dev/null || true
+            fi
+        fi
+        
+        echo -e "${GREEN}✅ Сертификаты сохранены в ${CERT_BACKUP_DIR}${NC}"
+        return 0
+    else
+        if [ "$cert_found" = false ]; then
+            echo -e "${YELLOW}ℹ️  SSL сертификаты не найдены${NC}"
+        else
+            echo -e "${YELLOW}ℹ️  Сертификаты не сохранены (истекли или скоро истекут)${NC}"
+        fi
+        return 1
+    fi
+}
+
+# Функция восстановления SSL сертификатов
+restore_ssl_certs() {
+    echo -e "${YELLOW}🔐 Восстановление SSL сертификатов...${NC}"
+    
+    if [ ! -f "$CERT_BACKUP_DIR/fullchain.pem" ] || [ ! -f "$CERT_BACKUP_DIR/privkey.pem" ]; then
+        echo -e "${RED}❌ Сохраненные сертификаты не найдены${NC}"
+        return 1
+    fi
+    
+    # Проверяем валидность сохраненных сертификатов
+    if ! check_cert_validity "$CERT_BACKUP_DIR/fullchain.pem" 1; then
+        echo -e "${RED}❌ Сохраненные сертификаты истекли${NC}"
+        return 1
+    fi
+    
+    echo -e "${GREEN}✓ Сохраненные сертификаты валидны${NC}"
+    get_cert_info "$CERT_BACKUP_DIR/fullchain.pem"
+    
+    # Создаем директорию для сертификатов
+    mkdir -p /root/cert/ip
+    
+    # Восстанавливаем сертификаты
+    cp -f "$CERT_BACKUP_DIR/fullchain.pem" /root/cert/ip/ 2>/dev/null || true
+    cp -f "$CERT_BACKUP_DIR/privkey.pem" /root/cert/ip/ 2>/dev/null || true
+    
+    # Устанавливаем правильные права
+    chmod 644 /root/cert/ip/fullchain.pem
+    chmod 600 /root/cert/ip/privkey.pem
+    
+    # Восстанавливаем конфигурацию acme.sh если есть
+    if [ -d "$CERT_BACKUP_DIR/acme_backup" ]; then
+        echo -e "${YELLOW}📦 Восстановление конфигурации acme.sh...${NC}"
+        
+        # Создаем директорию acme.sh если не существует
+        mkdir -p /root/.acme.sh
+        
+        # Восстанавливаем account
+        if [ -d "$CERT_BACKUP_DIR/acme_backup/account" ]; then
+            cp -r "$CERT_BACKUP_DIR/acme_backup/account" /root/.acme.sh/ 2>/dev/null || true
+        fi
+        
+        # Восстанавливаем конфигурацию для IP
+        local server_ip=$(curl -s -4 https://api4.ipify.org 2>/dev/null || echo "")
+        if [ -n "$server_ip" ] && [ -d "$CERT_BACKUP_DIR/acme_backup/${server_ip}_ecc" ]; then
+            cp -r "$CERT_BACKUP_DIR/acme_backup/${server_ip}_ecc" /root/.acme.sh/ 2>/dev/null || true
+        fi
+    fi
+    
+    echo -e "${GREEN}✅ Сертификаты восстановлены${NC}"
+    return 0
+}
+
+# Функция проверки и предложения использования существующих сертификатов
+check_and_offer_existing_certs() {
+    # Проверяем наличие сохраненных сертификатов
+    if [ ! -f "$CERT_BACKUP_DIR/fullchain.pem" ] || [ ! -f "$CERT_BACKUP_DIR/privkey.pem" ]; then
+        return 1  # Нет сохраненных сертификатов
+    fi
+    
+    # Проверяем валидность
+    if ! check_cert_validity "$CERT_BACKUP_DIR/fullchain.pem" 1; then
+        echo -e "${YELLOW}ℹ️  Найдены сохраненные сертификаты, но они истекли${NC}"
+        return 1
+    fi
+    
+    echo -e "\n${GREEN}✓ Найдены валидные сохраненные SSL сертификаты!${NC}"
+    echo -e "${BLUE}════════════════════════════════════════${NC}"
+    get_cert_info "$CERT_BACKUP_DIR/fullchain.pem"
+    echo -e "${BLUE}════════════════════════════════════════${NC}\n"
+    
+    if [ -z "$NONINTERACTIVE" ]; then
+        read -p "Использовать существующие сертификаты? (Enter - Да, 0 - Запросить новый): " use_existing
+    else
+        use_existing=""
+        echo -e "${BLUE}ℹ️  Автоматический режим: используем существующие сертификаты${NC}"
+    fi
+    
+    if [[ "$use_existing" == "0" ]]; then
+        echo -e "${YELLOW}⚠ Будет запрошен новый SSL сертификат${NC}"
+        echo -e "${YELLOW}⚠ Старые сертификаты будут удалены${NC}"
+        rm -rf "$CERT_BACKUP_DIR"
+        return 1  # Запросить новый сертификат
+    else
+        echo -e "${GREEN}✓ Используем существующие сертификаты${NC}"
+        return 0  # Использовать существующие
+    fi
 }
 
 # Функция установки последней версии 3x-ui панели
@@ -2183,14 +2725,19 @@ install_3xui_latest() {
     # Проверка установлена ли уже панель
     if systemctl is-active --quiet x-ui; then
         echo -e "${YELLOW}⚠ 3x-ui панель уже установлена${NC}"
-        read -p "Переустановить? (нажмите Enter для подтверждения или 0 для отмены): " reinstall
+        if [ -z "$NONINTERACTIVE" ]; then
+            read -p "Переустановить? (нажмите Enter для подтверждения или 0 для отмены): " reinstall
+        else
+            reinstall=""
+            echo -e "${BLUE}ℹ️  Автоматический режим: продолжаем переустановку${NC}"
+        fi
         if [[ "$reinstall" == "0" ]]; then
             echo -e "${YELLOW}Отменено${NC}"
             return
         fi
     fi
     
-    SERVER_IP=$(curl -s ifconfig.me)
+    SERVER_IP=$(curl -s -4 https://api4.ipify.org 2>/dev/null || curl -s -4 https://ipv4.icanhazip.com 2>/dev/null || curl -s -4 ifconfig.me 2>/dev/null || echo "")
     
     # Генерируем случайный пароль для панели
     GENERATED_PASSWORD=$(openssl rand -base64 16 | tr -d "=+/" | cut -c1-16)
@@ -2198,11 +2745,37 @@ install_3xui_latest() {
     echo -e "${YELLOW}📦 Загрузка и установка 3x-ui (последняя версия)...${NC}"
     echo -e "${BLUE}Будет сгенерирован случайный пароль для панели${NC}\n"
     
+    # Подготовка к получению SSL-сертификата
+    echo -e "${YELLOW}🔧 Подготовка к получению SSL-сертификата...${NC}"
+    
+    # Очищаем старые ключи acme.sh если они есть
+    if [ -d "/root/.acme.sh" ]; then
+        echo -e "${YELLOW}🧹 Очистка старых ключей acme.sh...${NC}"
+        rm -rf /root/.acme.sh/*/
+        echo -e "${GREEN}✅ Старые ключи очищены${NC}"
+    fi
+    
+    # Проверяем что порт 80 свободен
+    if netstat -tuln 2>/dev/null | grep -q ":80 " || ss -tuln 2>/dev/null | grep -q ":80 "; then
+        echo -e "${YELLOW}⚠ Порт 80 занят, освобождаем...${NC}"
+        # Останавливаем возможные сервисы на порту 80
+        systemctl stop nginx 2>/dev/null || true
+        systemctl stop apache2 2>/dev/null || true
+        systemctl stop httpd 2>/dev/null || true
+        sleep 2
+        echo -e "${GREEN}✅ Порт 80 освобожден${NC}"
+    else
+        echo -e "${GREEN}✅ Порт 80 свободен${NC}"
+    fi
+    
+    echo -e "${GREEN}✅ Готово к получению SSL-сертификата${NC}\n"
+    
     # Установка с автоматической генерацией параметров (новая версия установщика)
     # Передаем ответы на все промпты:
     # y - подтверждение установки
     # 1 - SQLite база данных
     # 2 - Let's Encrypt для IP
+    # y - подтверждение получения SSL для IP
     # (пусто) - IPv6 address (skip)
     # (пусто) - Port для ACME (default 80)
     
@@ -2211,6 +2784,7 @@ install_3xui_latest() {
 y
 1
 2
+y
 
 
 EOF
@@ -2333,7 +2907,7 @@ EOF
         # Формируем URL для v2.9.4 (всегда HTTP для старой установки)
         # Используем корневой путь для упрощения
         XUI_PATH="/"
-        XUI_URL="http://${SERVER_IP}:${XUI_PORT}"
+        XUI_URL="http://$(format_host_for_url "${SERVER_IP}"):${XUI_PORT}"
         
         echo -e "\n${GREEN}═══════════════════════════════════════════${NC}"
         echo -e "${GREEN}     Панель 3x-ui успешно установлена!${NC}"
@@ -2362,26 +2936,48 @@ EOF
         # Генерация Short IDs
         REALITY_SHORT_ID=$(openssl rand -hex 8)
         
-        # Создание .env файла с учетными данными 3x-ui
-        create_env_if_not_exists
+        # Создание config.yaml если не существует (БЕЗ попытки обновить локальную панель)
+        if [ ! -f "config.yaml" ]; then
+            echo -e "${YELLOW}📝 Создание config.yaml из примера...${NC}"
+            if [ -f "config.yaml.example" ]; then
+                cp config.yaml.example config.yaml
+                echo -e "${GREEN}✅ config.yaml создан из примера${NC}"
+            else
+                echo -e "${RED}❌ config.yaml.example не найден${NC}"
+            fi
+        fi
         
-        echo -e "${YELLOW}💾 Сохранение учетных данных в .env...${NC}"
-        update_env_value "XUI_URL" "${XUI_URL}"
-        update_env_value "XUI_USERNAME" "${XUI_USERNAME}"
-        update_env_value "XUI_PASSWORD" "${XUI_PASSWORD}"
-        update_env_value "REALITY_PUBLIC_KEY" "${REALITY_PUBLIC_KEY}"
-        update_env_value "REALITY_PRIVATE_KEY" "${REALITY_PRIVATE_KEY}"
-        update_env_value "REALITY_SHORT_ID" "${REALITY_SHORT_ID}"
-        update_env_value "SERVER_ADDRESS" "${SERVER_IP}"
-        update_env_value "SERVER_IP" "${SERVER_IP}"
-        update_env_value "SERVER_PORT" "443"
+        # Определяем версию для добавления в config.yaml
+        XUI_VERSION_FOR_CONFIG="${XUI_VERSION:-latest}"
+        
+        # Добавляем локальную панель в config.yaml ПЕРЕД сохранением данных
+        echo -e "${YELLOW}📝 Добавление локальной панели в config.yaml...${NC}"
+        if add_local_panel_to_config "$XUI_VERSION_FOR_CONFIG" "${XUI_URL}" "${XUI_USERNAME}" "${XUI_PASSWORD}" "${SERVER_IP}"; then
+            echo -e "${GREEN}✅ Локальная панель добавлена в config.yaml${NC}"
+        else
+            echo -e "${RED}❌ Не удалось добавить локальную панель в config.yaml${NC}"
+            echo -e "${YELLOW}⚠️  Продолжаем без config.yaml${NC}"
+        fi
+        
+        echo -e "${YELLOW}💾 Сохранение учетных данных...${NC}"
+        update_config_value "XUI_URL" "${XUI_URL}"
+        update_config_value "XUI_USERNAME" "${XUI_USERNAME}"
+        update_config_value "XUI_PASSWORD" "${XUI_PASSWORD}"
+        update_config_value "REALITY_PUBLIC_KEY" "${REALITY_PUBLIC_KEY}"
+        update_config_value "REALITY_PRIVATE_KEY" "${REALITY_PRIVATE_KEY}"
+        update_config_value "REALITY_SHORT_ID" "${REALITY_SHORT_ID}"
+        update_config_value "SERVER_ADDRESS" "${SERVER_IP}"
+        update_config_value "SERVER_IP" "${SERVER_IP}"
+        update_config_value "SERVER_PORT" "443"
         
         # Сохраняем версию панели
         if [ -n "$XUI_VERSION" ]; then
-            update_env_value "XUI_VERSION" "${XUI_VERSION}"
+            update_config_value "XUI_VERSION" "${XUI_VERSION}"
         else
-            update_env_value "XUI_VERSION" "latest"
+            update_config_value "XUI_VERSION" "latest"
         fi
+        
+        echo -e "${GREEN}✅ Все данные успешно сохранены${NC}"
         
         # Автоматическое создание inbound
         echo -e "\n${YELLOW}🔧 Создание VLESS Reality inbound...${NC}"
@@ -2391,7 +2987,7 @@ EOF
         
         if [ -n "$XUI_API_TOKEN" ]; then
             echo -e "${GREEN}✅ API Token извлечен: ${XUI_API_TOKEN:0:20}...${NC}"
-            update_env_value "XUI_API_TOKEN" "${XUI_API_TOKEN}"
+            update_config_value "XUI_API_TOKEN" "${XUI_API_TOKEN}"
         fi
         
         # Даем панели время на запуск
@@ -2568,8 +3164,8 @@ STREAMEOF
                     echo -e "${GREEN}   Network: xhttp${NC}"
                     echo -e "${GREEN}   Security: reality${NC}"
                     
-                    # Сохраняем ID в .env
-                    update_env_value "INBOUND_ID" "${INBOUND_ID}"
+                    # Сохраняем ID в config.yaml
+                    update_config_value "INBOUND_ID" "${INBOUND_ID}"
                     
                     # Извлекаем реальные Reality ключи из созданного inbound
                     echo -e "${YELLOW}🔑 Извлечение Reality ключей из inbound...${NC}"
@@ -2585,13 +3181,13 @@ STREAMEOF
                         echo -e "${GREEN}   Fingerprint: ${ACTUAL_FINGERPRINT}${NC}"
                         echo -e "${GREEN}   SNI: ${ACTUAL_SNI}${NC}"
                         
-                        # Обновляем .env с реальными ключами из inbound
-                        update_env_value "REALITY_PUBLIC_KEY" "${ACTUAL_PUBLIC_KEY}"
-                        update_env_value "REALITY_SHORT_ID" "${ACTUAL_SHORT_ID}"
-                        update_env_value "REALITY_FINGERPRINT" "${ACTUAL_FINGERPRINT}"
-                        update_env_value "REALITY_SNI" "${ACTUAL_SNI}"
+                        # Обновляем config.yaml с реальными ключами из inbound
+                        update_config_value "REALITY_PUBLIC_KEY" "${ACTUAL_PUBLIC_KEY}"
+                        update_config_value "REALITY_SHORT_ID" "${ACTUAL_SHORT_ID}"
+                        update_config_value "REALITY_FINGERPRINT" "${ACTUAL_FINGERPRINT}"
+                        update_config_value "REALITY_SNI" "${ACTUAL_SNI}"
                         
-                        echo -e "${GREEN}✅ Ключи сохранены в .env${NC}"
+                        echo -e "${GREEN}✅ Ключи сохранены в config.yaml${NC}"
                     else
                         echo -e "${YELLOW}⚠ Не удалось извлечь ключи из inbound, используем сгенерированные${NC}"
                     fi
@@ -2680,7 +3276,7 @@ STREAMEOF
                 INBOUND_ID=$(echo "$API_RESPONSE_BODY" | grep -oP '(?<="id":)\d+' | head -1)
                 if [ -n "$INBOUND_ID" ]; then
                     echo -e "${GREEN}   Inbound ID: ${INBOUND_ID}${NC}"
-                    update_env_value "INBOUND_ID" "${INBOUND_ID}"
+                    update_config_value "INBOUND_ID" "${INBOUND_ID}"
                 fi
                 
                 INBOUND_CREATED=true
@@ -2729,7 +3325,7 @@ STREAMEOF
         fi
         echo -e "${BLUE}========================================${NC}"
         echo -e "${YELLOW}💾 Также эти данные сохранены в:${NC}"
-        echo -e "   ${YELLOW}${WORK_DIR}/.env${NC}"
+        echo -e "   ${YELLOW}${WORK_DIR}/config.yaml${NC}"
         echo -e "${BLUE}========================================${NC}"
         
         if [ -n "$XUI_VERSION" ]; then
@@ -2747,10 +3343,10 @@ create_xhttp_reality_inbound() {
     echo -e "${BLUE}   Создание XHTTP Reality Inbound${NC}"
     echo -e "${BLUE}========================================${NC}\n"
     
-    # Загружаем Reality ключи из .env
-    REALITY_PRIVATE_KEY=$(get_env_value "REALITY_PRIVATE_KEY")
-    REALITY_PUBLIC_KEY=$(get_env_value "REALITY_PUBLIC_KEY")
-    REALITY_SHORT_ID=$(get_env_value "REALITY_SHORT_ID")
+    # Загружаем Reality ключи из config.yaml
+    REALITY_PRIVATE_KEY=$(get_config_value "REALITY_PRIVATE_KEY")
+    REALITY_PUBLIC_KEY=$(get_config_value "REALITY_PUBLIC_KEY")
+    REALITY_SHORT_ID=$(get_config_value "REALITY_SHORT_ID")
     
     # Проверяем наличие необходимых данных
     if [ -z "$REALITY_PRIVATE_KEY" ] || [ -z "$REALITY_PUBLIC_KEY" ] || [ -z "$REALITY_SHORT_ID" ]; then
@@ -2808,7 +3404,47 @@ STREAMEOF
     STREAM_SETTINGS_JSON_ESCAPED=$(echo "$STREAM_SETTINGS_JSON" | sed "s/'/''/g")
     SNIFFING_JSON_ESCAPED=$(echo "$SNIFFING_JSON" | sed "s/'/''/g")
     
-    # Проверяем и удаляем существующий inbound
+    # Получаем API токен и URL из config.yaml
+    local API_TOKEN=$(get_config_value "XUI_API_TOKEN")
+    local PANEL_URL=$(get_config_value "XUI_URL")
+    
+    # Пробуем создать через API (приоритет для v3)
+    local INBOUND_CREATED_API=false
+    if [ -n "$API_TOKEN" ] && [ -n "$PANEL_URL" ]; then
+        echo -e "${YELLOW}📤 Создание inbound через API...${NC}"
+        
+        local API_INBOUND_JSON=$(cat <<APIJSON
+{
+  "enable": true,
+  "remark": "VLESS-Reality-xHTTP",
+  "listen": "",
+  "port": 443,
+  "protocol": "vless",
+  "settings": {"clients":[],"decryption":"none","fallbacks":[]},
+  "streamSettings": $(echo "$STREAM_SETTINGS_JSON"),
+  "sniffing": {"enabled":true,"destOverride":["http","tls","quic","fakedns"],"metadataOnly":false,"routeOnly":false},
+  "tag": "inbound-443"
+}
+APIJSON
+)
+        local API_RESP=$(curl -sk -w "\n%{http_code}" -X POST "${PANEL_URL%/}/panel/api/inbounds/add" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${API_TOKEN}" \
+            -d "$API_INBOUND_JSON" 2>/dev/null)
+        local API_CODE=$(echo "$API_RESP" | tail -1)
+        local API_BODY=$(echo "$API_RESP" | head -n-1)
+        
+        if echo "$API_BODY" | grep -q '"success":true'; then
+            INBOUND_ID=$(echo "$API_BODY" | grep -oP '"id":\K\d+' | head -1)
+            echo -e "${GREEN}✅ XHTTP Reality inbound создан через API! ID: ${INBOUND_ID}${NC}"
+            INBOUND_CREATED_API=true
+        else
+            echo -e "${YELLOW}⚠ API не сработал (${API_CODE}), пробуем через SQL...${NC}"
+        fi
+    fi
+    
+    if [ "$INBOUND_CREATED_API" = false ]; then
+    # Проверяем и удаляем существующий inbound через SQL
     EXISTING_INBOUND=$(sqlite3 /etc/x-ui/x-ui.db "SELECT id FROM inbounds WHERE tag='inbound-443' OR remark='VLESS-Reality-xHTTP';" 2>/dev/null)
     
     if [ -n "$EXISTING_INBOUND" ]; then
@@ -2826,8 +3462,10 @@ STREAMEOF
     
     if [ $SQL_EXIT_CODE -eq 0 ]; then
         INBOUND_ID=$(sqlite3 /etc/x-ui/x-ui.db "SELECT id FROM inbounds WHERE remark='VLESS-Reality-xHTTP' ORDER BY id DESC LIMIT 1;" 2>/dev/null)
-        
-        if [ -n "$INBOUND_ID" ]; then
+    fi
+    fi # конец блока SQL
+    
+    if [ -n "$INBOUND_ID" ]; then
             echo -e "${GREEN}✅ XHTTP Reality inbound создан успешно!${NC}"
             echo -e "${GREEN}   ID: ${INBOUND_ID}${NC}"
             echo -e "${GREEN}   Порт: 443${NC}"
@@ -2835,9 +3473,9 @@ STREAMEOF
             echo -e "${GREEN}   Network: xhttp${NC}"
             echo -e "${GREEN}   Security: reality${NC}"
             
-            update_env_value "INBOUND_ID" "${INBOUND_ID}"
-            update_env_value "TRANSPORT" "xhttp"
-            update_env_value "SECURITY" "reality"
+            update_config_value "INBOUND_ID" "${INBOUND_ID}"
+            update_config_value "TRANSPORT" "xhttp"
+            update_config_value "SECURITY" "reality"
             
             # Извлекаем реальные Reality ключи из созданного inbound
             echo -e "${YELLOW}🔑 Извлечение Reality ключей из inbound...${NC}"
@@ -2853,13 +3491,13 @@ STREAMEOF
                 echo -e "${GREEN}   Fingerprint: ${ACTUAL_FINGERPRINT}${NC}"
                 echo -e "${GREEN}   SNI: ${ACTUAL_SNI}${NC}"
                 
-                # Обновляем .env с реальными ключами из inbound
-                update_env_value "REALITY_PUBLIC_KEY" "${ACTUAL_PUBLIC_KEY}"
-                update_env_value "REALITY_SHORT_ID" "${ACTUAL_SHORT_ID}"
-                update_env_value "REALITY_FINGERPRINT" "${ACTUAL_FINGERPRINT}"
-                update_env_value "REALITY_SNI" "${ACTUAL_SNI}"
+                # Обновляем config.yaml с реальными ключами из inbound
+                update_config_value "REALITY_PUBLIC_KEY" "${ACTUAL_PUBLIC_KEY}"
+                update_config_value "REALITY_SHORT_ID" "${ACTUAL_SHORT_ID}"
+                update_config_value "REALITY_FINGERPRINT" "${ACTUAL_FINGERPRINT}"
+                update_config_value "REALITY_SNI" "${ACTUAL_SNI}"
                 
-                echo -e "${GREEN}✅ Ключи сохранены в .env${NC}"
+                echo -e "${GREEN}✅ Ключи сохранены в config.yaml${NC}"
             else
                 echo -e "${YELLOW}⚠ Не удалось извлечь ключи из inbound, используем сгенерированные${NC}"
             fi
@@ -2873,7 +3511,6 @@ STREAMEOF
             sleep 3
             
             return 0
-        fi
     fi
     
     echo -e "${RED}❌ Ошибка создания inbound${NC}"
@@ -2886,10 +3523,10 @@ create_tcp_reality_inbound() {
     echo -e "${BLUE}   Создание TCP Reality Inbound${NC}"
     echo -e "${BLUE}========================================${NC}\n"
     
-    # Загружаем Reality ключи из .env
-    REALITY_PRIVATE_KEY=$(get_env_value "REALITY_PRIVATE_KEY")
-    REALITY_PUBLIC_KEY=$(get_env_value "REALITY_PUBLIC_KEY")
-    REALITY_SHORT_ID=$(get_env_value "REALITY_SHORT_ID")
+    # Загружаем Reality ключи из config.yaml
+    REALITY_PRIVATE_KEY=$(get_config_value "REALITY_PRIVATE_KEY")
+    REALITY_PUBLIC_KEY=$(get_config_value "REALITY_PUBLIC_KEY")
+    REALITY_SHORT_ID=$(get_config_value "REALITY_SHORT_ID")
     
     # Проверяем наличие необходимых данных
     if [ -z "$REALITY_PRIVATE_KEY" ] || [ -z "$REALITY_PUBLIC_KEY" ] || [ -z "$REALITY_SHORT_ID" ]; then
@@ -2940,26 +3577,60 @@ STREAMEOF
     STREAM_SETTINGS_JSON_ESCAPED=$(echo "$STREAM_SETTINGS_JSON" | sed "s/'/''/g")
     SNIFFING_JSON_ESCAPED=$(echo "$SNIFFING_JSON" | sed "s/'/''/g")
     
-    # Проверяем и удаляем существующий inbound
-    EXISTING_INBOUND=$(sqlite3 /etc/x-ui/x-ui.db "SELECT id FROM inbounds WHERE tag='inbound-443' OR remark='VLESS-Reality-TCP';" 2>/dev/null)
+    # Получаем API токен и URL из config.yaml
+    local API_TOKEN=$(get_config_value "XUI_API_TOKEN")
+    local PANEL_URL=$(get_config_value "XUI_URL")
     
-    if [ -n "$EXISTING_INBOUND" ]; then
-        echo -e "${YELLOW}⚠ Найден существующий inbound (ID: ${EXISTING_INBOUND}), удаляем...${NC}"
-        sqlite3 /etc/x-ui/x-ui.db "DELETE FROM inbounds WHERE tag='inbound-443' OR remark='VLESS-Reality-TCP';" 2>/dev/null
+    # Пробуем создать через API
+    local INBOUND_CREATED_API=false
+    if [ -n "$API_TOKEN" ] && [ -n "$PANEL_URL" ]; then
+        echo -e "${YELLOW}📤 Создание inbound через API...${NC}"
+        local API_INBOUND_JSON=$(cat <<APIJSON
+{
+  "enable": true,
+  "remark": "VLESS-Reality-TCP",
+  "listen": "",
+  "port": 443,
+  "protocol": "vless",
+  "settings": {"clients":[],"decryption":"none","fallbacks":[]},
+  "streamSettings": $(echo "$STREAM_SETTINGS_JSON"),
+  "sniffing": {"enabled":true,"destOverride":["http","tls","quic","fakedns"],"metadataOnly":false,"routeOnly":false},
+  "tag": "inbound-443"
+}
+APIJSON
+)
+        local API_RESP=$(curl -sk -w "\n%{http_code}" -X POST "${PANEL_URL%/}/panel/api/inbounds/add" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${API_TOKEN}" \
+            -d "$API_INBOUND_JSON" 2>/dev/null)
+        local API_CODE=$(echo "$API_RESP" | tail -1)
+        local API_BODY=$(echo "$API_RESP" | head -n-1)
+        
+        if echo "$API_BODY" | grep -q '"success":true'; then
+            INBOUND_ID=$(echo "$API_BODY" | grep -oP '"id":\K\d+' | head -1)
+            echo -e "${GREEN}✅ TCP Reality inbound создан через API! ID: ${INBOUND_ID}${NC}"
+            INBOUND_CREATED_API=true
+        else
+            echo -e "${YELLOW}⚠ API не сработал (${API_CODE}), пробуем через SQL...${NC}"
+        fi
     fi
     
-    # Вставляем inbound в базу данных
+    if [ "$INBOUND_CREATED_API" = false ]; then
+    EXISTING_INBOUND=$(sqlite3 /etc/x-ui/x-ui.db "SELECT id FROM inbounds WHERE tag='inbound-443' OR remark='VLESS-Reality-TCP';" 2>/dev/null)
+    if [ -n "$EXISTING_INBOUND" ]; then
+        sqlite3 /etc/x-ui/x-ui.db "DELETE FROM inbounds WHERE tag='inbound-443' OR remark='VLESS-Reality-TCP';" 2>/dev/null
+    fi
     SQL_INSERT="INSERT INTO inbounds (user_id, up, down, total, remark, enable, expiry_time, listen, port, protocol, settings, stream_settings, tag, sniffing) VALUES (1, 0, 0, 0, 'VLESS-Reality-TCP', 1, 0, '', 443, 'vless', '${SETTINGS_JSON_ESCAPED}', '${STREAM_SETTINGS_JSON_ESCAPED}', 'inbound-443', '${SNIFFING_JSON_ESCAPED}');"
-    
     set +e
     SQL_RESULT=$(sqlite3 /etc/x-ui/x-ui.db "${SQL_INSERT}" 2>&1)
     SQL_EXIT_CODE=$?
     set -e
-    
     if [ $SQL_EXIT_CODE -eq 0 ]; then
         INBOUND_ID=$(sqlite3 /etc/x-ui/x-ui.db "SELECT id FROM inbounds WHERE remark='VLESS-Reality-TCP' ORDER BY id DESC LIMIT 1;" 2>/dev/null)
-        
-        if [ -n "$INBOUND_ID" ]; then
+    fi
+    fi # конец блока SQL
+    
+    if [ -n "$INBOUND_ID" ]; then
             echo -e "${GREEN}✅ TCP Reality inbound создан успешно!${NC}"
             echo -e "${GREEN}   ID: ${INBOUND_ID}${NC}"
             echo -e "${GREEN}   Порт: 443${NC}"
@@ -2967,9 +3638,9 @@ STREAMEOF
             echo -e "${GREEN}   Network: tcp${NC}"
             echo -e "${GREEN}   Security: reality${NC}"
             
-            update_env_value "INBOUND_ID" "${INBOUND_ID}"
-            update_env_value "TRANSPORT" "tcp"
-            update_env_value "SECURITY" "reality"
+            update_config_value "INBOUND_ID" "${INBOUND_ID}"
+            update_config_value "TRANSPORT" "tcp"
+            update_config_value "SECURITY" "reality"
             
             # Извлекаем реальные Reality ключи из созданного inbound
             echo -e "${YELLOW}🔑 Извлечение Reality ключей из inbound...${NC}"
@@ -2985,13 +3656,13 @@ STREAMEOF
                 echo -e "${GREEN}   Fingerprint: ${ACTUAL_FINGERPRINT}${NC}"
                 echo -e "${GREEN}   SNI: ${ACTUAL_SNI}${NC}"
                 
-                # Обновляем .env с реальными ключами из inbound
-                update_env_value "REALITY_PUBLIC_KEY" "${ACTUAL_PUBLIC_KEY}"
-                update_env_value "REALITY_SHORT_ID" "${ACTUAL_SHORT_ID}"
-                update_env_value "REALITY_FINGERPRINT" "${ACTUAL_FINGERPRINT}"
-                update_env_value "REALITY_SNI" "${ACTUAL_SNI}"
+                # Обновляем config.yaml с реальными ключами из inbound
+                update_config_value "REALITY_PUBLIC_KEY" "${ACTUAL_PUBLIC_KEY}"
+                update_config_value "REALITY_SHORT_ID" "${ACTUAL_SHORT_ID}"
+                update_config_value "REALITY_FINGERPRINT" "${ACTUAL_FINGERPRINT}"
+                update_config_value "REALITY_SNI" "${ACTUAL_SNI}"
                 
-                echo -e "${GREEN}✅ Ключи сохранены в .env${NC}"
+                echo -e "${GREEN}✅ Ключи сохранены в config.yaml${NC}"
             else
                 echo -e "${YELLOW}⚠ Не удалось извлечь ключи из inbound, используем сгенерированные${NC}"
             fi
@@ -3005,7 +3676,6 @@ STREAMEOF
             sleep 3
             
             return 0
-        fi
     fi
     
     echo -e "${RED}❌ Ошибка создания inbound${NC}"
@@ -3105,9 +3775,9 @@ STREAMEOF
             echo -e "${GREEN}   Network: tcp${NC}"
             echo -e "${GREEN}   Security: tls${NC}"
             
-            update_env_value "INBOUND_ID" "${INBOUND_ID}"
-            update_env_value "TRANSPORT" "tcp"
-            update_env_value "SECURITY" "tls"
+            update_config_value "INBOUND_ID" "${INBOUND_ID}"
+            update_config_value "TRANSPORT" "tcp"
+            update_config_value "SECURITY" "tls"
             
             # Извлекаем TLS параметры из созданного inbound
             echo -e "${YELLOW}🔑 Извлечение TLS параметров из inbound...${NC}"
@@ -3120,12 +3790,12 @@ STREAMEOF
                 echo -e "${GREEN}   ALPN: ${ACTUAL_ALPN}${NC}"
                 echo -e "${GREEN}   SNI: ${SERVER_IP}${NC}"
                 
-                # Обновляем .env с реальными параметрами из inbound
-                update_env_value "TLS_FINGERPRINT" "${ACTUAL_FINGERPRINT}"
-                update_env_value "TLS_ALPN" "${ACTUAL_ALPN}"
-                update_env_value "TLS_SNI" "${SERVER_IP}"
+                # Обновляем config.yaml с реальными параметрами из inbound
+                update_config_value "TLS_FINGERPRINT" "${ACTUAL_FINGERPRINT}"
+                update_config_value "TLS_ALPN" "${ACTUAL_ALPN}"
+                update_config_value "TLS_SNI" "${SERVER_IP}"
                 
-                echo -e "${GREEN}✅ Параметры сохранены в .env${NC}"
+                echo -e "${GREEN}✅ Параметры сохранены в config.yaml${NC}"
             else
                 echo -e "${YELLOW}⚠ Не удалось извлечь параметры из inbound${NC}"
             fi
@@ -3148,6 +3818,7 @@ STREAMEOF
 
 # Функция меню после установки 3x-ui
 post_install_menu() {
+
     while true; do
         echo -e "\n${BLUE}========================================${NC}"
         echo -e "${BLUE}   Создать подключение?${NC}"
@@ -3182,7 +3853,6 @@ post_install_menu() {
             case $inbound_type in
                 1)
                     if create_xhttp_reality_inbound; then
-                        # Предлагаем установить бота
                         echo -e "\n${BLUE}========================================${NC}"
                         echo -e "${BLUE}   Установить xuibot?${NC}"
                         echo -e "${BLUE}========================================${NC}"
@@ -3190,7 +3860,6 @@ post_install_menu() {
                         echo -e "${GREEN}0${NC}     - Нет, вернуться в главное меню"
                         echo -e "${BLUE}========================================${NC}"
                         read -p "Ваш выбор: " install_bot_choice
-                        
                         if [[ "$install_bot_choice" != "0" ]]; then
                             install_bot
                         fi
@@ -3199,7 +3868,6 @@ post_install_menu() {
                     ;;
                 2)
                     if create_tcp_reality_inbound; then
-                        # Предлагаем установить бота
                         echo -e "\n${BLUE}========================================${NC}"
                         echo -e "${BLUE}   Установить xuibot?${NC}"
                         echo -e "${BLUE}========================================${NC}"
@@ -3207,7 +3875,6 @@ post_install_menu() {
                         echo -e "${GREEN}0${NC}     - Нет, вернуться в главное меню"
                         echo -e "${BLUE}========================================${NC}"
                         read -p "Ваш выбор: " install_bot_choice
-                        
                         if [[ "$install_bot_choice" != "0" ]]; then
                             install_bot
                         fi
@@ -3216,7 +3883,6 @@ post_install_menu() {
                     ;;
                 3)
                     if create_tcp_tls_inbound; then
-                        # Предлагаем установить бота
                         echo -e "\n${BLUE}========================================${NC}"
                         echo -e "${BLUE}   Установить xuibot?${NC}"
                         echo -e "${BLUE}========================================${NC}"
@@ -3224,7 +3890,6 @@ post_install_menu() {
                         echo -e "${GREEN}0${NC}     - Нет, вернуться в главное меню"
                         echo -e "${BLUE}========================================${NC}"
                         read -p "Ваш выбор: " install_bot_choice
-                        
                         if [[ "$install_bot_choice" != "0" ]]; then
                             install_bot
                         fi
@@ -3239,153 +3904,6 @@ post_install_menu() {
     done
 }
 # Функция проверки существующего сертификата
-check_existing_certificate() {
-    local server_ip=$1
-    local cert_dir="/root/.acme.sh/${server_ip}_ecc"
-    
-    # Проверяем наличие сертификата
-    if [ -d "$cert_dir" ] && [ -f "$cert_dir/fullchain.cer" ] && [ -f "$cert_dir/${server_ip}.key" ]; then
-        echo -e "${YELLOW}🔍 Найден существующий сертификат для ${server_ip}${NC}"
-        
-        # Проверяем срок действия сертификата
-        local expiry_date=$(openssl x509 -enddate -noout -in "$cert_dir/fullchain.cer" 2>/dev/null | cut -d= -f2)
-        if [ -n "$expiry_date" ]; then
-            local expiry_epoch=$(date -d "$expiry_date" +%s 2>/dev/null)
-            local current_epoch=$(date +%s)
-            local days_left=$(( ($expiry_epoch - $current_epoch) / 86400 ))
-            
-            if [ $days_left -gt 0 ]; then
-                echo -e "${GREEN}✅ Сертификат действителен ещё ${days_left} дней${NC}"
-                echo -e "${BLUE}Срок действия до: ${expiry_date}${NC}"
-                
-                read -p "Использовать существующий сертификат? (Enter - да, 0 - запросить новый): " use_existing
-                
-                if [[ "$use_existing" != "0" ]]; then
-                    return 0  # Использовать существующий
-                else
-                    return 1  # Запросить новый
-                fi
-            else
-                echo -e "${RED}⚠️  Сертификат истёк ${days_left#-} дней назад${NC}"
-                return 1  # Запросить новый
-            fi
-        else
-            echo -e "${YELLOW}⚠️  Не удалось проверить срок действия сертификата${NC}"
-            return 1
-        fi
-    else
-        echo -e "${YELLOW}ℹ️  Существующий сертификат не найден${NC}"
-        return 1  # Запросить новый
-    fi
-}
-
-# Функция установки существующего сертификата в 3x-ui
-install_existing_certificate() {
-    local server_ip=$1
-    local cert_dir="/root/.acme.sh/${server_ip}_ecc"
-    local target_dir="/root/cert/ip"
-    
-    echo -e "${YELLOW}📦 Установка существующего сертификата...${NC}"
-    
-    # Проверяем что директория с сертификатом существует
-    if [ ! -d "$cert_dir" ]; then
-        echo -e "${RED}❌ Директория с сертификатом не найдена: $cert_dir${NC}"
-        return 1
-    fi
-    
-    # Проверяем что файлы сертификата существуют
-    if [ ! -f "$cert_dir/${server_ip}.key" ]; then
-        echo -e "${RED}❌ Файл ключа не найден: $cert_dir/${server_ip}.key${NC}"
-        return 1
-    fi
-    
-    if [ ! -f "$cert_dir/fullchain.cer" ]; then
-        echo -e "${RED}❌ Файл сертификата не найден: $cert_dir/fullchain.cer${NC}"
-        return 1
-    fi
-    
-    echo -e "${BLUE}📂 Источник: $cert_dir${NC}"
-    echo -e "${BLUE}📂 Назначение: $target_dir${NC}"
-    
-    # Создаём целевую директорию
-    mkdir -p "$target_dir"
-    
-    # Удаляем старые файлы/симлинки если существуют
-    rm -f "$target_dir/privkey.pem" "$target_dir/fullchain.pem"
-    
-    # Создаём символические ссылки вместо копирования
-    echo -e "${YELLOW}🔗 Создание символических ссылок...${NC}"
-    if ln -sf "$cert_dir/${server_ip}.key" "$target_dir/privkey.pem" && \
-       ln -sf "$cert_dir/fullchain.cer" "$target_dir/fullchain.pem"; then
-        
-        echo -e "${GREEN}✅ Символические ссылки созданы${NC}"
-        echo -e "${BLUE}   $target_dir/privkey.pem -> $cert_dir/${server_ip}.key${NC}"
-        echo -e "${BLUE}   $target_dir/fullchain.pem -> $cert_dir/fullchain.cer${NC}"
-        echo -e "${GREEN}ℹ️  Сертификат будет автоматически обновляться через acme.sh${NC}"
-        
-        # Настраиваем пути в 3x-ui через базу данных
-        if [ -f "/etc/x-ui/x-ui.db" ]; then
-            echo -e "${YELLOW}🔧 Настройка путей к сертификатам в панели...${NC}"
-            
-            # Устанавливаем sqlite3 если не установлен
-            if ! command -v sqlite3 &> /dev/null; then
-                apt-get update -qq && apt-get install -y sqlite3 -qq > /dev/null 2>&1
-            fi
-            
-            # Останавливаем панель для безопасной работы с базой
-            systemctl stop x-ui 2>/dev/null || true
-            sleep 1
-            
-            # Добавляем пути к сертификатам с несколькими попытками
-            local max_attempts=3
-            local attempt=1
-            local success=false
-            
-            while [ $attempt -le $max_attempts ]; do
-                # Удаляем старые записи если есть
-                sqlite3 /etc/x-ui/x-ui.db "DELETE FROM settings WHERE key IN ('webCertFile', 'webKeyFile');" 2>/dev/null
-                
-                # Добавляем новые записи
-                sqlite3 /etc/x-ui/x-ui.db "INSERT INTO settings (key, value) VALUES ('webCertFile', '/root/cert/ip/fullchain.pem');" 2>/dev/null
-                sqlite3 /etc/x-ui/x-ui.db "INSERT INTO settings (key, value) VALUES ('webKeyFile', '/root/cert/ip/privkey.pem');" 2>/dev/null
-                
-                # Проверяем что записи добавлены
-                local cert_file=$(sqlite3 /etc/x-ui/x-ui.db "SELECT value FROM settings WHERE key='webCertFile';" 2>/dev/null)
-                local key_file=$(sqlite3 /etc/x-ui/x-ui.db "SELECT value FROM settings WHERE key='webKeyFile';" 2>/dev/null)
-                
-                if [ -n "$cert_file" ] && [ -n "$key_file" ]; then
-                    echo -e "${GREEN}✅ Пути к сертификатам настроены (попытка $attempt)${NC}"
-                    echo -e "${BLUE}   Certificate: $cert_file${NC}"
-                    echo -e "${BLUE}   Private Key: $key_file${NC}"
-                    success=true
-                    break
-                else
-                    echo -e "${YELLOW}⚠️  Попытка $attempt не удалась, повторяю...${NC}"
-                    attempt=$((attempt + 1))
-                    sleep 1
-                fi
-            done
-            
-            if [ "$success" = false ]; then
-                echo -e "${RED}⚠️  Не удалось настроить пути к сертификатам после $max_attempts попыток${NC}"
-                echo -e "${YELLOW}💡 Настройте вручную через веб-интерфейс панели:${NC}"
-                echo -e "${YELLOW}   Certificate: /root/cert/ip/fullchain.pem${NC}"
-                echo -e "${YELLOW}   Private Key: /root/cert/ip/privkey.pem${NC}"
-            fi
-            
-            # Запускаем панель обратно
-            systemctl start x-ui 2>/dev/null || true
-            sleep 2
-        fi
-        
-        echo -e "${GREEN}✅ Существующий сертификат успешно установлен!${NC}"
-        return 0
-    else
-        echo -e "${RED}❌ Ошибка копирования сертификата${NC}"
-        return 1
-    fi
-}
-
 
 # Функция установки 3x-ui панели версии 2.9.4
 install_3xui_v294() {
@@ -3396,7 +3914,12 @@ install_3xui_v294() {
     # Проверка установлена ли уже панель
     if systemctl is-active --quiet x-ui; then
         echo -e "${YELLOW}⚠ 3x-ui панель уже установлена${NC}"
-        read -p "Переустановить? (нажмите Enter для подтверждения или 0 для отмены): " reinstall
+        if [ -z "$NONINTERACTIVE" ]; then
+            read -p "Переустановить? (нажмите Enter для подтверждения или 0 для отмены): " reinstall
+        else
+            reinstall=""
+            echo -e "${BLUE}ℹ️  Автоматический режим: продолжаем переустановку${NC}"
+        fi
         if [[ "$reinstall" == "0" ]]; then
             echo -e "${YELLOW}Отменено${NC}"
             return
@@ -3420,66 +3943,30 @@ install_3xui_v294() {
         rm -f /etc/systemd/system/x-ui.service 2>/dev/null || true
         systemctl daemon-reload
         
-        # Удаление из .env
-        if [ -f "${WORK_DIR}/.env" ]; then
-            echo -e "${YELLOW}🔑 Очистка данных из .env...${NC}"
-            sed -i '/^XUI_/d' "${WORK_DIR}/.env" 2>/dev/null || true
-            sed -i '/^REALITY_/d' "${WORK_DIR}/.env" 2>/dev/null || true
-            sed -i '/^INBOUND_ID=/d' "${WORK_DIR}/.env" 2>/dev/null || true
-            sed -i '/^TRANSPORT=/d' "${WORK_DIR}/.env" 2>/dev/null || true
-            sed -i '/^SECURITY=/d' "${WORK_DIR}/.env" 2>/dev/null || true
+        # Удаление из config.yaml
+        if [ -f "${WORK_DIR}/config.yaml" ]; then
+            echo -e "${YELLOW}🔑 Очистка данных из config.yaml...${NC}"
+            if check_yq; then
+                local panel_id=$(get_local_panel_id)
+                if [ -n "$panel_id" ]; then
+                    yq eval -i "del(.panels.${panel_id})" "${WORK_DIR}/config.yaml" 2>/dev/null || true
+                    echo -e "${GREEN}✅ Панель удалена из config.yaml${NC}"
+                fi
+            fi
         fi
         
         echo -e "${GREEN}✅ Старая панель удалена${NC}\n"
     fi
     
-    SERVER_IP=$(curl -s ifconfig.me)
-    
-    # Проверяем существующий сертификат перед установкой (если включено)
-    USE_EXISTING_CERT=false
-    if [ "$ENABLE_CERT_REUSE" = "true" ]; then
-        echo -e "\n${BLUE}═══════════════════════════════════════════${NC}"
-        echo -e "${BLUE}     Проверка SSL сертификата${NC}"
-        echo -e "${BLUE}═══════════════════════════════════════════${NC}\n"
-        
-        if check_existing_certificate "$SERVER_IP"; then
-            USE_EXISTING_CERT=true
-            echo -e "${GREEN}✓ Будет использован существующий сертификат${NC}\n"
-        else
-            echo -e "${YELLOW}ℹ️  Будет запрошен новый сертификат при установке${NC}\n"
-        fi
-    else
-        echo -e "\n${YELLOW}ℹ️  Проверка существующих сертификатов отключена (ENABLE_CERT_REUSE=false)${NC}"
-        echo -e "${YELLOW}ℹ️  Будет запрошен новый сертификат при установке${NC}\n"
-    fi
+    SERVER_IP=$(curl -s -4 https://api4.ipify.org 2>/dev/null || curl -s -4 https://ipv4.icanhazip.com 2>/dev/null || curl -s -4 ifconfig.me 2>/dev/null || echo "")
     
     echo -e "${YELLOW}📦 Загрузка и установка 3x-ui v2.9.4...${NC}\n"
     
     # Запускаем установку с выводом на экран и в файл одновременно
     INSTALL_LOG="/tmp/xui_install_$$.log"
     
-    # Если есть существующий сертификат, подготавливаем его для установщика
-    if [ "$USE_EXISTING_CERT" = true ]; then
-        # Создаём символические ссылки на существующий сертификат
-        TARGET_CERT_DIR="/root/cert/ip"
-        mkdir -p "$TARGET_CERT_DIR"
-        
-        CERT_SOURCE="/root/.acme.sh/${SERVER_IP}_ecc"
-        
-        # Удаляем старые файлы/симлинки если существуют
-        rm -f "$TARGET_CERT_DIR/privkey.pem" "$TARGET_CERT_DIR/fullchain.pem"
-        
-        # Создаём символические ссылки
-        ln -sf "$CERT_SOURCE/${SERVER_IP}.key" "$TARGET_CERT_DIR/privkey.pem"
-        ln -sf "$CERT_SOURCE/fullchain.cer" "$TARGET_CERT_DIR/fullchain.pem"
-        
-        echo -e "${GREEN}✓ Символические ссылки на сертификат созданы в $TARGET_CERT_DIR${NC}"
-        echo -e "${GREEN}ℹ️  Сертификат будет автоматически обновляться через acme.sh${NC}"
-        echo -e "${YELLOW}ℹ️  Установщик попытается получить сертификат (получит Rate Limit), затем мы настроим пути${NC}\n"
-    fi
-    
-    # Передаем пустые ответы (Enter) на все вопросы через stdin
-    # Установщик попытается получить сертификат и получит Rate Limit (это нормально)
+    # Передаем пустые ответы (Enter) на все вопросы через stdin для автоматической установки
+    # Установщик будет использовать дефолтные значения (случайный порт, логин, пароль, SSL)
     printf '\n\n\n\n\n' | bash <(curl -Ls "https://raw.githubusercontent.com/MHSanaei/3x-ui/v2.9.4/install.sh") v2.9.4 2>&1 | tee "$INSTALL_LOG"
     
     # Читаем вывод из лог-файла
@@ -3509,63 +3996,6 @@ install_3xui_v294() {
             sleep 2
         fi
         
-        # Проверяем успешность установки SSL сертификата
-        echo -e "\n${YELLOW}🔍 Проверка SSL сертификата...${NC}"
-        
-        # Устанавливаем sqlite3 если не установлен
-        if ! command -v sqlite3 &> /dev/null; then
-            apt-get update -qq && apt-get install -y sqlite3 -qq > /dev/null 2>&1
-        fi
-        
-        # Проверяем наличие сертификата в установщике
-        SSL_SETUP_FAILED=false
-        if echo "$INSTALL_OUTPUT" | grep -q "IP certificate setup failed\|certificate setup failed\|Failed to issue\|rateLimited\|too many certificates\|rate.*limit"; then
-            SSL_SETUP_FAILED=true
-            
-            # Проверяем конкретную причину ошибки
-            if echo "$INSTALL_OUTPUT" | grep -qi "rateLimited\|too many certificates\|rate.*limit"; then
-                echo -e "${YELLOW}⚠️  Достигнут лимит Let's Encrypt (rate limit)${NC}"
-                echo -e "${YELLOW}ℹ️  Панель будет настроена для работы по HTTP${NC}"
-            else
-                echo -e "${YELLOW}⚠️  Установщик не смог получить SSL сертификат${NC}"
-            fi
-        fi
-        
-        # Если использовали существующий сертификат, устанавливаем его
-        if [ "$USE_EXISTING_CERT" = true ]; then
-            echo -e "${GREEN}✓ Установка существующего сертификата...${NC}"
-            
-            if install_existing_certificate "$SERVER_IP"; then
-                echo -e "${GREEN}✓ Существующий сертификат успешно установлен${NC}"
-                SSL_SETUP_FAILED=false
-            else
-                echo -e "${YELLOW}⚠️  Не удалось установить существующий сертификат${NC}"
-                SSL_SETUP_FAILED=true
-            fi
-        fi
-        
-        # Если SSL не удалось настроить, удаляем пути к сертификатам для работы по HTTP
-        if [ "$SSL_SETUP_FAILED" = true ]; then
-            echo -e "${YELLOW}⚠️  Настройка панели для работы по HTTP...${NC}"
-            
-            if [ -f "/etc/x-ui/x-ui.db" ]; then
-                # Останавливаем панель
-                systemctl stop x-ui 2>/dev/null || true
-                sleep 1
-                
-                # Удаляем пути к сертификатам из базы данных
-                sqlite3 /etc/x-ui/x-ui.db "DELETE FROM settings WHERE key IN ('webCertFile', 'webKeyFile');" 2>/dev/null
-                
-                # НЕ сбрасываем webBasePath - оставляем как есть
-                # WebBasePath будет работать и с HTTP
-                
-                # Запускаем панель
-                systemctl start x-ui 2>/dev/null || true
-                sleep 2
-                
-                echo -e "${GREEN}✅ Панель настроена для работы по HTTP${NC}"
-            fi
-        fi
         
         # Проверяем что данные получены от инсталятора
         if [ -z "$XUI_USERNAME" ] || [ -z "$XUI_PASSWORD" ]; then
@@ -3615,21 +4045,35 @@ install_3xui_v294() {
         fi
         
         # Формируем URL для v2.9.4 (БЕЗ /panel в конце)
-        # Используем HTTP если SSL не настроен, иначе HTTPS
-        PROTOCOL="https"
-        if [ "$SSL_SETUP_FAILED" = true ]; then
-            PROTOCOL="http"
-        fi
+        # Определяем протокол из вывода установщика
+        XUI_ACCESS_URL=$(echo "$INSTALL_OUTPUT" | grep -oP 'Access URL:\s+\K\S+' | tail -1 | sed 's/\x1b\[[0-9;]*m//g')
         
-        if [ -z "$XUI_PATH" ] || [ "$XUI_PATH" = "/" ]; then
-            XUI_URL="${PROTOCOL}://${SERVER_IP}:${XUI_PORT}"
-        else
-            # Добавляем leading slash если нужно
-            if [[ "$XUI_PATH" != /* ]]; then
-                XUI_PATH="/${XUI_PATH}"
+        if [ -n "$XUI_ACCESS_URL" ]; then
+            # Используем URL напрямую из установщика
+            XUI_URL="$XUI_ACCESS_URL"
+            
+            # ВАЖНО: Если SSL не установился, принудительно меняем https на http
+            if [ "$SSL_SETUP_FAILED" = true ]; then
+                XUI_URL=$(echo "$XUI_URL" | sed 's|^https://|http://|')
+                echo -e "${YELLOW}⚠️  SSL не установлен, URL изменен на HTTP: ${XUI_URL}${NC}"
             fi
-            # Используем webBasePath независимо от протокола (HTTP или HTTPS)
-            XUI_URL="${PROTOCOL}://${SERVER_IP}:${XUI_PORT}${XUI_PATH}"
+        else
+            # Fallback: определяем протокол по наличию сертификата
+            local PROTOCOL="http"
+            # Проверяем сертификат только если SSL_SETUP_FAILED != true
+            if [ "$SSL_SETUP_FAILED" != true ] && [ -f "/root/cert/ip/fullchain.pem" ] && [ -f "/root/cert/ip/privkey.pem" ]; then
+                PROTOCOL="https"
+            fi
+            
+            if [ -z "$XUI_PATH" ] || [ "$XUI_PATH" = "/" ]; then
+                XUI_URL="${PROTOCOL}://$(format_host_for_url "${SERVER_IP}"):${XUI_PORT}"
+            else
+                # Добавляем leading slash если нужно
+                if [[ "$XUI_PATH" != /* ]]; then
+                    XUI_PATH="/${XUI_PATH}"
+                fi
+                XUI_URL="${PROTOCOL}://$(format_host_for_url "${SERVER_IP}"):${XUI_PORT}${XUI_PATH}"
+            fi
         fi
         
         echo -e "\n${GREEN}═══════════════════════════════════════════${NC}"
@@ -3665,28 +4109,44 @@ install_3xui_v294() {
         # Генерация Short IDs
         REALITY_SHORT_ID=$(openssl rand -hex 8)
         
-        # Создание .env файла с учетными данными 3x-ui
-        create_env_if_not_exists
+        # Создание config.yaml если не существует (БЕЗ попытки обновить локальную панель)
+        if [ ! -f "config.yaml" ]; then
+            echo -e "${YELLOW}📝 Создание config.yaml из примера...${NC}"
+            if [ -f "config.yaml.example" ]; then
+                cp config.yaml.example config.yaml
+                echo -e "${GREEN}✅ config.yaml создан из примера${NC}"
+            else
+                echo -e "${RED}❌ config.yaml.example не найден${NC}"
+            fi
+        fi
         
-        # Сохранение учетных данных в .env
-        update_env_value "XUI_URL" "${XUI_URL}"
-        update_env_value "XUI_USERNAME" "${XUI_USERNAME}"
-        update_env_value "XUI_PASSWORD" "${XUI_PASSWORD}"
-        update_env_value "REALITY_PUBLIC_KEY" "${REALITY_PUBLIC_KEY}"
-        update_env_value "REALITY_PRIVATE_KEY" "${REALITY_PRIVATE_KEY}"
-        update_env_value "REALITY_SHORT_ID" "${REALITY_SHORT_ID}"
-        update_env_value "SERVER_ADDRESS" "${SERVER_IP}"
-        update_env_value "SERVER_IP" "${SERVER_IP}"
-        update_env_value "SERVER_PORT" "443"
-        update_env_value "XUI_VERSION" "2.9.4"
+        # Добавляем локальную панель в config.yaml ПЕРЕД сохранением данных
+        echo -e "${YELLOW}📝 Добавление локальной панели в config.yaml...${NC}"
+        if add_local_panel_to_config "2.9.4" "${XUI_URL}" "${XUI_USERNAME}" "${XUI_PASSWORD}" "${SERVER_IP}"; then
+            echo -e "${GREEN}✅ Локальная панель добавлена в config.yaml${NC}"
+        else
+            echo -e "${RED}❌ Не удалось добавить локальную панель в config.yaml${NC}"
+            echo -e "${YELLOW}⚠️  Продолжаем без config.yaml${NC}"
+        fi
+        
+        # Сохранение учетных данных
+        echo -e "${YELLOW}💾 Сохранение учетных данных...${NC}"
+        update_config_value "XUI_URL" "${XUI_URL}"
+        update_config_value "XUI_USERNAME" "${XUI_USERNAME}"
+        update_config_value "XUI_PASSWORD" "${XUI_PASSWORD}"
+        update_config_value "REALITY_PUBLIC_KEY" "${REALITY_PUBLIC_KEY}"
+        update_config_value "REALITY_PRIVATE_KEY" "${REALITY_PRIVATE_KEY}"
+        update_config_value "REALITY_SHORT_ID" "${REALITY_SHORT_ID}"
+        update_config_value "SERVER_ADDRESS" "${SERVER_IP}"
+        update_config_value "SERVER_IP" "${SERVER_IP}"
+        update_config_value "SERVER_PORT" "443"
+        update_config_value "XUI_VERSION" "2.9.4"
+        
+        echo -e "${GREEN}✅ Все данные успешно сохранены${NC}"
         
         # Финальное сообщение
         echo -e "\n${GREEN}✅ Установка 3x-ui панели завершена!${NC}\n"
-        echo -e "\n${BLUE}Также можно установить вручную:${NC}\n"
-        echo -e "${YELLOW}VERSION=v2.9.4 && bash <(curl -Ls "https://raw.githubusercontent.com/mhsanaei/3x-ui/$VERSION/install.sh") $VERSION${NC}\n"
         
-
-
         # Интерактивное меню после установки
         post_install_menu
     else
@@ -3708,7 +4168,12 @@ install_3xui_v3() {
     # Проверка установленной панели
     if systemctl is-active --quiet x-ui; then
         echo -e "${YELLOW}⚠ 3x-ui панель уже установлена${NC}"
-        read -p "Переустановить? (нажмите Enter для продолжения или 0 для отмены): " reinstall
+        if [ -z "$NONINTERACTIVE" ]; then
+            read -p "Переустановить? (нажмите Enter для продолжения или 0 для отмены): " reinstall
+        else
+            reinstall=""
+            echo -e "${BLUE}ℹ️  Автоматический режим: продолжаем переустановку${NC}"
+        fi
         if [[ "$reinstall" == "0" ]]; then
             echo -e "${YELLOW}Отменено${NC}"
             return
@@ -3723,96 +4188,41 @@ install_3xui_v3() {
     echo -e "${GREEN}SQLite - для небольших нагрузок (< 500 клиентов)${NC}"
     echo -e "${GREEN}PostgreSQL - для высоких нагрузок и множества узлов${NC}\n"
     
-    # Получаем IP сервера для проверки сертификата
-    SERVER_IP=$(curl -s https://api4.ipify.org 2>/dev/null || curl -s https://ipv4.icanhazip.com 2>/dev/null || echo "")
+    # Получаем IP сервера для путей к сертификатам
+    local SERVER_IP=$(curl -s -4 https://api4.ipify.org 2>/dev/null || curl -s -4 https://ipv4.icanhazip.com 2>/dev/null || curl -s -4 ifconfig.me 2>/dev/null || echo "")
     
-    # Проверка существующего SSL сертификата
-    USE_EXISTING_CERT=false
-    if [ "$ENABLE_CERT_REUSE" = "true" ] && [ -n "$SERVER_IP" ]; then
-        echo -e "\n${BLUE}═══════════════════════════════════════════${NC}"
-        echo -e "${BLUE}     Проверка SSL сертификата${NC}"
-        echo -e "${BLUE}═══════════════════════════════════════════${NC}\n"
-        
-        if check_existing_certificate "$SERVER_IP"; then
-            USE_EXISTING_CERT=true
-            echo -e "${GREEN}✓ Будет использован существующий сертификат${NC}\n"
-            
-            # Создаём символические ссылки на существующий сертификат
-            TARGET_CERT_DIR="/root/cert/ip"
-            mkdir -p "$TARGET_CERT_DIR"
-            
-            CERT_SOURCE="/root/.acme.sh/${SERVER_IP}_ecc"
-            
-            # Удаляем старые файлы/симлинки если существуют
-            rm -f "$TARGET_CERT_DIR/privkey.pem" "$TARGET_CERT_DIR/fullchain.pem"
-            
-            # Создаём символические ссылки
-            ln -sf "$CERT_SOURCE/${SERVER_IP}.key" "$TARGET_CERT_DIR/privkey.pem"
-            ln -sf "$CERT_SOURCE/fullchain.cer" "$TARGET_CERT_DIR/fullchain.pem"
-            
-            echo -e "${GREEN}✓ Символические ссылки на сертификат созданы в $TARGET_CERT_DIR${NC}"
-            echo -e "${GREEN}ℹ️  Сертификат будет автоматически обновляться через acme.sh${NC}"
-            echo -e "${YELLOW}ℹ️  Установщик попытается получить сертификат (получит Rate Limit), затем мы настроим пути${NC}\n"
-        else
-            echo -e "${YELLOW}ℹ️  Будет запрошен новый сертификат при установке${NC}\n"
-        fi
-    else
-        if [ "$ENABLE_CERT_REUSE" != "true" ]; then
-            echo -e "\n${YELLOW}ℹ️  Проверка существующих сертификатов отключена (ENABLE_CERT_REUSE не установлен)${NC}"
-        fi
-        echo -e "${YELLOW}ℹ️  SSL сертификат будет пропущен (можно настроить позже)${NC}\n"
+    # Проверяем наличие сохраненных SSL сертификатов
+    local USE_EXISTING_CERTS=false
+    if check_and_offer_existing_certs; then
+        USE_EXISTING_CERTS=true
+        # Восстанавливаем сертификаты перед установкой
+        restore_ssl_certs
     fi
     
     # Установка через официальный скрипт
     echo -e "${YELLOW}⚠ Запуск установщика 3x-ui...${NC}"
     echo -e "${YELLOW}⚠ Будет автоматически выбрана база данных SQLite${NC}"
-    
+
     # Создаем временный файл для сохранения вывода установщика
     INSTALL_OUTPUT=$(mktemp)
-    
-    # Устанавливаем переменную окружения для пропуска SSL
-    export ENABLE_CERT_REUSE="true"
-    
+
     # Автоматически отвечаем на вопросы установщика:
     # 1 - выбор SQLite
-    # 4 - пропуск SSL (Skip SSL)
-    # Добавляем больше пустых строк для обработки всех возможных вопросов
-    printf '1\n4\n\n\n\n\n\n\n\n\n\n' | bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh) 2>&1 | tee "$INSTALL_OUTPUT"
+    if [ "$USE_EXISTING_CERTS" = true ]; then
+        # 3 - использовать существующие пути к сертификатам (Custom SSL Certificate)
+        echo -e "${GREEN}✓ Используем существующие SSL сертификаты${NC}"
+        echo -e "${BLUE}📁 Путь к сертификатам: /root/cert/${SERVER_IP}/${NC}"
+        printf '1\n3\n/root/cert/%s/fullchain.pem\n/root/cert/%s/privkey.pem\n\n\n\n\n\n\n' "$SERVER_IP" "$SERVER_IP" | bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh) 2>&1 | tee "$INSTALL_OUTPUT"
+    else
+        # 2 - Let's Encrypt для IP (запросить новый сертификат)
+        # y - подтверждение получения SSL
+        echo -e "${YELLOW}⚠ Запрос нового SSL сертификата...${NC}"
+        printf '1\n2\ny\n\n\n\n\n\n\n\n\n' | bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh) 2>&1 | tee "$INSTALL_OUTPUT"
+    fi
     
     # Проверка успешности установки
     if systemctl is-active --quiet x-ui; then
         echo -e "\n${GREEN}✓ 3x-ui v3.x установлена успешно${NC}"
-        
-        # Проверяем наличие ошибок SSL в установщике
-        SSL_SETUP_FAILED=false
-        if echo "$INSTALL_OUTPUT" | grep -q "IP certificate setup failed\|certificate setup failed\|Failed to issue\|rateLimited\|too many certificates\|rate.*limit"; then
-            SSL_SETUP_FAILED=true
-            
-            # Проверяем конкретную причину ошибки
-            if echo "$INSTALL_OUTPUT" | grep -qi "rateLimited\|too many certificates\|rate.*limit"; then
-                echo -e "${YELLOW}⚠️  Достигнут лимит Let's Encrypt (rate limit)${NC}"
-            else
-                echo -e "${YELLOW}⚠️  Установщик не смог получить SSL сертификат${NC}"
-            fi
-        fi
-        
-        # Если использовали существующий сертификат, устанавливаем его
-        if [ "$USE_EXISTING_CERT" = true ]; then
-            echo -e "${GREEN}✓ Установка существующего сертификата...${NC}"
-            
-            if install_existing_certificate "$SERVER_IP"; then
-                echo -e "${GREEN}✓ Существующий сертификат успешно установлен${NC}"
-                SSL_SETUP_FAILED=false
-                
-                # Настраиваем пути к сертификату в панели через x-ui CLI
-                x-ui cert -webCert /root/cert/ip/fullchain.pem -webCertKey /root/cert/ip/privkey.pem >/dev/null 2>&1
-                systemctl restart x-ui
-                sleep 2
-            else
-                echo -e "${YELLOW}⚠️  Не удалось установить существующий сертификат${NC}"
-                SSL_SETUP_FAILED=true
-            fi
-        fi
         
         # Ожидание запуска панели
         echo -e "${YELLOW}⚠ Ожидание запуска панели...${NC}"
@@ -3841,6 +4251,7 @@ install_3xui_v3() {
         XUI_PORT=$(grep -oP 'Port:\s+\K\d+' "$INSTALL_OUTPUT" | tail -1 | sed 's/\x1b\[[0-9;]*m//g')
         XUI_WEB_BASE_PATH=$(grep -oP 'WebBasePath:\s+\K\S+' "$INSTALL_OUTPUT" | tail -1 | sed 's/\x1b\[[0-9;]*m//g')
         XUI_API_TOKEN=$(grep -oP 'API Token:\s+\K\S+' "$INSTALL_OUTPUT" | tail -1 | sed 's/\x1b\[[0-9;]*m//g')
+        XUI_ACCESS_URL=$(grep -oP 'Access URL:\s+\K\S+' "$INSTALL_OUTPUT" | tail -1 | sed 's/\x1b\[[0-9;]*m//g')
         
         # Извлекаем версию из вывода установщика (например: "Got x-ui latest version: v3.3.1")
         XUI_VERSION=$(grep -oP 'Got x-ui latest version:\s*v?\K[\d.]+' "$INSTALL_OUTPUT" | head -1 | sed 's/\x1b\[[0-9;]*m//g')
@@ -3859,36 +4270,190 @@ install_3xui_v3() {
         fi
         
         # Получение IP сервера
-        SERVER_IP=$(curl -s https://api4.ipify.org 2>/dev/null || curl -s https://ipv4.icanhazip.com 2>/dev/null || echo "YOUR_SERVER_IP")
+        SERVER_IP=$(curl -s -4 https://api4.ipify.org 2>/dev/null || curl -s -4 https://ipv4.icanhazip.com 2>/dev/null || curl -s -4 ifconfig.me 2>/dev/null || echo "YOUR_SERVER_IP")
         
-        # Формируем URL с webBasePath если он есть
-        if [ -n "$XUI_WEB_BASE_PATH" ] && [ "$XUI_WEB_BASE_PATH" != "/" ]; then
-            # Добавляем leading slash если нужно
-            if [[ "$XUI_WEB_BASE_PATH" != /* ]]; then
-                XUI_WEB_BASE_PATH="/${XUI_WEB_BASE_PATH}"
+        # Формируем URL из извлеченных данных
+        if [ -n "$XUI_ACCESS_URL" ]; then
+            # Используем URL напрямую из установщика
+            XUI_URL="$XUI_ACCESS_URL"
+            
+            # Настраиваем SSL после установки если есть сертификаты
+            if [ "$USE_EXISTING_CERTS" = true ] && [[ "$XUI_URL" == http://* ]]; then
+                echo -e "${YELLOW}🔐 Настройка SSL для панели...${NC}"
+                
+                # Проверяем существование сертификатов
+                if [ ! -f "/root/cert/${SERVER_IP}/fullchain.pem" ] || [ ! -f "/root/cert/${SERVER_IP}/privkey.pem" ]; then
+                    echo -e "${RED}❌ Сертификаты не найдены в /root/cert/${SERVER_IP}/${NC}"
+                    echo -e "${YELLOW}⚠️  Панель останется на HTTP${NC}"
+                else
+                    # Останавливаем панель для настройки
+                    systemctl stop x-ui
+                    sleep 2
+                    
+                    # Проверяем структуру таблицы settings
+                    CERT_KEY_EXISTS=$(sqlite3 /etc/x-ui/x-ui.db "SELECT COUNT(*) FROM settings WHERE key='webCertFile';" 2>/dev/null || echo "0")
+                    
+                    if [ "$CERT_KEY_EXISTS" = "0" ]; then
+                        # Вставляем новые записи если их нет
+                        echo -e "${BLUE}📝 Добавление настроек SSL в базу данных...${NC}"
+                        sqlite3 /etc/x-ui/x-ui.db "INSERT INTO settings (key, value) VALUES ('webCertFile', '/root/cert/${SERVER_IP}/fullchain.pem');" 2>/dev/null || true
+                        sqlite3 /etc/x-ui/x-ui.db "INSERT INTO settings (key, value) VALUES ('webKeyFile', '/root/cert/${SERVER_IP}/privkey.pem');" 2>/dev/null || true
+                    else
+                        # Обновляем существующие записи
+                        echo -e "${BLUE}📝 Обновление настроек SSL в базе данных...${NC}"
+                        sqlite3 /etc/x-ui/x-ui.db "UPDATE settings SET value='/root/cert/${SERVER_IP}/fullchain.pem' WHERE key='webCertFile';" 2>/dev/null || true
+                        sqlite3 /etc/x-ui/x-ui.db "UPDATE settings SET value='/root/cert/${SERVER_IP}/privkey.pem' WHERE key='webKeyFile';" 2>/dev/null || true
+                    fi
+                    
+                    # Проверяем что настройки применились
+                    CERT_PATH=$(sqlite3 /etc/x-ui/x-ui.db "SELECT value FROM settings WHERE key='webCertFile';" 2>/dev/null)
+                    KEY_PATH=$(sqlite3 /etc/x-ui/x-ui.db "SELECT value FROM settings WHERE key='webKeyFile';" 2>/dev/null)
+                    
+                    if [ "$CERT_PATH" = "/root/cert/${SERVER_IP}/fullchain.pem" ] && [ "$KEY_PATH" = "/root/cert/${SERVER_IP}/privkey.pem" ]; then
+                        echo -e "${GREEN}✅ SSL настройки успешно применены в БД${NC}"
+                        echo -e "${BLUE}   Cert: ${CERT_PATH}${NC}"
+                        echo -e "${BLUE}   Key:  ${KEY_PATH}${NC}"
+                        
+                        # Запускаем панель
+                        systemctl start x-ui
+                        sleep 5
+                        
+                        # Проверяем что панель запустилась
+                        if systemctl is-active --quiet x-ui; then
+                            # Меняем URL на HTTPS
+                            XUI_URL=$(echo "$XUI_URL" | sed 's|^http://|https://|')
+                            echo -e "${GREEN}✅ SSL настроен! Панель доступна по HTTPS${NC}"
+                            echo -e "${GREEN}   URL: ${XUI_URL}${NC}"
+                        else
+                            echo -e "${RED}❌ Панель не запустилась после настройки SSL${NC}"
+                            echo -e "${YELLOW}⚠️  Возможно проблема с сертификатами${NC}"
+                            # Откатываем изменения
+                            sqlite3 /etc/x-ui/x-ui.db "DELETE FROM settings WHERE key IN ('webCertFile', 'webKeyFile');" 2>/dev/null || true
+                            systemctl start x-ui
+                            echo -e "${YELLOW}⚠️  Панель запущена без SSL${NC}"
+                        fi
+                    else
+                        echo -e "${RED}❌ Не удалось применить настройки SSL в БД${NC}"
+                        systemctl start x-ui
+                        echo -e "${YELLOW}⚠️  Панель запущена без SSL${NC}"
+                    fi
+                fi
+            elif [[ "$XUI_URL" == https://* ]]; then
+                echo -e "${GREEN}✅ SSL уже настроен в панели${NC}"
+            else
+                echo -e "${YELLOW}⚠️  SSL пропущен при установке, панель работает по HTTP${NC}"
             fi
-            XUI_URL="http://${SERVER_IP}:${XUI_PORT}${XUI_WEB_BASE_PATH}"
         else
-            XUI_URL="http://${SERVER_IP}:${XUI_PORT}"
+            # Fallback: формируем URL вручную
+            if [ -n "$XUI_WEB_BASE_PATH" ] && [ "$XUI_WEB_BASE_PATH" != "/" ]; then
+                if [[ "$XUI_WEB_BASE_PATH" != /* ]]; then
+                    XUI_WEB_BASE_PATH="/${XUI_WEB_BASE_PATH}"
+                fi
+                XUI_URL="http://$(format_host_for_url "${SERVER_IP}"):${XUI_PORT}${XUI_WEB_BASE_PATH}"
+            else
+                XUI_URL="http://$(format_host_for_url "${SERVER_IP}"):${XUI_PORT}"
+            fi
+            
+            # Настраиваем SSL после установки если есть сертификаты
+            if [ "$USE_EXISTING_CERTS" = true ]; then
+                echo -e "${YELLOW}🔐 Настройка SSL для панели...${NC}"
+                
+                # Проверяем существование сертификатов
+                if [ ! -f "/root/cert/${SERVER_IP}/fullchain.pem" ] || [ ! -f "/root/cert/${SERVER_IP}/privkey.pem" ]; then
+                    echo -e "${RED}❌ Сертификаты не найдены в /root/cert/${SERVER_IP}/${NC}"
+                    echo -e "${YELLOW}⚠️  Панель останется на HTTP${NC}"
+                else
+                    # Останавливаем панель для настройки
+                    systemctl stop x-ui
+                    sleep 2
+                    
+                    # Проверяем структуру таблицы settings
+                    CERT_KEY_EXISTS=$(sqlite3 /etc/x-ui/x-ui.db "SELECT COUNT(*) FROM settings WHERE key='webCertFile';" 2>/dev/null || echo "0")
+                    
+                    if [ "$CERT_KEY_EXISTS" = "0" ]; then
+                        # Вставляем новые записи если их нет
+                        echo -e "${BLUE}📝 Добавление настроек SSL в базу данных...${NC}"
+                        sqlite3 /etc/x-ui/x-ui.db "INSERT INTO settings (key, value) VALUES ('webCertFile', '/root/cert/${SERVER_IP}/fullchain.pem');" 2>/dev/null || true
+                        sqlite3 /etc/x-ui/x-ui.db "INSERT INTO settings (key, value) VALUES ('webKeyFile', '/root/cert/${SERVER_IP}/privkey.pem');" 2>/dev/null || true
+                    else
+                        # Обновляем существующие записи
+                        echo -e "${BLUE}📝 Обновление настроек SSL в базе данных...${NC}"
+                        sqlite3 /etc/x-ui/x-ui.db "UPDATE settings SET value='/root/cert/${SERVER_IP}/fullchain.pem' WHERE key='webCertFile';" 2>/dev/null || true
+                        sqlite3 /etc/x-ui/x-ui.db "UPDATE settings SET value='/root/cert/${SERVER_IP}/privkey.pem' WHERE key='webKeyFile';" 2>/dev/null || true
+                    fi
+                    
+                    # Проверяем что настройки применились
+                    CERT_PATH=$(sqlite3 /etc/x-ui/x-ui.db "SELECT value FROM settings WHERE key='webCertFile';" 2>/dev/null)
+                    KEY_PATH=$(sqlite3 /etc/x-ui/x-ui.db "SELECT value FROM settings WHERE key='webKeyFile';" 2>/dev/null)
+                    
+                    if [ "$CERT_PATH" = "/root/cert/${SERVER_IP}/fullchain.pem" ] && [ "$KEY_PATH" = "/root/cert/${SERVER_IP}/privkey.pem" ]; then
+                        echo -e "${GREEN}✅ SSL настройки успешно применены в БД${NC}"
+                        echo -e "${BLUE}   Cert: ${CERT_PATH}${NC}"
+                        echo -e "${BLUE}   Key:  ${KEY_PATH}${NC}"
+                        
+                        # Запускаем панель
+                        systemctl start x-ui
+                        sleep 5
+                        
+                        # Проверяем что панель запустилась
+                        if systemctl is-active --quiet x-ui; then
+                            # Меняем URL на HTTPS
+                            XUI_URL=$(echo "$XUI_URL" | sed 's|^http://|https://|')
+                            echo -e "${GREEN}✅ SSL настроен! Панель доступна по HTTPS${NC}"
+                            echo -e "${GREEN}   URL: ${XUI_URL}${NC}"
+                        else
+                            echo -e "${RED}❌ Панель не запустилась после настройки SSL${NC}"
+                            echo -e "${YELLOW}⚠️  Возможно проблема с сертификатами${NC}"
+                            # Откатываем изменения
+                            sqlite3 /etc/x-ui/x-ui.db "DELETE FROM settings WHERE key IN ('webCertFile', 'webKeyFile');" 2>/dev/null || true
+                            systemctl start x-ui
+                            echo -e "${YELLOW}⚠️  Панель запущена без SSL${NC}"
+                        fi
+                    else
+                        echo -e "${RED}❌ Не удалось применить настройки SSL в БД${NC}"
+                        systemctl start x-ui
+                        echo -e "${YELLOW}⚠️  Панель запущена без SSL${NC}"
+                    fi
+                fi
+            else
+                echo -e "${YELLOW}⚠️  SSL пропущен при установке, панель работает по HTTP${NC}"
+            fi
         fi
         
-        # Сохранение в .env
-        create_env_if_not_exists
+        # Создание config.yaml если не существует (БЕЗ попытки обновить локальную панель)
+        if [ ! -f "config.yaml" ]; then
+            echo -e "${YELLOW}📝 Создание config.yaml из примера...${NC}"
+            if [ -f "config.yaml.example" ]; then
+                cp config.yaml.example config.yaml
+                echo -e "${GREEN}✅ config.yaml создан из примера${NC}"
+            else
+                echo -e "${RED}❌ config.yaml.example не найден${NC}"
+            fi
+        fi
         
-        echo -e "${YELLOW}⚠ Сохранение настроек панели в .env...${NC}"
+        # Добавляем локальную панель в config.yaml ПЕРЕД сохранением данных
+        echo -e "${YELLOW}📝 Добавление локальной панели в config.yaml...${NC}"
+        if add_local_panel_to_config "$XUI_VERSION" "$XUI_URL" "$XUI_USERNAME" "$XUI_PASSWORD" "$SERVER_IP"; then
+            echo -e "${GREEN}✅ Локальная панель добавлена в config.yaml${NC}"
+        else
+            echo -e "${RED}❌ Не удалось добавить локальную панель в config.yaml${NC}"
+            echo -e "${YELLOW}⚠️  Продолжаем без config.yaml${NC}"
+        fi
         
-        update_env_value "XUI_VERSION" "$XUI_VERSION"
-        update_env_value "XUI_URL" "$XUI_URL"
-        update_env_value "XUI_USERNAME" "$XUI_USERNAME"
-        update_env_value "XUI_PASSWORD" "$XUI_PASSWORD"
-        update_env_value "XUI_API_TOKEN" "$XUI_API_TOKEN"
-        update_env_value "INBOUND_ID" "1"
-        update_env_value "XUI_DB_PATH" "/etc/x-ui/x-ui.db"
+        echo -e "${YELLOW}💾 Сохранение настроек панели...${NC}"
+        
+        update_config_value "XUI_VERSION" "$XUI_VERSION"
+        update_config_value "XUI_URL" "$XUI_URL"
+        update_config_value "XUI_USERNAME" "$XUI_USERNAME"
+        update_config_value "XUI_PASSWORD" "$XUI_PASSWORD"
+        update_config_value "XUI_API_TOKEN" "$XUI_API_TOKEN"
+        update_config_value "INBOUND_ID" "1"
+        update_config_value "XUI_DB_PATH" "/etc/x-ui/x-ui.db"
         
         # Генерация Reality ключей если их нет
-        REALITY_PRIVATE_KEY=$(get_env_value "REALITY_PRIVATE_KEY")
-        REALITY_PUBLIC_KEY=$(get_env_value "REALITY_PUBLIC_KEY")
-        REALITY_SHORT_ID=$(get_env_value "REALITY_SHORT_ID")
+        REALITY_PRIVATE_KEY=$(get_config_value "REALITY_PRIVATE_KEY")
+        REALITY_PUBLIC_KEY=$(get_config_value "REALITY_PUBLIC_KEY")
+        REALITY_SHORT_ID=$(get_config_value "REALITY_SHORT_ID")
         
         if [ -z "$REALITY_PRIVATE_KEY" ] || [ -z "$REALITY_PUBLIC_KEY" ]; then
             echo -e "${YELLOW}⚠ Генерация Reality ключей...${NC}"
@@ -3896,9 +4461,9 @@ install_3xui_v3() {
             # Метод 1: Через API панели (ПРИОРИТЕТ)
             if [ -n "$XUI_API_TOKEN" ]; then
                 if generate_reality_keys_via_api "$XUI_URL" "$XUI_API_TOKEN"; then
-                    update_env_value "REALITY_PRIVATE_KEY" "$REALITY_PRIVATE_KEY"
-                    update_env_value "REALITY_PUBLIC_KEY" "$REALITY_PUBLIC_KEY"
-                    echo -e "${GREEN}✓ Reality ключи сохранены в .env${NC}"
+                    update_config_value "REALITY_PRIVATE_KEY" "$REALITY_PRIVATE_KEY"
+                    update_config_value "REALITY_PUBLIC_KEY" "$REALITY_PUBLIC_KEY"
+                    echo -e "${GREEN}✓ Reality ключи сохранены в config.yaml${NC}"
                 fi
             fi
             
@@ -3919,8 +4484,8 @@ install_3xui_v3() {
                     REALITY_PUBLIC_KEY=$(echo "$REALITY_KEYS" | grep -E "(Public key:|Password \(PublicKey\):)" | awk '{print $NF}')
                     
                     if [ -n "$REALITY_PRIVATE_KEY" ] && [ -n "$REALITY_PUBLIC_KEY" ]; then
-                        update_env_value "REALITY_PRIVATE_KEY" "$REALITY_PRIVATE_KEY"
-                        update_env_value "REALITY_PUBLIC_KEY" "$REALITY_PUBLIC_KEY"
+                        update_config_value "REALITY_PRIVATE_KEY" "$REALITY_PRIVATE_KEY"
+                        update_config_value "REALITY_PUBLIC_KEY" "$REALITY_PUBLIC_KEY"
                         echo -e "${GREEN}✓ Reality ключи успешно сгенерированы через xray${NC}"
                         echo -e "${BLUE}  Private Key: ${REALITY_PRIVATE_KEY:0:20}...${NC}"
                         echo -e "${BLUE}  Public Key:  ${REALITY_PUBLIC_KEY:0:20}...${NC}"
@@ -3951,8 +4516,8 @@ install_3xui_v3() {
                         REALITY_PUBLIC_KEY=$(echo "$REALITY_KEYS" | grep "Public key:" | awk '{print $3}')
                         
                         if [ -n "$REALITY_PRIVATE_KEY" ] && [ -n "$REALITY_PUBLIC_KEY" ]; then
-                            update_env_value "REALITY_PRIVATE_KEY" "$REALITY_PRIVATE_KEY"
-                            update_env_value "REALITY_PUBLIC_KEY" "$REALITY_PUBLIC_KEY"
+                            update_config_value "REALITY_PRIVATE_KEY" "$REALITY_PRIVATE_KEY"
+                            update_config_value "REALITY_PUBLIC_KEY" "$REALITY_PUBLIC_KEY"
                             echo -e "${GREEN}✓ Reality ключи успешно сгенерированы через xray${NC}"
                             echo -e "${BLUE}  Private Key: ${REALITY_PRIVATE_KEY:0:20}...${NC}"
                             echo -e "${BLUE}  Public Key:  ${REALITY_PUBLIC_KEY:0:20}...${NC}"
@@ -3975,10 +4540,17 @@ install_3xui_v3() {
             # Генерация Short ID
             if [ -z "$REALITY_SHORT_ID" ]; then
                 REALITY_SHORT_ID=$(openssl rand -hex 8)
-                update_env_value "REALITY_SHORT_ID" "$REALITY_SHORT_ID"
+                update_config_value "REALITY_SHORT_ID" "$REALITY_SHORT_ID"
                 echo -e "${GREEN}✓ Reality Short ID сгенерирован: ${REALITY_SHORT_ID}${NC}"
             fi
         fi
+        
+        # Сохраняем дополнительные параметры
+        update_config_value "SERVER_ADDRESS" "${SERVER_IP}"
+        update_config_value "SERVER_IP" "${SERVER_IP}"
+        update_config_value "SERVER_PORT" "443"
+        
+        echo -e "${GREEN}✅ Все данные успешно сохранены${NC}"
         
         # Вывод учетных данных
         echo -e "\n${GREEN}═══════════════════════════════════════════${NC}"
@@ -3992,7 +4564,7 @@ install_3xui_v3() {
         echo -e "${GREEN}═══════════════════════════════════════════${NC}"
         echo -e "${YELLOW}⚠ ВАЖНО: Сохраните эти данные в безопасном месте!${NC}"
         echo -e "${YELLOW}⚠ API Token необходим для работы бота с панелью v3${NC}"
-        echo -e "${YELLOW}⚠ Все данные сохранены в файл .env${NC}\n"
+        echo -e "${YELLOW}⚠ Все данные сохранены в файл config.yaml${NC}\n"
         
         # Вызов меню после установки
         post_install_menu
@@ -4019,6 +4591,9 @@ remove_3xui() {
     
     echo -e "${YELLOW}🗑️  Удаление 3x-ui панели...${NC}"
     
+    # Сохранение SSL сертификатов перед удалением
+    backup_ssl_certs
+    
     # Остановка сервиса
     systemctl stop x-ui 2>/dev/null || true
     systemctl disable x-ui 2>/dev/null || true
@@ -4034,21 +4609,23 @@ remove_3xui() {
     rm -f /etc/systemd/system/x-ui.service 2>/dev/null || true
     systemctl daemon-reload
     
-    # Удаление из .env
-    if [ -f "${WORK_DIR}/.env" ]; then
-        echo -e "${YELLOW}🔑 Очистка данных из .env...${NC}"
-        sed -i '/^XUI_/d' "${WORK_DIR}/.env" 2>/dev/null || true
-        sed -i '/^REALITY_/d' "${WORK_DIR}/.env" 2>/dev/null || true
-        sed -i '/^INBOUND_ID=/d' "${WORK_DIR}/.env" 2>/dev/null || true
-        sed -i '/^TRANSPORT=/d' "${WORK_DIR}/.env" 2>/dev/null || true
-        sed -i '/^SECURITY=/d' "${WORK_DIR}/.env" 2>/dev/null || true
+    # Удаление из config.yaml
+    if [ -f "${WORK_DIR}/config.yaml" ]; then
+        echo -e "${YELLOW}🔑 Очистка данных из config.yaml...${NC}"
+        if check_yq; then
+            local panel_id=$(get_local_panel_id)
+            if [ -n "$panel_id" ]; then
+                yq eval -i "del(.panels.${panel_id})" "${WORK_DIR}/config.yaml" 2>/dev/null || true
+                echo -e "${GREEN}✅ Панель удалена из config.yaml${NC}"
+            fi
+        fi
     fi
     
     echo -e "${GREEN}✅ 3x-ui панель полностью удалена!${NC}"
     echo -e "${GREEN}   - Программа удалена${NC}"
     echo -e "${GREEN}   - База данных удалена${NC}"
     echo -e "${GREEN}   - Конфигурация удалена${NC}"
-    echo -e "${GREEN}   - Данные из .env очищены${NC}"
+    echo -e "${GREEN}   - Данные из config.yaml очищены${NC}"
 }
 
 # ============================================
@@ -4596,8 +5173,21 @@ generate_awg_config() {
     # Проверяем наличие Node.js
     if ! command -v node &> /dev/null; then
         echo -e "${RED}❌ Node.js не установлен!${NC}"
-        echo -e "${YELLOW}Установите Node.js для генерации конфигураций${NC}"
-        return 1
+        echo -e "${YELLOW}Для генерации конфигураций требуется Node.js${NC}"
+        echo -e ""
+        read -p "Установить Node.js сейчас? (y/n): " install_choice
+        
+        if [[ "$install_choice" =~ ^[Yy]$ ]]; then
+            install_nodejs
+            if [ $? -ne 0 ]; then
+                echo -e "${RED}❌ Не удалось установить Node.js${NC}"
+                return 1
+            fi
+        else
+            echo -e "${YELLOW}Установка отменена${NC}"
+            echo -e "${YELLOW}Node.js не установлен. Установите его вручную для работы AWGBOT${NC}"
+            return 1
+        fi
     fi
     
     # Проверяем и устанавливаем зависимости Node.js
@@ -4638,8 +5228,22 @@ generate_awg_config() {
     
     echo -e "${GREEN}✅ Контейнер ${container_name} найден${NC}"
     
+    # Получаем server_label из config.yaml
+    local server_label=""
+    if [ -f "config.yaml" ] && check_yq; then
+        server_label=$(yq eval '.common.server_label' config.yaml 2>/dev/null)
+        if [ "$server_label" = "null" ] || [ -z "$server_label" ]; then
+            server_label=""
+        else
+            server_label="${server_label^^}"
+        fi
+    fi
+    
     # Создаем временный Node.js скрипт для генерации конфигурации
     echo -e "${YELLOW}⏳ Генерирую конфигурацию ${version}...${NC}"
+    if [ -n "$server_label" ]; then
+        echo -e "${BLUE}📝 Используется метка сервера: ${server_label^^}${NC}"
+    fi
     
     # Устанавливаем STANDALONE_MODE для работы без бота
     STANDALONE_MODE=true node -e "
@@ -4649,7 +5253,8 @@ generate_awg_config() {
         
         try {
             await awgManager.initialize();
-            const result = await awgManager.generateClientConfig('${version}');
+            const serverLabel = '${server_label}' ? '${server_label}' : null;
+            const result = await awgManager.generateClientConfig('${version}', serverLabel);
             
             console.log('');
             console.log('✅ Конфигурация успешно создана!');
@@ -4675,6 +5280,136 @@ generate_awg_config() {
         echo -e "\n${RED}❌ Ошибка генерации конфигурации${NC}"
     fi
 }
+# Функция запуска AWG v1
+start_awg_v1() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Запуск AWG v1${NC}"
+    echo -e "${BLUE}========================================${NC}"
+    
+    local container_name="amnezia-awg"
+    
+    # Проверяем существование контейнера
+    if ! docker ps -a --format '{{.Names}}' | grep -q "^${container_name}$"; then
+        echo -e "${RED}❌ Контейнер ${container_name} не найден!${NC}"
+        echo -e "${YELLOW}AWG v1 не установлен${NC}"
+        return 1
+    fi
+    
+    # Проверяем запущен ли контейнер
+    if docker ps --format '{{.Names}}' | grep -q "^${container_name}$"; then
+        echo -e "${YELLOW}⚠️  Контейнер ${container_name} уже запущен${NC}"
+        return 0
+    fi
+    
+    # Запускаем контейнер
+    echo -e "${YELLOW}🚀 Запуск контейнера ${container_name}...${NC}"
+    if docker start "${container_name}" 2>/dev/null; then
+        echo -e "${GREEN}✅ AWG v1 успешно запущен${NC}"
+        return 0
+    else
+        echo -e "${RED}❌ Ошибка запуска контейнера${NC}"
+        return 1
+    fi
+}
+
+# Функция запуска AWG v2
+start_awg_v2() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Запуск AWG v2${NC}"
+    echo -e "${BLUE}========================================${NC}"
+    
+    local container_name="amnezia-awg2"
+    
+    # Проверяем существование контейнера
+    if ! docker ps -a --format '{{.Names}}' | grep -q "^${container_name}$"; then
+        echo -e "${RED}❌ Контейнер ${container_name} не найден!${NC}"
+        echo -e "${YELLOW}AWG v2 не установлен${NC}"
+        return 1
+    fi
+    
+    # Проверяем запущен ли контейнер
+    if docker ps --format '{{.Names}}' | grep -q "^${container_name}$"; then
+        echo -e "${YELLOW}⚠️  Контейнер ${container_name} уже запущен${NC}"
+        return 0
+    fi
+    
+    # Запускаем контейнер
+    echo -e "${YELLOW}🚀 Запуск контейнера ${container_name}...${NC}"
+    if docker start "${container_name}" 2>/dev/null; then
+        echo -e "${GREEN}✅ AWG v2 успешно запущен${NC}"
+        return 0
+    else
+        echo -e "${RED}❌ Ошибка запуска контейнера${NC}"
+        return 1
+    fi
+}
+
+# Функция остановки AWG v1
+stop_awg_v1() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Остановка AWG v1${NC}"
+    echo -e "${BLUE}========================================${NC}"
+    
+    local container_name="amnezia-awg"
+    
+    # Проверяем существование контейнера
+    if ! docker ps -a --format '{{.Names}}' | grep -q "^${container_name}$"; then
+        echo -e "${RED}❌ Контейнер ${container_name} не найден!${NC}"
+        echo -e "${YELLOW}AWG v1 не установлен${NC}"
+        return 1
+    fi
+    
+    # Проверяем запущен ли контейнер
+    if ! docker ps --format '{{.Names}}' | grep -q "^${container_name}$"; then
+        echo -e "${YELLOW}⚠️  Контейнер ${container_name} уже остановлен${NC}"
+        return 0
+    fi
+    
+    # Останавливаем контейнер
+    echo -e "${YELLOW}🛑 Остановка контейнера ${container_name}...${NC}"
+    if docker stop "${container_name}" 2>/dev/null; then
+        echo -e "${GREEN}✅ AWG v1 успешно остановлен${NC}"
+        echo -e "${YELLOW}Для запуска используйте: docker start ${container_name}${NC}"
+        return 0
+    else
+        echo -e "${RED}❌ Ошибка остановки контейнера${NC}"
+        return 1
+    fi
+}
+
+# Функция остановки AWG v2
+stop_awg_v2() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Остановка AWG v2${NC}"
+    echo -e "${BLUE}========================================${NC}"
+    
+    local container_name="amnezia-awg2"
+    
+    # Проверяем существование контейнера
+    if ! docker ps -a --format '{{.Names}}' | grep -q "^${container_name}$"; then
+        echo -e "${RED}❌ Контейнер ${container_name} не найден!${NC}"
+        echo -e "${YELLOW}AWG v2 не установлен${NC}"
+        return 1
+    fi
+    
+    # Проверяем запущен ли контейнер
+    if ! docker ps --format '{{.Names}}' | grep -q "^${container_name}$"; then
+        echo -e "${YELLOW}⚠️  Контейнер ${container_name} уже остановлен${NC}"
+        return 0
+    fi
+    
+    # Останавливаем контейнер
+    echo -e "${YELLOW}🛑 Остановка контейнера ${container_name}...${NC}"
+    if docker stop "${container_name}" 2>/dev/null; then
+        echo -e "${GREEN}✅ AWG v2 успешно остановлен${NC}"
+        echo -e "${YELLOW}Для запуска используйте: docker start ${container_name}${NC}"
+        return 0
+    else
+        echo -e "${RED}❌ Ошибка остановки контейнера${NC}"
+        return 1
+    fi
+}
+
 
 # Главное меню
 show_menu() {
@@ -4693,21 +5428,25 @@ show_menu() {
     echo -e "${GREEN}6)${NC} Удаление AWG"
     echo -e "${GREEN}7)${NC} Сформировать конфигурацию AWG v1"
     echo -e "${GREEN}8)${NC} Сформировать конфигурацию AWG v2"
+    echo -e "${GREEN}9)${NC} Запустить AWG v1"
+    echo -e "${GREEN}10)${NC} Запустить AWG v2"
+    echo -e "${GREEN}11)${NC} Остановить AWG v1"
+    echo -e "${GREEN}12)${NC} Остановить AWG v2"
     echo -e "${BLUE}---${NC}"
     echo -e "${YELLOW}XUIBOT:${NC}"
-    echo -e "${GREEN}9)${NC} Установка XUIBOT"
-    echo -e "${GREEN}10)${NC} Логи XUIBOT"
-    echo -e "${GREEN}11)${NC} Пересборка XUIBOT"
-    echo -e "${GREEN}12)${NC} Удаление XUIBOT"
+    echo -e "${GREEN}13)${NC} Установка XUIBOT"
+    echo -e "${GREEN}14)${NC} Логи XUIBOT"
+    echo -e "${GREEN}15)${NC} Пересборка XUIBOT"
+    echo -e "${GREEN}16)${NC} Удаление XUIBOT"
     echo -e "${BLUE}---${NC}"
     echo -e "${YELLOW}AWGBOT:${NC}"
-    echo -e "${GREEN}13)${NC} Установка AWGBOT"
-    echo -e "${GREEN}14)${NC} Логи AWGBOT"
-    echo -e "${GREEN}15)${NC} Пересборка AWGBOT"
-    echo -e "${GREEN}16)${NC} Удаление AWGBOT"
+    echo -e "${GREEN}17)${NC} Установка AWGBOT"
+    echo -e "${GREEN}18)${NC} Логи AWGBOT"
+    echo -e "${GREEN}19)${NC} Пересборка AWGBOT"
+    echo -e "${GREEN}20)${NC} Удаление AWGBOT"
     echo -e "${BLUE}---${NC}"
     echo -e "${YELLOW}Системные утилиты:${NC}"
-    echo -e "${GREEN}17)${NC} Анализ диска и памяти"
+    echo -e "${GREEN}21)${NC} Анализ диска и памяти"
     echo -e "${BLUE}---${NC}"
     echo -e "${RED}99)${NC} Удалить ВСЁ (AWG + Боты + 3x-ui)"
     echo -e "${GREEN}0)${NC} Выход"
@@ -4744,7 +5483,7 @@ while true; do
                     continue
                 fi
             fi
-            install_3xui_v294
+            NONINTERACTIVE=1; install_3xui_v294; unset NONINTERACTIVE
             ;;
         3)
             sync_repository
@@ -4821,7 +5560,7 @@ while true; do
                     continue
                 fi
             fi
-            install_xuibot
+            start_awg_v1
             ;;
         10)
             sync_repository
@@ -4832,7 +5571,7 @@ while true; do
                     continue
                 fi
             fi
-            show_xuibot_logs
+            start_awg_v2
             ;;
         11)
             sync_repository
@@ -4843,7 +5582,7 @@ while true; do
                     continue
                 fi
             fi
-            update_xuibot
+            stop_awg_v1
             ;;
         12)
             sync_repository
@@ -4854,7 +5593,7 @@ while true; do
                     continue
                 fi
             fi
-            remove_xuibot
+            stop_awg_v2
             ;;
         13)
             sync_repository
@@ -4865,7 +5604,7 @@ while true; do
                     continue
                 fi
             fi
-            install_awgbot
+            install_xuibot
             ;;
         14)
             sync_repository
@@ -4876,7 +5615,7 @@ while true; do
                     continue
                 fi
             fi
-            show_awgbot_logs
+            show_xuibot_logs
             ;;
         15)
             sync_repository
@@ -4887,7 +5626,7 @@ while true; do
                     continue
                 fi
             fi
-            update_awgbot
+            update_xuibot
             ;;
         16)
             sync_repository
@@ -4898,9 +5637,53 @@ while true; do
                     continue
                 fi
             fi
-            remove_awgbot
+            remove_xuibot
             ;;
         17)
+            sync_repository
+            if [ $? -ne 0 ]; then
+                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
+                if [[ "$continue_choice" == "0" ]]; then
+                    echo -e "${YELLOW}Операция отменена${NC}"
+                    continue
+                fi
+            fi
+            install_awgbot
+            ;;
+        18)
+            sync_repository
+            if [ $? -ne 0 ]; then
+                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
+                if [[ "$continue_choice" == "0" ]]; then
+                    echo -e "${YELLOW}Операция отменена${NC}"
+                    continue
+                fi
+            fi
+            show_awgbot_logs
+            ;;
+        19)
+            sync_repository
+            if [ $? -ne 0 ]; then
+                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
+                if [[ "$continue_choice" == "0" ]]; then
+                    echo -e "${YELLOW}Операция отменена${NC}"
+                    continue
+                fi
+            fi
+            update_awgbot
+            ;;
+        20)
+            sync_repository
+            if [ $? -ne 0 ]; then
+                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
+                if [[ "$continue_choice" == "0" ]]; then
+                    echo -e "${YELLOW}Операция отменена${NC}"
+                    continue
+                fi
+            fi
+            remove_awgbot
+            ;;
+        21)
             sync_repository
             if [ $? -ne 0 ]; then
                 read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
@@ -4942,8 +5725,10 @@ while true; do
             ;;
     esac
     
-    echo -e "\n${YELLOW}Нажмите Enter для продолжения...${NC}"
-    read
+    if [ -z "$NONINTERACTIVE" ]; then
+        echo -e "\n${YELLOW}Нажмите Enter для продолжения...${NC}"
+        read
+    fi
 done
 
 # ============================================

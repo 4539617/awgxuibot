@@ -1,0 +1,54 @@
+common:
+  xui_bot_token: ""
+  awg_bot_token: ""
+  admin_ids: []
+  server_label: ""
+  server_port: 443
+  api_timeout: 30
+  xhttp_mode: "auto"
+  tls_fingerprint: "edge"
+  tls_alpn: "http/1.1"
+  max_traffic_gb: 1000
+  max_days: 3650
+  min_days: 1
+  default_traffic_gb: 100
+  default_days: 30
+  db_path: "/app/data/bot_users.db"
+  db_backup_enabled: true
+  db_backup_interval: 24
+  log_level: "INFO"
+  log_file_enabled: true
+  log_file_path: "/app/logs/bot.log"
+  log_max_size_mb: 10
+  log_backup_count: 5
+  allow_user_dns_queries: false
+  panel_monitoring_enabled: true
+  panel_check_interval: 30
+  panel_failure_threshold: 3
+  panel_check_timeout: 5
+
+default_panel: "panel1"
+
+panels:
+  panel1:
+    alias: "Локальная"
+    enabled: true
+    is_local: true
+    xui_version: ""
+    xui_url: ""
+    xui_username: ""
+    xui_password: ""
+    xui_api_token: ""
+    inbound_id: 1
+    xui_db_path: "/etc/x-ui/x-ui.db"
+    server_address: ""
+    server_ip: ""
+    transport: "xhttp"
+    security: "reality"
+    tls_sni: ""
+    tls_fingerprint: "edge"
+    reality_sni: "www.nvidia.com"
+    reality_fingerprint: "edge"
+    reality_public_key: ""
+    reality_private_key: ""
+    reality_short_id: ""

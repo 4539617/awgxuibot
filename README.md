@@ -1,13 +1,11 @@
 # 🚀 AWGXUIBOT
 
-Универсальный инсталлятор и менеджер с Telegram ботами.
-
 ---
 
 ## 📦 Быстрая установка
 
 ```bash
-git clone https://github.com/4539617/awgxuibot.git /opt/awgxuibot
+git clone -b exp https://github.com/4539617/awgxuibot.git /opt/awgxuibot
 cd /opt/awgxuibot
 bash install.sh
 ```

@@ -14,6 +14,7 @@ from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 import sqlite3
 from config import config
 from utils import XUIClient, generate_vless_link, get_client_link, setup_logging
+from panel_monitor import PanelMonitor
 
 setup_logging(config.logging)
 logger = logging.getLogger(__name__)
@@ -124,10 +125,16 @@ async def cmd_start(message: Message, state: FSMContext):
                     InlineKeyboardButton(text="🔑 Мои ключи", callback_data="cmd_myclients")
                 ]
             ])
+            
+            # Получаем информацию о текущей панели
+            current_panel = config.get_current_panel()
+            panel_alias = current_panel.alias if current_panel else "N/A"
+            
             await message.answer(
                 f"👤 Добро пожаловать, {first_name}!\n\n"
                 f"✅ <b>У вас обнаружены активные ключи.</b>\n"
-                f"Доступ предоставлен автоматически.\n\n"
+                f"Доступ предоставлен автоматически.\n"
+                f"📡 <b>Панель:</b> <code>{panel_alias}</code>\n\n"
                 f"🔐 <b>Настройки подключения:</b>\n"
                 f"• Transport: <code>{config.vpn.transport}</code>\n"
                 f"• Security: <code>{config.vpn.security}</code>\n\n"
@@ -159,13 +166,40 @@ async def cmd_start(message: Message, state: FSMContext):
                 [
                     InlineKeyboardButton(text="🖥️ Сервер", callback_data="server_status"),
                     InlineKeyboardButton(text="👥 Пользователи", callback_data="show_users")
+                ],
+                [
+                    InlineKeyboardButton(text="🔧 Панели", callback_data="show_panels")
                 ]
             ])
+            
+            # Получаем информацию о текущей панели
+            current_panel = config.get_current_panel()
+            panel_info = ""
+            
+            # Используем актуальные данные из config.vpn (обновляются через refresh_vpn_config)
+            transport = config.vpn.transport if hasattr(config, 'vpn') and config.vpn else "N/A"
+            security = config.vpn.security if hasattr(config, 'vpn') and config.vpn else "N/A"
+            
+            if current_panel:
+                alias = current_panel.alias
+                is_local = current_panel.is_local
+                xui_version = current_panel.xui_version
+                xui_url = current_panel.xui_url
+                
+                panel_info = (
+                    f"\n📋 <b>Панель:</b>\n"
+                    f"• Alias: <code>{alias}</code>\n"
+                    f"• Local: <code>{'Да' if is_local else 'Нет'}</code>\n"
+                    f"• Version: <code>{xui_version}</code>\n"
+                    f"• URL: <code>{xui_url}</code>\n"
+                )
+            
             await message.answer(
-                f"👑 Администратор\n {username or first_name}\n\n"
+                f"👑 Администратор\n\n\n"
                 f"🔐 <b>Настройки подключения:</b>\n"
-                f"• Transport: <code>{config.vpn.transport}</code>\n"
-                f"• Security: <code>{config.vpn.security}</code>",
+                f"• Transport: <code>{transport}</code>\n"
+                f"• Security: <code>{security}</code>"
+                f"{panel_info}",
                 reply_markup=keyboard,
                 parse_mode="HTML"
             )
@@ -179,8 +213,14 @@ async def cmd_start(message: Message, state: FSMContext):
                     InlineKeyboardButton(text="🔑 Мои ключи", callback_data="cmd_myclients")
                 ]
             ])
+            
+            # Получаем информацию о текущей панели
+            current_panel = config.get_current_panel()
+            panel_alias = current_panel.alias if current_panel else "N/A"
+            
             await message.answer(
-                f"👤 <b>Пользователь:</b> {username or first_name}\n\n"
+                f"👤 <b>Пользователь:</b> {username or first_name}\n"
+                f"📡 <b>Панель:</b> <code>{panel_alias}</code>\n\n"
                 f"🔐 <b>Настройки подключения:</b>\n"
                 f"• Transport: <code>{config.vpn.transport}</code>\n"
                 f"• Security: <code>{config.vpn.security}</code>\n\n"
@@ -237,8 +277,12 @@ async def process_new_comment(message: Message, state: FSMContext):
     if not username:
         username = message.from_user.first_name.lower().replace(" ", "_")
 
+    # Получаем префикс из алиаса панели (первые 5 символов)
+    current_panel = config.get_current_panel()
+    panel_prefix = current_panel.alias[:5].lower() if current_panel and current_panel.alias else "panel"
+    
     random_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
-    email = f"{username}_{random_suffix}"
+    email = f"{panel_prefix}_{username}_{random_suffix}"
 
     status_msg = await message.answer(f"🔄 Ожидайте...")
 
@@ -264,9 +308,11 @@ async def process_new_comment(message: Message, state: FSMContext):
             [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")]
         ])
         
+        # Убираем слово "Временный" из комментария для отображения
+        display_comment = comment.replace('Временный ', '')
         await message.answer(
             f"🔑 <b>Бессрочный ключ</b>\n\n"
-            f"📝 Комментарий: {comment}",
+            f"📝 Комментарий: {display_comment}",
             parse_mode="HTML",
             reply_markup=keyboard
         )
@@ -389,9 +435,11 @@ async def process_tempkey_comment(message: Message, state: FSMContext):
             [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")]
         ])
         
+        # Убираем слово "Временный" из комментария для отображения
+        display_comment = comment.replace('Временный ', '')
         await message.answer(
             f"⏰ <b>Временный ключ на {duration_text}</b>\n\n"
-            f"📝 Комментарий: {comment}",
+            f"📝 Комментарий: {display_comment}",
             parse_mode="HTML",
             reply_markup=keyboard
         )
@@ -416,7 +464,7 @@ async def cmd_my_clients(message: Message):
     clients = await xui_client.get_user_clients_by_username(username)
 
     if not clients:
-        await message.answer("📭 У вас пока нет ключей.\n\nИспользуйте /new для создания.")
+        await message.answer("📭 У вас пока нет ключей.\n\n")
         return
 
     # Подсчитываем статистику
@@ -432,7 +480,9 @@ async def cmd_my_clients(message: Message):
         
         # Формируем текст кнопки
         if comment:
-            display_text = f"{comment[:25]}"
+            # Убираем слово "Временный" из комментария для кнопки
+            display_comment = comment.replace('Временный ', '')
+            display_text = f"{display_comment[:25]}"
         else:
             display_text = f"{email[:25]}"
         
@@ -498,10 +548,14 @@ async def show_my_client_details(callback_query: types.CallbackQuery):
         [InlineKeyboardButton(text="🔙 Назад", callback_data="cmd_myclients")]
     ])
     
-    await callback_query.message.edit_text(
+    # Всегда отправляем новое сообщение для навигации
+    # Убираем слово "Временный" из комментария для отображения
+    display_comment = comment.replace('Временный ', '') if comment else 'Без комментария'
+    await bot.send_message(
+        callback_query.message.chat.id,
         f"🔑 <b>Информация о ключе</b>\n\n"
         f"Статус: {status_text}\n"
-        f"📝 Комментарий: {comment if comment else 'Без комментария'}",
+        f"📝 Комментарий: {display_comment}",
         parse_mode="HTML",
         reply_markup=keyboard
     )
@@ -632,8 +686,14 @@ async def cmd_all_clients(message: Message):
             else:
                 return f"{bytes_value / (1024**3):.2f} GB"
         
+        # Получаем информацию о текущей панели
+        current_panel = config.get_current_panel()
+        panel_info = ""
+        if current_panel:
+            panel_info = f"📡 <b>Панель:</b> {current_panel.alias}  {current_panel.xui_version}\n\n"
+        
         # Формируем текст статистики
-        text = f"📊 <b>Статистика ключей</b>\n\n"
+        text = panel_info
         text += f"🔑 Всего ключей: {total_count}\n"
         text += f"✅ Активных: {active_count}\n"
         text += f"⏸️ Неактивных: {inactive_count}\n"
@@ -660,7 +720,9 @@ async def cmd_all_clients(message: Message):
             
             # Формируем текст кнопки (короче для двух колонок)
             if comment:
-                button_text = f"{email[:10]}-{comment[:10]}"
+                # Убираем слово "Временный" из комментария для кнопки
+                display_comment = comment.replace('Временный ', '')
+                button_text = f"{email[:10]}-{display_comment[:10]}"
             else:
                 button_text = email[:20]
             
@@ -739,12 +801,20 @@ async def show_all_client_details(callback_query: types.CallbackQuery):
         else:  # expired
             status_text = "⏰ Просрочен"
         
-        # Форматируем трафик
-        total_gb = client['totalGB']
-        if total_gb > 0:
-            traffic_text = f"{total_gb / (1024**3):.2f} GB"
-        else:
-            traffic_text = "Безлимит"
+        # Форматируем скачанный трафик (up + down)
+        downloaded_traffic = client.get('up', 0) + client.get('down', 0)
+        
+        def format_traffic(bytes_value):
+            if bytes_value < 1024:
+                return f"{bytes_value} B"
+            elif bytes_value < 1024**2:
+                return f"{bytes_value / 1024:.2f} KB"
+            elif bytes_value < 1024**3:
+                return f"{bytes_value / (1024**2):.2f} MB"
+            else:
+                return f"{bytes_value / (1024**3):.2f} GB"
+        
+        traffic_text = format_traffic(downloaded_traffic)
         
         # Форматируем срок окончания
         expiry_time = client['expiryTime']
@@ -759,8 +829,12 @@ async def show_all_client_details(callback_query: types.CallbackQuery):
         text = f"📋 <b>Информация о ключе</b>\n\n"
         text += f"{status_text}\n"
         text += f"📧 <b>Email:</b> <code>{client['email']}</code>\n"
-        text += f"📝 <b>Комментарий:</b> {client['comment'] if client['comment'] else 'Не указан'}\n"
-        text += f"📊 <b>Общий трафик:</b> {traffic_text}\n"
+        # Убираем слово "Временный" из комментария для отображения
+        display_comment = client['comment'] if client['comment'] else 'Не указан'
+        if display_comment != 'Не указан':
+            display_comment = display_comment.replace('Временный ', '')
+        text += f"📝 <b>Комментарий:</b> {display_comment}\n"
+        text += f"📊 <b>Скачано:</b> {traffic_text}\n"
         text += f"📅 <b>Срок окончания:</b> {expiry_text}\n"
         
         # Создаем кнопки управления
@@ -783,7 +857,13 @@ async def show_all_client_details(callback_query: types.CallbackQuery):
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
         
-        await callback_query.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+        # Всегда отправляем новое сообщение для навигации
+        await bot.send_message(
+            callback_query.message.chat.id,
+            text,
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
         await callback_query.answer()
         
     except Exception as e:
@@ -842,14 +922,17 @@ async def enable_client(callback_query: types.CallbackQuery):
     client_uuid = callback_query.data.split('_', 1)[1]
     
     try:
+        # Получаем email клиента для v3 API
+        client = await xui_client.get_client_details(client_uuid)
+        email = client.get('email') if client else None
+        
         # Включаем клиента
-        success = await xui_client.update_client_status(client_uuid, True)
+        success = await xui_client.update_client_status(client_uuid, True, email)
         
         if success:
             await callback_query.answer("✅ Ключ включен")
-            # Обновляем информацию о клиенте
-            callback_query.data = f"allclient_{client_uuid}"
-            await show_all_client_details(callback_query)
+            # Обновляем информацию о клиенте - получаем свежие данные
+            await refresh_client_details(callback_query, client_uuid)
         else:
             await callback_query.answer("❌ Ошибка включения ключа", show_alert=True)
         
@@ -868,20 +951,96 @@ async def disable_client(callback_query: types.CallbackQuery):
     client_uuid = callback_query.data.split('_', 1)[1]
     
     try:
+        # Получаем email клиента для v3 API
+        client = await xui_client.get_client_details(client_uuid)
+        email = client.get('email') if client else None
+        
         # Выключаем клиента
-        success = await xui_client.update_client_status(client_uuid, False)
+        success = await xui_client.update_client_status(client_uuid, False, email)
         
         if success:
             await callback_query.answer("⏸️ Ключ выключен")
-            # Обновляем информацию о клиенте
-            callback_query.data = f"allclient_{client_uuid}"
-            await show_all_client_details(callback_query)
+            # Обновляем информацию о клиенте - получаем свежие данные
+            await refresh_client_details(callback_query, client_uuid)
         else:
             await callback_query.answer("❌ Ошибка выключения ключа", show_alert=True)
         
     except Exception as e:
         logger.error(f"Ошибка выключения клиента: {e}")
         await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
+
+
+async def refresh_client_details(callback_query: types.CallbackQuery, client_uuid: str):
+    """Обновить информацию о клиенте после изменения статуса"""
+    try:
+        # Получаем обновленные детали клиента
+        client = await xui_client.get_client_details(client_uuid)
+        
+        if not client:
+            await callback_query.message.edit_text("❌ Ключ не найден!")
+            return
+        
+        # Определяем статус с иконкой
+        if client['status'] == 'active':
+            status_text = "✅ Активен"
+        elif client['status'] == 'inactive':
+            status_text = "⏸️ Неактивен (выключен)"
+        else:  # expired
+            status_text = "⏰ Просрочен"
+        
+        # Форматируем трафик
+        total_gb = client['totalGB']
+        if total_gb > 0:
+            traffic_text = f"{total_gb / (1024**3):.2f} GB"
+        else:
+            traffic_text = "Безлимит"
+        
+        # Форматируем срок окончания
+        expiry_time = client['expiryTime']
+        if expiry_time > 0:
+            from datetime import datetime
+            expiry_date = datetime.fromtimestamp(expiry_time / 1000)
+            expiry_text = expiry_date.strftime("%Y-%m-%d %H:%M")
+        else:
+            expiry_text = "Бессрочно"
+        
+        # Формируем текст
+        text = f"📋 <b>Информация о ключе</b>\n\n"
+        text += f"{status_text}\n"
+        text += f"📧 <b>Email:</b> <code>{client['email']}</code>\n"
+        # Убираем слово "Временный" из комментария для отображения
+        display_comment = client['comment'] if client['comment'] else 'Не указан'
+        if display_comment != 'Не указан':
+            display_comment = display_comment.replace('Временный ', '')
+        text += f"📝 <b>Комментарий:</b> {display_comment}\n"
+        text += f"📊 <b>Общий трафик:</b> {traffic_text}\n"
+        text += f"📅 <b>Срок окончания:</b> {expiry_text}\n"
+        
+        # Создаем кнопки управления
+        buttons = []
+        
+        # Кнопки "Показать ключ" и "Показать QR" в одной строке
+        buttons.append([
+            InlineKeyboardButton(text="🔑 Показать ключ", callback_data=f"showkey_{client_uuid}"),
+            InlineKeyboardButton(text="📱 Показать QR", callback_data=f"showqr_{client_uuid}")
+        ])
+        
+        # Кнопки включить/выключить в зависимости от статуса
+        if client['enable']:
+            buttons.append([InlineKeyboardButton(text="⏸️ Выключить ключ", callback_data=f"disable_{client_uuid}")])
+        else:
+            buttons.append([InlineKeyboardButton(text="✅ Включить ключ", callback_data=f"enable_{client_uuid}")])
+        
+        # Кнопка "Назад"
+        buttons.append([InlineKeyboardButton(text="🔙 Назад к списку", callback_data="back_to_allclients")])
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+        
+        await callback_query.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+        
+    except Exception as e:
+        logger.error(f"Ошибка обновления информации о клиенте: {e}")
+        await callback_query.message.edit_text(f"❌ Ошибка обновления: {str(e)}")
 
 
 @dp.callback_query(lambda c: c.data and c.data.startswith('showlink_'))
@@ -1020,7 +1179,7 @@ async def show_qr_code(callback_query: types.CallbackQuery):
 🔑 <b>VLESS-ссылка:</b>
 <code>{vless_link}</code>
 
-💬 <b>Комментарий:</b> {comment}"""
+💬 <b>Комментарий:</b> {comment.replace('Временный ', '')}"""
         
         # Добавляем кнопку "В главное меню"
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -1056,8 +1215,8 @@ async def refresh_allclients(callback_query: types.CallbackQuery):
         # Показываем уведомление об обновлении
         await callback_query.answer("🔄 Обновление данных...", show_alert=False)
         
-        # Перенаправляем на back_to_allclients для отображения обновленных данных
-        await back_to_allclients(callback_query)
+        # Перенаправляем на back_to_allclients для отображения обновленных данных (с флагом refresh)
+        await back_to_allclients(callback_query, is_refresh=True)
         
     except Exception as e:
         logger.error(f"Ошибка обновления списка ключей: {e}")
@@ -1070,7 +1229,7 @@ async def refresh_allclients(callback_query: types.CallbackQuery):
 
 
 @dp.callback_query(lambda c: c.data == "back_to_allclients")
-async def back_to_allclients(callback_query: types.CallbackQuery):
+async def back_to_allclients(callback_query: types.CallbackQuery, is_refresh: bool = False):
     """Вернуться к списку всех ключей"""
     if not is_admin(callback_query.from_user.id):
         await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
@@ -1080,27 +1239,29 @@ async def back_to_allclients(callback_query: types.CallbackQuery):
         import time
         user_id = callback_query.from_user.id
         
-        # Проверяем кеш
-        should_refresh = True
-        all_clients = []
+        # Всегда очищаем кеш при возврате из информации о ключе
+        # для актуальности данных после включения/выключения
         if user_id in allclients_cache:
-            cache_time = allclients_cache[user_id]['time']
-            if time.time() - cache_time < 30:  # Кеш действителен 30 секунд
-                should_refresh = False
-                all_clients = allclients_cache[user_id]['data']
+            del allclients_cache[user_id]
         
-        # Обновляем данные если нужно
-        if should_refresh:
-            all_clients = await xui_client.get_all_clients()
-            allclients_cache[user_id] = {
-                'time': time.time(),
-                'data': all_clients
-            }
+        # Получаем свежие данные
+        all_clients = await xui_client.get_all_clients()
+        allclients_cache[user_id] = {
+            'time': time.time(),
+            'data': all_clients
+        }
+        
+        # Получаем информацию о текущей панели
+        current_panel = config.get_current_panel()
+        panel_info = ""
+        if current_panel:
+            panel_info = f"📡 <b>Панель:</b> {current_panel.alias}  {current_panel.xui_version}\n\n"
         
         # Подсчитываем статистику
         if not all_clients:
             # Показываем полное окно даже если ключей нет
-            text = f"📋 <b>Все ключи</b>\n\n"
+            text = "📋 <b>Все ключи</b>\n\n"
+            text += panel_info
             text += f"🔑 Всего ключей: 0\n"
             text += f"✅ Активных: 0\n"
             text += f"⏸️ Неактивных: 0\n"
@@ -1115,7 +1276,16 @@ async def back_to_allclients(callback_query: types.CallbackQuery):
             ]
             keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
             
-            await callback_query.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+            # Для refresh обновляем сообщение, для навигации - отправляем новое
+            if is_refresh:
+                await callback_query.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+            else:
+                await bot.send_message(
+                    callback_query.message.chat.id,
+                    text,
+                    reply_markup=keyboard,
+                    parse_mode="HTML"
+                )
             await callback_query.answer()
             return
         
@@ -1144,7 +1314,8 @@ async def back_to_allclients(callback_query: types.CallbackQuery):
                 return f"{bytes_value / (1024**3):.2f} GB"
         
         # Обновляем текст статистики
-        text = f"📋 <b>Все ключи</b>\n\n"
+        text = "📋 <b>Все ключи</b>\n\n"
+        text += panel_info
         text += f"🔑 Всего ключей: {total_count}\n"
         text += f"✅ Активных: {active_count}\n"
         text += f"⏸️ Неактивных: {inactive_count}\n"
@@ -1171,7 +1342,9 @@ async def back_to_allclients(callback_query: types.CallbackQuery):
             
             # Формируем текст кнопки (короче для двух колонок)
             if comment:
-                button_text = f"{email[:10]}-{comment[:10]}"
+                # Убираем слово "Временный" из комментария для кнопки
+                display_comment = comment.replace('Временный ', '')
+                button_text = f"{email[:10]}-{display_comment[:10]}"
             else:
                 button_text = email[:20]
             
@@ -1212,7 +1385,16 @@ async def back_to_allclients(callback_query: types.CallbackQuery):
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
         
-        await callback_query.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+        # Для refresh обновляем сообщение, для навигации - отправляем новое
+        if is_refresh:
+            await callback_query.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+        else:
+            await bot.send_message(
+                callback_query.message.chat.id,
+                text,
+                reply_markup=keyboard,
+                parse_mode="HTML"
+            )
         await callback_query.answer()
         
     except Exception as e:
@@ -1514,7 +1696,7 @@ async def handle_unknown(message: Message):
 
 
 @dp.callback_query(lambda c: c.data == "server_status")
-async def show_server_status(callback_query: types.CallbackQuery, state: FSMContext):
+async def show_server_status(callback_query: types.CallbackQuery, state: FSMContext, is_refresh: bool = False):
     """Показать состояние сервера (только для администратора)"""
     if not is_admin(callback_query.from_user.id):
         await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
@@ -1523,14 +1705,18 @@ async def show_server_status(callback_query: types.CallbackQuery, state: FSMCont
     # Очищаем состояние при открытии нового окна
     await state.clear()
     
-    await callback_query.answer("⏳ Получаю данные...")
+    if not is_refresh:
+        await callback_query.answer("⏳ Получаю данные...")
     
     try:
         # Получаем статус сервера
         status = await xui_client.get_server_status()
         
         if not status:
-            await callback_query.message.answer("❌ Не удалось получить статус сервера")
+            if is_refresh:
+                await callback_query.message.edit_text("❌ Не удалось получить статус сервера")
+            else:
+                await callback_query.message.answer("❌ Не удалось получить статус сервера")
             return
         
         # Форматируем данные
@@ -1570,11 +1756,47 @@ async def show_server_status(callback_query: types.CallbackQuery, state: FSMCont
         xray_state = xray.get('state', 'unknown')
         xray_version = xray.get('version', 'unknown')
         
+        # Статус Xray с эмодзи
+        xray_emoji = "✅" if xray_state == "running" else "❌"
+        
         # TCP connections
         tcp_count = status.get('tcpCount', 0)
         
+        # Получаем информацию о текущей панели
+        current_panel = config.get_current_panel()
+        
         # Формируем сообщение
-        message = "🖥️ <b>Сервер</b>\n\n"
+        message = "========================================\n"
+        message += "   <b>СТАТУС СИСТЕМЫ</b>\n"
+        message += "========================================\n\n"
+        
+        # Информация о 3X-UI панели
+        message += "<b>3X-UI PANEL:</b>\n"
+        if current_panel:
+            message += f"  ✅ Установлена\n"
+            message += f"  Версия: v{current_panel.xui_version}\n"
+            message += f"  Состояние: {xray_emoji} {'Запущена' if xray_state == 'running' else 'Остановлена'}\n"
+            
+            # Получаем количество ключей
+            try:
+                all_clients = await xui_client.get_clients()
+                total_keys = len(all_clients) if all_clients else 0
+                message += f"  Всего ключей: {total_keys}\n\n"
+            except:
+                message += f"  Всего ключей: N/A\n\n"
+            
+            # Добавляем данные из local_panel (показываем для всех панелей)
+            if current_panel.is_local or current_panel.panel_id == 'local_panel':
+                message += f"  <b>Данные подключения:</b>\n"
+                message += f"  • URL: <code>{current_panel.xui_url}</code>\n"
+                message += f"  • Username: <code>{current_panel.xui_username}</code>\n"
+                message += f"  • Password: <code>{current_panel.xui_password}</code>\n"
+                if current_panel.xui_api_token:
+                    message += f"  • API Token: <code>{current_panel.xui_api_token}</code>\n"
+        else:
+            message += f"  ❌ Панель не настроена\n"
+        
+        message += "\n<b>🖥️ Сервер</b>\n\n"
         
         message += f"💻 <b>CPU:</b> {cpu:.1f}%\n\n"
         
@@ -1598,7 +1820,7 @@ async def show_server_status(callback_query: types.CallbackQuery, state: FSMCont
         # Добавляем кнопки в два ряда
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [
-                InlineKeyboardButton(text="🔄 Обновить", callback_data="server_status"),
+                InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_server_status"),
                 InlineKeyboardButton(text="💾 Бэкап", callback_data="create_backup")
             ],
             [
@@ -1610,18 +1832,25 @@ async def show_server_status(callback_query: types.CallbackQuery, state: FSMCont
             ]
         ])
         
-        # Если это обновление существующего сообщения, редактируем его
-        # Иначе отправляем новое
-        try:
-            await callback_query.message.edit_text(
-                message,
-                parse_mode="HTML",
-                reply_markup=keyboard
-            )
-        except:
-            # Если не удалось отредактировать (например, сообщение слишком старое),
-            # отправляем новое
-            await callback_query.message.answer(
+        # Для refresh обновляем текущее сообщение, для навигации - отправляем новое
+        if is_refresh:
+            try:
+                await callback_query.message.edit_text(
+                    message,
+                    parse_mode="HTML",
+                    reply_markup=keyboard
+                )
+            except:
+                # Если не удалось отредактировать (например, сообщение слишком старое),
+                # отправляем новое
+                await callback_query.message.answer(
+                    message,
+                    parse_mode="HTML",
+                    reply_markup=keyboard
+                )
+        else:
+            await bot.send_message(
+                callback_query.message.chat.id,
                 message,
                 parse_mode="HTML",
                 reply_markup=keyboard
@@ -1852,6 +2081,18 @@ async def toggle_disk_alert(callback_query: types.CallbackQuery, state: FSMConte
     await show_notification_settings(callback_query, state)
 
 
+@dp.callback_query(lambda c: c.data == "refresh_server_status")
+async def refresh_server_status(callback_query: types.CallbackQuery, state: FSMContext):
+    """Обновить статус сервера"""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
+        return
+    
+    await callback_query.answer("🔄 Обновление...")
+    # Вызываем функцию показа статуса сервера с флагом refresh
+    await show_server_status(callback_query, state, is_refresh=True)
+
+
 @dp.callback_query(lambda c: c.data == "back_to_server_status")
 async def back_to_server_status(callback_query: types.CallbackQuery, state: FSMContext):
     """Вернуться к окну состояния сервера"""
@@ -1865,7 +2106,7 @@ async def back_to_server_status(callback_query: types.CallbackQuery, state: FSMC
 
 
 @dp.callback_query(lambda c: c.data == "show_users")
-async def show_users_list(callback_query: types.CallbackQuery, state: FSMContext):
+async def show_users_list(callback_query: types.CallbackQuery, state: FSMContext, is_refresh: bool = False):
     """Показать список пользователей (только для администратора)"""
     if not is_admin(callback_query.from_user.id):
         await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
@@ -1874,7 +2115,8 @@ async def show_users_list(callback_query: types.CallbackQuery, state: FSMContext
     # Очищаем состояние при открытии нового окна
     await state.clear()
     
-    await callback_query.answer("⏳ Обновляю список...")
+    if not is_refresh:
+        await callback_query.answer("⏳ Обновляю список...")
     
     try:
         users = config.users_db.list_users()
@@ -1906,7 +2148,7 @@ async def show_users_list(callback_query: types.CallbackQuery, state: FSMContext
 
         # Добавляем кнопки действий и навигации
         buttons = [
-            [InlineKeyboardButton(text="🔄 Обновить", callback_data="show_users")]
+            [InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_users")]
         ]
         
         # Показываем кнопки действий только если есть пользователи
@@ -1921,21 +2163,40 @@ async def show_users_list(callback_query: types.CallbackQuery, state: FSMContext
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
 
-        # Редактируем существующее сообщение
-        try:
-            await callback_query.message.edit_text(
+        # Для refresh обновляем текущее сообщение, для навигации - отправляем новое
+        if is_refresh:
+            try:
+                await callback_query.message.edit_text(
+                    text,
+                    parse_mode="HTML",
+                    reply_markup=keyboard
+                )
+            except Exception as e:
+                logger.error(f"Не удалось отредактировать сообщение: {e}")
+                await callback_query.answer("❌ Не удалось обновить", show_alert=True)
+        else:
+            await bot.send_message(
+                callback_query.message.chat.id,
                 text,
                 parse_mode="HTML",
                 reply_markup=keyboard
             )
-        except Exception as e:
-            # Логируем ошибку, но не создаем новое сообщение
-            logger.error(f"Не удалось отредактировать сообщение: {e}")
-            await callback_query.answer("❌ Не удалось обновить", show_alert=True)
         
     except Exception as e:
         logger.error(f"Ошибка получения списка пользователей: {e}")
         await callback_query.message.answer(f"❌ Ошибка: {str(e)}")
+
+@dp.callback_query(lambda c: c.data == "refresh_users")
+async def refresh_users(callback_query: types.CallbackQuery, state: FSMContext):
+    """Обновить список пользователей"""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
+        return
+    
+    await callback_query.answer("🔄 Обновление...")
+    # Вызываем функцию показа пользователей с флагом refresh
+    await show_users_list(callback_query, state, is_refresh=True)
+
 
 @dp.callback_query(lambda c: c.data == "back_to_start")
 async def back_to_start_menu(callback_query: types.CallbackQuery, state: FSMContext):
@@ -1948,6 +2209,24 @@ async def back_to_start_menu(callback_query: types.CallbackQuery, state: FSMCont
     await state.clear()
     
     await callback_query.answer()
+    
+    # Обновляем конфигурацию из текущей панели
+    try:
+        panel_manager = config.panel_manager
+        current_panel_id = panel_manager.get_current_panel_id()
+        
+        if current_panel_id:
+            panel_config = panel_manager.get_panel(current_panel_id)
+            if panel_config:
+                # Обновляем transport и security из панели
+                if hasattr(panel_config, 'transport'):
+                    config.vpn.transport = panel_config.transport
+                if hasattr(panel_config, 'security'):
+                    config.vpn.security = panel_config.security
+                
+                logger.info(f"🔄 Конфигурация обновлена из панели {current_panel_id}")
+    except Exception as e:
+        logger.error(f"Ошибка обновления конфигурации: {e}")
     
     # Проверяем права доступа
     if not is_allowed(user_id):
@@ -1967,28 +2246,49 @@ async def back_to_start_menu(callback_query: types.CallbackQuery, state: FSMCont
             [
                 InlineKeyboardButton(text="🖥️ Сервер", callback_data="server_status"),
                 InlineKeyboardButton(text="👥 Пользователи", callback_data="show_users")
+            ],
+            [
+                InlineKeyboardButton(text="🔧 Панели", callback_data="show_panels")
             ]
         ])
         
+        # Получаем информацию о текущей панели
+        current_panel = config.get_current_panel()
+        panel_info = ""
+        
+        # Используем актуальные данные из config.vpn (обновляются через refresh_vpn_config)
+        transport = config.vpn.transport if hasattr(config, 'vpn') and config.vpn else "N/A"
+        security = config.vpn.security if hasattr(config, 'vpn') and config.vpn else "N/A"
+        
+        if current_panel:
+            alias = current_panel.alias
+            is_local = current_panel.is_local
+            xui_version = current_panel.xui_version
+            xui_url = current_panel.xui_url
+            
+            panel_info = (
+                f"\n📋 <b>Панель:</b>\n"
+                f"• Alias: <code>{alias}</code>\n"
+                f"• Local: <code>{'Да' if is_local else 'Нет'}</code>\n"
+                f"• Version: <code>{xui_version}</code>\n"
+                f"• URL: <code>{xui_url}</code>\n"
+            )
+        
         text = (
-            f"👑 Администратор\n {username or first_name}\n\n"
+            f"👑 Администратор\n\n\n"
             f"🔐 <b>Настройки подключения:</b>\n"
-            f"• Transport: <code>{config.vpn.transport}</code>\n"
-            f"• Security: <code>{config.vpn.security}</code>"
+            f"• Transport: <code>{transport}</code>\n"
+            f"• Security: <code>{security}</code>"
+            f"{panel_info}"
         )
         
-        try:
-            await callback_query.message.edit_text(
-                text,
-                parse_mode="HTML",
-                reply_markup=keyboard
-            )
-        except:
-            await callback_query.message.answer(
-                text,
-                parse_mode="HTML",
-                reply_markup=keyboard
-            )
+        # Всегда отправляем новое сообщение для навигации
+        await bot.send_message(
+            callback_query.message.chat.id,
+            text,
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
     else:
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [
@@ -2000,18 +2300,26 @@ async def back_to_start_menu(callback_query: types.CallbackQuery, state: FSMCont
             ]
         ])
         
+        # Получаем информацию о текущей панели
+        current_panel = config.get_current_panel()
+        panel_alias = current_panel.alias if current_panel else "N/A"
+        
         text = (
-            f"👤 <b>Пользователь:</b> {username or first_name}\n\n"
+            f"👤 <b>Пользователь:</b> {username or first_name}\n"
+            f"📡 <b>Панель:</b> <code>{panel_alias}</code>\n\n"
             f"🔐 <b>Настройки подключения:</b>\n"
             f"• Transport: <code>{config.vpn.transport}</code>\n"
             f"• Security: <code>{config.vpn.security}</code>\n\n"
             f"📱 Выберите действие:"
         )
         
-        try:
-            await callback_query.message.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
-        except:
-            await callback_query.message.answer(text, parse_mode="HTML", reply_markup=keyboard)
+        # Всегда отправляем новое сообщение для навигации
+        await bot.send_message(
+            callback_query.message.chat.id,
+            text,
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
 @dp.callback_query(lambda c: c.data == "cmd_new")
 async def callback_cmd_new(callback_query: types.CallbackQuery, state: FSMContext):
     """Обработчик кнопки 'Создать ключ'"""
@@ -2033,19 +2341,13 @@ async def callback_cmd_new(callback_query: types.CallbackQuery, state: FSMContex
         [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
     ])
     
-    try:
-        await callback_query.message.edit_text(
-            "📝 Введите комментарий к подключению:\n\n",
-            parse_mode="HTML",
-            reply_markup=keyboard
-        )
-    except:
-        await bot.send_message(
-            callback_query.message.chat.id,
-            "📝 Введите комментарий к подключению:\n\n",
-            parse_mode="HTML",
-            reply_markup=keyboard
-        )
+    # Всегда отправляем новое сообщение для навигации
+    await bot.send_message(
+        callback_query.message.chat.id,
+        "📝 Введите комментарий к подключению:\n\n",
+        parse_mode="HTML",
+        reply_markup=keyboard
+    )
     
     await state.set_state(NewClientState.waiting_for_comment)
 
@@ -2070,19 +2372,13 @@ async def callback_cmd_tempkey(callback_query: types.CallbackQuery, state: FSMCo
         [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
     ])
     
-    try:
-        await callback_query.message.edit_text(
-            "📝 Введите комментарий к подключению:\n\n",
-            parse_mode="HTML",
-            reply_markup=keyboard
-        )
-    except:
-        await bot.send_message(
-            callback_query.message.chat.id,
-            "📝 Введите комментарий к подключению:\n\n",
-            parse_mode="HTML",
-            reply_markup=keyboard
-        )
+    # Всегда отправляем новое сообщение для навигации
+    await bot.send_message(
+        callback_query.message.chat.id,
+        "📝 Введите комментарий к подключению:\n\n",
+        parse_mode="HTML",
+        reply_markup=keyboard
+    )
     
     await state.set_state(TempKeyState.waiting_for_comment)
 
@@ -2093,6 +2389,10 @@ async def callback_cmd_myclients(callback_query: types.CallbackQuery, state: FSM
     
     # Очищаем состояние при открытии нового окна
     await state.clear()
+    
+    # Очищаем кеш "Все ключи" при переходе в "Мои ключи"
+    if user_id in allclients_cache:
+        del allclients_cache[user_id]
     
     # Проверка доступа
     if not is_allowed(user_id):
@@ -2112,49 +2412,44 @@ async def callback_cmd_myclients(callback_query: types.CallbackQuery, state: FSM
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
             ])
-            try:
-                await callback_query.message.edit_text(
-                    "❌ У вас не установлен username в Telegram.\n\nУстановите username в настройках Telegram для использования бота.",
-                    reply_markup=keyboard
-                )
-            except:
-                await bot.send_message(
-                    callback_query.message.chat.id,
-                    "❌ У вас не установлен username в Telegram.\n\nУстановите username в настройках Telegram для использования бота.",
-                    reply_markup=keyboard
-                )
+            # Всегда отправляем новое сообщение для навигации
+            await bot.send_message(
+                callback_query.message.chat.id,
+                "❌ У вас не установлен username в Telegram.\n\nУстановите username в настройках Telegram для использования бота.",
+                reply_markup=keyboard
+            )
             return
         
         # Получаем ключи пользователя из X-UI по username
         clients = await xui_client.get_user_clients_by_username(username)
         
+        # Получаем информацию о текущей панели
+        current_panel = config.get_current_panel()
+        panel_info = ""
+        if current_panel:
+            panel_info = f"📡 <b>Панель:</b> {current_panel.alias} <code>v{current_panel.xui_version}</code>\n\n"
+        
         # Подсчитываем статистику
         if not clients:
             # Показываем полное окно даже если ключей нет
             text = f"🔑 <b>Мои ключи (0)</b>\n\n"
+            text += panel_info
             text += f"✅ Активных: 0\n"
             text += f"⏸️ Неактивных: 0\n"
             text += f"⏰ Просроченных: 0\n\n"
             text += "📭 <i>У вас пока нет ключей.</i>\n\n"
-            text += "Используйте /new для создания."
             
             # Добавляем кнопки "Обновить" и "Назад"
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_myclients")],
                 [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
             ])
-            try:
-                await callback_query.message.edit_text(
-                    text,
-                    reply_markup=keyboard,
-                    parse_mode="HTML"
-                )
-            except:
-                await bot.send_message(
-                    callback_query.message.chat.id,
-                    text,
-                    reply_markup=keyboard,
-                    parse_mode="HTML"
+            # Всегда отправляем новое сообщение для навигации
+            await bot.send_message(
+                callback_query.message.chat.id,
+                text,
+                reply_markup=keyboard,
+                parse_mode="HTML"
                 )
             return
         
@@ -2171,7 +2466,9 @@ async def callback_cmd_myclients(callback_query: types.CallbackQuery, state: FSM
             
             # Формируем текст кнопки
             if comment:
-                display_text = f"{comment[:25]}"
+                # Убираем слово "Временный" из комментария для кнопки
+                display_comment = comment.replace('Временный ', '')
+                display_text = f"{display_comment[:25]}"
             else:
                 display_text = f"{email[:25]}"
             
@@ -2196,41 +2493,31 @@ async def callback_cmd_myclients(callback_query: types.CallbackQuery, state: FSM
         keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
         
         text = f"🔑 <b>Мои ключи ({len(clients)})</b>\n\n"
+        text += panel_info
         text += f"✅ Активных: {active_count}\n"
         text += f"⏸️ Неактивных: {inactive_count}\n"
         text += f"⏰ Просроченных: {expired_count}\n\n"
         text += "Выберите ключ для просмотра:"
         
-        try:
-            await callback_query.message.edit_text(
-                text,
-                reply_markup=keyboard,
-                parse_mode="HTML"
-            )
-        except:
-            await bot.send_message(
-                callback_query.message.chat.id,
-                text,
-                reply_markup=keyboard,
-                parse_mode="HTML"
-            )
+        # Всегда отправляем новое сообщение для навигации
+        await bot.send_message(
+            callback_query.message.chat.id,
+            text,
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
         
     except Exception as e:
         logger.error(f"Ошибка получения списка клиентов: {e}")
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
         ])
-        try:
-            await callback_query.message.edit_text(
-                f"❌ Ошибка: {str(e)}",
-                reply_markup=keyboard
-            )
-        except:
-            await bot.send_message(
-                callback_query.message.chat.id,
-                f"❌ Ошибка: {str(e)}",
-                reply_markup=keyboard
-            )
+        # Всегда отправляем новое сообщение для навигации
+        await bot.send_message(
+            callback_query.message.chat.id,
+            f"❌ Ошибка: {str(e)}",
+            reply_markup=keyboard
+        )
 
 @dp.callback_query(lambda c: c.data == "refresh_myclients")
 async def refresh_myclients(callback_query: types.CallbackQuery, state: FSMContext):
@@ -2249,11 +2536,21 @@ async def refresh_myclients(callback_query: types.CallbackQuery, state: FSMConte
     # Очищаем состояние
     await state.clear()
     
+    # Очищаем кеш "Все ключи" при обновлении "Мои ключи"
+    if user_id in allclients_cache:
+        del allclients_cache[user_id]
+    
     try:
         username = callback_query.from_user.username
         if not username:
             await callback_query.answer("❌ У вас не установлен username", show_alert=True)
             return
+        
+        # Получаем информацию о текущей панели
+        current_panel = config.get_current_panel()
+        panel_info = ""
+        if current_panel:
+            panel_info = f"📡 <b>Панель:</b> {current_panel.alias} <code>v{current_panel.xui_version}</code>\n\n"
         
         # Получаем ключи пользователя из X-UI по username
         clients = await xui_client.get_user_clients_by_username(username)
@@ -2262,11 +2559,11 @@ async def refresh_myclients(callback_query: types.CallbackQuery, state: FSMConte
         if not clients:
             # Показываем полное окно даже если ключей нет
             text = f"🔑 <b>Мои ключи (0)</b>\n\n"
+            text += panel_info
             text += f"✅ Активных: 0\n"
             text += f"⏸️ Неактивных: 0\n"
             text += f"⏰ Просроченных: 0\n\n"
             text += "📭 <i>У вас пока нет ключей.</i>\n\n"
-            text += "Используйте /new для создания."
             
             # Добавляем кнопки "Обновить" и "Назад"
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -2295,7 +2592,9 @@ async def refresh_myclients(callback_query: types.CallbackQuery, state: FSMConte
             
             # Формируем текст кнопки
             if comment:
-                display_text = f"{comment[:25]}"
+                # Убираем слово "Временный" из комментария для кнопки
+                display_comment = comment.replace('Временный ', '')
+                display_text = f"{display_comment[:25]}"
             else:
                 display_text = f"{email[:25]}"
             
@@ -2320,6 +2619,7 @@ async def refresh_myclients(callback_query: types.CallbackQuery, state: FSMConte
         keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
         
         text = f"🔑 <b>Мои ключи ({len(clients)})</b>\n\n"
+        text += panel_info
         text += f"✅ Активных: {active_count}\n"
         text += f"⏸️ Неактивных: {inactive_count}\n"
         text += f"⏰ Просроченных: {expired_count}\n\n"
@@ -2345,6 +2645,10 @@ async def refresh_myclients(callback_query: types.CallbackQuery, state: FSMConte
 async def callback_cmd_allclients(callback_query: types.CallbackQuery, state: FSMContext):
     """Обработчик кнопки 'Все ключи' (только для админа)"""
     user_id = callback_query.from_user.id
+    
+    # Очищаем кеш при переходе в "Все ключи" для принудительного обновления
+    if user_id in allclients_cache:
+        del allclients_cache[user_id]
     
     # Очищаем состояние при открытии нового окна
     await state.clear()
@@ -2594,6 +2898,518 @@ async def process_doremove_user(callback_query: types.CallbackQuery, state: FSMC
         await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
 
 
+# ============================================
+# Управление панелями 3x-ui
+# ============================================
+
+@dp.callback_query(lambda c: c.data == "show_panels")
+async def show_panels_list(callback_query: types.CallbackQuery, state: FSMContext, is_refresh: bool = False):
+    """Показать список всех панелей с их статусами"""
+    await callback_query.answer()
+    
+    user_id = callback_query.from_user.id
+    if not is_admin(user_id):
+        await callback_query.message.answer("⛔ Доступ запрещен")
+        return
+    
+    try:
+        panel_manager = config.panel_manager
+        panels = panel_manager.get_all_panels()
+        current_panel_id = panel_manager.get_current_panel_id()
+        
+        # Диагностическая информация
+        logger.info(f"📊 Диагностика панелей:")
+        logger.info(f"  - Путь к файлу: {panel_manager.config_path.absolute()}")
+        logger.info(f"  - Файл существует: {panel_manager.config_path.exists()}")
+        logger.info(f"  - Количество панелей: {len(panels)}")
+        logger.info(f"  - Текущая панель: {current_panel_id}")
+        logger.info(f"  - Список панелей: {list(panels.keys())}")
+        
+        if not panels:
+            # Дополнительная диагностика
+            import os
+            cwd = os.getcwd()
+            files_in_dir = os.listdir(cwd) if os.path.exists(cwd) else []
+            
+            diagnostic_text = (
+                "📋 <b>Управление панелями</b>\n\n"
+                "❌ Панели не настроены.\n\n"
+                f"🔍 <b>Диагностика:</b>\n"
+                f"• Рабочая директория: <code>{cwd}</code>\n"
+                f"• Ищем файл: <code>{panel_manager.config_path.name}</code>\n"
+                f"• Полный путь: <code>{panel_manager.config_path.absolute()}</code>\n"
+                f"• Файл существует: {'✅ Да' if panel_manager.config_path.exists() else '❌ Нет'}\n\n"
+            )
+            
+            if 'config.yaml' in files_in_dir:
+                diagnostic_text += "✅ Файл <code>config.yaml</code> найден в директории\n"
+                diagnostic_text += "⚠️ Возможно, ошибка в формате YAML или файл пустой\n\n"
+            else:
+                diagnostic_text += "❌ Файл <code>config.yaml</code> не найден\n\n"
+            
+            diagnostic_text += (
+                "📝 <b>Решение:</b>\n"
+                "1. Скопируйте <code>config.yaml.example</code> в <code>config.yaml</code>\n"
+                "2. Настройте параметры панелей в секции <code>panels</code>\n"
+                "3. Перезапустите бота\n\n"
+                f"💡 Файлы в директории: {len(files_in_dir)}"
+            )
+            
+            # Всегда отправляем новое сообщение для кнопки "Панели" из главного меню
+            # Для refresh обновляем текущее сообщение
+            if is_refresh:
+                await callback_query.message.edit_text(
+                    diagnostic_text,
+                    parse_mode="HTML",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_start")]
+                    ])
+                )
+            else:
+                await bot.send_message(
+                    callback_query.message.chat.id,
+                    diagnostic_text,
+                    parse_mode="HTML",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_start")]
+                    ])
+                )
+            return
+        
+        # Проверяем статусы всех панелей
+        # Для refresh обновляем текущее сообщение, для нового окна показываем прогресс
+        progress_msg = None
+        if is_refresh:
+            await callback_query.message.edit_text(
+                "🔄 Проверка статусов панелей...",
+                parse_mode="HTML"
+            )
+        else:
+            # Отправляем новое сообщение с прогрессом
+            progress_msg = await bot.send_message(
+                callback_query.message.chat.id,
+                "🔄 Проверка статусов панелей...",
+                parse_mode="HTML"
+            )
+        
+        statuses = await panel_manager.check_all_panels_status()
+        
+        # Формируем текст со списком панелей
+        text = "🔧 <b>Управление панелями</b>\n\n"
+        
+        for panel_id, panel_config in panels.items():
+            alias = getattr(panel_config, 'alias', panel_id)
+            version = getattr(panel_config, 'xui_version', 'N/A')
+            is_current = panel_id == current_panel_id
+            is_online = statuses.get(panel_id, False)
+            
+            # Иконки статуса
+            current_icon = "🟢" if is_current else "⚪"
+            status_icon = "✅" if is_online else "❌"
+            status_text = "Доступна" if is_online else "Недоступна"
+            
+            text += f"{current_icon} <b>{alias}</b> <code>v{version}</code>\n"
+            text += f"   {status_icon} {status_text}"
+            if is_current:
+                text += " (Текущая)"
+            text += f"\n   ID: <code>{panel_id}</code>\n\n"
+        
+        # Кнопки управления
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_panels"),
+                InlineKeyboardButton(text="🔌 Подключить", callback_data="select_panel_to_connect")
+            ],
+            [
+                InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_start")
+            ]
+        ])
+        
+        # Для refresh обновляем сообщение, для нового окна редактируем прогресс-сообщение
+        if is_refresh:
+            await callback_query.message.edit_text(
+                text,
+                parse_mode="HTML",
+                reply_markup=keyboard
+            )
+        else:
+            if progress_msg:
+                await progress_msg.edit_text(
+                    text,
+                    parse_mode="HTML",
+                    reply_markup=keyboard
+                )
+        
+    except Exception as e:
+        logger.error(f"Ошибка отображения панелей: {e}")
+        await callback_query.message.edit_text(
+            f"❌ Ошибка: {str(e)}",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_start")]
+            ])
+        )
+
+
+@dp.callback_query(lambda c: c.data == "refresh_panels")
+async def refresh_panels_status(callback_query: types.CallbackQuery, state: FSMContext):
+    """Обновить статусы всех панелей"""
+    await callback_query.answer("🔄 Обновление конфигурации...")
+    
+    # Перезагружаем config.yaml
+    config.reload_config()
+    
+    # Показываем обновленный список панелей (с флагом refresh)
+    await show_panels_list(callback_query, state, is_refresh=True)
+
+
+@dp.callback_query(lambda c: c.data == "select_panel_to_connect")
+async def select_panel_to_connect(callback_query: types.CallbackQuery, state: FSMContext):
+    """Выбрать панель для подключения"""
+    await callback_query.answer()
+    
+    user_id = callback_query.from_user.id
+    if not is_admin(user_id):
+        await callback_query.message.answer("⛔ Доступ запрещен")
+        return
+    
+    try:
+        panel_manager = config.panel_manager
+        panels = panel_manager.get_all_panels()
+        current_panel_id = panel_manager.get_current_panel_id()
+        
+        if not panels:
+            await callback_query.answer("❌ Панели не настроены", show_alert=True)
+            return
+        
+        # Формируем кнопки для выбора панели
+        # Показываем только панели v3+ (с API) или локальные панели (работают через БД)
+        keyboard_buttons = []
+        for panel_id, panel_config in panels.items():
+            # Локальные панели показываем всегда (работают через БД)
+            is_local = getattr(panel_config, 'is_local', False)
+            
+            if is_local:
+                logger.debug(f"✅ Локальная панель {panel_id} добавлена в список")
+            else:
+                # Для удаленных панелей проверяем версию (нужен API v3+)
+                is_v3_or_higher = panel_config.is_v3() if hasattr(panel_config, 'is_v3') else False
+                
+                if not is_v3_or_higher:
+                    logger.debug(f"⏭️ Пропуск панели {panel_id} (v2.x, удаленная, нет API)")
+                    continue
+            
+            alias = getattr(panel_config, 'alias', panel_id)
+            is_current = panel_id == current_panel_id
+            
+            button_text = f"{'🟢' if is_current else '⚪'} {alias}"
+            if is_current:
+                button_text += " (Текущая)"
+            
+            keyboard_buttons.append([
+                InlineKeyboardButton(
+                    text=button_text,
+                    callback_data=f"connect_panel:{panel_id}"
+                )
+            ])
+        
+        keyboard_buttons.append([
+            InlineKeyboardButton(text="◀️ Назад", callback_data="show_panels")
+        ])
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+        
+        await callback_query.message.edit_text(
+            "🔌 <b>Выберите панель для подключения:</b>\n\n"
+            "⚠️ При переключении текущая панель будет сохранена.",
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
+        
+    except Exception as e:
+        logger.error(f"Ошибка выбора панели: {e}")
+        await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
+
+
+@dp.callback_query(lambda c: c.data and c.data.startswith("connect_panel:"))
+async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContext):
+    """Подключиться к выбранной панели"""
+    global xui_client
+    
+    await callback_query.answer()
+    
+    user_id = callback_query.from_user.id
+    if not is_admin(user_id):
+        await callback_query.message.answer("⛔ Доступ запрещен")
+        return
+    
+    try:
+        panel_id = callback_query.data.split(":", 1)[1]
+        panel_manager = config.panel_manager
+        current_panel_id = panel_manager.get_current_panel_id()
+        
+        panel_config = panel_manager.get_panel(panel_id)
+        if not panel_config:
+            await callback_query.answer("❌ Панель не найдена", show_alert=True)
+            return
+        
+        alias = getattr(panel_config, 'alias', panel_id)
+        
+        # Если это текущая панель, проверяем подключение и показываем статистику
+        if panel_id == current_panel_id:
+            await callback_query.message.edit_text(
+                f"🔄 Проверка подключения к панели <b>{alias}</b>...",
+                parse_mode="HTML"
+            )
+            
+            # Проверяем, что бот действительно подключен к этой панели
+            # Сравниваем URL из config с URL из panel_config
+            panel_url = getattr(panel_config, 'xui_url', '') or getattr(panel_config, 'url', '')
+            current_url = config.xui.url
+            
+            if panel_url != current_url:
+                # URL не совпадают - нужно переподключиться
+                logger.warning(f"⚠️ URL не совпадают! Panel: {panel_url}, Current: {current_url}")
+                logger.info(f"🔄 Переподключение к панели {alias}...")
+                
+                # Создаем новый XUIConfig из панели
+                new_xui_config = panel_manager.create_xui_config_from_panel(panel_id)
+                if new_xui_config:
+                    config.xui = new_xui_config
+                    xui_client.update_xui_config(new_xui_config)
+                    
+                    # Переподключаемся
+                    if not await xui_client.login():
+                        await callback_query.message.edit_text(
+                            f"❌ <b>Ошибка переподключения к панели {alias}</b>\n\n"
+                            "Не удалось авторизоваться.",
+                            parse_mode="HTML",
+                            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                                [InlineKeyboardButton(text="◀️ Назад", callback_data="show_panels")]
+                            ])
+                        )
+                        return
+                    
+                    logger.info(f"✅ Переподключено к панели {alias}")
+            
+            await callback_query.message.edit_text(
+                f"🔄 Получение статистики панели <b>{alias}</b>...",
+                parse_mode="HTML"
+            )
+            
+            try:
+                all_clients = await xui_client.get_all_clients()
+                
+                total_clients = len(all_clients)
+                active_clients = sum(1 for c in all_clients if c.get('enable', False))
+                inactive_clients = total_clients - active_clients
+                
+                # Подсчет трафика
+                total_traffic_up = sum(c.get('up', 0) for c in all_clients)
+                total_traffic_down = sum(c.get('down', 0) for c in all_clients)
+                total_traffic = total_traffic_up + total_traffic_down
+                
+                def format_bytes(bytes_val):
+                    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+                        if bytes_val < 1024.0:
+                            return f"{bytes_val:.2f} {unit}"
+                        bytes_val /= 1024.0
+                    return f"{bytes_val:.2f} PB"
+                
+                stats_text = (
+                    f"🟢 <b>Текущая панель: {alias}</b>\n\n"
+                    f"🔐 <b>Информация о панели:</b>\n"
+                    f"• URL: <code>{getattr(panel_config, 'xui_url', 'N/A') or getattr(panel_config, 'url', 'N/A')}</code>\n"
+                    f"• Версия: <code>{getattr(panel_config, 'xui_version', 'N/A') or getattr(panel_config, 'version', 'N/A')}</code>\n"
+                    f"• Inbound ID: <code>{getattr(panel_config, 'inbound_id', 'N/A')}</code>\n\n"
+                    f"📊 <b>Статистика ключей:</b>\n"
+                    f"• Всего ключей: <b>{total_clients}</b>\n"
+                    f"• Активных: <b>{active_clients}</b> ✅\n"
+                    f"• Неактивных: <b>{inactive_clients}</b> ❌\n\n"
+                    f"📈 <b>Трафик:</b>\n"
+                    f"• Загружено: <code>{format_bytes(total_traffic_up)}</code>\n"
+                    f"• Скачано: <code>{format_bytes(total_traffic_down)}</code>\n"
+                    f"• Всего: <code>{format_bytes(total_traffic)}</code>"
+                )
+            except Exception as e:
+                logger.error(f"Ошибка получения статистики: {e}")
+                stats_text = (
+                    f"🟢 <b>Текущая панель: {alias}</b>\n\n"
+                    f"🔐 URL: <code>{getattr(panel_config, 'xui_url', 'N/A') or getattr(panel_config, 'url', 'N/A')}</code>\n"
+                    f"📋 Версия: <code>{getattr(panel_config, 'xui_version', 'N/A') or getattr(panel_config, 'version', 'N/A')}</code>\n"
+                    f"🆔 Inbound ID: <code>{getattr(panel_config, 'inbound_id', 'N/A')}</code>\n\n"
+                    f"⚠️ Не удалось получить статистику ключей"
+                )
+            
+            await callback_query.message.edit_text(
+                stats_text,
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="◀️ К списку панелей", callback_data="show_panels")],
+                    [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_start")]
+                ])
+            )
+            return
+        
+        await callback_query.message.edit_text(
+            f"🔄 Подключение к панели <b>{alias}</b>...\n\n"
+            "⏳ Проверка доступности...",
+            parse_mode="HTML"
+        )
+        
+        # Проверяем доступность панели
+        is_available = await panel_manager.check_panel_status(panel_config)
+        
+        if not is_available:
+            await callback_query.message.edit_text(
+                f"❌ <b>Панель {alias} недоступна</b>\n\n"
+                "Проверьте настройки подключения и доступность сервера.",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="◀️ Назад", callback_data="show_panels")]
+                ])
+            )
+            return
+        
+        # Переключаемся на новую панель
+        if panel_manager.switch_panel(panel_id):
+            # Создаем новый XUIConfig из панели
+            new_xui_config = panel_manager.create_xui_config_from_panel(panel_id)
+            
+            if new_xui_config:
+                # Обновляем конфигурацию в config
+                config.xui = new_xui_config
+                
+                # Обновляем XUIClient
+                xui_client.update_xui_config(new_xui_config)
+                
+                # Пытаемся подключиться к новой панели
+                await callback_query.message.edit_text(
+                    f"🔄 Подключение к панели <b>{alias}</b>...\n\n"
+                    "⏳ Авторизация...",
+                    parse_mode="HTML"
+                )
+                
+                if await xui_client.login():
+                    logger.info(f"✅ Переключено на панель: {alias} (ID: {panel_id})")
+                    
+                    # Извлекаем и сохраняем параметры панели
+                    await callback_query.message.edit_text(
+                        f"🔄 Подключение к панели <b>{alias}</b>...\n\n"
+                        "⏳ Извлечение параметров панели...",
+                        parse_mode="HTML"
+                    )
+                    
+                    try:
+                        if await panel_manager.fetch_and_update_panel_settings(panel_id, xui_client):
+                            logger.info(f"✅ Параметры панели {alias} обновлены")
+                            # Обновляем VPN конфигурацию в config
+                            config.refresh_vpn_config()
+                            logger.info(f"✅ VPN конфигурация обновлена: transport={config.vpn.transport}, security={config.vpn.security}")
+                        else:
+                            logger.warning(f"⚠️ Не удалось обновить параметры панели {alias}")
+                    except Exception as e:
+                        logger.error(f"❌ Ошибка извлечения параметров панели: {e}")
+                    
+                    # Получаем статистику по ключам
+                    try:
+                        all_clients = await xui_client.get_all_clients()
+                        
+                        total_clients = len(all_clients)
+                        active_clients = sum(1 for c in all_clients if c.get('enable', False))
+                        inactive_clients = total_clients - active_clients
+                        
+                        # Подсчет трафика
+                        total_traffic_up = sum(c.get('up', 0) for c in all_clients)
+                        total_traffic_down = sum(c.get('down', 0) for c in all_clients)
+                        total_traffic = total_traffic_up + total_traffic_down
+                        
+                        def format_bytes(bytes_val):
+                            for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+                                if bytes_val < 1024.0:
+                                    return f"{bytes_val:.2f} {unit}"
+                                bytes_val /= 1024.0
+                            return f"{bytes_val:.2f} PB"
+                        
+                        stats_text = (
+                            f"✅ <b>Успешно подключено к панели {alias}</b>\n\n"
+                            f"🔐 <b>Информация о панели:</b>\n"
+                            f"• URL: <code>{new_xui_config.url}</code>\n"
+                            f"• Версия: <code>{new_xui_config.version}</code>\n"
+                            f"• Inbound ID: <code>{new_xui_config.inbound_id}</code>\n\n"
+                            f"📊 <b>Статистика ключей:</b>\n"
+                            f"• Всего ключей: <b>{total_clients}</b>\n"
+                            f"• Активных: <b>{active_clients}</b> ✅\n"
+                            f"• Неактивных: <b>{inactive_clients}</b> ❌\n\n"
+                            f"📈 <b>Трафик:</b>\n"
+                            f"• Загружено: <code>{format_bytes(total_traffic_up)}</code>\n"
+                            f"• Скачано: <code>{format_bytes(total_traffic_down)}</code>\n"
+                            f"• Всего: <code>{format_bytes(total_traffic)}</code>"
+                        )
+                    except Exception as e:
+                        logger.error(f"Ошибка получения статистики: {e}")
+                        stats_text = (
+                            f"✅ <b>Успешно подключено к панели {alias}</b>\n\n"
+                            f"🔐 URL: <code>{new_xui_config.url}</code>\n"
+                            f"📋 Версия: <code>{new_xui_config.version}</code>\n"
+                            f"🆔 Inbound ID: <code>{new_xui_config.inbound_id}</code>\n\n"
+                            f"⚠️ Не удалось получить статистику ключей"
+                        )
+                    
+                    await callback_query.message.edit_text(
+                        stats_text,
+                        parse_mode="HTML",
+                        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                            [InlineKeyboardButton(text="◀️ К списку панелей", callback_data="show_panels")],
+                            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_start")]
+                        ])
+                    )
+                else:
+                    # Откатываемся к предыдущей панели
+                    if current_panel_id:
+                        panel_manager.switch_panel(current_panel_id)
+                        old_config = panel_manager.create_xui_config_from_panel(current_panel_id)
+                        if old_config:
+                            config.xui = old_config
+                            xui_client.update_xui_config(old_config)
+                            await xui_client.login()
+                    
+                    logger.error(f"❌ Не удалось подключиться к панели: {alias}")
+                    
+                    await callback_query.message.edit_text(
+                        f"❌ <b>Ошибка подключения к панели {alias}</b>\n\n"
+                        "Не удалось авторизоваться. Проверьте учетные данные.\n"
+                        "Возвращено подключение к предыдущей панели.",
+                        parse_mode="HTML",
+                        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                            [InlineKeyboardButton(text="◀️ Назад", callback_data="show_panels")]
+                        ])
+                    )
+            else:
+                await callback_query.message.edit_text(
+                    f"❌ Ошибка создания конфигурации для панели {alias}",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="◀️ Назад", callback_data="show_panels")]
+                    ])
+                )
+        else:
+            await callback_query.message.edit_text(
+                f"❌ Ошибка переключения на панель {alias}",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="◀️ Назад", callback_data="show_panels")]
+                ])
+            )
+        
+    except Exception as e:
+        logger.error(f"Ошибка подключения к панели: {e}")
+        await callback_query.message.edit_text(
+            f"❌ Ошибка: {str(e)}",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="◀️ Назад", callback_data="show_panels")]
+            ])
+        )
+
+
+
 async def main():
     logger.info("🚀 Запуск бота...")
     logger.info(f"👑 Администратор: {config.users_db.get_main_admin()}")
@@ -2603,7 +3419,62 @@ async def main():
 
     if await xui_client.login():
         logger.info("✅ Подключение к X-UI установлено")
-        await dp.start_polling(bot)
+        
+        # Извлекаем и обновляем параметры текущей панели из БД
+        try:
+            current_panel_id = config.panel_manager.get_current_panel_id()
+            if current_panel_id:
+                logger.info(f"🔄 Обновление параметров панели {current_panel_id} из БД...")
+                if await config.panel_manager.fetch_and_update_panel_settings(current_panel_id, xui_client):
+                    logger.info(f"✅ Параметры панели {current_panel_id} обновлены из БД")
+                    # Обновляем VPN конфигурацию
+                    config.refresh_vpn_config()
+                    logger.info(f"✅ VPN конфигурация обновлена: transport={config.vpn.transport}, security={config.vpn.security}")
+                else:
+                    logger.warning(f"⚠️ Не удалось обновить параметры панели {current_panel_id}")
+        except Exception as e:
+            logger.error(f"❌ Ошибка обновления параметров панели при запуске: {e}")
+        
+        # Инициализация и запуск мониторинга панелей
+        panel_monitor = None
+        monitoring_task = None
+        
+        try:
+            # Создаем экземпляр монитора панелей
+            panel_monitor = PanelMonitor(
+                config_manager=config.panel_manager,
+                bot=bot,
+                admin_ids=config.common.admin_ids
+            )
+            
+            # Запускаем мониторинг в фоновой задаче
+            if panel_monitor.enabled:
+                logger.info("🔍 Запуск фонового мониторинга панелей...")
+                monitoring_task = asyncio.create_task(panel_monitor.start_monitoring())
+                logger.info("✅ Мониторинг панелей запущен")
+            else:
+                logger.info("⏸️ Мониторинг панелей отключен в конфигурации")
+            
+            # Запуск polling бота
+            await dp.start_polling(bot)
+            
+        finally:
+            # Graceful shutdown мониторинга
+            if panel_monitor and monitoring_task:
+                logger.info("🛑 Остановка мониторинга панелей...")
+                await panel_monitor.stop_monitoring()
+                
+                # Ожидаем завершения задачи мониторинга
+                if not monitoring_task.done():
+                    try:
+                        await asyncio.wait_for(monitoring_task, timeout=5.0)
+                    except asyncio.TimeoutError:
+                        logger.warning("⚠️ Таймаут при остановке мониторинга")
+                        monitoring_task.cancel()
+                    except asyncio.CancelledError:
+                        pass
+                
+                logger.info("✅ Мониторинг панелей остановлен")
     else:
         logger.error("❌ Не удалось подключиться к X-UI")
         return

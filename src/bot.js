@@ -18,6 +18,7 @@ import { AWGManager } from './awgManager.js';
 import { logger } from './logger.js';
 import fs from 'fs';
 import path from 'path';
+import yaml from 'js-yaml';
 
 export class RouteBot {
   constructor() {
@@ -61,7 +62,7 @@ export class RouteBot {
       const data = query.data;
 
       // Start menu callbacks
-      if (data.startsWith('start_')) {
+      if (data.startsWith('start_') || data === 'main_menu') {
         await this.bot.answerCallbackQuery(query.id);
         
         // Verify admin access
@@ -70,7 +71,7 @@ export class RouteBot {
           return;
         }
         
-        if (data === 'start_menu') {
+        if (data === 'start_menu' || data === 'main_menu') {
           // Показываем главное меню
           await this.showMainMenu(chatId);
         }
@@ -93,22 +94,59 @@ export class RouteBot {
         
         if (data.startsWith('awg_select_')) {
           const version = data.replace('awg_select_', '');
-          await this.showClientSelectionMenu(chatId, version);
+          await this.showClientSelectionMenu(chatId, version, false);
         } else if (data.startsWith('awg_gen_next_')) {
           const version = data.replace('awg_gen_next_', '');
-          await this.requestVpsLabel(chatId, version);
+          await this.requestPeerName(chatId, version, null, 'next');
         } else if (data.startsWith('awg_gen_by_number_')) {
           const version = data.replace('awg_gen_by_number_', '');
           await this.requestIpNumber(chatId, version);
         } else if (data === 'awg_gen_v1') {
-          await this.requestVpsLabel(chatId, 'v1');
+          await this.generateAwgConfig(chatId, 'v1', config.serverLabel);
         } else if (data === 'awg_gen_v2') {
-          await this.requestVpsLabel(chatId, 'v2');
+          await this.generateAwgConfig(chatId, 'v2', config.serverLabel);
         } else if (data === 'awg_stats') {
           await this.showAwgStats(chatId);
         } else if (data.startsWith('awg_clients_')) {
           const version = data.replace('awg_clients_', '');
-          await this.showAwgClientsList(chatId, version);
+          await this.showAwgClientsList(chatId, version, false);
+        } else if (data.startsWith('awg_start_')) {
+          const version = data.replace('awg_start_', '');
+          await this.handleAwgStart(chatId, version);
+        } else if (data.startsWith('awg_stop_')) {
+          const version = data.replace('awg_stop_', '');
+          await this.handleAwgStop(chatId, version);
+        }
+      }
+      // Refresh callbacks (для кнопок "Обновить")
+      else if (data.startsWith('refresh_')) {
+        // НЕ вызываем answerCallbackQuery здесь, так как это будет сделано в методах
+        
+        // Verify admin access
+        if (!this.isAdmin(userId)) {
+          logger.warn(`Unauthorized refresh callback from user ${userId}`);
+          await this.bot.answerCallbackQuery(query.id);
+          return;
+        }
+        
+        if (data === 'refresh_main_menu') {
+          await this.bot.answerCallbackQuery(query.id, { text: '🔄 Обновление...' });
+          
+          // Удаляем старое сообщение
+          try {
+            await this.bot.deleteMessage(chatId, query.message.message_id);
+          } catch (error) {
+            logger.warn(`Failed to delete message during refresh: ${error.message}`);
+          }
+          
+          // Показываем обновленное главное меню
+          await this.showMainMenu(chatId);
+        } else if (data.startsWith('refresh_select_')) {
+          const version = data.replace('refresh_select_', '');
+          await this.showClientSelectionMenu(chatId, version, true, query.id);
+        } else if (data.startsWith('refresh_clients_')) {
+          const version = data.replace('refresh_clients_', '');
+          await this.showAwgClientsList(chatId, version, true, query.id);
         }
       }
       // Resend config callbacks
@@ -127,6 +165,23 @@ export class RouteBot {
         const ip = parts.slice(2).join('.');
         
         await this.resendClientConfig(chatId, version, ip);
+      }
+      // Rename client callbacks
+      else if (data.startsWith('rename_')) {
+        await this.bot.answerCallbackQuery(query.id);
+        
+        // Verify admin access
+        if (!this.isAdmin(userId)) {
+          logger.warn(`Unauthorized rename callback from user ${userId}`);
+          return;
+        }
+        
+        // Parse: rename_v1_10.8.1.1
+        const parts = data.split('_');
+        const version = parts[1];
+        const ip = parts.slice(2).join('.');
+        
+        await this.requestPeerRename(chatId, version, ip);
       }
       // Delete client callbacks
       else if (data.startsWith('delete_')) {
@@ -161,6 +216,34 @@ export class RouteBot {
         const ip = parts.slice(1).join('.');
         
         await this.confirmDeleteClient(chatId, version, ip);
+      }
+      // Skip peer name callbacks
+      else if (data.startsWith('skip_peer_name_')) {
+        await this.bot.answerCallbackQuery(query.id);
+        
+        // Verify admin access
+        if (!this.isAdmin(userId)) {
+          logger.warn(`Unauthorized skip peer name callback from user ${userId}`);
+          return;
+        }
+        
+        // Parse: skip_peer_name_v1_next_next or skip_peer_name_v1_by_number_5
+        const parts = data.replace('skip_peer_name_', '').split('_');
+        const version = parts[0];
+        const mode = parts[1];
+        const ipNumberOrNext = parts[2];
+        
+        // Очищаем сессию
+        if (this.vpsLabelSessions.has(chatId)) {
+          this.vpsLabelSessions.delete(chatId);
+        }
+        
+        if (mode === 'next') {
+          await this.generateAwgConfig(chatId, version, config.serverLabel, null);
+        } else if (mode === 'by' && parts[2] === 'number') {
+          const ipNumber = parseInt(parts[3]);
+          await this.generateAwgConfigByNumber(chatId, version, ipNumber, config.serverLabel, null);
+        }
       }
     });
 
@@ -259,16 +342,22 @@ export class RouteBot {
         return; // Silently ignore for non-admins
       }
 
-      // Check if user is in VPS label input mode
+      // Check if user is in IP number input mode
       const vpsSession = this.vpsLabelSessions.get(userId);
-      if (vpsSession && vpsSession.waitingForLabel) {
-        await this.handleVpsLabelInput(chatId, userId, text, vpsSession.version, vpsSession.mode);
+      if (vpsSession && vpsSession.waitingForIpNumber) {
+        await this.handleIpNumberInput(chatId, userId, text, vpsSession.version);
         return;
       }
 
-      // Check if user is in IP number input mode
-      if (vpsSession && vpsSession.waitingForIpNumber) {
-        await this.handleIpNumberInput(chatId, userId, text, vpsSession.version);
+      // Check if user is in peer name input mode
+      if (vpsSession && vpsSession.waitingForPeerName) {
+        await this.handlePeerNameInput(chatId, userId, text, vpsSession.version, vpsSession.ipNumber, vpsSession.mode);
+        return;
+      }
+
+      // Check if user is in peer rename input mode
+      if (vpsSession && vpsSession.waitingForPeerRename) {
+        await this.handlePeerRenameInput(chatId, userId, text, vpsSession.version, vpsSession.ip);
         return;
       }
 
@@ -375,8 +464,20 @@ export class RouteBot {
         totalIPs += addresses.ipv4.length;
       }
 
+      // Check if we have any IPs to generate
+      if (totalIPs === 0) {
+        logger.warn(`No IP addresses found for any domain from chat ${chatId}`);
+        if (verbose && processingMsg) {
+          this.bot.editMessageText(
+            '❌ Домены найдены, но не удалось получить IP адреса. Возможно, домены недоступны или заблокированы.',
+            { chat_id: chatId, message_id: processingMsg.message_id }
+          );
+        }
+        return;
+      }
+
       // Generate batch file
-      const filename = domains.length === 1 
+      const filename = domains.length === 1
         ? generateFilename(domains[0])
         : generateMultipleDomainsFilename(domains);
 
@@ -597,7 +698,15 @@ export class RouteBot {
    * Отправить или отредактировать сообщение
    * Использует editMessageText если есть сохраненный message_id, иначе sendMessage
    */
-  async sendOrEditMessage(chatId, text, options = {}) {
+  // Метод для отправки нового сообщения (каждый переход в новом окне)
+  async sendNewMessage(chatId, text, options = {}) {
+    const result = await this.bot.sendMessage(chatId, text, options);
+    this.lastMessageIds.set(chatId, result.message_id);
+    return result;
+  }
+
+  // Метод для обновления существующего сообщения (для кнопки "Обновить")
+  async updateMessage(chatId, text, options = {}, callbackQueryId = null) {
     const lastMessageId = this.lastMessageIds.get(chatId);
     
     try {
@@ -608,7 +717,8 @@ export class RouteBot {
           message_id: lastMessageId,
           ...options
         });
-        return { message_id: lastMessageId };
+        // Успешно обновили в том же окне - НЕ показываем уведомление
+        return { message_id: lastMessageId, isNewWindow: false };
       }
     } catch (error) {
       // Если не удалось отредактировать (сообщение слишком старое или удалено)
@@ -616,19 +726,123 @@ export class RouteBot {
       this.lastMessageIds.delete(chatId);
     }
     
-    // Отправляем новое сообщение
+    // Отправляем новое сообщение, если редактирование не удалось
     const result = await this.bot.sendMessage(chatId, text, options);
     this.lastMessageIds.set(chatId, result.message_id);
-    return result;
+    
+    // Показываем уведомление ТОЛЬКО при создании нового окна
+    if (callbackQueryId) {
+      try {
+        await this.bot.answerCallbackQuery(callbackQueryId, {
+          text: 'Попробуйте позже или убедитесь что сервер запущен'
+        });
+      } catch (error) {
+        logger.warn(`Failed to show notification: ${error.message}`);
+      }
+    }
+    
+    return { ...result, isNewWindow: true };
   }
 
-  async showClientSelectionMenu(chatId, version) {
-    try {
-      logger.info(`Showing client selection menu for ${version} in chat ${chatId}`);
-      
-      // Показываем индикатор загрузки в текущем сообщении
-      await this.sendOrEditMessage(chatId, '⏳ Загружаю список клиентов...', { parse_mode: 'Markdown' });
+  // Обратная совместимость - по умолчанию отправляем новое сообщение
+  async sendOrEditMessage(chatId, text, options = {}) {
+    return this.sendNewMessage(chatId, text, options);
+  }
 
+  /**
+   * Обработчик запуска AWG контейнера
+   */
+  async handleAwgStart(chatId, version) {
+    try {
+      logger.info(`Starting AWG ${version} for chat ${chatId}`);
+      
+      // Показываем сообщение о процессе
+      const processingMsg = await this.bot.sendMessage(
+        chatId,
+        `⏳ Запускаю AWG ${version.toUpperCase()}...`,
+        { parse_mode: 'Markdown' }
+      );
+      
+      // Запускаем контейнер
+      const result = await this.awgManager.startContainer(version);
+      
+      // Удаляем сообщение о процессе
+      try {
+        await this.bot.deleteMessage(chatId, processingMsg.message_id);
+      } catch (error) {
+        logger.warn(`Failed to delete processing message: ${error.message}`);
+      }
+      
+      // Показываем результат
+      const emoji = result.alreadyRunning ? '✅' : '🚀';
+      await this.bot.sendMessage(
+        chatId,
+        `${emoji} ${result.message}`,
+        { parse_mode: 'Markdown' }
+      );
+      
+      // Обновляем окно списка клиентов для этой версии
+      await this.showAwgClientsList(chatId, version, false);
+      
+    } catch (error) {
+      logger.error(`Error starting AWG ${version} for chat ${chatId}:`, error);
+      await this.bot.sendMessage(
+        chatId,
+        `❌ ${error.message}`,
+        { parse_mode: 'Markdown' }
+      );
+    }
+  }
+
+  /**
+   * Обработчик остановки AWG контейнера
+   */
+  async handleAwgStop(chatId, version) {
+    try {
+      logger.info(`Stopping AWG ${version} for chat ${chatId}`);
+      
+      // Показываем сообщение о процессе
+      const processingMsg = await this.bot.sendMessage(
+        chatId,
+        `⏳ Останавливаю AWG ${version.toUpperCase()}...`,
+        { parse_mode: 'Markdown' }
+      );
+      
+      // Останавливаем контейнер
+      const result = await this.awgManager.stopContainer(version);
+      
+      // Удаляем сообщение о процессе
+      try {
+        await this.bot.deleteMessage(chatId, processingMsg.message_id);
+      } catch (error) {
+        logger.warn(`Failed to delete processing message: ${error.message}`);
+      }
+      
+      // Показываем результат
+      const emoji = result.alreadyStopped ? '✅' : '⏹';
+      await this.bot.sendMessage(
+        chatId,
+        `${emoji} ${result.message}`,
+        { parse_mode: 'Markdown' }
+      );
+      
+      // Обновляем окно списка клиентов для этой версии
+      await this.showAwgClientsList(chatId, version, false);
+      
+    } catch (error) {
+      logger.error(`Error stopping AWG ${version} for chat ${chatId}:`, error);
+      await this.bot.sendMessage(
+        chatId,
+        `❌ ${error.message}`,
+        { parse_mode: 'Markdown' }
+      );
+    }
+  }
+
+  async showClientSelectionMenu(chatId, version, shouldUpdate = false, callbackQueryId = null) {
+    try {
+      logger.info(`Showing client selection menu for ${version} in chat ${chatId}, shouldUpdate: ${shouldUpdate}`);
+      
       // Initialize AWG manager if needed
       if (!this.awgManager.initialized) {
         await this.awgManager.initialize();
@@ -638,16 +852,31 @@ export class RouteBot {
       const container = this.awgManager.availableContainers.find(c => c.version === version);
       
       if (!container) {
-        await this.sendOrEditMessage(
-          chatId,
-          `❌ Контейнер версии ${version} не найден`,
-          { parse_mode: 'Markdown' }
-        );
+        if (shouldUpdate) {
+          await this.updateMessage(
+            chatId,
+            `❌ Контейнер версии ${version} не найден`,
+            { parse_mode: 'Markdown' },
+            callbackQueryId
+          );
+        } else {
+          await this.sendNewMessage(
+            chatId,
+            `❌ Контейнер версии ${version} не найден`,
+            { parse_mode: 'Markdown' }
+          );
+        }
         return;
       }
 
+      // Проверяем статус контейнера
+      const containerStatus = await this.awgManager.checkContainer(container.name);
+
       // Get clients with status
       const clients = await this.awgManager.getClientsWithStatus(container.name, version);
+
+      // Get peer names
+      const peerNames = await this.awgManager.getPeerNames(container.name);
 
       // Build message
       let message = `📋 *AWG ${version.toUpperCase()}*\n\n`;
@@ -656,12 +885,17 @@ export class RouteBot {
         message += 'Нет клиентов\n\n';
       } else {
         clients.forEach((client) => {
+          const peerName = peerNames[client.ip];
+          // Экранируем специальные символы Markdown в имени пира
+          const escapedPeerName = peerName ? peerName.replace(/[_*[\]()~`>#+=|{}.!-]/g, '\\$&') : null;
+          const displayName = escapedPeerName ? `\`${client.ip}\` (${escapedPeerName})` : `\`${client.ip}\``;
+          
           if (client.active) {
             // Для активных показываем время последнего соединения
-            message += `\`${client.ip}\` - ✅ ${client.lastHandshake || 'активен'}\n`;
+            message += `${displayName} - ✅ ${client.lastHandshake || 'активен'}\n`;
           } else {
             // Для неактивных просто крестик
-            message += `\`${client.ip}\` - ❌\n`;
+            message += `${displayName} - ❌\n`;
           }
         });
         message += '\n';
@@ -671,25 +905,49 @@ export class RouteBot {
       const keyboard = {
         inline_keyboard: [
           [
-            { text: '📋 Подробнее', callback_data: `awg_clients_${version}` }
+            { text: '📋 Подробнее клиенты ', callback_data: `awg_clients_${version}` }
           ],
           [
             { text: '➕ Сформировать следующий', callback_data: `awg_gen_next_${version}` }
           ],
           [
             { text: '🔢 Сформировать по номеру', callback_data: `awg_gen_by_number_${version}` }
-          ],
-          [
-            { text: '🔄 Обновить', callback_data: `awg_select_${version}` },
-            { text: '🔙 Назад', callback_data: 'start_menu' }
           ]
         ]
       };
 
-      await this.sendOrEditMessage(chatId, message, {
-        parse_mode: 'Markdown',
-        reply_markup: keyboard
-      });
+      // Добавляем кнопки управления контейнером
+      const controlButtons = [];
+      if (containerStatus.running) {
+        controlButtons.push({ text: `⏹ Остановить AWG ${version.toUpperCase()}`, callback_data: `awg_stop_${version}` });
+      } else if (containerStatus.stopped) {
+        controlButtons.push({ text: `▶️ Запустить AWG ${version.toUpperCase()}`, callback_data: `awg_start_${version}` });
+      }
+      
+      if (controlButtons.length > 0) {
+        keyboard.inline_keyboard.push(controlButtons);
+      }
+
+      // Добавляем кнопки "Обновить" и "Назад"
+      keyboard.inline_keyboard.push([
+        { text: '🔄 Обновить', callback_data: `refresh_select_${version}` },
+        { text: '🔙 Назад', callback_data: 'start_menu' }
+      ]);
+
+      // Выбираем метод отправки в зависимости от shouldUpdate
+      if (shouldUpdate) {
+        // При обновлении передаем callbackQueryId - updateMessage сам обработает ответ на callback
+        await this.updateMessage(chatId, message, {
+          parse_mode: 'Markdown',
+          reply_markup: keyboard
+        }, callbackQueryId);
+      } else {
+        // При первом открытии используем sendNewMessage
+        await this.sendNewMessage(chatId, message, {
+          parse_mode: 'Markdown',
+          reply_markup: keyboard
+        });
+      }
 
     } catch (error) {
       logger.error(`Error showing client selection menu for chat ${chatId}:`, error);
@@ -762,6 +1020,170 @@ export class RouteBot {
     }
   }
 
+  async requestPeerName(chatId, version, ipNumber = null, mode = 'next') {
+    try {
+      logger.info(`Requesting peer name for ${version} from chat ${chatId}, mode: ${mode}, ipNumber: ${ipNumber}`);
+      
+      // Сохраняем сессию
+      this.vpsLabelSessions.set(chatId, {
+        waitingForPeerName: true,
+        version: version,
+        ipNumber: ipNumber,
+        mode: mode
+      });
+      
+      const ipInfo = ipNumber ? ` для IP \`10.8.1.${ipNumber}\`` : '';
+      
+      await this.sendOrEditMessage(
+        chatId,
+        `👤 *Введите имя пира*${ipInfo}\n\n` +
+        `Это имя будет добавлено в комментарий на сервере для идентификации.\n\n` +
+        `Примеры:\n` +
+        `• \`John iPhone\`\n` +
+        `• \`Maria Laptop\`\n` +
+        `• \`Office PC\`\n\n` +
+        `Или отправьте \`-\` чтобы пропустить`,
+        {
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [[
+              { text: '⏭️ Пропустить', callback_data: `skip_peer_name_${version}_${mode}_${ipNumber || 'next'}` },
+              { text: '🔙 Назад', callback_data: `awg_select_${version}` }
+            ]]
+          }
+        }
+      );
+    } catch (error) {
+      logger.error(`Error requesting peer name for chat ${chatId}:`, error);
+      this.bot.sendMessage(chatId, `❌ Ошибка: ${error.message}`);
+    }
+  }
+
+  async requestPeerRename(chatId, version, ip) {
+    try {
+      logger.info(`Requesting peer rename for ${ip} (${version}) from chat ${chatId}`);
+      
+      // Сохраняем сессию
+      this.vpsLabelSessions.set(chatId, {
+        waitingForPeerRename: true,
+        version: version,
+        ip: ip
+      });
+      
+      await this.sendOrEditMessage(
+        chatId,
+        `✏️ *Переименование пира*\n\n` +
+        `IP: \`${ip}\`\n` +
+        `Версия: ${version.toUpperCase()}\n\n` +
+        `Введите новое имя для этого пира:\n\n` +
+        `Примеры:\n` +
+        `• \`John iPhone\`\n` +
+        `• \`Maria Laptop\`\n` +
+        `• \`Office PC\`\n\n` +
+        `Или отправьте \`-\` чтобы удалить имя`,
+        {
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [[
+              { text: '🔙 Назад', callback_data: `awg_clients_${version}` }
+            ]]
+          }
+        }
+      );
+    } catch (error) {
+      logger.error(`Error requesting peer rename for chat ${chatId}:`, error);
+      this.bot.sendMessage(chatId, `❌ Ошибка: ${error.message}`);
+    }
+  }
+
+  async handlePeerRenameInput(chatId, userId, text, version, ip) {
+    try {
+      // Очищаем сессию
+      this.vpsLabelSessions.delete(userId);
+      
+      // Валидация имени
+      const newPeerName = text.trim();
+      
+      // Если пользователь ввел "-", удаляем имя (оставляем только IP)
+      const finalPeerName = (newPeerName === '-') ? null : newPeerName;
+      
+      if (finalPeerName && finalPeerName.length === 0) {
+        await this.bot.sendMessage(
+          chatId,
+          `❌ Имя не может быть пустым. Введите имя или \`-\` чтобы удалить имя.\n\n` +
+          `Попробуйте снова через /start → Конфигурации`
+        );
+        return;
+      }
+      
+      if (finalPeerName && finalPeerName.length > 50) {
+        await this.bot.sendMessage(
+          chatId,
+          `❌ Имя слишком длинное (максимум 50 символов).\n\n` +
+          `Попробуйте снова через /start → Конфигурации`
+        );
+        return;
+      }
+      
+      logger.info(`Renaming peer ${ip} to "${finalPeerName || 'no name'}" for ${version} from chat ${chatId}`);
+      
+      // Показываем сообщение о процессе
+      const processingMsg = await this.bot.sendMessage(
+        chatId,
+        `⏳ Переименовываю пира ${ip}...\n` +
+        `Это может занять несколько секунд...`
+      );
+      
+      // Получаем контейнер
+      const container = this.awgManager.availableContainers.find(c => c.version === version);
+      if (!container) {
+        await this.bot.deleteMessage(chatId, processingMsg.message_id);
+        await this.bot.sendMessage(chatId, `❌ Контейнер ${version} не найден`);
+        return;
+      }
+      
+      // Переименовываем пира
+      const result = await this.awgManager.renamePeer(container.name, ip, finalPeerName || ip);
+      
+      // Удаляем сообщение о процессе
+      await this.bot.deleteMessage(chatId, processingMsg.message_id);
+      
+      // Экранируем специальные символы Markdown в имени пира
+      const escapedPeerName = finalPeerName
+        ? finalPeerName.replace(/[_*[\]()~`>#+=|{}.!-]/g, '\\$&')
+        : null;
+      
+      // Отправляем результат
+      let statusMsg = escapedPeerName
+        ? `✅ Пир \`${ip}\` переименован в "${escapedPeerName}"\n\n`
+        : `✅ Имя пира \`${ip}\` удалено\n\n`;
+      
+      if (result.healthStatus && result.healthStatus.interfaceReady) {
+        statusMsg += `📊 Всего клиентов: ${result.healthStatus.peerCount}`;
+      }
+      
+      if (result.healthStatus && !result.healthStatus.healthy) {
+        statusMsg += `\n\n⚠️ Обнаружены проблемы, проверьте статус`;
+      }
+      
+      const keyboard = {
+        inline_keyboard: [
+          [{ text: '📋 Список клиентов', callback_data: `awg_clients_${version}` }],
+          [{ text: '🏠 Главное меню', callback_data: 'main_menu' }]
+        ]
+      };
+      
+      await this.bot.sendMessage(chatId, statusMsg, {
+        parse_mode: 'Markdown',
+        reply_markup: keyboard
+      });
+      
+    } catch (error) {
+      logger.error(`Error handling peer rename input for chat ${chatId}:`, error);
+      this.bot.sendMessage(chatId, `❌ Ошибка при переименовании: ${error.message}`);
+    }
+  }
+
   async handleVpsLabelInput(chatId, userId, label, version, mode = 'next') {
     try {
       // Получаем сессию для проверки ipNumber
@@ -809,9 +1231,6 @@ export class RouteBot {
 
   async handleIpNumberInput(chatId, userId, text, version) {
     try {
-      // Очищаем сессию
-      this.vpsLabelSessions.delete(userId);
-      
       // Валидация номера
       const ipNumber = parseInt(text.trim());
       
@@ -821,6 +1240,8 @@ export class RouteBot {
           `❌ Некорректный номер. Введите число от 1 до 254.\n\n` +
           `Попробуйте снова через /start → Конфигурации`
         );
+        // Очищаем сессию
+        this.vpsLabelSessions.delete(userId);
         return;
       }
       
@@ -832,44 +1253,79 @@ export class RouteBot {
           `Используйте номера от 2 до 254.\n` +
           `Попробуйте снова через /start → Конфигурации`
         );
+        // Очищаем сессию
+        this.vpsLabelSessions.delete(userId);
         return;
       }
       
       logger.info(`IP number accepted: ${ipNumber} for ${version} from chat ${chatId}`);
       
-      // Запрашиваем метку VPS
-      this.vpsLabelSessions.set(chatId, {
-        waitingForLabel: true,
-        version: version,
-        mode: 'by_number',
-        ipNumber: ipNumber
-      });
-      
-      await this.sendOrEditMessage(
-        chatId,
-        `📝 *Введите метку сервера*\n\n` +
-        `Например: \`VPS3\`, \`SERVER1\`\n\n` +
-        `Эта метка будет добавлена к имени файла конфигурации для IP \`10.8.1.${ipNumber}\`\n` +
-        `Пример: \`VPS3_AWGv${version === 'v1' ? '1' : '2'}_10_8_1_${ipNumber}.conf\``,
-        {
-          parse_mode: 'Markdown',
-          reply_markup: {
-            inline_keyboard: [[
-              { text: '🔙 Назад', callback_data: `awg_select_${version}` }
-            ]]
-          }
-        }
-      );
+      // Запрашиваем имя пира
+      await this.requestPeerName(chatId, version, ipNumber, 'by_number');
       
     } catch (error) {
       logger.error(`Error handling IP number input for chat ${chatId}:`, error);
       this.bot.sendMessage(chatId, `❌ Ошибка: ${error.message}`);
+      // Очищаем сессию
+      this.vpsLabelSessions.delete(userId);
     }
   }
 
-  async generateAwgConfig(chatId, version, vpsLabel = null) {
+  async handlePeerNameInput(chatId, userId, text, version, ipNumber, mode) {
     try {
-      logger.info(`Generating ${version} config for chat ${chatId}`);
+      // Очищаем сессию
+      this.vpsLabelSessions.delete(userId);
+      
+      // Валидация имени
+      const peerName = text.trim();
+      
+      // Если пользователь ввел "-", пропускаем имя
+      if (peerName === '-') {
+        logger.info(`Peer name skipped for ${version} from chat ${chatId}`);
+        if (mode === 'by_number' && ipNumber) {
+          await this.generateAwgConfigByNumber(chatId, version, ipNumber, config.serverLabel, null);
+        } else {
+          await this.generateAwgConfig(chatId, version, config.serverLabel, null);
+        }
+        return;
+      }
+      
+      if (!peerName || peerName.length === 0) {
+        await this.bot.sendMessage(
+          chatId,
+          `❌ Имя не может быть пустым. Введите имя или \`-\` чтобы пропустить.\n\n` +
+          `Попробуйте снова через /start → Конфигурации`
+        );
+        return;
+      }
+      
+      if (peerName.length > 50) {
+        await this.bot.sendMessage(
+          chatId,
+          `❌ Имя слишком длинное (максимум 50 символов).\n\n` +
+          `Попробуйте снова через /start → Конфигурации`
+        );
+        return;
+      }
+      
+      logger.info(`Peer name accepted: "${peerName}" for ${version} from chat ${chatId}, mode: ${mode}, ipNumber: ${ipNumber}`);
+      
+      // Генерируем конфигурацию с именем пира
+      if (mode === 'by_number' && ipNumber) {
+        await this.generateAwgConfigByNumber(chatId, version, ipNumber, config.serverLabel, peerName);
+      } else {
+        await this.generateAwgConfig(chatId, version, config.serverLabel, peerName);
+      }
+      
+    } catch (error) {
+      logger.error(`Error handling peer name input for chat ${chatId}:`, error);
+      this.bot.sendMessage(chatId, `❌ Ошибка: ${error.message}`);
+    }
+  }
+
+  async generateAwgConfig(chatId, version, vpsLabel = null, peerName = null) {
+    try {
+      logger.info(`Generating ${version} config for chat ${chatId}${peerName ? ` with peer name: ${peerName}` : ''}`);
       
       // Check anti-flood
       const userId = chatId;
@@ -892,13 +1348,39 @@ export class RouteBot {
       );
 
       // Generate config
-      const result = await this.awgManager.generateClientConfig(version, vpsLabel);
+      const result = await this.awgManager.generateClientConfig(version, vpsLabel, peerName);
 
       // Delete processing message
       await this.bot.deleteMessage(chatId, processingMsg.message_id);
 
-      // Send config file
+      // Send config file with status info
       await this.bot.sendDocument(chatId, result.filepath);
+      
+      // Send status message if health check was performed
+      if (result.healthStatus) {
+        const health = result.healthStatus;
+        let statusMsg = `✅ Конфигурация создана: \`${result.ip}\`\n\n`;
+        
+        if (health.interfaceReady) {
+          statusMsg += `📊 Всего клиентов: ${health.peerCount}`;
+        }
+        
+        if (!health.healthy) {
+          statusMsg += `\n\n⚠️ Обнаружены проблемы, проверьте статус`;
+        }
+        
+        const keyboard = {
+          inline_keyboard: [
+            [{ text: '🏠 Главное меню', callback_data: 'main_menu' }]
+          ]
+        };
+        
+        await this.bot.sendMessage(chatId, statusMsg, {
+          parse_mode: 'Markdown',
+          reply_markup: keyboard
+        });
+      }
+      
       logger.info(`Sent ${version} config to chat ${chatId}: ${result.filename}`);
 
     } catch (error) {
@@ -912,9 +1394,9 @@ export class RouteBot {
     }
   }
 
-  async generateAwgConfigByNumber(chatId, version, ipNumber, vpsLabel = null) {
+  async generateAwgConfigByNumber(chatId, version, ipNumber, vpsLabel = null, peerName = null) {
     try {
-      logger.info(`Generating ${version} config by number ${ipNumber} for chat ${chatId}`);
+      logger.info(`Generating ${version} config by number ${ipNumber} for chat ${chatId}${peerName ? ` with peer name: ${peerName}` : ''}`);
       
       // Check anti-flood
       const userId = chatId;
@@ -937,13 +1419,41 @@ export class RouteBot {
       );
 
       // Generate config by number
-      const result = await this.awgManager.generateClientConfigByNumber(version, ipNumber, vpsLabel);
+      const result = await this.awgManager.generateClientConfigByNumber(version, ipNumber, vpsLabel, peerName);
 
       // Delete processing message
       await this.bot.deleteMessage(chatId, processingMsg.message_id);
 
-      // Send config file
+      // Send config file with status info
       await this.bot.sendDocument(chatId, result.filepath);
+      
+      // Send status message if health check was performed
+      if (result.healthStatus) {
+        const health = result.healthStatus;
+        let statusMsg = result.isNew
+          ? `✅ Новая конфигурация создана: \`${result.ip}\`\n\n`
+          : `✅ Конфигурация восстановлена: \`${result.ip}\`\n\n`;
+        
+        if (health.interfaceReady) {
+          statusMsg += `📊 Всего клиентов: ${health.peerCount}`;
+        }
+        
+        if (!health.healthy) {
+          statusMsg += `\n\n⚠️ Обнаружены проблемы, проверьте статус`;
+        }
+        
+        const keyboard = {
+          inline_keyboard: [
+            [{ text: '🏠 Главное меню', callback_data: 'main_menu' }]
+          ]
+        };
+        
+        await this.bot.sendMessage(chatId, statusMsg, {
+          parse_mode: 'Markdown',
+          reply_markup: keyboard
+        });
+      }
+      
       logger.info(`Sent ${version} config to chat ${chatId}: ${result.filename}`);
 
     } catch (error) {
@@ -954,6 +1464,55 @@ export class RouteBot {
         `Убедитесь, что:\n` +
         `• Docker-контейнер запущен\n`
       );
+    }
+  }
+
+  getServerIp() {
+    try {
+      // Получаем IP из AWG Manager (который получает его через curl ifconfig.me)
+      if (this.awgManager && this.awgManager.serverIP) {
+        return this.awgManager.serverIP;
+      }
+      
+      // Fallback: читаем config.yaml и получаем server_ip из local_panel
+      const configPath = path.join(process.cwd(), 'config.yaml');
+      
+      if (!fs.existsSync(configPath)) {
+        logger.warn('config.yaml not found');
+        return 'N/A';
+      }
+      
+      const fileContents = fs.readFileSync(configPath, 'utf8');
+      const data = yaml.load(fileContents);
+      
+      // Ищем локальную панель
+      if (data && data.panels) {
+        // Сначала пробуем найти local_panel
+        if (data.panels.local_panel && data.panels.local_panel.server_ip) {
+          return data.panels.local_panel.server_ip;
+        }
+        
+        // Если нет local_panel, ищем любую панель с is_local: true
+        for (const panelId in data.panels) {
+          const panel = data.panels[panelId];
+          if (panel.is_local && panel.server_ip) {
+            return panel.server_ip;
+          }
+        }
+        
+        // Если нет локальной панели, берем server_ip из первой доступной панели
+        for (const panelId in data.panels) {
+          const panel = data.panels[panelId];
+          if (panel.server_ip) {
+            return panel.server_ip;
+          }
+        }
+      }
+      
+      return 'N/A';
+    } catch (error) {
+      logger.error('Error getting server IP from config:', error);
+      return 'N/A';
     }
   }
 
@@ -969,7 +1528,9 @@ export class RouteBot {
         statsMap.set(container.version, container);
       });
 
-      let statsMessage = '📊 *Серверы*\n\n';
+      // Получаем server_label из конфига или используем server_ip
+      const serverLabel = config.serverLabel || this.getServerIp();
+      let statsMessage = `*Сервер:* \`${serverLabel}\`\n\n`;
       
       // Показываем статус для обеих версий
       const versions = ['v1', 'v2'];
@@ -978,30 +1539,75 @@ export class RouteBot {
         const container = statsMap.get(version);
         
         if (container) {
-          // Получаем количество активных клиентов
+          // Получаем клиентов с их статусами
+          let clientsWithStatus = [];
           let activeClients = 0;
+          
           if (container.running) {
             try {
-              const clientsWithStatus = await this.awgManager.getClientsWithStatus(
+              clientsWithStatus = await this.awgManager.getClientsWithStatus(
                 container.name,
                 version
               );
               activeClients = clientsWithStatus.filter(c => c.active).length;
+              
+              // Получаем имена пиров
+              const peerNames = await this.awgManager.getPeerNames(container.name);
+              
+              // Получаем статистику handshake
+              const clientsStats = await this.getClientsStats(container.name, version);
+              
+              // Обогащаем данные клиентов именами и временем handshake
+              clientsWithStatus = clientsWithStatus.map(client => ({
+                ...client,
+                name: peerNames[client.ip] || null,
+                lastHandshake: clientsStats[client.ip]?.lastHandshake || null
+              }));
+              
+              // Сортируем: активные первыми, затем по IP
+              clientsWithStatus.sort((a, b) => {
+                if (a.active && !b.active) return -1;
+                if (!a.active && b.active) return 1;
+                return a.ip.localeCompare(b.ip);
+              });
             } catch (error) {
-              logger.warn(`Failed to get active clients for ${container.name}`);
+              logger.warn(`Failed to get clients details for ${container.name}: ${error.message}`);
             }
           }
           
           // Контейнер найден - показываем реальный статус
-          statsMessage += `*AWG ${version.toUpperCase()}:*\n`;
-          statsMessage += `${container.running ? '✅ Запущен' : '⚠️ Остановлен'}\n`;
-          statsMessage += `📦 Контейнер: \`${container.name}\`\n`;
-          statsMessage += `👥 Клиентов: ${container.clients}\n`;
+          statsMessage += `📋 *AWG ${version.toUpperCase()}*\n`;
+          
+          // Определяем статус контейнера
+          if (container.restarting) {
+            statsMessage += `🔄 Перезапускается...\n`;
+          } else if (container.running) {
+            statsMessage += `✅ Запущен\n`;
+          } else if (container.stopped) {
+            statsMessage += `⚠️ Остановлен\n`;
+          } else {
+            statsMessage += `❓ Неизвестно\n`;
+          }
+          
           statsMessage += `🔌 Порт: ${container.port}\n`;
+          statsMessage += `👥 Клиентов: ${container.clients}\n`;
           statsMessage += `👤 Активных: ${activeClients}\n\n`;
+          
+          // Показываем список активных клиентов с деталями
+          if (container.running && clientsWithStatus.length > 0) {
+            const activeClientsList = clientsWithStatus.filter(c => c.active);
+            if (activeClientsList.length > 0) {
+              for (const client of activeClientsList) {
+                const name = client.name ? ` (${client.name})` : '';
+                const handshake = client.lastHandshake || 'неизвестно';
+                statsMessage += `${client.ip}${name} - ✅ ${handshake}\n`;
+              }
+              statsMessage += '\n';
+            }
+          }
         } else {
           // Контейнер не найден
-          statsMessage += `*AWG ${version.toUpperCase()}:*\n`;
+          statsMessage += `📋 *AWG ${version.toUpperCase()}*\n`;
           statsMessage += `❌ Не установлен\n\n`;
         }
       }
@@ -1018,26 +1624,42 @@ export class RouteBot {
     try {
       logger.info(`Showing main menu for chat ${chatId}`);
       
+      // Показываем сообщение о загрузке
+      const loadingMsg = await this.bot.sendMessage(chatId, '⏳ Загружаю...', { parse_mode: 'Markdown' });
+      
       // Получаем статистику
       let statsMessage = '';
+      
       try {
         statsMessage = await this.showAwgStats(chatId);
       } catch (error) {
         statsMessage = '❌ Ошибка при получении статистики\n\n';
       }
       
+      // Создаем клавиатуру с основными кнопками выбора версии
       const keyboard = {
         inline_keyboard: [
           [
-            { text: 'V1', callback_data: 'awg_select_v1' },
-            { text: 'V2', callback_data: 'awg_select_v2' }
+            { text: 'AWG V1', callback_data: 'awg_select_v1' },
+            { text: 'AWG V2', callback_data: 'awg_select_v2' }
+          ],
+          [
+            { text: '🔄 Обновить', callback_data: 'refresh_main_menu' }
           ]
         ]
       };
       
-      await this.sendOrEditMessage(
+      // Удаляем сообщение о загрузке
+      try {
+        await this.bot.deleteMessage(chatId, loadingMsg.message_id);
+      } catch (error) {
+        logger.warn(`Failed to delete loading message: ${error.message}`);
+      }
+      
+      // Отправляем главное меню
+      await this.sendNewMessage(
         chatId,
-        `🔐 *Панель администратора*\n\n${statsMessage}Выберите действие:`,
+        `📊 *Главное меню*\n\n${statsMessage}`,
         { parse_mode: 'Markdown', reply_markup: keyboard }
       );
     } catch (error) {
@@ -1046,12 +1668,9 @@ export class RouteBot {
     }
   }
 
-  async showAwgClientsList(chatId, version) {
+  async showAwgClientsList(chatId, version, shouldUpdate = false, callbackQueryId = null) {
     try {
-      logger.info(`Showing ${version} clients list for chat ${chatId}`);
-
-      // Показываем индикатор загрузки в текущем сообщении
-      await this.sendOrEditMessage(chatId, '⏳ Получаю список клиентов...', { parse_mode: 'Markdown' });
+      logger.info(`Showing ${version} clients list for chat ${chatId}, shouldUpdate: ${shouldUpdate}`);
 
       // Initialize AWG manager if needed
       if (!this.awgManager.initialized) {
@@ -1062,30 +1681,118 @@ export class RouteBot {
       const container = this.awgManager.availableContainers.find(c => c.version === version);
       
       if (!container) {
-        await this.sendOrEditMessage(
-          chatId,
-          `📋 *Подробнее Клиенты ${version.toUpperCase()}*\n\n❌ Контейнер версии ${version} не найден`,
-          { parse_mode: 'Markdown' }
-        );
+        if (shouldUpdate) {
+          await this.updateMessage(
+            chatId,
+            `📋 *Подробнее клиенты ${version.toUpperCase()}*\n\n❌ Контейнер версии ${version} не найден`,
+            { parse_mode: 'Markdown' },
+            callbackQueryId
+          );
+        } else {
+          await this.sendNewMessage(
+            chatId,
+            `📋 *Подробнее клиенты ${version.toUpperCase()}*\n\n❌ Контейнер версии ${version} не найден`,
+            { parse_mode: 'Markdown' }
+          );
+        }
         return;
+      }
+
+      // Проверяем статус контейнера
+      const containerStatus = await this.awgManager.checkContainer(container.name);
+      let containerStatusMessage = '';
+      let serverStatusEmoji = '';
+      
+      if (containerStatus.restarting) {
+        containerStatusMessage = '\n🔄 *Статус контейнера:* Перезапускается\n';
+        serverStatusEmoji = '🔄';
+      } else if (!containerStatus.running) {
+        containerStatusMessage = '\n⚠️ *Статус контейнера:* Остановлен\n';
+        serverStatusEmoji = '⚠️';
+      } else {
+        serverStatusEmoji = '✅';
       }
 
       const clients = await this.awgManager.getClients(container.name);
 
-      // Получаем статистику клиентов (последнее соединение, трафик)
-      const clientsStats = await this.getClientsStats(container.name, version);
+      // Проверяем статус WireGuard интерфейса только если контейнер работает
+      const configFile = version === 'v2' ? 'awg0' : 'wg0';
+      let interfaceStatus = 'unknown';
+      let interfaceMessage = '';
+      
+      if (containerStatus.running) {
+        try {
+          await execAsync(`docker exec ${container.name} wg show ${configFile} 2>&1`);
+          interfaceStatus = 'ready';
+          interfaceMessage = '\n✅ *Статус интерфейса:* Работает\n';
+        } catch (error) {
+          const errorMsg = error.message || error.toString();
+          
+          if (errorMsg.includes('does not exist') || errorMsg.includes('No such device')) {
+            interfaceStatus = 'starting';
+            interfaceMessage = '\n⏳ *Статус интерфейса:* Запускается\n';
+            serverStatusEmoji = '⏳';
+          } else if (errorMsg.includes('Unable to access interface')) {
+            interfaceStatus = 'error';
+            interfaceMessage = '\n⚠️ *Статус интерфейса:* Ошибка\n';
+            serverStatusEmoji = '⚠️';
+          } else {
+            interfaceStatus = 'unknown';
+            interfaceMessage = '\n❓ *Статус интерфейса:* Неизвестно\n';
+            serverStatusEmoji = '❓';
+          }
+        }
+      }
+
+      // Определяем доступность сервера
+      const serverAvailable = (containerStatus.running && interfaceStatus === 'ready');
+      
+      // Получаем статистику клиентов только если сервер доступен
+      let clientsStats = {};
+      if (serverAvailable) {
+        clientsStats = await this.getClientsStats(container.name, version);
+      }
+
+      // Получаем имена пиров
+      const peerNames = await this.awgManager.getPeerNames(container.name);
 
       if (clients.length === 0) {
-        await this.sendOrEditMessage(
-          chatId,
-          `📋 *Подробнее Клиенты ${version.toUpperCase()}*\n\n📦 Контейнер: \`${container.name}\`\n\nНет активных клиентов`,
-          { parse_mode: 'Markdown' }
-        );
+        // Создаём клавиатуру с кнопками управления даже если нет клиентов
+        const keyboard = {
+          inline_keyboard: []
+        };
+        
+        // Добавляем кнопки "Обновить" и "Назад"
+        keyboard.inline_keyboard.push([
+          { text: '🔄 Обновить', callback_data: `refresh_clients_${version}` },
+          { text: '🔙 Назад', callback_data: `awg_select_${version}` }
+        ]);
+        
+        if (shouldUpdate) {
+          await this.updateMessage(
+            chatId,
+            `📋 *Подробнее клиенты ${version.toUpperCase()}*\n\n📦 Контейнер: \`${container.name}\`${containerStatusMessage}${interfaceMessage}\n\nНет активных клиентов`,
+            {
+              parse_mode: 'Markdown',
+              reply_markup: keyboard
+            },
+            callbackQueryId
+          );
+        } else {
+          await this.sendNewMessage(
+            chatId,
+            `📋 *Подробнее клиенты ${version.toUpperCase()}*\n\n📦 Контейнер: \`${container.name}\`${containerStatusMessage}${interfaceMessage}\n\nНет активных клиентов`,
+            {
+              parse_mode: 'Markdown',
+              reply_markup: keyboard
+            }
+          );
+        }
         return;
       }
 
-      let clientsMessage = `📋 *Подробнее Клиенты ${version.toUpperCase()}*\n\n`;
-      clientsMessage += `📦 Контейнер: \`${container.name}\`\n`;
+      let clientsMessage = `📋 *Подробнее клиенты ${version.toUpperCase()}*\n\n`;
+      
       clientsMessage += `Всего: ${clients.length}\n\n`;
       
       // Создаём кнопки для каждого клиента
@@ -1097,13 +1804,31 @@ export class RouteBot {
         const stats = clientsStats[ip] || {};
         const lastSeen = stats.lastHandshake || '❌';
         const transfer = stats.transfer || 'нет данных';
+        const peerName = peerNames[ip];
         
-        // Если клиент неактивен - показываем только IP и крестик
-        if (lastSeen === '❌') {
-          clientsMessage += `\`${ip}\` ❌\n`;
+        // Экранируем специальные символы Markdown в имени пира
+        const escapedPeerName = peerName ? peerName.replace(/[_*[\]()~`>#+=|{}.!-]/g, '\\$&') : null;
+        
+        // Формируем отображение IP с именем
+        const displayName = escapedPeerName ? `${ip} (${escapedPeerName})` : ip;
+        
+        // Если сервер недоступен - показываем причину
+        if (!serverAvailable) {
+          if (interfaceStatus === 'starting') {
+            clientsMessage += `${displayName} ⏳ (интерфейс запускается)\n`;
+          } else if (interfaceStatus === 'error') {
+            clientsMessage += `${displayName} ⚠️ (ошибка интерфейса)\n`;
+          } else if (!containerStatus.running) {
+            clientsMessage += `${displayName} ⚠️ (контейнер остановлен)\n`;
+          } else {
+            clientsMessage += `${displayName} ${serverStatusEmoji} (сервер недоступен)\n`;
+          }
+        } else if (lastSeen === '❌') {
+          // Сервер доступен, но клиент неактивен
+          clientsMessage += `${displayName} ❌ (клиент неактивен)\n`;
         } else {
-          // Если активен - показываем IP и детали
-          clientsMessage += `\`${ip}\`\n`;
+          // Сервер доступен и клиент активен - показываем детали
+          clientsMessage += `${displayName} ✅\n`;
           clientsMessage += `   └ 🕐 ${lastSeen}\n`;
           if (transfer !== 'нет данных') {
             clientsMessage += `   └ 📊 ${transfer}\n`;
@@ -1117,6 +1842,10 @@ export class RouteBot {
             callback_data: `resend_${version}_${ip}`
           },
           {
+            text: `✏️ ${ip}`,
+            callback_data: `rename_${version}_${ip}`
+          },
+          {
             text: `🗑️ ${ip}`,
             callback_data: `delete_${version}_${ip}`
           }
@@ -1125,14 +1854,24 @@ export class RouteBot {
 
       // Добавляем кнопки "Обновить" и "Назад"
       keyboard.inline_keyboard.push([
-        { text: '🔄 Обновить', callback_data: `awg_clients_${version}` },
+        { text: '🔄 Обновить', callback_data: `refresh_clients_${version}` },
         { text: '🔙 Назад', callback_data: `awg_select_${version}` }
       ]);
 
-      await this.sendOrEditMessage(chatId, clientsMessage, {
-        parse_mode: 'Markdown',
-        reply_markup: keyboard
-      });
+      // Выбираем метод отправки в зависимости от shouldUpdate
+      if (shouldUpdate) {
+        // При обновлении передаем callbackQueryId - updateMessage сам обработает ответ на callback
+        await this.updateMessage(chatId, clientsMessage, {
+          parse_mode: 'Markdown',
+          reply_markup: keyboard
+        }, callbackQueryId);
+      } else {
+        // При первом открытии используем sendNewMessage
+        await this.sendNewMessage(chatId, clientsMessage, {
+          parse_mode: 'Markdown',
+          reply_markup: keyboard
+        });
+      }
 
     } catch (error) {
       logger.error(`Error showing ${version} clients list for chat ${chatId}:`, error);
@@ -1246,8 +1985,8 @@ export class RouteBot {
         return;
       }
       
-      // Regenerate config
-      const result = await this.awgManager.regenerateClientConfig(container.name, ip);
+      // Regenerate config with server label
+      const result = await this.awgManager.regenerateClientConfig(container.name, ip, config.serverLabel);
       
       // Delete processing message
       await this.bot.deleteMessage(chatId, processingMsg.message_id);
@@ -1347,26 +2086,15 @@ export class RouteBot {
         );
         
         // Remove peer section for this IP
-        // Разбиваем конфигурацию на секции
-        const sections = currentConfig.split(/(?=\[Peer\])/);
+        // Используем regex который захватывает комментарий перед [Peer] и всю секцию до следующего [Peer] или конца файла
+        const escapedIP = ip.replace(/\./g, '\\.');
+        const peerSectionRegex = new RegExp(
+          `(#[^\\n]*\\n)?\\[Peer\\]\\n([^\\[]*)AllowedIPs\\s*=\\s*${escapedIP}\\/32[^\\[]*`,
+          'g'
+        );
         
-        // Фильтруем секции, удаляя ту, которая содержит нужный IP
-        const filteredSections = sections.filter(section => {
-          // Если это не секция [Peer], оставляем её
-          if (!section.trim().startsWith('[Peer]')) {
-            return true;
-          }
-          // Проверяем, содержит ли секция нужный IP
-          const allowedIPsMatch = section.match(/AllowedIPs\s*=\s*([^\n]+)/);
-          if (allowedIPsMatch) {
-            const allowedIP = allowedIPsMatch[1].trim();
-            // Удаляем только секцию с точным совпадением IP
-            return allowedIP !== `${ip}/32`;
-          }
-          return true;
-        });
-        
-        const newConfig = filteredSections.join('');
+        // Удаляем найденную секцию пира
+        const newConfig = currentConfig.replace(peerSectionRegex, '');
         
         // Write new config
         const tempFile = `/tmp/awg_config_${Date.now()}.conf`;
@@ -1377,25 +2105,52 @@ export class RouteBot {
         // Restart WireGuard interface
         const configName = configFile.replace('.conf', '');
         const fullConfigPath = `/etc/amnezia/amneziawg/${configFile}`;
+        
+        logger.info(`Restarting WireGuard interface ${configName}...`);
         await execAsync(`docker exec ${container.name} wg-quick down ${fullConfigPath} || true`);
         await execAsync(`docker exec ${container.name} wg-quick up ${fullConfigPath}`);
         
         logger.info(`Successfully deleted client ${ip} from ${container.name}`);
         
-        // Создаем кнопки для быстрого перехода к клиентам
+        // Используем новую функцию полной проверки здоровья сервера
+        logger.info(`Starting comprehensive health check...`);
+        const healthStatus = await this.awgManager.checkServerHealthAfterChange(
+          container.name,
+          15,  // maxAttempts
+          1000 // delayMs
+        );
+        
+        // Создаем кнопки для перехода к списку клиентов и главному меню
         const keyboard = {
           inline_keyboard: [
             [
-              { text: '📋 AWG V1', callback_data: 'awg_select_v1' },
-              { text: '📋 AWG V2', callback_data: 'awg_select_v2' }
+              { text: '📋 Список клиентов', callback_data: `clients_${version}` }
+            ],
+            [
+              { text: '🏠 Главное меню', callback_data: 'start_menu' }
             ]
           ]
         };
         
+        let statusMessage = `✅ Клиент \`${ip}\` успешно удалён из ${version.toUpperCase()}\n`;
+        
+        // Ошибки (если есть критические проблемы)
+        if (healthStatus.errors.length > 0) {
+          statusMessage += `\n\n❌ *Ошибки:*\n`;
+          healthStatus.errors.slice(0, 2).forEach(error => {
+            statusMessage += `└ ${error}\n`;
+          });
+          statusMessage += `\n💡 Проверьте логи: \`docker logs ${container.name}\``;
+        }
+        
+        // Общий статус (только если есть проблемы)
+        if (!healthStatus.healthy) {
+          statusMessage += `\n\n⚠️ Сервер требует внимания`;
+        }
+        
         this.bot.sendMessage(
           chatId,
-          `✅ Клиент \`${ip}\` успешно удалён из ${version.toUpperCase()}\n\n` +
-          `IP адрес освобождён и может быть использован для нового клиента`,
+          statusMessage,
           {
             parse_mode: 'Markdown',
             reply_markup: keyboard
@@ -1482,3 +2237,4 @@ export class RouteBot {
     logger.info('Waiting for messages...');
   }
 }
+

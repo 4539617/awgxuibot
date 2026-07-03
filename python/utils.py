@@ -112,6 +112,16 @@ class XUIClient:
                 cookie_jar=cookie_jar,
                 timeout=aiohttp.ClientTimeout(total=self.config.xui.api_timeout)
             )
+    
+    def update_xui_config(self, new_xui_config):
+        """Обновить конфигурацию XUI для переключения между панелями"""
+        self.config.xui = new_xui_config
+        self.api_token = new_xui_config.api_token
+        # Сбрасываем сессию для переподключения
+        if self.session:
+            asyncio.create_task(self.session.close())
+            self.session = None
+        self.cookies = None
         return self.session
     
     async def _get_headers(self):
@@ -415,9 +425,53 @@ class XUIClient:
         else:
             total_bytes = total_gb * 1024 * 1024 * 1024
         
+        # Получаем реальные настройки inbound из панели для определения flow
+        flow = ""
+        try:
+            endpoint_get = f"{self.config.xui.url}/panel/api/inbounds/get/{self.config.xui.inbound_id}"
+            headers = await self._get_headers()
+            
+            async with self.session.get(endpoint_get, headers=headers) as resp:
+                if resp.status == 200:
+                    result = await resp.json()
+                    if result.get('success'):
+                        inbound_data = result.get('obj', {})
+                        stream_settings_str = inbound_data.get('streamSettings', '{}')
+                        stream_settings = json.loads(stream_settings_str) if isinstance(stream_settings_str, str) else stream_settings_str
+                        
+                        # Извлекаем реальные transport и security из inbound
+                        real_transport = stream_settings.get('network', 'tcp')
+                        real_security = stream_settings.get('security', 'none')
+                        
+                        # Устанавливаем flow на основе реальных настроек inbound
+                        if real_transport == "tcp" and real_security in ["reality", "tls"]:
+                            flow = "xtls-rprx-vision"
+                            logger.info(f"Установлен flow для {real_transport}+{real_security}: {flow}")
+                        else:
+                            logger.info(f"Flow не требуется для {real_transport}+{real_security}")
+                    else:
+                        logger.warning(f"⚠️ Не удалось получить настройки inbound, используем конфиг")
+                        # Fallback на конфиг
+                        if self.config.vpn.transport == "tcp" and self.config.vpn.security in ["reality", "tls"]:
+                            flow = "xtls-rprx-vision"
+                            logger.info(f"Установлен flow из конфига для TCP+{self.config.vpn.security}: {flow}")
+                else:
+                    logger.warning(f"⚠️ API вернул статус {resp.status}, используем конфиг")
+                    # Fallback на конфиг
+                    if self.config.vpn.transport == "tcp" and self.config.vpn.security in ["reality", "tls"]:
+                        flow = "xtls-rprx-vision"
+                        logger.info(f"Установлен flow из конфига для TCP+{self.config.vpn.security}: {flow}")
+        except Exception as e:
+            logger.warning(f"⚠️ Ошибка получения настроек inbound: {e}, используем конфиг")
+            # Fallback на конфиг
+            if self.config.vpn.transport == "tcp" and self.config.vpn.security in ["reality", "tls"]:
+                flow = "xtls-rprx-vision"
+                logger.info(f"Установлен flow из конфига для TCP+{self.config.vpn.security}: {flow}")
+        
         # Формируем данные клиента согласно API v3
         client_data = {
             "email": email,
+            "flow": flow,  # ВАЖНО: flow обязателен для TCP+Reality/TLS
             "totalGB": total_bytes,
             "expiryTime": expiry_time,
             "enable": True,
@@ -431,9 +485,10 @@ class XUIClient:
             client_data["comment"] = comment
         
         # Формируем финальный запрос
+        # ВАЖНО: inboundIds должен быть массивом целых чисел, не строк
         data = {
             "client": client_data,
-            "inboundIds": [self.config.xui.inbound_id]
+            "inboundIds": [int(self.config.xui.inbound_id)]
         }
         
         # ВАЖНО: Используем базовый путь из XUI_URL
@@ -442,28 +497,49 @@ class XUIClient:
         headers = await self._get_headers()
         
         try:
-            logger.info(f"Создание клиента v3: email={email}, inbound={self.config.xui.inbound_id}")
+            logger.info(f"Создание клиента v3: email={email}, inbound={self.config.xui.inbound_id}, flow={flow}")
             logger.debug(f"Request URL: {endpoint}")
             logger.debug(f"Request headers: {headers}")
             logger.debug(f"Request data: {json.dumps(data, indent=2)}")
             
             async with self.session.post(endpoint, json=data, headers=headers) as resp:
                 response_text = await resp.text()
-                logger.debug(f"Response status: {resp.status}")
-                logger.debug(f"Response text: {response_text}")
+                logger.info(f"Response status: {resp.status}")
+                logger.info(f"Response text: {response_text}")
                 
                 if resp.status == 200:
                     try:
                         result = json.loads(response_text) if response_text else {}
+                        logger.info(f"📦 Полный ответ API при создании: {json.dumps(result, indent=2, ensure_ascii=False)}")
                     except json.JSONDecodeError as je:
                         logger.error(f"Ошибка парсинга JSON: {je}")
+                        logger.error(f"Response text: {response_text}")
                         result = {}
                     
                     if result.get('success'):
-                        logger.info(f"Клиент {email} создан через v3 API")
-                        # Получаем UUID клиента
-                        client_details = await self._get_client_details_v3(email)
-                        client_uuid = client_details.get('uuid', '') if client_details else ''
+                        logger.info(f"✅ Клиент {email} создан через v3 API")
+                        
+                        # В v3 API UUID возвращается в obj
+                        obj = result.get('obj', {})
+                        logger.info(f"📦 obj из ответа: {obj}")
+                        logger.info(f"📦 Тип obj: {type(obj)}")
+                        
+                        client_uuid = obj.get('uuid', '') if isinstance(obj, dict) else ''
+                        logger.info(f"🔑 UUID из obj: '{client_uuid}'")
+                        
+                        # Если UUID не в ответе, получаем через список клиентов
+                        if not client_uuid:
+                            logger.warning(f"⚠️ UUID не найден в ответе API, получаем через список клиентов")
+                            client_details = await self._get_client_details_v3(email)
+                            logger.info(f"📦 Детали клиента из списка: {client_details}")
+                            client_uuid = client_details.get('uuid', '') if client_details else ''
+                            logger.info(f"🔑 UUID из списка: '{client_uuid}'")
+                        
+                        if client_uuid:
+                            logger.info(f"✅ UUID клиента {email}: {client_uuid}")
+                        else:
+                            logger.error(f"❌ Не удалось получить UUID для клиента {email}")
+                        
                         return {"success": True, "uuid": client_uuid}
                     else:
                         error_msg = result.get('msg', response_text)
@@ -482,124 +558,102 @@ class XUIClient:
             return {"success": False, "error": str(e)}
 
     async def _get_client_details_v3(self, email: str) -> dict:
-        """Получение деталей клиента через v3 API"""
+        """Получение деталей клиента через v3 API GET /panel/api/clients/get/{email}"""
         if not self.session:
             if not await self.login():
                 return None
         
+        # В v3 API есть endpoint для получения клиента по email
         endpoint = f"{self.config.xui.url}/panel/api/clients/get/{email}"
         headers = await self._get_headers()
+        
+        try:
+            logger.info(f"🔍 Запрос деталей клиента: {email}")
+            async with self.session.get(endpoint, headers=headers) as resp:
+                if resp.status == 200:
+                    result = await resp.json()
+                    if result.get('success'):
+                        obj = result.get('obj', {})
+                        # В v3 API структура: obj.client содержит данные клиента
+                        client = obj.get('client', {})
+                        logger.info(f"✅ Получены детали клиента {email}")
+                        logger.info(f"📦 Полные данные obj: {json.dumps(obj, indent=2, ensure_ascii=False)}")
+                        logger.info(f"📦 Данные client: {json.dumps(client, indent=2, ensure_ascii=False)}")
+                        logger.info(f"🔑 UUID клиента: '{client.get('uuid')}'")
+                        return client
+                    else:
+                        logger.warning(f"⚠️ API вернул success=false для клиента {email}")
+                        return None
+                else:
+                    logger.error(f"❌ Ошибка получения клиента {email}: HTTP {resp.status}")
+                    return None
+            
+        except Exception as e:
+            logger.error(f"Ошибка получения деталей клиента v3: {e}")
+            return None
+
+    async def _get_all_clients_v3(self) -> list:
+        """Получение всех клиентов через v3 API (полный список с UUID)"""
+        if not self.session:
+            if not await self.login():
+                return []
+        
+        # Используем ПОЛНЫЙ endpoint /list который возвращает UUID
+        # НЕ используем /list/paged - он возвращает slim данные БЕЗ UUID!
+        endpoint = f"{self.config.xui.url}/panel/api/clients/list"
+        headers = await self._get_headers()
+        
+        all_clients = []
         
         try:
             async with self.session.get(endpoint, headers=headers) as resp:
                 if resp.status == 200:
                     result = await resp.json()
                     if result.get('success'):
-                        client = result.get('obj', {})
+                        clients = result.get('obj', [])
+                        
+                        if not clients:
+                            logger.warning("⚠️ Список клиентов пуст")
+                            return []
+                        
                         current_time = int(time.time() * 1000)
-                        expiry_time = client.get('expiryTime', 0)
-                        enable = client.get('enable', True)
                         
-                        # Определяем статус
-                        if expiry_time > 0 and expiry_time < current_time:
-                            status = 'expired'
-                        elif not enable:
-                            status = 'inactive'
-                        else:
-                            status = 'active'
+                        logger.info(f"📊 Получено {len(clients)} клиентов из /list endpoint")
                         
-                        traffic = client.get('traffic', {})
-                        return {
-                            'uuid': client.get('uuid', ''),
-                            'email': client.get('email', ''),
-                            'comment': client.get('comment', ''),
-                            'enable': enable,
-                            'expiryTime': expiry_time,
-                            'totalGB': client.get('totalGB', 0),
-                            'status': status,
-                            'up': traffic.get('up', 0),
-                            'down': traffic.get('down', 0)
-                        }
-            
-            return None
-        except Exception as e:
-            logger.error(f"Ошибка получения деталей клиента v3: {e}")
-            return None
-
-    async def _get_all_clients_v3(self) -> list:
-        """Получение всех клиентов через v3 API"""
-        if not self.session:
-            if not await self.login():
-                return []
-        
-        # Используем paginated endpoint с большим pageSize для получения всех клиентов
-        endpoint = f"{self.config.xui.url}/panel/api/clients/list/paged"
-        headers = await self._get_headers()
-        
-        # Параметры для получения всех клиентов (максимум 200 за раз по документации)
-        params = {
-            'page': 1,
-            'pageSize': 200
-        }
-        
-        all_clients = []
-        
-        try:
-            # Получаем клиентов постранично
-            while True:
-                async with self.session.get(endpoint, headers=headers, params=params) as resp:
-                    if resp.status == 200:
-                        result = await resp.json()
-                        if result.get('success'):
-                            obj = result.get('obj', {})
-                            clients = obj.get('items', [])
-                            total = obj.get('total', 0)
+                        # Преобразуем в формат v2 для совместимости
+                        for client in clients:
+                            expiry_time = client.get('expiryTime', 0)
+                            enable = client.get('enable', True)
                             
-                            if not clients:
-                                break
+                            # Определяем статус
+                            if expiry_time > 0 and expiry_time < current_time:
+                                status = 'expired'
+                            elif not enable:
+                                status = 'inactive'
+                            else:
+                                status = 'active'
                             
-                            current_time = int(time.time() * 1000)
-                            
-                            # Преобразуем в формат v2 для совместимости
-                            for client in clients:
-                                expiry_time = client.get('expiryTime', 0)
-                                enable = client.get('enable', True)
-                                
-                                # Определяем статус
-                                if expiry_time > 0 and expiry_time < current_time:
-                                    status = 'expired'
-                                elif not enable:
-                                    status = 'inactive'
-                                else:
-                                    status = 'active'
-                                
-                                traffic = client.get('traffic', {})
-                                all_clients.append({
-                                    'uuid': client.get('uuid', ''),
-                                    'email': client.get('email', ''),
-                                    'comment': client.get('comment', ''),
-                                    'enable': enable,
-                                    'expiryTime': expiry_time,
-                                    'totalGB': client.get('totalGB', 0),
-                                    'status': status,
-                                    'up': traffic.get('up', 0),
-                                    'down': traffic.get('down', 0)
-                                })
-                            
-                            # Проверяем, есть ли еще страницы
-                            if len(all_clients) >= total:
-                                break
-                            
-                            params['page'] += 1
-                        else:
-                            logger.error(f"API вернул success=false: {result}")
-                            break
+                            traffic = client.get('traffic', {})
+                            all_clients.append({
+                                'uuid': client.get('uuid', ''),
+                                'email': client.get('email', ''),
+                                'comment': client.get('comment', ''),
+                                'enable': enable,
+                                'expiryTime': expiry_time,
+                                'totalGB': client.get('totalGB', 0),
+                                'status': status,
+                                'up': traffic.get('up', 0),
+                                'down': traffic.get('down', 0)
+                            })
+                        
+                        return all_clients
                     else:
-                        text = await resp.text()
-                        logger.error(f"Ошибка получения клиентов v3: {resp.status} - {text}")
-                        break
-            
-            return all_clients
+                        logger.error(f"API вернул success=false: {result}")
+                        return []
+                else:
+                    text = await resp.text()
+                    logger.error(f"Ошибка получения клиентов v3: {resp.status} - {text}")
+                    return []
             
         except Exception as e:
             logger.error(f"Ошибка получения клиентов v3: {e}")
@@ -950,21 +1004,28 @@ class XUIClient:
             all_clients = await self.get_all_clients()
             
             # Фильтруем клиенты по username в email
-            # Поддерживаем два формата:
-            # 1. username_random (обычные ключи)
-            # 2. temp_username_random (временные ключи)
+            # Поддерживаем форматы:
+            # 1. prefix_username_random (бессрочные ключи с префиксом панели)
+            # 2. username_random (старые бессрочные ключи без префикса)
+            # 3. temp_username_random (временные ключи)
             user_clients = []
             for client in all_clients:
                 email = client.get('email', '').lower()
                 
-                # Проверяем формат: username_random
                 if '_' in email:
                     parts = email.split('_')
-                    # Первая часть должна быть username
-                    if parts[0] == username_lower:
+                    
+                    # Временный ключ: temp_username_random
+                    if len(parts) >= 3 and parts[0] == 'temp' and parts[1] == username_lower:
                         user_clients.append(client)
-                    # Или это временный ключ: temp_username_random
-                    elif len(parts) >= 2 and parts[0] == 'temp' and parts[1] == username_lower:
+                    # Бессрочный ключ с префиксом панели: prefix_username_random
+                    # Префикс - это первые 5 символов алиаса панели
+                    # Поиск пользователя осуществляется после префикса и служебного символа
+                    elif len(parts) >= 3 and parts[0] != 'temp' and parts[1] == username_lower:
+                        user_clients.append(client)
+                    # Старый формат без префикса: username_random
+                    # Проверяем что это именно старый формат (ровно 2 части)
+                    elif len(parts) == 2 and parts[0] == username_lower:
                         user_clients.append(client)
                 elif email == username_lower:
                     # Если email совпадает полностью с username
@@ -994,9 +1055,14 @@ class XUIClient:
 
             return None
     
-    async def update_client_status(self, client_uuid: str, enable: bool) -> bool:
-        """Включение/выключение клиента"""
+    async def update_client_status(self, client_uuid: str, enable: bool, email: str = None) -> bool:
+        """Включение/выключение клиента (универсальный метод для v2 и v3)"""
         try:
+            # Для v3 используем API
+            if self.config.xui.is_v3_new_api():
+                return await self._update_client_status_v3(client_uuid, enable, email)
+            
+            # Для v2 используем прямой доступ к SQLite
             # Получаем текущие настройки inbound
             sql_get = f"""sqlite3 {self.config.xui.db_path} "SELECT settings FROM inbounds WHERE id={self.config.xui.inbound_id};" """
             result = subprocess.run(sql_get, shell=True, capture_output=True, text=True)
@@ -1054,6 +1120,81 @@ class XUIClient:
         except Exception as e:
             logger.error(f"Ошибка обновления статуса клиента: {e}")
             return False
+    
+    async def _update_client_status_v3(self, client_uuid: str, enable: bool, email: str = None) -> bool:
+        """Обновление статуса клиента через v3 API"""
+        if not self.session:
+            if not await self.login():
+                return False
+        
+        try:
+            # Если email не передан, получаем его из деталей клиента
+            if not email:
+                # Получаем все клиенты и ищем по UUID
+                all_clients = await self.get_all_clients()
+                client_data = None
+                for client in all_clients:
+                    if client.get('uuid') == client_uuid:
+                        client_data = client
+                        email = client.get('email')
+                        break
+                
+                if not email:
+                    logger.error(f"Не удалось найти email для клиента {client_uuid}")
+                    return False
+            
+            # Получаем полные данные клиента
+            client = await self._get_client_details_v3(email)
+            if not client:
+                logger.error(f"Не удалось получить данные клиента {email}")
+                return False
+            
+            # Обновляем статус
+            client['enable'] = enable
+            
+            # Отправляем обновление через API v3
+            # Используем endpoint для обновления клиента по email
+            endpoint = f"{self.config.xui.url}/panel/api/clients/update/{email}"
+            headers = await self._get_headers()
+            headers['Content-Type'] = 'application/json'
+            
+            # Формируем данные для обновления (используем структуру из client)
+            # Важно: id должен быть UUID (строка), а не числовой ID из базы
+            update_data = {
+                "id": client_uuid,  # UUID клиента (строка)
+                "email": email,
+                "enable": enable,
+                "flow": client.get('flow', ''),
+                "limitIp": client.get('limitIp', 0),
+                "totalGB": client.get('totalGB', 0),
+                "expiryTime": client.get('expiryTime', 0),
+                "subId": client.get('subId', ''),
+                "tgId": client.get('tgId', ''),
+                "reset": client.get('reset', 0)
+            }
+            
+            logger.info(f"🔄 Обновление статуса клиента {email} (UUID: {client_uuid}) -> enable={enable}")
+            logger.info(f"📤 Endpoint: {endpoint}")
+            logger.info(f"📦 Данные: {json.dumps(update_data, indent=2)}")
+            
+            async with self.session.post(endpoint, headers=headers, json=update_data) as resp:
+                if resp.status == 200:
+                    result = await resp.json()
+                    if result.get('success'):
+                        status_text = "включен" if enable else "выключен"
+                        logger.info(f"✅ Клиент {email} {status_text}")
+                        return True
+                    else:
+                        logger.error(f"❌ API вернул success=false: {result.get('msg', 'Unknown error')}")
+                        return False
+                else:
+                    error_text = await resp.text()
+                    logger.error(f"❌ Ошибка обновления статуса: HTTP {resp.status}, {error_text}")
+                    return False
+                    
+        except Exception as e:
+            logger.error(f"Ошибка обновления статуса клиента v3: {e}")
+            return False
     async def get_server_status(self) -> dict:
         """Получение статуса сервера (CPU, RAM, Disk, Network, Xray)"""
         if not self.session:
@@ -1103,35 +1244,59 @@ class XUIClient:
 
 async def get_client_link(xui_client, email: str, client_uuid: str, vpn_config, inbound_id: int) -> Optional[str]:
     """Универсальная функция получения VLESS ссылки для v2 и v3"""
-    if xui_client.config.xui.is_v3_new_api():
-        # Для v3 получаем готовую ссылку от панели
-        links = await xui_client.get_client_links_v3(email)
-        if links and len(links) > 0:
-            return links[0]
+    # Для v3 и v2 ВСЕГДА используем ручную генерацию
+    # Панель v3 часто возвращает некорректные ссылки (неправильный sid, spx и т.д.)
+    
+    # Получаем данные клиента для извлечения реального flow из БД
+    client_flow = None
+    try:
+        if hasattr(xui_client, '_get_client_details_v3'):
+            client_data = await xui_client._get_client_details_v3(email)
+            if client_data:
+                client_flow = client_data.get('flow', '')
+                logger.info(f"🔑 Flow клиента {email} из БД: '{client_flow}'")
+            else:
+                logger.warning(f"⚠️ Не удалось получить данные клиента {email}, flow будет определен автоматически")
         else:
-            logger.error(f"Не удалось получить ссылку от панели v3 для {email}")
-            return None
-    else:
-        # Для v2 генерируем вручную
-        return generate_vless_link(client_uuid, email, vpn_config, inbound_id)
+            logger.info(f"ℹ️ Метод _get_client_details_v3 недоступен, flow будет определен автоматически")
+    except Exception as e:
+        logger.warning(f"⚠️ Ошибка получения flow клиента: {e}, flow будет определен автоматически")
+    
+    logger.info(f"🔗 Генерация VLESS ссылки вручную")
+    return generate_vless_link(client_uuid, email, vpn_config, inbound_id, client_flow)
 
 
 
-def generate_vless_link(client_uuid: str, email: str, vpn_config, inbound_id: int) -> str:
+def generate_vless_link(client_uuid: str, email: str, vpn_config, inbound_id: int, client_flow: Optional[str] = None) -> str:
     """Универсальная генерация VLESS ссылки в зависимости от настроек
     
     Поддерживаемые сценарии:
     1. xhttp + reality
     2. tcp + reality
     3. tcp + tls
+    
+    Args:
+        client_uuid: UUID клиента
+        email: Email клиента
+        vpn_config: Конфигурация VPN
+        inbound_id: ID inbound
+        client_flow: Flow клиента из БД (опционально, если None - определяется автоматически)
     """
     import urllib.parse
     
-    # Получаем реальные параметры Reality из inbound (если используется Reality)
+    # Для Docker-окружения используем параметры из конфига, а не из БД
+    # (БД может быть недоступна, если X-UI на удаленном сервере)
     reality_params = {}
     if vpn_config.security == "reality":
-        reality_params = get_inbound_reality_settings(vpn_config.xui_db_path, inbound_id)
-        logger.info(f"Используем параметры Reality из inbound: {reality_params}")
+        # Пытаемся получить параметры из БД только если путь локальный
+        if hasattr(vpn_config, 'xui_db_path') and vpn_config.xui_db_path.startswith('/etc/'):
+            reality_params = get_inbound_reality_settings(vpn_config.xui_db_path, inbound_id)
+            if reality_params:
+                logger.info(f"Используем параметры Reality из inbound БД: {reality_params}")
+        
+        # Если не получили из БД, используем параметры из конфига
+        if not reality_params:
+            logger.info(f"Используем параметры Reality из конфига")
     
     # ВАЛИДАЦИЯ: Проверяем и устанавливаем transport
     transport = vpn_config.transport if vpn_config.transport else "tcp"
@@ -1160,44 +1325,41 @@ def generate_vless_link(client_uuid: str, email: str, vpn_config, inbound_id: in
     
     # ===== СЦЕНАРИЙ 1 и 2: Reality (xhttp или tcp) =====
     if vpn_config.security == "reality":
-        # Fingerprint для Reality
-        if reality_params.get('fingerprint'):
-            params += f"&fp={reality_params['fingerprint']}"
-        else:
-            params += f"&fp={vpn_config.reality_fingerprint}"
+        # Fingerprint для Reality (приоритет: БД -> конфиг)
+        fingerprint = reality_params.get('fingerprint') or vpn_config.reality_fingerprint
+        if fingerprint:
+            params += f"&fp={fingerprint}"
         
-        # Public key (pbk) - ОБЯЗАТЕЛЬНЫЙ параметр для Reality
-        if reality_params.get('public_key'):
-            params += f"&pbk={reality_params['public_key']}"
+        # Public key (pbk) - ОБЯЗАТЕЛЬНЫЙ параметр для Reality (приоритет: БД -> конфиг)
+        public_key = reality_params.get('public_key') or getattr(vpn_config, 'reality_public_key', '')
+        if public_key:
+            params += f"&pbk={public_key}"
         else:
-            reality_public_key = getattr(vpn_config, 'reality_public_key', '')
-            if reality_public_key:
-                params += f"&pbk={reality_public_key}"
-            else:
-                logger.error("⚠️ REALITY_PUBLIC_KEY не найден!")
+            logger.error("⚠️ REALITY_PUBLIC_KEY не найден ни в БД, ни в конфиге!")
         
-        # SNI для Reality
-        if reality_params.get('sni'):
-            params += f"&sni={reality_params['sni']}"
-        else:
-            if vpn_config.reality_sni:
-                params += f"&sni={vpn_config.reality_sni}"
+        # SNI для Reality (приоритет: БД -> конфиг)
+        sni = reality_params.get('sni') or vpn_config.reality_sni
+        if sni:
+            params += f"&sni={sni}"
         
-        # Short ID (sid) для Reality
-        if reality_params.get('short_id'):
-            params += f"&sid={reality_params['short_id']}"
-        else:
-            reality_short_id = getattr(vpn_config, 'reality_short_id', '')
-            if reality_short_id:
-                params += f"&sid={reality_short_id}"
+        # Short ID (sid) для Reality (приоритет: БД -> конфиг)
+        short_id = reality_params.get('short_id') or getattr(vpn_config, 'reality_short_id', '')
+        if short_id:
+            params += f"&sid={short_id}"
+            logger.debug(f"Используем short_id: {short_id}")
         
         # spiderX (SpiderX path) для Reality
         params += "&spx=%2F"
         
         # Flow для TCP + Reality
         if transport == "tcp":
-            params += "&flow=xtls-rprx-vision"
-            logger.debug(f"Добавлен flow для TCP+Reality")
+            # Используем переданный flow из БД клиента или значение по умолчанию
+            flow_value = client_flow if client_flow is not None else "xtls-rprx-vision"
+            if flow_value:  # Добавляем только если не пустой
+                params += f"&flow={flow_value}"
+                logger.info(f"Добавлен flow для TCP+Reality: {flow_value}")
+            else:
+                logger.warning(f"⚠️ Flow пустой для TCP+Reality, клиент может не подключиться!")
     
     # ===== СЦЕНАРИЙ 3: TLS (обычно с tcp) =====
     elif vpn_config.security == "tls":
@@ -1217,8 +1379,13 @@ def generate_vless_link(client_uuid: str, email: str, vpn_config, inbound_id: in
         
         # Flow для TCP + TLS
         if transport == "tcp":
-            params += "&flow=xtls-rprx-vision"
-            logger.debug(f"Добавлен flow для TCP+TLS")
+            # Используем переданный flow из БД клиента или значение по умолчанию
+            flow_value = client_flow if client_flow is not None else "xtls-rprx-vision"
+            if flow_value:  # Добавляем только если не пустой
+                params += f"&flow={flow_value}"
+                logger.info(f"Добавлен flow для TCP+TLS: {flow_value}")
+            else:
+                logger.warning(f"⚠️ Flow пустой для TCP+TLS, клиент может не подключиться!")
     
     # ===== Дополнительные параметры для xHTTP =====
     if transport == "xhttp":

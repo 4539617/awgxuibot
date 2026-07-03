@@ -27,9 +27,9 @@ export class AWGManager {
     
     logger.info('Initializing AWG Manager...');
     
-    // Получаем внешний IP сервера
+    // Получаем внешний IP сервера (только IPv4)
     try {
-      const { stdout } = await execAsync('curl -s ifconfig.me');
+      const { stdout } = await execAsync('curl -4 -s ifconfig.me');
       this.serverIP = stdout.trim();
       logger.info(`Server IP: ${this.serverIP}`);
     } catch (error) {
@@ -37,10 +37,12 @@ export class AWGManager {
       this.serverIP = '0.0.0.0';
     }
 
-    // Ищем запущенные контейнеры AWG
+    // Ищем все контейнеры AWG (запущенные и остановленные)
     try {
-      const { stdout } = await execAsync('docker ps --filter "name=amnezia" --format "{{.Names}}"');
+      const { stdout } = await execAsync('docker ps -a --filter "name=amnezia" --format "{{.Names}}"');
       const containerNames = stdout.trim().split('\n').filter(name => name);
+      
+      logger.info(`Found containers: ${containerNames.join(', ') || 'none'}`);
       
       for (const containerName of containerNames) {
         try {
@@ -65,6 +67,10 @@ export class AWGManager {
    * Определить конфигурацию контейнера
    */
   async detectContainerConfig(containerName) {
+    // Проверяем статус контейнера
+    const containerStatus = await this.checkContainer(containerName);
+    const isRunning = containerStatus.running;
+    
     // Ищем конфиг файл в разных возможных путях
     const possiblePaths = [
       { dir: '/opt/amnezia/amneziawg', files: ['awg0.conf', 'wg0.conf'] },  // Новый путь
@@ -79,12 +85,29 @@ export class AWGManager {
       for (const confFile of pathInfo.files) {
         try {
           const fullPath = `${pathInfo.dir}/${confFile}`;
-          const { stdout } = await execAsync(
-            `docker exec ${containerName} cat ${fullPath}`
-          );
+          
+          if (isRunning) {
+            // Для запущенного контейнера используем docker exec
+            const { stdout } = await execAsync(
+              `docker exec ${containerName} cat ${fullPath}`
+            );
+            configContent = stdout;
+          } else {
+            // Для остановленного контейнера используем docker cp
+            const tempFile = `/tmp/${containerName}_${confFile}`;
+            try {
+              await execAsync(`docker cp ${containerName}:${fullPath} ${tempFile} 2>&1`);
+              const { stdout } = await execAsync(`cat ${tempFile}`);
+              configContent = stdout;
+              await execAsync(`rm -f ${tempFile}`);
+            } catch (cpError) {
+              logger.debug(`Failed to copy ${fullPath} from stopped container: ${cpError.message}`);
+              continue;
+            }
+          }
+          
           configPath = fullPath;
-          configContent = stdout;
-          logger.info(`Found config at ${fullPath} for ${containerName}`);
+          logger.info(`Found config at ${fullPath} for ${containerName} (${isRunning ? 'running' : 'stopped'})`);
           break;
         } catch (error) {
           continue;
@@ -125,9 +148,19 @@ export class AWGManager {
     
     for (const keyPath of keyPaths) {
       try {
-        const { stdout: pubKey } = await execAsync(
-          `docker exec ${containerName} cat ${keyPath}/wireguard_server_public_key.key`
-        );
+        let pubKey;
+        if (isRunning) {
+          const { stdout } = await execAsync(
+            `docker exec ${containerName} cat ${keyPath}/wireguard_server_public_key.key`
+          );
+          pubKey = stdout;
+        } else {
+          const tempFile = `/tmp/${containerName}_pubkey.key`;
+          await execAsync(`docker cp ${containerName}:${keyPath}/wireguard_server_public_key.key ${tempFile}`);
+          const { stdout } = await execAsync(`cat ${tempFile}`);
+          pubKey = stdout;
+          await execAsync(`rm -f ${tempFile}`);
+        }
         serverPublicKey = pubKey.trim();
         logger.info(`Found public key at ${keyPath} for ${containerName}`);
         break;
@@ -138,9 +171,19 @@ export class AWGManager {
     
     for (const keyPath of keyPaths) {
       try {
-        const { stdout: psk } = await execAsync(
-          `docker exec ${containerName} cat ${keyPath}/wireguard_psk.key`
-        );
+        let psk;
+        if (isRunning) {
+          const { stdout } = await execAsync(
+            `docker exec ${containerName} cat ${keyPath}/wireguard_psk.key`
+          );
+          psk = stdout;
+        } else {
+          const tempFile = `/tmp/${containerName}_psk.key`;
+          await execAsync(`docker cp ${containerName}:${keyPath}/wireguard_psk.key ${tempFile}`);
+          const { stdout } = await execAsync(`cat ${tempFile}`);
+          psk = stdout;
+          await execAsync(`rm -f ${tempFile}`);
+        }
         presharedKey = psk.trim();
         logger.info(`Found PSK at ${keyPath} for ${containerName}`);
         break;
@@ -156,27 +199,32 @@ export class AWGManager {
 
     // КРИТИЧЕСКАЯ ПРОВЕРКА: Получаем актуальный PublicKey из запущенного интерфейса
     // Основано на amneziawg-installer v5.16.1
-    try {
-      const interfaceName = configPath.includes('awg0') ? 'awg0' : 'wg0';
-      const { stdout: wgShow } = await execAsync(
-        `docker exec ${containerName} wg show ${interfaceName} public-key 2>/dev/null || echo ""`
-      );
-      const actualPublicKey = wgShow.trim();
-      
-      if (actualPublicKey && actualPublicKey !== serverPublicKey) {
-        logger.warn(`⚠️  PublicKey mismatch обнаружен для ${containerName}!`);
-        logger.warn(`   Ключ из файла: ${serverPublicKey}`);
-        logger.warn(`   Реальный ключ:  ${actualPublicKey}`);
-        logger.info(`✅ Используем реальный ключ из запущенного интерфейса`);
-        serverPublicKey = actualPublicKey;
-      } else if (actualPublicKey) {
-        logger.info(`✅ PublicKey проверен и совпадает: ${actualPublicKey.substring(0, 16)}...`);
-      } else {
-        logger.warn(`⚠️  Не удалось получить PublicKey из интерфейса, используем ключ из файла`);
+    // Только для запущенных контейнеров
+    if (isRunning) {
+      try {
+        const interfaceName = configPath.includes('awg0') ? 'awg0' : 'wg0';
+        const { stdout: wgShow } = await execAsync(
+          `docker exec ${containerName} wg show ${interfaceName} public-key 2>/dev/null || echo ""`
+        );
+        const actualPublicKey = wgShow.trim();
+        
+        if (actualPublicKey && actualPublicKey !== serverPublicKey) {
+          logger.warn(`⚠️  PublicKey mismatch обнаружен для ${containerName}!`);
+          logger.warn(`   Ключ из файла: ${serverPublicKey}`);
+          logger.warn(`   Реальный ключ:  ${actualPublicKey}`);
+          logger.info(`✅ Используем реальный ключ из запущенного интерфейса`);
+          serverPublicKey = actualPublicKey;
+        } else if (actualPublicKey) {
+          logger.info(`✅ PublicKey проверен и совпадает: ${actualPublicKey.substring(0, 16)}...`);
+        } else {
+          logger.warn(`⚠️  Не удалось получить PublicKey из интерфейса, используем ключ из файла`);
+        }
+      } catch (error) {
+        logger.warn(`⚠️  Ошибка проверки PublicKey из интерфейса: ${error.message}`);
+        logger.warn(`   Используем ключ из файла (может быть устаревшим)`);
       }
-    } catch (error) {
-      logger.warn(`⚠️  Ошибка проверки PublicKey из интерфейса: ${error.message}`);
-      logger.warn(`   Используем ключ из файла (может быть устаревшим)`);
+    } else {
+      logger.info(`ℹ️  Контейнер остановлен, используем ключ из файла`);
     }
 
     return {
@@ -265,14 +313,47 @@ export class AWGManager {
 
   /**
    * Проверить доступность контейнера
+   * Возвращает объект с детальным статусом
    */
   async checkContainer(containerName) {
     try {
-      const { stdout } = await execAsync(`docker ps --filter "name=${containerName}" --format "{{.Status}}"`);
-      return stdout.includes('Up');
+      // Используем ^name$ для точного совпадения имени контейнера
+      const { stdout } = await execAsync(`docker ps -a --filter "name=^${containerName}$" --format "{{.Status}}"`);
+      const status = stdout.trim();
+      
+      // Если статус пустой, контейнер не найден
+      if (!status) {
+        logger.warn(`Container ${containerName} not found`);
+        return {
+          running: false,
+          restarting: false,
+          stopped: true,
+          status: 'not found',
+          available: false
+        };
+      }
+      
+      // Определяем состояние контейнера
+      const isUp = status.includes('Up');
+      const isRestarting = status.toLowerCase().includes('restarting');
+      const isExited = status.toLowerCase().includes('exited');
+      
+      return {
+        running: isUp && !isRestarting,
+        restarting: isRestarting,
+        stopped: isExited,
+        status: status,
+        available: isUp && !isRestarting
+      };
     } catch (error) {
       logger.error(`Error checking container ${containerName}:`, error);
-      return false;
+      return {
+        running: false,
+        restarting: false,
+        stopped: true,
+        status: 'unknown',
+        available: false
+      };
     }
   }
 
@@ -281,12 +362,26 @@ export class AWGManager {
    */
   async getNextIP(container) {
     try {
-      const { stdout } = await execAsync(
-        `docker exec ${container.name} cat ${container.configPath}`
-      );
+      // Проверяем статус контейнера
+      const containerStatus = await this.checkContainer(container.name);
+      
+      let configContent;
+      if (containerStatus.available) {
+        const { stdout } = await execAsync(
+          `docker exec ${container.name} cat ${container.configPath}`
+        );
+        configContent = stdout;
+      } else {
+        // Для остановленного контейнера используем docker cp
+        const tempFile = `/tmp/${container.name}_config_nextip.conf`;
+        await execAsync(`docker cp ${container.name}:${container.configPath} ${tempFile}`);
+        const { stdout } = await execAsync(`cat ${tempFile}`);
+        configContent = stdout;
+        await execAsync(`rm -f ${tempFile}`);
+      }
 
       // Найти все IP из AllowedIPs
-      const ipMatches = stdout.matchAll(/AllowedIPs\s*=\s*(\d+\.\d+\.\d+\.\d+)\/32/g);
+      const ipMatches = configContent.matchAll(/AllowedIPs\s*=\s*(\d+\.\d+\.\d+\.\d+)\/32/g);
       const ips = Array.from(ipMatches, m => m[1]);
 
       if (ips.length === 0) {
@@ -328,18 +423,36 @@ export class AWGManager {
         throw new Error(`Container ${containerName} not found`);
       }
 
-      const { stdout: configContent } = await execAsync(
-        `docker exec ${containerName} cat ${container.configPath}`
-      );
+      // Проверяем статус контейнера
+      const containerStatus = await this.checkContainer(containerName);
+      
+      let configContent;
+      if (containerStatus.available) {
+        const { stdout } = await execAsync(
+          `docker exec ${containerName} cat ${container.configPath}`
+        );
+        configContent = stdout;
+      } else {
+        // Для остановленного контейнера используем docker cp
+        const tempFile = `/tmp/${containerName}_config_status.conf`;
+        await execAsync(`docker cp ${containerName}:${container.configPath} ${tempFile}`);
+        const { stdout } = await execAsync(`cat ${tempFile}`);
+        configContent = stdout;
+        await execAsync(`rm -f ${tempFile}`);
+      }
 
       // Извлекаем все IP из AllowedIPs
       const ipMatches = configContent.matchAll(/AllowedIPs\s*=\s*(\d+\.\d+\.\d+\.\d+)\/32/g);
       const allIPs = Array.from(ipMatches, m => m[1]);
 
-      // Получаем статистику handshake через wg show
-      const { stdout: wgShow } = await execAsync(
-        `docker exec ${containerName} wg show ${interfaceName} 2>/dev/null || echo ""`
-      );
+      // Получаем статистику handshake через wg show только если контейнер запущен
+      let wgShow = '';
+      if (containerStatus.available) {
+        const { stdout } = await execAsync(
+          `docker exec ${containerName} wg show ${interfaceName} 2>/dev/null || echo ""`
+        );
+        wgShow = stdout;
+      }
 
       // Парсим wg show для получения информации о handshake
       const handshakeMap = new Map();
@@ -390,7 +503,7 @@ export class AWGManager {
   /**
    * Сгенерировать пару ключей WireGuard
    */
-  async generateKeys() {
+  async generateKeys(containerName = null) {
     try {
       // Пробуем использовать wg на хосте
       try {
@@ -407,18 +520,37 @@ export class AWGManager {
         // Если на хосте нет wg, используем из контейнера
         logger.info('wg not found on host, using container...');
         
-        if (!this.availableContainers.length) {
-          throw new Error('No AWG containers available and wg not installed on host');
+        // Если передан конкретный контейнер, используем его
+        let targetContainer = containerName;
+        
+        // Если контейнер не указан, ищем любой доступный
+        if (!targetContainer) {
+          if (!this.availableContainers.length) {
+            // Пробуем найти любой запущенный amnezia контейнер
+            try {
+              const { stdout } = await execAsync('docker ps --filter "name=amnezia" --format "{{.Names}}" | head -n 1');
+              targetContainer = stdout.trim();
+              if (!targetContainer) {
+                throw new Error('No running AWG containers found');
+              }
+              logger.info(`Found running container: ${targetContainer}`);
+            } catch (findError) {
+              throw new Error('No AWG containers available and wg not installed on host');
+            }
+          } else {
+            targetContainer = this.availableContainers[0].name;
+          }
         }
         
-        const container = this.availableContainers[0];
+        // Генерируем ключи через контейнер
+        logger.info(`Generating keys using container: ${targetContainer}`);
         const { stdout: privateKey } = await execAsync(
-          `docker exec ${container.name} wg genkey`
+          `docker exec ${targetContainer} wg genkey`
         );
         const privKey = privateKey.trim();
         
         const { stdout: publicKey } = await execAsync(
-          `docker exec ${container.name} sh -c "echo '${privKey}' | wg pubkey"`
+          `docker exec ${targetContainer} sh -c "echo '${privKey}' | wg pubkey"`
         );
         const pubKey = publicKey.trim();
         
@@ -435,9 +567,17 @@ export class AWGManager {
 
   /**
    * Добавить пира в конфиг контейнера
+   * Теперь с проверкой здоровья после добавления
    */
-  async addPeer(container, publicKey, ip) {
+  async addPeer(container, publicKey, ip, peerName = null) {
+    // Формируем комментарий с именем пира и датой создания
+    const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
+    const comment = peerName
+      ? `# Peer: ${peerName} | IP: ${ip} | Created: ${timestamp}`
+      : `# IP: ${ip} | Created: ${timestamp}`;
+    
     const peerConfig = `
+${comment}
 [Peer]
 PublicKey = ${publicKey}
 PresharedKey = ${container.presharedKey}
@@ -451,10 +591,27 @@ AllowedIPs = ${ip}/32
       );
 
       // Перезапускаем контейнер
+      logger.info(`Restarting container ${container.name} after adding peer...`);
       await execAsync(`docker restart ${container.name}`);
 
       logger.info(`Added peer to ${container.name}: ${ip} (${publicKey})`);
-      return true;
+      
+      // Проверяем здоровье сервера после перезапуска
+      logger.info(`Checking server health after adding peer...`);
+      const healthStatus = await this.checkServerHealthAfterChange(container.name, 15, 1000);
+      
+      if (!healthStatus.healthy) {
+        logger.warn(`⚠️ Server health check shows issues after adding peer ${ip}`);
+        logger.warn(`Container running: ${healthStatus.containerRunning}`);
+        logger.warn(`Interface ready: ${healthStatus.interfaceReady}`);
+      } else {
+        logger.info(`✅ Server is healthy after adding peer ${ip}`);
+      }
+      
+      return {
+        success: true,
+        healthStatus
+      };
     } catch (error) {
       logger.error(`Error adding peer to ${container.name}:`, error);
       throw error;
@@ -530,7 +687,7 @@ PersistentKeepalive = 25
   /**
    * Сгенерировать новый клиентский конфиг
    */
-  async generateClientConfig(version = null, vpsLabel = null) {
+  async generateClientConfig(version = null, vpsLabel = null, peerName = null) {
     // Инициализируем если еще не сделали
     if (!this.initialized) {
       await this.initialize();
@@ -538,29 +695,32 @@ PersistentKeepalive = 25
 
     // Получаем контейнер
     const container = this.getContainer(version);
-    logger.info(`Generating ${container.version} config using ${container.name}${vpsLabel ? ` with label: ${vpsLabel}` : ''}`);
+    logger.info(`Generating ${container.version} config using ${container.name}${vpsLabel ? ` with label: ${vpsLabel}` : ''}${peerName ? ` for peer: ${peerName}` : ''}`);
 
     // Проверяем контейнер
-    const isRunning = await this.checkContainer(container.name);
-    if (!isRunning) {
+    const containerStatus = await this.checkContainer(container.name);
+    if (!containerStatus.available) {
+      if (containerStatus.restarting) {
+        throw new Error(`Container ${container.name} is restarting. Please wait...`);
+      }
       throw new Error(`Container ${container.name} is not running`);
     }
 
-    // Генерируем ключи
-    const keys = await this.generateKeys();
+    // Генерируем ключи, передаем имя контейнера
+    const keys = await this.generateKeys(container.name);
 
     // Получаем следующий свободный IP
     const ip = await this.getNextIP(container);
 
-    // Добавляем пира на сервер
-    await this.addPeer(container, keys.publicKey, ip);
+    // Добавляем пира на сервер с именем (теперь возвращает healthStatus)
+    const addPeerResult = await this.addPeer(container, keys.publicKey, ip, peerName);
 
     // Создаем клиентский конфиг
     const configContent = this.createClientConfig(container, keys.privateKey, ip);
 
     // Сохраняем конфиг в файл с меткой VPS если указана
     let filename;
-    if (vpsLabel) {
+    if (vpsLabel && vpsLabel.trim() !== '') {
       filename = `${vpsLabel}_AWG${container.version}_${ip.replace(/\./g, '_')}.conf`;
     } else {
       filename = `AWG${container.version}_${ip.replace(/\./g, '_')}.conf`;
@@ -577,7 +737,8 @@ PersistentKeepalive = 25
       ip,
       publicKey: keys.publicKey,
       version: container.version,
-      containerName: container.name
+      containerName: container.name,
+      healthStatus: addPeerResult.healthStatus
     };
   }
 
@@ -586,7 +747,7 @@ PersistentKeepalive = 25
    * Если IP уже существует - вернуть существующий конфиг
    * Если нет - создать новый
    */
-  async generateClientConfigByNumber(version, ipNumber, vpsLabel = null) {
+  async generateClientConfigByNumber(version, ipNumber, vpsLabel = null, peerName = null) {
     // Инициализируем если еще не сделали
     if (!this.initialized) {
       await this.initialize();
@@ -596,11 +757,14 @@ PersistentKeepalive = 25
     const container = this.getContainer(version);
     const targetIP = `10.8.1.${ipNumber}`;
     
-    logger.info(`Generating ${container.version} config for IP ${targetIP}${vpsLabel ? ` with label: ${vpsLabel}` : ''}`);
+    logger.info(`Generating ${container.version} config for IP ${targetIP}${vpsLabel ? ` with label: ${vpsLabel}` : ''}${peerName ? ` with peer name: ${peerName}` : ''}`);
 
     // Проверяем контейнер
-    const isRunning = await this.checkContainer(container.name);
-    if (!isRunning) {
+    const containerStatus = await this.checkContainer(container.name);
+    if (!containerStatus.available) {
+      if (containerStatus.restarting) {
+        throw new Error(`Container ${container.name} is restarting. Please wait...`);
+      }
       throw new Error(`Container ${container.name} is not running`);
     }
 
@@ -620,17 +784,17 @@ PersistentKeepalive = 25
       logger.info(`IP ${targetIP} does not exist, creating new config`);
       
       // Генерируем ключи
-      const keys = await this.generateKeys();
+      const keys = await this.generateKeys(container.name);
 
-      // Добавляем пира на сервер с указанным IP
-      await this.addPeer(container, keys.publicKey, targetIP);
+      // Добавляем пира на сервер с указанным IP и именем (теперь возвращает healthStatus)
+      const addPeerResult = await this.addPeer(container, keys.publicKey, targetIP, peerName);
 
       // Создаем клиентский конфиг
       const configContent = this.createClientConfig(container, keys.privateKey, targetIP);
 
       // Сохраняем конфиг в файл с меткой VPS если указана
       let filename;
-      if (vpsLabel) {
+      if (vpsLabel && vpsLabel.trim() !== '') {
         filename = `${vpsLabel}_AWG${container.version}_${targetIP.replace(/\./g, '_')}.conf`;
       } else {
         filename = `AWG${container.version}_${targetIP.replace(/\./g, '_')}.conf`;
@@ -648,7 +812,8 @@ PersistentKeepalive = 25
         publicKey: keys.publicKey,
         version: container.version,
         containerName: container.name,
-        isNew: true
+        isNew: true,
+        healthStatus: addPeerResult.healthStatus
       };
     }
   }
@@ -667,12 +832,12 @@ PersistentKeepalive = 25
     for (const container of this.availableContainers) {
       try {
         // Проверяем статус контейнера в реальном времени
-        const isRunning = await this.checkContainer(container.name);
+        const containerStatus = await this.checkContainer(container.name);
         
         let clients = 0;
         let actualPort = container.port;
         
-        if (isRunning) {
+        if (containerStatus.available) {
           try {
             // Получаем количество клиентов
             const { stdout } = await execAsync(
@@ -702,7 +867,10 @@ PersistentKeepalive = 25
           version: container.version,
           port: actualPort,
           endpoint: `${this.serverIP}:${actualPort}`,
-          running: isRunning,
+          running: containerStatus.running,
+          restarting: containerStatus.restarting,
+          stopped: containerStatus.stopped,
+          status: containerStatus.status,
           clients
         });
       } catch (error) {
@@ -720,6 +888,13 @@ PersistentKeepalive = 25
     const container = this.availableContainers.find(c => c.name === containerName);
     if (!container) {
       throw new Error(`Container ${containerName} not found`);
+    }
+    
+    // Проверяем статус контейнера перед попыткой чтения
+    const containerStatus = await this.checkContainer(container.name);
+    if (!containerStatus.available) {
+      logger.info(`Container ${container.name} is not available, returning empty client list`);
+      return [];
     }
     
     try {
@@ -741,6 +916,163 @@ PersistentKeepalive = 25
     } catch (error) {
       logger.error(`Error getting clients for ${container.name}:`, error);
       return [];
+    }
+  }
+
+  /**
+   * Получить имена пиров из комментариев в конфигурации
+   */
+  async getPeerNames(containerName) {
+    const container = this.availableContainers.find(c => c.name === containerName);
+    if (!container) {
+      throw new Error(`Container ${containerName} not found`);
+    }
+    
+    // Проверяем статус контейнера
+    const containerStatus = await this.checkContainer(container.name);
+    if (!containerStatus.available) {
+      logger.info(`Container ${container.name} is not available, returning empty peer names`);
+      return {};
+    }
+    
+    try {
+      // Читаем полную конфигурацию
+      const { stdout: configContent } = await execAsync(
+        `docker exec ${container.name} cat ${container.configPath}`
+      );
+      
+      const peerNames = {};
+      const lines = configContent.split('\n');
+      
+      let currentComment = null;
+      
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        
+        // Ищем комментарий с именем пира
+        // Формат: # Peer: <имя> | IP: <ip> | Created/Updated: <дата>
+        const commentMatch = line.match(/^#\s*Peer:\s*(.+?)\s*\|\s*IP:\s*(\d+\.\d+\.\d+\.\d+)/);
+        if (commentMatch) {
+          const peerName = commentMatch[1].trim();
+          const ip = commentMatch[2].trim();
+          // Сохраняем комментарий для последующей связи с AllowedIPs
+          currentComment = { name: peerName, ip: ip };
+          continue;
+        }
+        
+        // Также ищем старый формат без имени: # IP: <ip> | Created: <дата>
+        const ipOnlyMatch = line.match(/^#\s*IP:\s*(\d+\.\d+\.\d+\.\d+)/);
+        if (ipOnlyMatch) {
+          const ip = ipOnlyMatch[1].trim();
+          currentComment = { name: null, ip: ip };
+          continue;
+        }
+        
+        // Если нашли AllowedIPs и есть сохраненный комментарий
+        const allowedIPsMatch = line.match(/^AllowedIPs\s*=\s*(\d+\.\d+\.\d+\.\d+)/);
+        if (allowedIPsMatch && currentComment) {
+          const actualIP = allowedIPsMatch[1].trim();
+          // Всегда используем IP из AllowedIPs как правильный
+          if (currentComment.name) {
+            peerNames[actualIP] = currentComment.name;
+          } else {
+            peerNames[actualIP] = null;
+          }
+          currentComment = null;
+        }
+        
+        // Сбрасываем комментарий при начале новой секции [Peer]
+        if (line === '[Peer]') {
+          // Не сбрасываем, чтобы связать с AllowedIPs
+          continue;
+        }
+      }
+      
+      return peerNames;
+    } catch (error) {
+      logger.error(`Error getting peer names for ${container.name}:`, error);
+      return {};
+    }
+  }
+
+  /**
+   * Переименовать пира (обновить комментарий в конфигурации)
+   */
+  async renamePeer(containerName, clientIP, newPeerName) {
+    const container = this.availableContainers.find(c => c.name === containerName);
+    if (!container) {
+      throw new Error(`Container ${containerName} not found`);
+    }
+    
+    logger.info(`Renaming peer ${clientIP} to "${newPeerName}" in ${containerName}`);
+    
+    try {
+      // Получаем конфигурацию сервера из контейнера
+      const { stdout: serverConfig } = await execAsync(
+        `docker exec ${container.name} cat ${container.configPath}`
+      );
+      
+      // Ищем секцию [Peer] для этого IP
+      // Используем более точный regex, который не пересекает границы между peer секциями
+      // [^\\[] означает "любой символ кроме [", что предотвращает захват следующей секции [Peer]
+      const escapedIP = clientIP.replace(/\./g, '\\.');
+      const peerRegex = new RegExp(
+        `(#[^\\n]*\\n)?\\[Peer\\]\\n([^\\[]*)AllowedIPs\\s*=\\s*${escapedIP}\\/32`,
+        'g'
+      );
+      
+      const peerMatch = serverConfig.match(peerRegex);
+      if (!peerMatch || peerMatch.length === 0) {
+        throw new Error(`Client with IP ${clientIP} not found in server config`);
+      }
+      
+      // Если найдено несколько совпадений, берем первое (не должно быть дубликатов IP)
+      const oldPeerSection = peerMatch[0];
+      
+      // Извлекаем реальный IP из AllowedIPs (на случай если комментарий содержит неправильный IP)
+      const allowedIPsMatch = oldPeerSection.match(/AllowedIPs\s*=\s*(\d+\.\d+\.\d+\.\d+)\/32/);
+      const actualIP = allowedIPsMatch ? allowedIPsMatch[1] : clientIP;
+      
+      // Создаем новый комментарий с правильным IP из AllowedIPs
+      const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
+      const newComment = `# Peer: ${newPeerName} | IP: ${actualIP} | Updated: ${timestamp}`;
+      
+      // Удаляем все комментарии перед секцией [Peer]
+      const peerSectionWithoutComment = oldPeerSection.replace(/^#[^\n]*\n/gm, '');
+      
+      // Создаем новую секцию с новым комментарием
+      const newPeerSection = `${newComment}\n${peerSectionWithoutComment}`;
+      
+      // Заменяем в конфигурации
+      const newConfig = serverConfig.replace(oldPeerSection, newPeerSection);
+      
+      // Сохраняем обновленную конфигурацию во временный файл
+      const tempFile = `/tmp/${containerName}_rename_${Date.now()}.conf`;
+      await execAsync(`echo '${newConfig.replace(/'/g, "'\\''")}' > ${tempFile}`);
+      
+      // Копируем обновленную конфигурацию в контейнер
+      await execAsync(`docker cp ${tempFile} ${container.name}:${container.configPath}`);
+      
+      // Удаляем временный файл
+      await execAsync(`rm -f ${tempFile}`);
+      
+      // Перезапускаем контейнер для применения изменений
+      logger.info(`Restarting container ${container.name} after renaming peer...`);
+      await execAsync(`docker restart ${container.name}`);
+      
+      logger.info(`Successfully renamed peer ${clientIP} to "${newPeerName}"`);
+      
+      // Проверяем здоровье сервера после перезапуска
+      const healthStatus = await this.checkServerHealthAfterChange(container.name, 15, 1000);
+      
+      return {
+        success: true,
+        healthStatus
+      };
+      
+    } catch (error) {
+      logger.error(`Error renaming peer ${clientIP} in ${containerName}:`, error);
+      throw error;
     }
   }
 
@@ -820,8 +1152,8 @@ PersistentKeepalive = 25
       
       // Сохраняем конфиг в файл с меткой VPS если указана
       let filename;
-      if (vpsLabel) {
-        filename = `${vpsLabel}_AWG${container.version}_${clientIP.replace(/\./g, '_')}_RESENT.conf`;
+      if (vpsLabel && vpsLabel.trim() !== '') {
+        filename = `${vpsLabel.toUpperCase()}_AWG${container.version}_${clientIP.replace(/\./g, '_')}_RESENT.conf`;
       } else {
         filename = `AWG${container.version}_${clientIP.replace(/\./g, '_')}_RESENT.conf`;
       }
@@ -847,6 +1179,139 @@ PersistentKeepalive = 25
   }
 
   /**
+   * Полная проверка состояния сервера после изменений конфигурации
+   * Возвращает детальную информацию о состоянии контейнера и интерфейса
+   */
+  async checkServerHealthAfterChange(containerName, maxAttempts = 15, delayMs = 1000) {
+    logger.info(`Starting health check for ${containerName}...`);
+    
+    const container = this.availableContainers.find(c => c.name === containerName);
+    if (!container) {
+      throw new Error(`Container ${containerName} not found`);
+    }
+    
+    const interfaceName = container.version === 'v2' ? 'awg0' : 'wg0';
+    const healthStatus = {
+      containerRunning: false,
+      interfaceUp: false,
+      interfaceReady: false,
+      peerCount: 0,
+      attempts: 0,
+      errors: [],
+      warnings: [],
+      timestamp: new Date().toISOString()
+    };
+    
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      healthStatus.attempts = attempt;
+      
+      try {
+        // 1. Проверка состояния контейнера Docker
+        const containerStatus = await this.checkContainer(containerName);
+        healthStatus.containerRunning = containerStatus.running;
+        
+        if (!containerStatus.running) {
+          healthStatus.warnings.push(`Container is not running (status: ${containerStatus.status})`);
+          
+          if (containerStatus.restarting) {
+            logger.info(`Attempt ${attempt}/${maxAttempts}: Container is restarting...`);
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+            continue;
+          } else {
+            healthStatus.errors.push('Container stopped unexpectedly');
+            break;
+          }
+        }
+        
+        // 2. Проверка существования интерфейса WireGuard
+        try {
+          const { stdout: ifaceCheck } = await execAsync(
+            `docker exec ${containerName} ip link show ${interfaceName} 2>&1`
+          );
+          
+          if (ifaceCheck.includes('does not exist')) {
+            healthStatus.warnings.push(`Interface ${interfaceName} does not exist yet`);
+            logger.info(`Attempt ${attempt}/${maxAttempts}: Interface ${interfaceName} not ready...`);
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+            continue;
+          }
+          
+          healthStatus.interfaceUp = ifaceCheck.includes('state UP') || ifaceCheck.includes('UNKNOWN');
+          
+        } catch (error) {
+          healthStatus.warnings.push(`Cannot check interface: ${error.message}`);
+          logger.info(`Attempt ${attempt}/${maxAttempts}: Interface check failed...`);
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+          continue;
+        }
+        
+        // 3. Проверка состояния WireGuard через wg show
+        try {
+          const { stdout: wgOutput } = await execAsync(
+            `docker exec ${containerName} wg show ${interfaceName} 2>&1`
+          );
+          
+          // Подсчитываем количество пиров
+          const peerMatches = wgOutput.match(/peer:/g);
+          healthStatus.peerCount = peerMatches ? peerMatches.length : 0;
+          
+          // Проверяем наличие listening port (признак готовности)
+          const hasListeningPort = wgOutput.includes('listening port:');
+          
+          if (hasListeningPort) {
+            healthStatus.interfaceReady = true;
+            logger.info(`✅ Interface ${interfaceName} is ready with ${healthStatus.peerCount} peer(s)`);
+            break; // Успешная проверка
+          } else {
+            healthStatus.warnings.push('Interface exists but no listening port yet');
+            logger.info(`Attempt ${attempt}/${maxAttempts}: Interface starting...`);
+          }
+          
+        } catch (error) {
+          const errorMsg = error.message || error.toString();
+          
+          if (errorMsg.includes('does not exist') || errorMsg.includes('No such device')) {
+            healthStatus.warnings.push(`Interface ${interfaceName} not created yet`);
+            logger.info(`Attempt ${attempt}/${maxAttempts}: Waiting for interface...`);
+          } else {
+            healthStatus.errors.push(`WireGuard error: ${errorMsg}`);
+            logger.error(`Interface error: ${errorMsg}`);
+          }
+        }
+        
+        // Ожидание перед следующей попыткой
+        if (attempt < maxAttempts) {
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+        
+      } catch (error) {
+        healthStatus.errors.push(`Health check error: ${error.message}`);
+        logger.error(`Health check attempt ${attempt} failed:`, error);
+        
+        if (attempt < maxAttempts) {
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+      }
+    }
+    
+    // Финальная оценка состояния
+    healthStatus.healthy = healthStatus.containerRunning &&
+                          healthStatus.interfaceUp &&
+                          healthStatus.interfaceReady;
+    
+    if (!healthStatus.healthy) {
+      logger.warn(`⚠️ Health check completed with issues after ${healthStatus.attempts} attempts`);
+      logger.warn(`Container running: ${healthStatus.containerRunning}`);
+      logger.warn(`Interface up: ${healthStatus.interfaceUp}`);
+      logger.warn(`Interface ready: ${healthStatus.interfaceReady}`);
+    } else {
+      logger.info(`✅ Health check passed: ${healthStatus.peerCount} peer(s) active`);
+    }
+    
+    return healthStatus;
+  }
+
+  /**
    * Получить список доступных версий
    */
   getAvailableVersions() {
@@ -855,5 +1320,93 @@ PersistentKeepalive = 25
       name: c.name,
       port: c.port
     }));
+  }
+
+  /**
+   * Запустить контейнер AWG
+   */
+  async startContainer(version) {
+    try {
+      const containerName = version === 'v1' ? 'amnezia-awg' : 'amnezia-awg2';
+      
+      logger.info(`Starting container ${containerName}...`);
+      
+      // Используем checkContainer для точной проверки статуса
+      const containerStatus = await this.checkContainer(containerName);
+      
+      if (containerStatus.status === 'not found') {
+        throw new Error(`Container ${containerName} not found. AWG ${version} is not installed.`);
+      }
+      
+      // Проверяем, запущен ли контейнер
+      if (containerStatus.running) {
+        logger.info(`Container ${containerName} is already running`);
+        return {
+          success: true,
+          message: `AWG ${version} уже запущен`,
+          alreadyRunning: true
+        };
+      }
+      
+      // Запускаем контейнер
+      await execAsync(`docker start ${containerName}`);
+      logger.info(`Container ${containerName} started successfully`);
+      
+      // Обновляем информацию о контейнерах
+      await this.initialize();
+      
+      return {
+        success: true,
+        message: `AWG ${version} успешно запущен`,
+        alreadyRunning: false
+      };
+    } catch (error) {
+      logger.error(`Error starting container for ${version}:`, error);
+      throw new Error(`Ошибка запуска AWG ${version}: ${error.message}`);
+    }
+  }
+
+  /**
+   * Остановить контейнер AWG
+   */
+  async stopContainer(version) {
+    try {
+      const containerName = version === 'v1' ? 'amnezia-awg' : 'amnezia-awg2';
+      
+      logger.info(`Stopping container ${containerName}...`);
+      
+      // Проверяем существование контейнера
+      const { stdout: allContainers } = await execAsync('docker ps -a --format "{{.Names}}"');
+      if (!allContainers.includes(containerName)) {
+        throw new Error(`Container ${containerName} not found. AWG ${version} is not installed.`);
+      }
+      
+      // Проверяем, запущен ли контейнер
+      const { stdout: runningContainers } = await execAsync('docker ps --format "{{.Names}}"');
+      if (!runningContainers.includes(containerName)) {
+        logger.info(`Container ${containerName} is already stopped`);
+        return {
+          success: true,
+          message: `AWG ${version} уже остановлен`,
+          alreadyStopped: true
+        };
+      }
+      
+      // Останавливаем контейнер
+      await execAsync(`docker stop ${containerName}`);
+      logger.info(`Container ${containerName} stopped successfully`);
+      
+      // Обновляем информацию о контейнерах
+      await this.initialize();
+      
+      return {
+        success: true,
+        message: `AWG ${version} успешно остановлен`,
+        alreadyStopped: false
+      };
+    } catch (error) {
+      logger.error(`Error stopping container for ${version}:`, error);
+      throw new Error(`Ошибка остановки AWG ${version}: ${error.message}`);
+    }
   }
 }
