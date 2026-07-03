@@ -1500,7 +1500,6 @@ export class RouteBot {
       });
 
       // Получаем server_label из конфига или используем server_ip
-      const config = require('./config');
       const serverLabel = config.common.server_label || config.common.server_ip;
       let statsMessage = `📊 *Сервер:* \`${serverLabel}\`\n\n`;
       
