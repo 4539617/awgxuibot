@@ -944,6 +944,8 @@ PersistentKeepalive = 25
       const peerNames = {};
       const lines = configContent.split('\n');
       
+      let currentComment = null;
+      
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i].trim();
         
@@ -953,15 +955,40 @@ PersistentKeepalive = 25
         if (commentMatch) {
           const peerName = commentMatch[1].trim();
           const ip = commentMatch[2].trim();
+          // Сохраняем имя пира по IP из комментария
           peerNames[ip] = peerName;
+          currentComment = { name: peerName, ip: ip };
+          continue;
         }
+        
         // Также ищем старый формат без имени: # IP: <ip> | Created: <дата>
-        else {
-          const ipOnlyMatch = line.match(/^#\s*IP:\s*(\d+\.\d+\.\d+\.\d+)/);
-          if (ipOnlyMatch) {
-            const ip = ipOnlyMatch[1].trim();
-            peerNames[ip] = null; // Нет имени
+        const ipOnlyMatch = line.match(/^#\s*IP:\s*(\d+\.\d+\.\d+\.\d+)/);
+        if (ipOnlyMatch) {
+          const ip = ipOnlyMatch[1].trim();
+          peerNames[ip] = null; // Нет имени
+          currentComment = { name: null, ip: ip };
+          continue;
+        }
+        
+        // Если нашли AllowedIPs и есть сохраненный комментарий
+        const allowedIPsMatch = line.match(/^AllowedIPs\s*=\s*(\d+\.\d+\.\d+\.\d+)/);
+        if (allowedIPsMatch && currentComment) {
+          const actualIP = allowedIPsMatch[1].trim();
+          // Если IP в AllowedIPs отличается от IP в комментарии,
+          // используем IP из AllowedIPs как правильный
+          if (actualIP !== currentComment.ip && currentComment.name) {
+            // Удаляем неправильную запись
+            delete peerNames[currentComment.ip];
+            // Добавляем правильную
+            peerNames[actualIP] = currentComment.name;
           }
+          currentComment = null;
+        }
+        
+        // Сбрасываем комментарий при начале новой секции [Peer]
+        if (line === '[Peer]') {
+          // Не сбрасываем, чтобы связать с AllowedIPs
+          continue;
         }
       }
       
