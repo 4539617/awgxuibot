@@ -905,7 +905,7 @@ export class RouteBot {
       const keyboard = {
         inline_keyboard: [
           [
-            { text: '📋 Подробнее', callback_data: `awg_clients_${version}` }
+            { text: '📋 Подробнее клиенты ', callback_data: `awg_clients_${version}` }
           ],
           [
             { text: '➕ Сформировать следующий', callback_data: `awg_gen_next_${version}` }
@@ -1530,7 +1530,7 @@ export class RouteBot {
 
       // Получаем server_label из конфига или используем server_ip
       const serverLabel = config.serverLabel || this.getServerIp();
-      let statsMessage = `📊 *Сервер:* \`${serverLabel}\`\n\n`;
+      let statsMessage = `*Сервер:* \`${serverLabel}\`\n\n`;
       
       // Показываем статус для обеих версий
       const versions = ['v1', 'v2'];
@@ -1684,14 +1684,14 @@ export class RouteBot {
         if (shouldUpdate) {
           await this.updateMessage(
             chatId,
-            `📋 *Подробнее Клиенты ${version.toUpperCase()}*\n\n❌ Контейнер версии ${version} не найден`,
+            `📋 *Подробнее клиенты ${version.toUpperCase()}*\n\n❌ Контейнер версии ${version} не найден`,
             { parse_mode: 'Markdown' },
             callbackQueryId
           );
         } else {
           await this.sendNewMessage(
             chatId,
-            `📋 *Подробнее Клиенты ${version.toUpperCase()}*\n\n❌ Контейнер версии ${version} не найден`,
+            `📋 *Подробнее клиенты ${version.toUpperCase()}*\n\n❌ Контейнер версии ${version} не найден`,
             { parse_mode: 'Markdown' }
           );
         }
@@ -1771,7 +1771,7 @@ export class RouteBot {
         if (shouldUpdate) {
           await this.updateMessage(
             chatId,
-            `📋 *Подробнее Клиенты ${version.toUpperCase()}*\n\n📦 Контейнер: \`${container.name}\`${containerStatusMessage}${interfaceMessage}\n\nНет активных клиентов`,
+            `📋 *Подробнее клиенты ${version.toUpperCase()}*\n\n📦 Контейнер: \`${container.name}\`${containerStatusMessage}${interfaceMessage}\n\nНет активных клиентов`,
             {
               parse_mode: 'Markdown',
               reply_markup: keyboard
@@ -1781,7 +1781,7 @@ export class RouteBot {
         } else {
           await this.sendNewMessage(
             chatId,
-            `📋 *Подробнее Клиенты ${version.toUpperCase()}*\n\n📦 Контейнер: \`${container.name}\`${containerStatusMessage}${interfaceMessage}\n\nНет активных клиентов`,
+            `📋 *Подробнее клиенты ${version.toUpperCase()}*\n\n📦 Контейнер: \`${container.name}\`${containerStatusMessage}${interfaceMessage}\n\nНет активных клиентов`,
             {
               parse_mode: 'Markdown',
               reply_markup: keyboard
@@ -1791,7 +1791,7 @@ export class RouteBot {
         return;
       }
 
-      let clientsMessage = `📋 *Подробнее Клиенты ${version.toUpperCase()}*\n\n`;
+      let clientsMessage = `📋 *Подробнее клиенты ${version.toUpperCase()}*\n\n`;
       
       clientsMessage += `Всего: ${clients.length}\n\n`;
       
@@ -2237,3 +2237,4 @@ export class RouteBot {
     logger.info('Waiting for messages...');
   }
 }
+
