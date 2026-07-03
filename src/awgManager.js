@@ -747,7 +747,7 @@ PersistentKeepalive = 25
    * Если IP уже существует - вернуть существующий конфиг
    * Если нет - создать новый
    */
-  async generateClientConfigByNumber(version, ipNumber, vpsLabel = null) {
+  async generateClientConfigByNumber(version, ipNumber, vpsLabel = null, peerName = null) {
     // Инициализируем если еще не сделали
     if (!this.initialized) {
       await this.initialize();
@@ -757,7 +757,7 @@ PersistentKeepalive = 25
     const container = this.getContainer(version);
     const targetIP = `10.8.1.${ipNumber}`;
     
-    logger.info(`Generating ${container.version} config for IP ${targetIP}${vpsLabel ? ` with label: ${vpsLabel}` : ''}`);
+    logger.info(`Generating ${container.version} config for IP ${targetIP}${vpsLabel ? ` with label: ${vpsLabel}` : ''}${peerName ? ` with peer name: ${peerName}` : ''}`);
 
     // Проверяем контейнер
     const containerStatus = await this.checkContainer(container.name);
