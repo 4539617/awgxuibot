@@ -1500,7 +1500,7 @@ export class RouteBot {
       });
 
       // Получаем server_label из конфига или используем server_ip
-      const serverLabel = config.common.server_label || config.common.server_ip;
+      const serverLabel = config.serverLabel || this.getServerIp();
       let statsMessage = `📊 *Сервер:* \`${serverLabel}\`\n\n`;
       
       // Показываем статус для обеих версий
