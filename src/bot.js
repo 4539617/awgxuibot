@@ -869,6 +869,9 @@ export class RouteBot {
         return;
       }
 
+      // Проверяем статус контейнера
+      const containerStatus = await this.awgManager.checkContainer(container.name);
+
       // Get clients with status
       const clients = await this.awgManager.getClientsWithStatus(container.name, version);
 
@@ -909,13 +912,27 @@ export class RouteBot {
           ],
           [
             { text: '🔢 Сформировать по номеру', callback_data: `awg_gen_by_number_${version}` }
-          ],
-          [
-            { text: '🔄 Обновить', callback_data: `refresh_select_${version}` },
-            { text: '🔙 Назад', callback_data: 'start_menu' }
           ]
         ]
       };
+
+      // Добавляем кнопки управления контейнером
+      const controlButtons = [];
+      if (containerStatus.running) {
+        controlButtons.push({ text: `⏹ Остановить AWG ${version.toUpperCase()}`, callback_data: `awg_stop_${version}` });
+      } else if (containerStatus.stopped) {
+        controlButtons.push({ text: `▶️ Запустить AWG ${version.toUpperCase()}`, callback_data: `awg_start_${version}` });
+      }
+      
+      if (controlButtons.length > 0) {
+        keyboard.inline_keyboard.push(controlButtons);
+      }
+
+      // Добавляем кнопки "Обновить" и "Назад"
+      keyboard.inline_keyboard.push([
+        { text: '🔄 Обновить', callback_data: `refresh_select_${version}` },
+        { text: '🔙 Назад', callback_data: 'start_menu' }
+      ]);
 
       // Выбираем метод отправки в зависимости от shouldUpdate
       if (shouldUpdate) {
@@ -1745,18 +1762,6 @@ export class RouteBot {
           inline_keyboard: []
         };
         
-        // Добавляем кнопки управления контейнером
-        const controlButtons = [];
-        if (containerStatus.running) {
-          controlButtons.push({ text: `⏹ Остановить AWG ${version.toUpperCase()}`, callback_data: `awg_stop_${version}` });
-        } else if (containerStatus.stopped) {
-          controlButtons.push({ text: `▶️ Запустить AWG ${version.toUpperCase()}`, callback_data: `awg_start_${version}` });
-        }
-        
-        if (controlButtons.length > 0) {
-          keyboard.inline_keyboard.push(controlButtons);
-        }
-        
         // Добавляем кнопки "Обновить" и "Назад"
         keyboard.inline_keyboard.push([
           { text: '🔄 Обновить', callback_data: `refresh_clients_${version}` },
@@ -1847,18 +1852,6 @@ export class RouteBot {
         ]);
       });
 
-      // Добавляем кнопки управления контейнером
-      const controlButtons = [];
-      if (containerStatus.running) {
-        controlButtons.push({ text: `⏹ Остановить AWG ${version.toUpperCase()}`, callback_data: `awg_stop_${version}` });
-      } else if (containerStatus.stopped) {
-        controlButtons.push({ text: `▶️ Запустить AWG ${version.toUpperCase()}`, callback_data: `awg_start_${version}` });
-      }
-      
-      if (controlButtons.length > 0) {
-        keyboard.inline_keyboard.push(controlButtons);
-      }
-      
       // Добавляем кнопки "Обновить" и "Назад"
       keyboard.inline_keyboard.push([
         { text: '🔄 Обновить', callback_data: `refresh_clients_${version}` },
