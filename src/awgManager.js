@@ -1013,8 +1013,11 @@ PersistentKeepalive = 25
       );
       
       // Ищем секцию [Peer] для этого IP
+      // Используем более точный regex, который не пересекает границы между peer секциями
+      // [^\\[] означает "любой символ кроме [", что предотвращает захват следующей секции [Peer]
+      const escapedIP = clientIP.replace(/\./g, '\\.');
       const peerRegex = new RegExp(
-        `(#[^\\n]*\\n)?\\[Peer\\][\\s\\S]*?AllowedIPs\\s*=\\s*${clientIP.replace(/\./g, '\\.')}\\/32`,
+        `(#[^\\n]*\\n)?\\[Peer\\]\\n([^\\[]*)AllowedIPs\\s*=\\s*${escapedIP}\\/32`,
         'g'
       );
       
@@ -1023,6 +1026,7 @@ PersistentKeepalive = 25
         throw new Error(`Client with IP ${clientIP} not found in server config`);
       }
       
+      // Если найдено несколько совпадений, берем первое (не должно быть дубликатов IP)
       const oldPeerSection = peerMatch[0];
       
       // Извлекаем реальный IP из AllowedIPs (на случай если комментарий содержит неправильный IP)
