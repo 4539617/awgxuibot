@@ -129,7 +129,19 @@ export class RouteBot {
           return;
         }
         
-        if (data.startsWith('refresh_select_')) {
+        if (data === 'refresh_main_menu') {
+          await this.bot.answerCallbackQuery(query.id, { text: '🔄 Обновление...' });
+          
+          // Удаляем старое сообщение
+          try {
+            await this.bot.deleteMessage(chatId, query.message.message_id);
+          } catch (error) {
+            logger.warn(`Failed to delete message during refresh: ${error.message}`);
+          }
+          
+          // Показываем обновленное главное меню
+          await this.showMainMenu(chatId);
+        } else if (data.startsWith('refresh_select_')) {
           const version = data.replace('refresh_select_', '');
           await this.showClientSelectionMenu(chatId, version, true, query.id);
         } else if (data.startsWith('refresh_clients_')) {
@@ -1613,6 +1625,9 @@ export class RouteBot {
           [
             { text: 'AWG V1', callback_data: 'awg_select_v1' },
             { text: 'AWG V2', callback_data: 'awg_select_v2' }
+          ],
+          [
+            { text: '🔄 Обновить', callback_data: 'refresh_main_menu' }
           ]
         ]
       };
