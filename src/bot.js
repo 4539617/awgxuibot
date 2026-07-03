@@ -2085,9 +2085,12 @@ export class RouteBot {
           1000 // delayMs
         );
         
-        // Создаем кнопку для перехода в главное меню
+        // Создаем кнопки для перехода к списку клиентов и главному меню
         const keyboard = {
           inline_keyboard: [
+            [
+              { text: '📋 Список клиентов', callback_data: `clients_${version}` }
+            ],
             [
               { text: '🏠 Главное меню', callback_data: 'start_menu' }
             ]
@@ -2095,15 +2098,6 @@ export class RouteBot {
         };
         
         let statusMessage = `✅ Клиент \`${ip}\` успешно удалён из ${version.toUpperCase()}\n`;
-        
-        // Информация о клиентах
-        if (healthStatus.interfaceReady) {
-          if (healthStatus.peerCount > 0) {
-            statusMessage += `\n📊 Активных клиентов: ${healthStatus.peerCount}`;
-          } else {
-            statusMessage += `\n📊 Клиентов не осталось`;
-          }
-        }
         
         // Ошибки (если есть критические проблемы)
         if (healthStatus.errors.length > 0) {
