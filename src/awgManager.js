@@ -955,8 +955,7 @@ PersistentKeepalive = 25
         if (commentMatch) {
           const peerName = commentMatch[1].trim();
           const ip = commentMatch[2].trim();
-          // Сохраняем имя пира по IP из комментария
-          peerNames[ip] = peerName;
+          // Сохраняем комментарий для последующей связи с AllowedIPs
           currentComment = { name: peerName, ip: ip };
           continue;
         }
@@ -965,7 +964,6 @@ PersistentKeepalive = 25
         const ipOnlyMatch = line.match(/^#\s*IP:\s*(\d+\.\d+\.\d+\.\d+)/);
         if (ipOnlyMatch) {
           const ip = ipOnlyMatch[1].trim();
-          peerNames[ip] = null; // Нет имени
           currentComment = { name: null, ip: ip };
           continue;
         }
@@ -974,13 +972,11 @@ PersistentKeepalive = 25
         const allowedIPsMatch = line.match(/^AllowedIPs\s*=\s*(\d+\.\d+\.\d+\.\d+)/);
         if (allowedIPsMatch && currentComment) {
           const actualIP = allowedIPsMatch[1].trim();
-          // Если IP в AllowedIPs отличается от IP в комментарии,
-          // используем IP из AllowedIPs как правильный
-          if (actualIP !== currentComment.ip && currentComment.name) {
-            // Удаляем неправильную запись
-            delete peerNames[currentComment.ip];
-            // Добавляем правильную
+          // Всегда используем IP из AllowedIPs как правильный
+          if (currentComment.name) {
             peerNames[actualIP] = currentComment.name;
+          } else {
+            peerNames[actualIP] = null;
           }
           currentComment = null;
         }
