@@ -1499,8 +1499,10 @@ export class RouteBot {
         statsMap.set(container.version, container);
       });
 
-      const serverIp = this.getServerIp();
-      let statsMessage = `📊 *Сервер:* \`${serverIp}\`\n\n`;
+      // Получаем server_label из конфига или используем server_ip
+      const config = require('./config');
+      const serverLabel = config.common.server_label || config.common.server_ip;
+      let statsMessage = `📊 *Сервер:* \`${serverLabel}\`\n\n`;
       
       // Показываем статус для обеих версий
       const versions = ['v1', 'v2'];
@@ -1509,17 +1511,39 @@ export class RouteBot {
         const container = statsMap.get(version);
         
         if (container) {
-          // Получаем количество активных клиентов
+          // Получаем клиентов с их статусами
+          let clientsWithStatus = [];
           let activeClients = 0;
+          
           if (container.running) {
             try {
-              const clientsWithStatus = await this.awgManager.getClientsWithStatus(
+              clientsWithStatus = await this.awgManager.getClientsWithStatus(
                 container.name,
                 version
               );
               activeClients = clientsWithStatus.filter(c => c.active).length;
+              
+              // Получаем имена пиров
+              const peerNames = await this.awgManager.getPeerNames(container.name);
+              
+              // Получаем статистику handshake
+              const clientsStats = await this.getClientsStats(container.name, version);
+              
+              // Обогащаем данные клиентов именами и временем handshake
+              clientsWithStatus = clientsWithStatus.map(client => ({
+                ...client,
+                name: peerNames[client.ip] || null,
+                lastHandshake: clientsStats[client.ip]?.lastHandshake || null
+              }));
+              
+              // Сортируем: активные первыми, затем по IP
+              clientsWithStatus.sort((a, b) => {
+                if (a.active && !b.active) return -1;
+                if (!a.active && b.active) return 1;
+                return a.ip.localeCompare(b.ip);
+              });
             } catch (error) {
-              logger.warn(`Failed to get active clients for ${container.name}`);
+              logger.warn(`Failed to get clients details for ${container.name}: ${error.message}`);
             }
           }
           
@@ -1537,18 +1561,22 @@ export class RouteBot {
             statsMessage += `❓ Неизвестно\n`;
           }
           
-          statsMessage += `📦 Контейнер: \`${container.name}\`\n`;
-          statsMessage += `👥 Клиентов: ${container.clients}\n`;
           statsMessage += `🔌 Порт: ${container.port}\n`;
+          statsMessage += `👥 Клиентов: ${container.clients}\n`;
+          statsMessage += `👤 Активных: ${activeClients}\n\n`;
           
-          // Показываем активных клиентов только если контейнер работает
-          if (container.running) {
-            statsMessage += `👤 Активных: ${activeClients}\n`;
-          } else if (container.restarting) {
-            statsMessage += `⏳ Ожидание запуска...\n`;
+          // Показываем список активных клиентов с деталями
+          if (container.running && clientsWithStatus.length > 0) {
+            const activeClientsList = clientsWithStatus.filter(c => c.active);
+            if (activeClientsList.length > 0) {
+              for (const client of activeClientsList) {
+                const name = client.name ? ` (${client.name})` : '';
+                const handshake = client.lastHandshake || 'неизвестно';
+                statsMessage += `${client.ip}${name} - ✅ ${handshake}\n`;
+              }
+              statsMessage += '\n';
+            }
           }
-          
-          statsMessage += '\n';
         } else {
           // Контейнер не найден
           statsMessage += `📋 *AWG ${version.toUpperCase()}*\n`;
@@ -1584,8 +1612,8 @@ export class RouteBot {
       const keyboard = {
         inline_keyboard: [
           [
-            { text: '📝 V1', callback_data: 'awg_select_v1' },
-            { text: '📝 V2', callback_data: 'awg_select_v2' }
+            { text: 'AWG V1', callback_data: 'awg_select_v1' },
+            { text: 'AWG V2', callback_data: 'awg_select_v2' }
           ]
         ]
       };
@@ -1600,7 +1628,7 @@ export class RouteBot {
       // Отправляем главное меню
       await this.sendNewMessage(
         chatId,
-        `🔐 *Панель администратора*\n\n${statsMessage}Выберите действие:`,
+        `📊 *Главное меню*\n\n${statsMessage}`,
         { parse_mode: 'Markdown', reply_markup: keyboard }
       );
     } catch (error) {
