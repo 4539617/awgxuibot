@@ -2051,26 +2051,15 @@ export class RouteBot {
         );
         
         // Remove peer section for this IP
-        // Разбиваем конфигурацию на секции
-        const sections = currentConfig.split(/(?=\[Peer\])/);
+        // Используем regex который захватывает комментарий перед [Peer] и всю секцию до следующего [Peer] или конца файла
+        const escapedIP = ip.replace(/\./g, '\\.');
+        const peerSectionRegex = new RegExp(
+          `(#[^\\n]*\\n)?\\[Peer\\]\\n([^\\[]*)AllowedIPs\\s*=\\s*${escapedIP}\\/32[^\\[]*`,
+          'g'
+        );
         
-        // Фильтруем секции, удаляя ту, которая содержит нужный IP
-        const filteredSections = sections.filter(section => {
-          // Если это не секция [Peer], оставляем её
-          if (!section.trim().startsWith('[Peer]')) {
-            return true;
-          }
-          // Проверяем, содержит ли секция нужный IP
-          const allowedIPsMatch = section.match(/AllowedIPs\s*=\s*([^\n]+)/);
-          if (allowedIPsMatch) {
-            const allowedIP = allowedIPsMatch[1].trim();
-            // Удаляем только секцию с точным совпадением IP
-            return allowedIP !== `${ip}/32`;
-          }
-          return true;
-        });
-        
-        const newConfig = filteredSections.join('');
+        // Удаляем найденную секцию пира
+        const newConfig = currentConfig.replace(peerSectionRegex, '');
         
         // Write new config
         const tempFile = `/tmp/awg_config_${Date.now()}.conf`;
