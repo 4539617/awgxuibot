@@ -1029,12 +1029,16 @@ PersistentKeepalive = 25
       
       const oldPeerSection = peerMatch[0];
       
-      // Создаем новый комментарий
-      const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
-      const newComment = `# Peer: ${newPeerName} | IP: ${clientIP} | Updated: ${timestamp}`;
+      // Извлекаем реальный IP из AllowedIPs (на случай если комментарий содержит неправильный IP)
+      const allowedIPsMatch = oldPeerSection.match(/AllowedIPs\s*=\s*(\d+\.\d+\.\d+\.\d+)\/32/);
+      const actualIP = allowedIPsMatch ? allowedIPsMatch[1] : clientIP;
       
-      // Удаляем старый комментарий если есть
-      const peerSectionWithoutComment = oldPeerSection.replace(/^#[^\n]*\n/, '');
+      // Создаем новый комментарий с правильным IP из AllowedIPs
+      const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
+      const newComment = `# Peer: ${newPeerName} | IP: ${actualIP} | Updated: ${timestamp}`;
+      
+      // Удаляем все комментарии перед секцией [Peer]
+      const peerSectionWithoutComment = oldPeerSection.replace(/^#[^\n]*\n/gm, '');
       
       // Создаем новую секцию с новым комментарием
       const newPeerSection = `${newComment}\n${peerSectionWithoutComment}`;
