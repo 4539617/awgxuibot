@@ -9,14 +9,33 @@ echo ""
 # Get the directory where the script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Define paths relative to script location
-ENV_FILE="$SCRIPT_DIR/.env"
+# Try to find .env file in multiple locations
+if [ -f "$SCRIPT_DIR/.env" ]; then
+    ENV_FILE="$SCRIPT_DIR/.env"
+elif [ -f "$SCRIPT_DIR/294/conf/.env" ]; then
+    ENV_FILE="$SCRIPT_DIR/294/conf/.env"
+elif [ -f "$SCRIPT_DIR/conf/.env" ]; then
+    ENV_FILE="$SCRIPT_DIR/conf/.env"
+else
+    echo "Error: .env file not found!"
+    echo "Searched in:"
+    echo "  - $SCRIPT_DIR/.env"
+    echo "  - $SCRIPT_DIR/294/conf/.env"
+    echo "  - $SCRIPT_DIR/conf/.env"
+    exit 1
+fi
+
 OUTPUT_FILE="$SCRIPT_DIR/config.yaml"
 
-# Check if input file exists
-if [ ! -f "$ENV_FILE" ]; then
-    echo "Error: .env file not found at $ENV_FILE"
+# Check if output path is a directory
+if [ -d "$OUTPUT_FILE" ]; then
+    echo "Error: $OUTPUT_FILE is a directory, not a file"
     exit 1
+fi
+
+# Remove old output file if exists
+if [ -f "$OUTPUT_FILE" ]; then
+    rm -f "$OUTPUT_FILE"
 fi
 
 echo "✓ Found .env file: $ENV_FILE"
