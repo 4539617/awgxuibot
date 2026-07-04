@@ -878,24 +878,38 @@ export class RouteBot {
       // Get peer names
       const peerNames = await this.awgManager.getPeerNames(container.name);
 
+      // Сортируем клиентов по IP (численно)
+      const sortedClients = [...clients].sort((a, b) => {
+        const aParts = a.ip.split('.').map(Number);
+        const bParts = b.ip.split('.').map(Number);
+        
+        for (let i = 0; i < 4; i++) {
+          if (aParts[i] !== bParts[i]) {
+            return aParts[i] - bParts[i];
+          }
+        }
+        return 0;
+      });
+
       // Build message
       let message = `📋 *AWG ${version.toUpperCase()}*\n\n`;
       
-      if (clients.length === 0) {
+      if (sortedClients.length === 0) {
         message += 'Нет клиентов\n\n';
       } else {
-        clients.forEach((client) => {
+        sortedClients.forEach((client) => {
           const peerName = peerNames[client.ip];
           // Экранируем специальные символы Markdown в имени пира
           const escapedPeerName = peerName ? peerName.replace(/[_*[\]()~`>#+=|{}.!-]/g, '\\$&') : null;
-          const displayName = escapedPeerName ? `\`${client.ip}\` (${escapedPeerName})` : `\`${client.ip}\``;
+          const nameDisplay = escapedPeerName ? ` ${escapedPeerName}` : '';
           
           if (client.active) {
             // Для активных показываем время последнего соединения
-            message += `${displayName} - ✅ ${client.lastHandshake || 'активен'}\n`;
+            const handshakeTime = client.lastHandshake || 'активен';
+            message += `\`${client.ip}\` ✅${nameDisplay} (${handshakeTime})\n`;
           } else {
             // Для неактивных просто крестик
-            message += `${displayName} - ❌\n`;
+            message += `\`${client.ip}\` ❌${nameDisplay}\n`;
           }
         });
         message += '\n';
@@ -1564,11 +1578,18 @@ export class RouteBot {
                 lastHandshake: clientsStats[client.ip]?.lastHandshake || null
               }));
               
-              // Сортируем: активные первыми, затем по IP
+              // Сортируем только по IP (численно)
               clientsWithStatus.sort((a, b) => {
-                if (a.active && !b.active) return -1;
-                if (!a.active && b.active) return 1;
-                return a.ip.localeCompare(b.ip);
+                // Сравниваем IP адреса численно
+                const aParts = a.ip.split('.').map(Number);
+                const bParts = b.ip.split('.').map(Number);
+                
+                for (let i = 0; i < 4; i++) {
+                  if (aParts[i] !== bParts[i]) {
+                    return aParts[i] - bParts[i];
+                  }
+                }
+                return 0;
               });
             } catch (error) {
               logger.warn(`Failed to get clients details for ${container.name}: ${error.message}`);
@@ -1793,12 +1814,25 @@ export class RouteBot {
       
       clientsMessage += `Всего: ${clients.length}\n\n`;
       
+      // Сортируем клиентов по IP (численно)
+      const sortedClients = [...clients].sort((a, b) => {
+        const aParts = a.split('.').map(Number);
+        const bParts = b.split('.').map(Number);
+        
+        for (let i = 0; i < 4; i++) {
+          if (aParts[i] !== bParts[i]) {
+            return aParts[i] - bParts[i];
+          }
+        }
+        return 0;
+      });
+      
       // Создаём кнопки для каждого клиента
       const keyboard = {
         inline_keyboard: []
       };
       
-      clients.forEach((ip, index) => {
+      sortedClients.forEach((ip, index) => {
         const stats = clientsStats[ip] || {};
         const lastSeen = stats.lastHandshake || '❌';
         const transfer = stats.transfer || 'нет данных';
@@ -1807,26 +1841,27 @@ export class RouteBot {
         // Экранируем специальные символы Markdown в имени пира
         const escapedPeerName = peerName ? peerName.replace(/[_*[\]()~`>#+=|{}.!-]/g, '\\$&') : null;
         
-        // Формируем отображение IP с именем
-        const displayName = escapedPeerName ? `${ip} (${escapedPeerName})` : ip;
+        // Формируем отображение IP с именем (имя после статуса)
+        const displayName = ip;
+        const nameDisplay = escapedPeerName ? ` ${escapedPeerName}` : '';
         
         // Если сервер недоступен - показываем причину
         if (!serverAvailable) {
           if (interfaceStatus === 'starting') {
-            clientsMessage += `${displayName} ⏳ (интерфейс запускается)\n`;
+            clientsMessage += `${displayName} ⏳${nameDisplay}\n`;
           } else if (interfaceStatus === 'error') {
-            clientsMessage += `${displayName} ⚠️ (ошибка интерфейса)\n`;
+            clientsMessage += `${displayName} ⚠️${nameDisplay}\n`;
           } else if (!containerStatus.running) {
-            clientsMessage += `${displayName} ⚠️ (контейнер остановлен)\n`;
+            clientsMessage += `${displayName} ⚠️${nameDisplay}\n`;
           } else {
-            clientsMessage += `${displayName} ${serverStatusEmoji} (сервер недоступен)\n`;
+            clientsMessage += `${displayName} ${serverStatusEmoji}${nameDisplay}\n`;
           }
         } else if (lastSeen === '❌') {
           // Сервер доступен, но клиент неактивен
-          clientsMessage += `${displayName} ❌ (клиент неактивен)\n`;
+          clientsMessage += `${displayName} ❌${nameDisplay}\n`;
         } else {
           // Сервер доступен и клиент активен - показываем детали
-          clientsMessage += `${displayName} ✅\n`;
+          clientsMessage += `${displayName} ✅${nameDisplay}\n`;
           clientsMessage += `   └ 🕐 ${lastSeen}\n`;
           if (transfer !== 'нет данных') {
             clientsMessage += `   └ 📊 ${transfer}\n`;
