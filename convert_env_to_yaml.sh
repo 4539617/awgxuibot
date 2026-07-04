@@ -1,14 +1,17 @@
 #!/bin/bash
 
 # Script to convert .env file to config.yaml format
-# Automatically finds .env in 294/conf/ and creates config.yaml in current directory
+# Looks for .env in the same directory as the script
 
 echo "=== .env to config.yaml Converter ==="
 echo ""
 
-# Define paths
-ENV_FILE="294/conf/.env"
-OUTPUT_FILE="config.yaml"
+# Get the directory where the script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Define paths relative to script location
+ENV_FILE="$SCRIPT_DIR/.env"
+OUTPUT_FILE="$SCRIPT_DIR/config.yaml"
 
 # Check if input file exists
 if [ ! -f "$ENV_FILE" ]; then
