@@ -1593,17 +1593,15 @@ export class RouteBot {
           statsMessage += `👥 Клиентов: ${container.clients}\n`;
           statsMessage += `👤 Активных: ${activeClients}\n\n`;
           
-          // Показываем список активных клиентов с деталями
+          // Показываем список всех клиентов с деталями (активные и неактивные)
           if (container.running && clientsWithStatus.length > 0) {
-            const activeClientsList = clientsWithStatus.filter(c => c.active);
-            if (activeClientsList.length > 0) {
-              for (const client of activeClientsList) {
-                const name = client.name ? ` (${client.name})` : '';
-                const handshake = client.lastHandshake || 'неизвестно';
-                statsMessage += `${client.ip}${name} - ✅ ${handshake}\n`;
-              }
-              statsMessage += '\n';
+            for (const client of clientsWithStatus) {
+              const name = client.name ? ` (${client.name})` : '';
+              const statusIcon = client.active ? '✅' : '❌';
+              const handshake = client.active ? (client.lastHandshake || 'неизвестно') : '';
+              statsMessage += `${client.ip}${name} - ${statusIcon}${handshake ? ' ' + handshake : ''}\n`;
             }
+            statsMessage += '\n';
           }
         } else {
           // Контейнер не найден
