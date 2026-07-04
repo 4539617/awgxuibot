@@ -906,10 +906,10 @@ export class RouteBot {
           if (client.active) {
             // Для активных показываем время последнего соединения
             const handshakeTime = client.lastHandshake || 'активен';
-            message += `\`${client.ip}\` ✅${nameDisplay} (${handshakeTime})\n`;
+            message += `${client.ip} ✅${nameDisplay} (${handshakeTime})\n`;
           } else {
             // Для неактивных просто крестик
-            message += `\`${client.ip}\` ❌${nameDisplay}\n`;
+            message += `${client.ip} ❌${nameDisplay}\n`;
           }
         });
         message += '\n';
@@ -1614,13 +1614,12 @@ export class RouteBot {
           statsMessage += `👥 Клиентов: ${container.clients}\n`;
           statsMessage += `👤 Активных: ${activeClients}\n\n`;
           
-          // Показываем список всех клиентов с деталями (активные и неактивные)
+          // Показываем список всех клиентов (формат: IP статус имя)
           if (container.running && clientsWithStatus.length > 0) {
             for (const client of clientsWithStatus) {
-              const name = client.name ? ` (${client.name})` : '';
+              const name = client.name ? ` ${client.name}` : '';
               const statusIcon = client.active ? '✅' : '❌';
-              const handshake = client.active ? (client.lastHandshake || 'неизвестно') : '';
-              statsMessage += `${client.ip}${name} - ${statusIcon}${handshake ? ' ' + handshake : ''}\n`;
+              statsMessage += `${client.ip} ${statusIcon}${name}\n`;
             }
             statsMessage += '\n';
           }
