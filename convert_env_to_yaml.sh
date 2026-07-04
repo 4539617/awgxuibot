@@ -27,10 +27,10 @@ fi
 
 OUTPUT_FILE="$SCRIPT_DIR/config.yaml"
 
-# Check if output path is a directory
+# Check if output path is a directory and remove it
 if [ -d "$OUTPUT_FILE" ]; then
-    echo "Error: $OUTPUT_FILE is a directory, not a file"
-    exit 1
+    echo "⚠ Warning: $OUTPUT_FILE is a directory, removing it..."
+    rm -rf "$OUTPUT_FILE"
 fi
 
 # Remove old output file if exists
@@ -65,6 +65,7 @@ common:
   admin_ids:
     - ${env_vars[ADMIN_IDS]}
   server_port: ${env_vars[SERVER_PORT]:-443}
+  server_label: ""
   api_timeout: ${env_vars[API_TIMEOUT]:-30}
   xhttp_mode: "${env_vars[XHTTP_MODE]:-auto}"
   tls_fingerprint: "${env_vars[TLS_FINGERPRINT]:-edge}"
@@ -90,7 +91,7 @@ common:
 default_panel: local_panel
 panels:
   local_panel:
-    alias: Converted Panel
+    alias: Локальная
     enabled: true
     is_local: true
     xui_version: ${env_vars[XUI_VERSION]:-2.8.10}
@@ -125,4 +126,3 @@ echo "  - Panel URL: ${env_vars[XUI_URL]}"
 echo ""
 echo "You can now use config.yaml for your bot configuration!"
 
-# Made with Bob
