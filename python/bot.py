@@ -1669,16 +1669,49 @@ async def process_temp_key_request(callback_query: types.CallbackQuery):
     await callback_query.answer()
 
 
+class EditThresholdState(StatesGroup):
+    waiting_for_value = State()
+
+
+@dp.message(EditThresholdState.waiting_for_value)
+async def process_threshold_value(message: types.Message, state: FSMContext):
+    """Обработка нового значения порога"""
+    if not is_admin(message.from_user.id):
+        return
+    
+    try:
+        value = float(message.text.strip().replace('%', ''))
+        
+        if value < 50 or value > 99:
+            await message.answer("❌ Значение должно быть от 50 до 99%")
+            return
+        
+        data = await state.get_data()
+        threshold_type = data.get('threshold_type')
+        
+        threshold_names = {
+            'cpu': '💻 CPU',
+            'ram': '🧠 RAM',
+            'disk': '💿 Диск'
+        }
+        
+        config.users_db.set_threshold(f"{threshold_type}_threshold", value)
+        
+        await message.answer(
+            f"✅ Порог {threshold_names.get(threshold_type, threshold_type)} обновлен: <b>{value:.0f}%</b>",
+            parse_mode="HTML"
+        )
+        
+        await state.clear()
+        
+    except ValueError:
+        await message.answer("❌ Неверный формат. Введите число от 50 до 99")
+
+
 @dp.message()
 async def handle_unknown(message: Message, state: FSMContext):
     user_id = message.from_user.id
     
-    # Проверяем, есть ли активное FSM состояние
-    current_state = await state.get_state()
-    if current_state is not None:
-        # Если есть состояние, не обрабатываем - пусть обработает state handler
-        return
-
     if is_blocked_by_admin(user_id):
         await message.answer("⛔ Вы заблокированы администратором. Обратитесь к администратору.")
         return
@@ -2087,11 +2120,6 @@ async def toggle_disk_alert(callback_query: types.CallbackQuery, state: FSMConte
     await show_notification_settings(callback_query, state)
 
 
-class EditThresholdState(StatesGroup):
-    waiting_for_value = State()
-    threshold_type = State()
-
-
 @dp.callback_query(lambda c: c.data.startswith("edit_") and c.data.endswith("_threshold"))
 async def edit_threshold(callback_query: types.CallbackQuery, state: FSMContext):
     """Начать редактирование порога"""
@@ -2119,41 +2147,6 @@ async def edit_threshold(callback_query: types.CallbackQuery, state: FSMContext)
         parse_mode="HTML"
     )
     await callback_query.answer()
-
-
-@dp.message(EditThresholdState.waiting_for_value)
-async def process_threshold_value(message: types.Message, state: FSMContext):
-    """Обработка нового значения порога"""
-    if not is_admin(message.from_user.id):
-        return
-    
-    try:
-        value = float(message.text.strip().replace('%', ''))
-        
-        if value < 50 or value > 99:
-            await message.answer("❌ Значение должно быть от 50 до 99%")
-            return
-        
-        data = await state.get_data()
-        threshold_type = data.get('threshold_type')
-        
-        threshold_names = {
-            'cpu': '💻 CPU',
-            'ram': '🧠 RAM',
-            'disk': '💿 Диск'
-        }
-        
-        config.users_db.set_threshold(f"{threshold_type}_threshold", value)
-        
-        await message.answer(
-            f"✅ Порог {threshold_names.get(threshold_type, threshold_type)} обновлен: <b>{value:.0f}%</b>",
-            parse_mode="HTML"
-        )
-        
-        await state.clear()
-        
-    except ValueError:
-        await message.answer("❌ Неверный формат. Введите число от 50 до 99")
 
 
 @dp.callback_query(lambda c: c.data == "refresh_server_status")
