@@ -15,7 +15,14 @@ import sqlite3
 from config import config
 from utils import XUIClient, generate_vless_link, get_client_link, setup_logging
 from panel_monitor import PanelMonitor
-from system_monitor import SystemMonitor
+
+try:
+    from system_monitor import SystemMonitor
+    SYSTEM_MONITOR_AVAILABLE = True
+except ImportError:
+    SYSTEM_MONITOR_AVAILABLE = False
+    import warnings
+    warnings.warn("SystemMonitor not available - system monitoring disabled")
 
 setup_logging(config.logging)
 logger = logging.getLogger(__name__)
@@ -3538,13 +3545,14 @@ async def main():
                 admin_ids=config.common.admin_ids
             )
             
-            # Создаем экземпляр монитора системы
-            system_monitor = SystemMonitor(
-                config=config,
-                xui_client=xui_client,
-                bot=bot,
-                admin_ids=config.common.admin_ids
-            )
+            # Создаем экземпляр монитора системы (если доступен)
+            if SYSTEM_MONITOR_AVAILABLE:
+                system_monitor = SystemMonitor(
+                    config=config,
+                    xui_client=xui_client,
+                    bot=bot,
+                    admin_ids=config.common.admin_ids
+                )
             
             # Запускаем мониторинг панелей в фоновой задаче
             if panel_monitor.enabled:
@@ -3554,10 +3562,13 @@ async def main():
             else:
                 logger.info("⏸️ Мониторинг панелей отключен в конфигурации")
             
-            # Запускаем мониторинг системы в фоновой задаче
-            logger.info("🔍 Запуск фонового мониторинга системы...")
-            system_monitoring_task = asyncio.create_task(system_monitor.start_monitoring())
-            logger.info("✅ Мониторинг системы запущен")
+            # Запускаем мониторинг системы в фоновой задаче (если доступен)
+            if SYSTEM_MONITOR_AVAILABLE and system_monitor:
+                logger.info("🔍 Запуск фонового мониторинга системы...")
+                system_monitoring_task = asyncio.create_task(system_monitor.start_monitoring())
+                logger.info("✅ Мониторинг системы запущен")
+            else:
+                logger.info("⏸️ Мониторинг системы недоступен (system_monitor.py не найден)")
             
             # Запуск polling бота
             await dp.start_polling(bot)
@@ -3580,7 +3591,7 @@ async def main():
                 logger.info("✅ Мониторинг панелей остановлен")
             
             # Graceful shutdown мониторинга системы
-            if system_monitor and system_monitoring_task:
+            if SYSTEM_MONITOR_AVAILABLE and system_monitor and system_monitoring_task:
                 logger.info("🛑 Остановка мониторинга системы...")
                 await system_monitor.stop_monitoring()
                 
