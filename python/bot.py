@@ -1672,6 +1672,12 @@ async def process_temp_key_request(callback_query: types.CallbackQuery):
 @dp.message()
 async def handle_unknown(message: Message, state: FSMContext):
     user_id = message.from_user.id
+    
+    # Проверяем, есть ли активное FSM состояние
+    current_state = await state.get_state()
+    if current_state is not None:
+        # Если есть состояние, не обрабатываем - пусть обработает state handler
+        return
 
     if is_blocked_by_admin(user_id):
         await message.answer("⛔ Вы заблокированы администратором. Обратитесь к администратору.")
