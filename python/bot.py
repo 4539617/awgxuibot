@@ -2004,6 +2004,9 @@ async def show_notification_settings(callback_query: types.CallbackQuery, state:
     ram_threshold = thresholds.get('ram_threshold', 95.0)
     disk_threshold = thresholds.get('disk_threshold', 95.0)
     
+    # Получаем интервал проверки из конфигурации
+    check_interval = config.common.panel_check_interval if hasattr(config.common, 'panel_check_interval') else 30
+    
     # Формируем сообщение
     message = "🔔 <b>Настройки уведомлений</b>\n\n"
     message += f"💻 Загрузка CPU {'✅' if cpu_alert else '❌'}\n"
@@ -2012,6 +2015,7 @@ async def show_notification_settings(callback_query: types.CallbackQuery, state:
     message += f"   └ Уведомление при загрузке > {ram_threshold:.0f}%\n\n"
     message += f"💿 Заполнение диска {'✅' if disk_alert else '❌'}\n"
     message += f"   └ Уведомление при заполнении > {disk_threshold:.0f}%\n\n"
+    message += f"⏱ Интервал проверки: <b>{int(check_interval)}</b> сек (из config.yaml)\n\n"
     message += "Нажмите на переключатель для изменения настройки"
     
     # Создаем клавиатуру с переключателями
@@ -3527,7 +3531,6 @@ async def main():
             if SYSTEM_MONITOR_AVAILABLE:
                 system_monitor = SystemMonitor(
                     config=config,
-                    xui_client=xui_client,
                     bot=bot,
                     admin_ids=config.common.admin_ids
                 )
