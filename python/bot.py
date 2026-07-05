@@ -1697,9 +1697,15 @@ async def process_threshold_value(message: types.Message, state: FSMContext):
         
         config.users_db.set_threshold(f"{threshold_type}_threshold", value)
         
+        # Создаем клавиатуру с кнопкой возврата
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔔 Настройки уведомлений", callback_data="notification_settings")]
+        ])
+        
         await message.answer(
             f"✅ Порог {threshold_names.get(threshold_type, threshold_type)} обновлен: <b>{value:.0f}%</b>",
-            parse_mode="HTML"
+            parse_mode="HTML",
+            reply_markup=keyboard
         )
         
         await state.clear()
