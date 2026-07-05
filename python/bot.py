@@ -1682,8 +1682,8 @@ async def process_threshold_value(message: types.Message, state: FSMContext):
     try:
         value = float(message.text.strip().replace('%', ''))
         
-        if value < 50 or value > 99:
-            await message.answer("❌ Значение должно быть от 50 до 99%")
+        if value < 1 or value > 99:
+            await message.answer("❌ Значение должно быть от 1 до 99%")
             return
         
         data = await state.get_data()
@@ -1705,7 +1705,7 @@ async def process_threshold_value(message: types.Message, state: FSMContext):
         await state.clear()
         
     except ValueError:
-        await message.answer("❌ Неверный формат. Введите число от 50 до 99")
+        await message.answer("❌ Неверный формат. Введите число от 1 до 99")
 
 
 @dp.message()
@@ -2143,7 +2143,7 @@ async def edit_threshold(callback_query: types.CallbackQuery, state: FSMContext)
     await callback_query.message.answer(
         f"⚙️ <b>Редактирование порога {threshold_names.get(threshold_type, threshold_type)}</b>\n\n"
         f"Текущее значение: <b>{current_value:.0f}%</b>\n\n"
-        f"Введите новое значение порога (от 50 до 99):",
+        f"Введите новое значение порога (от 1 до 99):",
         parse_mode="HTML"
     )
     await callback_query.answer()
