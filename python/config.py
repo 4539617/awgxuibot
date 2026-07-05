@@ -638,6 +638,18 @@ class UserDatabase:
             """)
             
             conn.execute("""
+                CREATE TABLE IF NOT EXISTS notification_thresholds (
+                    threshold_name TEXT PRIMARY KEY,
+                    threshold_value REAL DEFAULT 95.0
+                )
+            """)
+            
+            conn.execute("""
+                INSERT OR IGNORE INTO notification_thresholds (threshold_name, threshold_value)
+                VALUES ('cpu_threshold', 95.0), ('ram_threshold', 95.0), ('disk_threshold', 95.0)
+            """)
+            
+            conn.execute("""
                 CREATE TABLE IF NOT EXISTS blocked_users (
                     user_id INTEGER PRIMARY KEY,
                     blocked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -829,6 +841,32 @@ class UserDatabase:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute("SELECT setting_name, enabled FROM notification_settings")
             return {row[0]: bool(row[1]) for row in cursor.fetchall()}
+    
+    def get_threshold(self, threshold_name: str, default: float = 95.0) -> float:
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                "SELECT threshold_value FROM notification_thresholds WHERE threshold_name = ?",
+                (threshold_name,)
+            )
+            result = cursor.fetchone()
+            return float(result[0]) if result else default
+    
+    def set_threshold(self, threshold_name: str, value: float) -> bool:
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute(
+                    "INSERT OR REPLACE INTO notification_thresholds (threshold_name, threshold_value) VALUES (?, ?)",
+                    (threshold_name, value)
+                )
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка сохранения порога: {e}")
+            return False
+    
+    def get_all_thresholds(self) -> dict:
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute("SELECT threshold_name, threshold_value FROM notification_thresholds")
+            return {row[0]: float(row[1]) for row in cursor.fetchall()}
     
     def was_user_registered(self, user_id: int) -> bool:
         with sqlite3.connect(self.db_path) as conn:

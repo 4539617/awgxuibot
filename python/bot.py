@@ -15,6 +15,7 @@ import sqlite3
 from config import config
 from utils import XUIClient, generate_vless_link, get_client_link, setup_logging
 from panel_monitor import PanelMonitor
+from system_monitor import SystemMonitor
 
 setup_logging(config.logging)
 logger = logging.getLogger(__name__)
@@ -1977,30 +1978,54 @@ async def show_notification_settings(callback_query: types.CallbackQuery, state:
     ram_alert = settings.get('ram_alert', False)
     disk_alert = settings.get('disk_alert', False)
     
+    # Получаем пороги
+    thresholds = config.users_db.get_all_thresholds()
+    cpu_threshold = thresholds.get('cpu_threshold', 95.0)
+    ram_threshold = thresholds.get('ram_threshold', 95.0)
+    disk_threshold = thresholds.get('disk_threshold', 95.0)
+    
     # Формируем сообщение
     message = "🔔 <b>Настройки уведомлений</b>\n\n"
     message += f"💻 Загрузка CPU {'✅' if cpu_alert else '❌'}\n"
-    message += f"   └ Уведомление при загрузке > 95%\n\n"
+    message += f"   └ Уведомление при загрузке > {cpu_threshold:.0f}%\n\n"
     message += f"🧠 Загрузка RAM {'✅' if ram_alert else '❌'}\n"
-    message += f"   └ Уведомление при загрузке > 95%\n\n"
+    message += f"   └ Уведомление при загрузке > {ram_threshold:.0f}%\n\n"
     message += f"💿 Заполнение диска {'✅' if disk_alert else '❌'}\n"
-    message += f"   └ Уведомление при заполнении > 95%\n\n"
+    message += f"   └ Уведомление при заполнении > {disk_threshold:.0f}%\n\n"
     message += "Нажмите на переключатель для изменения настройки"
     
     # Создаем клавиатуру с переключателями
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
-            text=f"💻 CPU {'✅ Вкл' if cpu_alert else '❌ Выкл'}",
-            callback_data="toggle_cpu_alert"
-        )],
-        [InlineKeyboardButton(
-            text=f"🧠 RAM {'✅ Вкл' if ram_alert else '❌ Выкл'}",
-            callback_data="toggle_ram_alert"
-        )],
-        [InlineKeyboardButton(
-            text=f"💿 Диск {'✅ Вкл' if disk_alert else '❌ Выкл'}",
-            callback_data="toggle_disk_alert"
-        )],
+        [
+            InlineKeyboardButton(
+                text=f"💻 CPU {'✅ Вкл' if cpu_alert else '❌ Выкл'}",
+                callback_data="toggle_cpu_alert"
+            ),
+            InlineKeyboardButton(
+                text=f"⚙️ {cpu_threshold:.0f}%",
+                callback_data="edit_cpu_threshold"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text=f"🧠 RAM {'✅ Вкл' if ram_alert else '❌ Выкл'}",
+                callback_data="toggle_ram_alert"
+            ),
+            InlineKeyboardButton(
+                text=f"⚙️ {ram_threshold:.0f}%",
+                callback_data="edit_ram_threshold"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text=f"💿 Диск {'✅ Вкл' if disk_alert else '❌ Выкл'}",
+                callback_data="toggle_disk_alert"
+            ),
+            InlineKeyboardButton(
+                text=f"⚙️ {disk_threshold:.0f}%",
+                callback_data="edit_disk_threshold"
+            )
+        ],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_server_status")]
     ])
     
@@ -2079,6 +2104,75 @@ async def toggle_disk_alert(callback_query: types.CallbackQuery, state: FSMConte
     
     # Обновляем окно настроек
     await show_notification_settings(callback_query, state)
+
+
+class EditThresholdState(StatesGroup):
+    waiting_for_value = State()
+    threshold_type = State()
+
+
+@dp.callback_query(lambda c: c.data.startswith("edit_") and c.data.endswith("_threshold"))
+async def edit_threshold(callback_query: types.CallbackQuery, state: FSMContext):
+    """Начать редактирование порога"""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
+        return
+    
+    threshold_type = callback_query.data.replace("edit_", "").replace("_threshold", "")
+    
+    threshold_names = {
+        'cpu': '💻 CPU',
+        'ram': '🧠 RAM',
+        'disk': '💿 Диск'
+    }
+    
+    await state.set_state(EditThresholdState.waiting_for_value)
+    await state.update_data(threshold_type=threshold_type)
+    
+    current_value = config.users_db.get_threshold(f"{threshold_type}_threshold", 95.0)
+    
+    await callback_query.message.answer(
+        f"⚙️ <b>Редактирование порога {threshold_names.get(threshold_type, threshold_type)}</b>\n\n"
+        f"Текущее значение: <b>{current_value:.0f}%</b>\n\n"
+        f"Введите новое значение порога (от 50 до 99):",
+        parse_mode="HTML"
+    )
+    await callback_query.answer()
+
+
+@dp.message(EditThresholdState.waiting_for_value)
+async def process_threshold_value(message: types.Message, state: FSMContext):
+    """Обработка нового значения порога"""
+    if not is_admin(message.from_user.id):
+        return
+    
+    try:
+        value = float(message.text.strip().replace('%', ''))
+        
+        if value < 50 or value > 99:
+            await message.answer("❌ Значение должно быть от 50 до 99%")
+            return
+        
+        data = await state.get_data()
+        threshold_type = data.get('threshold_type')
+        
+        threshold_names = {
+            'cpu': '💻 CPU',
+            'ram': '🧠 RAM',
+            'disk': '💿 Диск'
+        }
+        
+        config.users_db.set_threshold(f"{threshold_type}_threshold", value)
+        
+        await message.answer(
+            f"✅ Порог {threshold_names.get(threshold_type, threshold_type)} обновлен: <b>{value:.0f}%</b>",
+            parse_mode="HTML"
+        )
+        
+        await state.clear()
+        
+    except ValueError:
+        await message.answer("❌ Неверный формат. Введите число от 50 до 99")
 
 
 @dp.callback_query(lambda c: c.data == "refresh_server_status")
@@ -3435,9 +3529,11 @@ async def main():
         except Exception as e:
             logger.error(f"❌ Ошибка обновления параметров панели при запуске: {e}")
         
-        # Инициализация и запуск мониторинга панелей
+        # Инициализация и запуск мониторинга панелей и системы
         panel_monitor = None
-        monitoring_task = None
+        system_monitor = None
+        panel_monitoring_task = None
+        system_monitoring_task = None
         
         try:
             # Создаем экземпляр монитора панелей
@@ -3447,34 +3543,62 @@ async def main():
                 admin_ids=config.common.admin_ids
             )
             
-            # Запускаем мониторинг в фоновой задаче
+            # Создаем экземпляр монитора системы
+            system_monitor = SystemMonitor(
+                config=config,
+                xui_client=xui_client,
+                bot=bot,
+                admin_ids=config.common.admin_ids
+            )
+            
+            # Запускаем мониторинг панелей в фоновой задаче
             if panel_monitor.enabled:
                 logger.info("🔍 Запуск фонового мониторинга панелей...")
-                monitoring_task = asyncio.create_task(panel_monitor.start_monitoring())
+                panel_monitoring_task = asyncio.create_task(panel_monitor.start_monitoring())
                 logger.info("✅ Мониторинг панелей запущен")
             else:
                 logger.info("⏸️ Мониторинг панелей отключен в конфигурации")
+            
+            # Запускаем мониторинг системы в фоновой задаче
+            logger.info("🔍 Запуск фонового мониторинга системы...")
+            system_monitoring_task = asyncio.create_task(system_monitor.start_monitoring())
+            logger.info("✅ Мониторинг системы запущен")
             
             # Запуск polling бота
             await dp.start_polling(bot)
             
         finally:
-            # Graceful shutdown мониторинга
-            if panel_monitor and monitoring_task:
+            # Graceful shutdown мониторинга панелей
+            if panel_monitor and panel_monitoring_task:
                 logger.info("🛑 Остановка мониторинга панелей...")
                 await panel_monitor.stop_monitoring()
                 
-                # Ожидаем завершения задачи мониторинга
-                if not monitoring_task.done():
+                if not panel_monitoring_task.done():
                     try:
-                        await asyncio.wait_for(monitoring_task, timeout=5.0)
+                        await asyncio.wait_for(panel_monitoring_task, timeout=5.0)
                     except asyncio.TimeoutError:
-                        logger.warning("⚠️ Таймаут при остановке мониторинга")
-                        monitoring_task.cancel()
+                        logger.warning("⚠️ Таймаут при остановке мониторинга панелей")
+                        panel_monitoring_task.cancel()
                     except asyncio.CancelledError:
                         pass
                 
                 logger.info("✅ Мониторинг панелей остановлен")
+            
+            # Graceful shutdown мониторинга системы
+            if system_monitor and system_monitoring_task:
+                logger.info("🛑 Остановка мониторинга системы...")
+                await system_monitor.stop_monitoring()
+                
+                if not system_monitoring_task.done():
+                    try:
+                        await asyncio.wait_for(system_monitoring_task, timeout=5.0)
+                    except asyncio.TimeoutError:
+                        logger.warning("⚠️ Таймаут при остановке мониторинга системы")
+                        system_monitoring_task.cancel()
+                    except asyncio.CancelledError:
+                        pass
+                
+                logger.info("✅ Мониторинг системы остановлен")
     else:
         logger.error("❌ Не удалось подключиться к X-UI")
         return
