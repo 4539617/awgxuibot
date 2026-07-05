@@ -22,6 +22,7 @@ class CommonConfig:
     awg_bot_token: str = ""
     admin_ids: List[int] = field(default_factory=list)
     server_port: int = 443
+    server_label: str = ""  # Метка сервера (сохраняется при обновлениях)
     api_timeout: int = 30
     xhttp_mode: str = "auto"
     tls_fingerprint: str = "edge"
@@ -40,7 +41,6 @@ class CommonConfig:
     log_max_size_mb: int = 10
     log_backup_count: int = 5
     allow_user_dns_queries: bool = False
-    # Panel Monitoring
     panel_monitoring_enabled: bool = True
     panel_check_interval: int = 30
     panel_failure_threshold: int = 3
@@ -152,6 +152,7 @@ class ConfigManager:
                 awg_bot_token=common_data.get('awg_bot_token', ''),
                 admin_ids=common_data.get('admin_ids', []),
                 server_port=common_data.get('server_port', 443),
+                server_label=common_data.get('server_label', ''),  # Метка сервера
                 api_timeout=common_data.get('api_timeout', 30),
                 xhttp_mode=common_data.get('xhttp_mode', 'auto'),
                 tls_fingerprint=common_data.get('tls_fingerprint', 'edge'),
@@ -467,12 +468,18 @@ class ConfigManager:
     def _save_config(self):
         """Сохраняет текущую конфигурацию в файл"""
         try:
-            # ВАЖНО: Загружаем текущий config.yaml чтобы сохранить is_local
-            # is_local НЕ должен изменяться программно!
+            # ВАЖНО: Загружаем текущий config.yaml чтобы сохранить is_local и server_label
+            # is_local и server_label НЕ должны изменяться программно!
             existing_config = {}
             if os.path.exists(self.config_path):
                 with open(self.config_path, 'r', encoding='utf-8') as f:
                     existing_config = yaml.safe_load(f) or {}
+            
+            # ВАЖНО: Сохраняем server_label из существующего файла, если он там есть
+            # server_label НЕ должен изменяться программно!
+            existing_server_label = self.common.server_label
+            if existing_config.get('common', {}).get('server_label'):
+                existing_server_label = existing_config['common']['server_label']
             
             # Пересобираем словарь из объектов
             config_dict = {
@@ -498,11 +505,20 @@ class ConfigManager:
                     'log_file_path': self.common.log_file_path,
                     'log_max_size_mb': self.common.log_max_size_mb,
                     'log_backup_count': self.common.log_backup_count,
-                    'allow_user_dns_queries': self.common.allow_user_dns_queries
+                    'allow_user_dns_queries': self.common.allow_user_dns_queries,
+                    # Panel Monitoring
+                    'panel_monitoring_enabled': self.common.panel_monitoring_enabled,
+                    'panel_check_interval': self.common.panel_check_interval,
+                    'panel_failure_threshold': self.common.panel_failure_threshold,
+                    'panel_check_timeout': self.common.panel_check_timeout
                 },
                 'default_panel': self.default_panel_id,
                 'panels': {}
             }
+            
+            # Добавляем server_label только если он не пустой
+            if existing_server_label:
+                config_dict['common']['server_label'] = existing_server_label
             
             # Добавляем панели
             for panel_id, panel in self.panels.items():
