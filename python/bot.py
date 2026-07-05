@@ -1767,12 +1767,7 @@ async def show_server_status(callback_query: types.CallbackQuery, state: FSMCont
         current_panel = config.get_current_panel()
         
         # Формируем сообщение
-        message = "========================================\n"
-        message += "   <b>СТАТУС СИСТЕМЫ</b>\n"
-        message += "========================================\n\n"
-        
-        # Информация о 3X-UI панели
-        message += "<b>3X-UI PANEL:</b>\n"
+        message = "<b>3X-UI PANEL:</b>\n"
         if current_panel:
             message += f"  ✅ Установлена\n"
             message += f"  Версия: v{current_panel.xui_version}\n"
