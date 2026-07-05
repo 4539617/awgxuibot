@@ -2005,15 +2005,37 @@ async def show_notification_settings(callback_query: types.CallbackQuery, state:
     # Получаем интервал проверки из конфигурации
     check_interval = config.common.panel_check_interval if hasattr(config.common, 'panel_check_interval') else 30
     
+    # Получаем текущие данные о системе
+    try:
+        import psutil
+        cpu_usage = psutil.cpu_percent(interval=0.5)
+        ram = psutil.virtual_memory()
+        disk = psutil.disk_usage('/')
+        
+        system_stats = (
+            f"📊 <b>Текущее состояние системы:</b>\n\n"
+            f"💻 CPU: <b>{cpu_usage:.1f}%</b>\n\n"
+            f"🧠 RAM: <b>{ram.percent:.1f}%</b>\n"
+            f"   └ {ram.used / (1024**3):.2f} GB / {ram.total / (1024**3):.2f} GB\n\n"
+            f"💿 Диск: <b>{disk.percent:.1f}%</b>\n"
+            f"   └ {disk.used / (1024**3):.2f} GB / {disk.total / (1024**3):.2f} GB\n\n"
+        )
+    except ImportError:
+        system_stats = "⚠️ <i>Мониторинг системы недоступен (psutil не установлен)</i>\n\n"
+    except Exception as e:
+        logger.error(f"Ошибка получения статистики системы: {e}")
+        system_stats = "⚠️ <i>Ошибка получения данных о системе</i>\n\n"
+    
     # Формируем сообщение
-    message = "🔔 <b>Настройки уведомлений</b>\n\n"
+    message = system_stats
+    message += "🔔 <b>Настройки уведомлений</b>\n\n"
     message += f"💻 Загрузка CPU {'✅' if cpu_alert else '❌'}\n"
     message += f"   └ Уведомление при загрузке > {cpu_threshold:.0f}%\n\n"
     message += f"🧠 Загрузка RAM {'✅' if ram_alert else '❌'}\n"
     message += f"   └ Уведомление при загрузке > {ram_threshold:.0f}%\n\n"
     message += f"💿 Заполнение диска {'✅' if disk_alert else '❌'}\n"
     message += f"   └ Уведомление при заполнении > {disk_threshold:.0f}%\n\n"
-    message += f"⏱ Интервал проверки: <b>{int(check_interval)}</b> сек (из config.yaml)\n\n"
+    message += f"⏱️ Интервал проверки: <b>{int(check_interval)}</b> сек (из config.yaml)\n\n"
     message += "Нажмите на переключатель для изменения настройки"
     
     # Создаем клавиатуру с переключателями
@@ -2048,6 +2070,7 @@ async def show_notification_settings(callback_query: types.CallbackQuery, state:
                 callback_data="edit_disk_threshold"
             )
         ],
+        [InlineKeyboardButton(text="🔄 Обновить", callback_data="notification_settings")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_server_status")]
     ])
     
