@@ -145,37 +145,63 @@ class ConfigManager:
                 logger.error("❌ config.yaml пустой")
                 raise ValueError("config.yaml пустой или содержит некорректные данные")
             
+            # Вспомогательная функция для безопасного преобразования в int
+            def safe_int(value, default):
+                """Безопасное преобразование значения в int"""
+                if isinstance(value, int):
+                    return value
+                if isinstance(value, str):
+                    # Удаляем возможные префиксы типа "int = "
+                    value = value.replace('int =', '').replace('int=', '').strip()
+                try:
+                    return int(value)
+                except (ValueError, TypeError):
+                    return default
+            
+            # Вспомогательная функция для безопасного преобразования в bool
+            def safe_bool(value, default):
+                """Безопасное преобразование значения в bool"""
+                if isinstance(value, bool):
+                    return value
+                if isinstance(value, str):
+                    value = value.lower().strip()
+                    if value in ('true', '1', 'yes', 'on'):
+                        return True
+                    if value in ('false', '0', 'no', 'off'):
+                        return False
+                return default
+            
             # Загружаем общие параметры
             common_data = data.get('common', {})
             self.common = CommonConfig(
                 xui_bot_token=common_data.get('xui_bot_token', ''),
                 awg_bot_token=common_data.get('awg_bot_token', ''),
                 admin_ids=common_data.get('admin_ids', []),
-                server_port=int(common_data.get('server_port', 443)),
+                server_port=safe_int(common_data.get('server_port', 443), 443),
                 server_label=common_data.get('server_label', ''),  # Метка сервера
-                api_timeout=int(common_data.get('api_timeout', 30)),
+                api_timeout=safe_int(common_data.get('api_timeout', 30), 30),
                 xhttp_mode=common_data.get('xhttp_mode', 'auto'),
                 tls_fingerprint=common_data.get('tls_fingerprint', 'edge'),
                 tls_alpn=common_data.get('tls_alpn', 'http/1.1'),
-                max_traffic_gb=int(common_data.get('max_traffic_gb', 1000)),
-                max_days=int(common_data.get('max_days', 3650)),
-                min_days=int(common_data.get('min_days', 1)),
-                default_traffic_gb=int(common_data.get('default_traffic_gb', 100)),
-                default_days=int(common_data.get('default_days', 30)),
+                max_traffic_gb=safe_int(common_data.get('max_traffic_gb', 1000), 1000),
+                max_days=safe_int(common_data.get('max_days', 3650), 3650),
+                min_days=safe_int(common_data.get('min_days', 1), 1),
+                default_traffic_gb=safe_int(common_data.get('default_traffic_gb', 100), 100),
+                default_days=safe_int(common_data.get('default_days', 30), 30),
                 db_path=common_data.get('db_path', '/app/data/bot_users.db'),
-                db_backup_enabled=bool(common_data.get('db_backup_enabled', True)),
-                db_backup_interval=int(common_data.get('db_backup_interval', 24)),
+                db_backup_enabled=safe_bool(common_data.get('db_backup_enabled', True), True),
+                db_backup_interval=safe_int(common_data.get('db_backup_interval', 24), 24),
                 log_level=common_data.get('log_level', 'INFO'),
-                log_file_enabled=bool(common_data.get('log_file_enabled', True)),
+                log_file_enabled=safe_bool(common_data.get('log_file_enabled', True), True),
                 log_file_path=common_data.get('log_file_path', '/app/logs/bot.log'),
-                log_max_size_mb=int(common_data.get('log_max_size_mb', 10)),
-                log_backup_count=int(common_data.get('log_backup_count', 5)),
-                allow_user_dns_queries=bool(common_data.get('allow_user_dns_queries', False)),
+                log_max_size_mb=safe_int(common_data.get('log_max_size_mb', 10), 10),
+                log_backup_count=safe_int(common_data.get('log_backup_count', 5), 5),
+                allow_user_dns_queries=safe_bool(common_data.get('allow_user_dns_queries', False), False),
                 # Panel Monitoring
-                panel_monitoring_enabled=bool(common_data.get('panel_monitoring_enabled', True)),
-                panel_check_interval=int(common_data.get('panel_check_interval', 30)),
-                panel_failure_threshold=int(common_data.get('panel_failure_threshold', 3)),
-                panel_check_timeout=int(common_data.get('panel_check_timeout', 5))
+                panel_monitoring_enabled=safe_bool(common_data.get('panel_monitoring_enabled', True), True),
+                panel_check_interval=safe_int(common_data.get('panel_check_interval', 30), 30),
+                panel_failure_threshold=safe_int(common_data.get('panel_failure_threshold', 3), 3),
+                panel_check_timeout=safe_int(common_data.get('panel_check_timeout', 5), 5)
             )
             
             # Загружаем панели
