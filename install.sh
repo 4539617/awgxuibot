@@ -782,8 +782,16 @@ extract_inbound_params() {
         return 1
     fi
     
+    # Получаем ID локальной панели
+    local panel_id=$(get_local_panel_id)
+    
+    if [ -z "$panel_id" ]; then
+        echo -e "${YELLOW}⚠️  Локальная панель не найдена в config.yaml${NC}"
+        return 1
+    fi
+    
     # Получаем INBOUND_ID из config.yaml (если указан)
-    local INBOUND_ID=$(yq eval '.panels.panel1.inbound_id' config.yaml 2>/dev/null)
+    local INBOUND_ID=$(yq eval ".panels.${panel_id}.inbound_id" config.yaml 2>/dev/null)
     
     # Если не указан или пустой, берем первый
     if [ -z "$INBOUND_ID" ] || [ "$INBOUND_ID" = "null" ]; then
@@ -1153,7 +1161,6 @@ check_and_create_inbound_if_needed() {
                 echo -e "${BLUE}========================================${NC}"
                 echo -e "${GREEN}1${NC} - XHTTP Reality (рекомендуется)"
                 echo -e "${GREEN}2${NC} - TCP Reality"
-                echo -e "${GREEN}3${NC} - TCP TLS"
                 echo -e "${GREEN}0${NC} - Вернуться в главное меню"
                 echo -e "${BLUE}========================================${NC}"
                 read -p "Ваш выбор: " inbound_type
@@ -1175,15 +1182,6 @@ check_and_create_inbound_if_needed() {
                         ;;
                     2)
                         if create_tcp_reality_inbound; then
-                            echo -e "${GREEN}✅ Инбаунд успешно создан!${NC}"
-                            return 0
-                        else
-                            echo -e "${RED}❌ Не удалось создать инбаунд${NC}"
-                            return 1
-                        fi
-                        ;;
-                    3)
-                        if create_tcp_tls_inbound; then
                             echo -e "${GREEN}✅ Инбаунд успешно создан!${NC}"
                             return 0
                         else
@@ -3840,7 +3838,6 @@ post_install_menu() {
             echo -e "${BLUE}========================================${NC}"
             echo -e "${GREEN}1${NC} - XHTTP Reality (рекомендуется)"
             echo -e "${GREEN}2${NC} - TCP Reality"
-            echo -e "${GREEN}3${NC} - TCP TLS"
             echo -e "${GREEN}0${NC} - Вернуться в главное меню"
             echo -e "${BLUE}========================================${NC}"
             read -p "Ваш выбор: " inbound_type
@@ -3868,21 +3865,6 @@ post_install_menu() {
                     ;;
                 2)
                     if create_tcp_reality_inbound; then
-                        echo -e "\n${BLUE}========================================${NC}"
-                        echo -e "${BLUE}   Установить xuibot?${NC}"
-                        echo -e "${BLUE}========================================${NC}"
-                        echo -e "${GREEN}Enter${NC} - Да, установить бота"
-                        echo -e "${GREEN}0${NC}     - Нет, вернуться в главное меню"
-                        echo -e "${BLUE}========================================${NC}"
-                        read -p "Ваш выбор: " install_bot_choice
-                        if [[ "$install_bot_choice" != "0" ]]; then
-                            install_bot
-                        fi
-                        return
-                    fi
-                    ;;
-                3)
-                    if create_tcp_tls_inbound; then
                         echo -e "\n${BLUE}========================================${NC}"
                         echo -e "${BLUE}   Установить xuibot?${NC}"
                         echo -e "${BLUE}========================================${NC}"
