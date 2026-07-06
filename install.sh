@@ -1295,6 +1295,47 @@ install_xuibot() {
     # Создание config.yaml если не существует
     create_config_if_not_exists
     
+    # Проверка и копирование server_label в local_panel.alias
+    echo -e "\n${YELLOW}🔍 Проверка метки сервера...${NC}"
+    if check_yq; then
+        SERVER_LABEL=$(yq eval '.common.server_label' config.yaml 2>/dev/null)
+        
+        # Проверяем, заполнен ли server_label
+        if [ -n "$SERVER_LABEL" ] && [ "$SERVER_LABEL" != "null" ] && [ "$SERVER_LABEL" != '""' ]; then
+            echo -e "${GREEN}✅ Найдена метка сервера: ${SERVER_LABEL}${NC}"
+            
+            # Находим локальную панель
+            local panel_id=$(yq eval '.panels | to_entries | .[] | select(.value.is_local == true) | .key' config.yaml 2>/dev/null | head -1)
+            
+            if [ -n "$panel_id" ]; then
+                # Копируем значение в local_panel.alias
+                yq eval -i ".panels.${panel_id}.alias = \"${SERVER_LABEL}\"" config.yaml
+                echo -e "${GREEN}✅ Метка сервера скопирована в ${panel_id}.alias${NC}"
+            else
+                echo -e "${YELLOW}⚠️  Локальная панель не найдена${NC}"
+            fi
+        else
+            echo -e "${YELLOW}⚠️  Метка сервера не заполнена${NC}"
+            echo -e "${BLUE}📝 Введите метку сервера для идентификации:${NC}"
+            read -p "Метка сервера: " server_label
+            
+            if [ -n "$server_label" ]; then
+                # Находим локальную панель
+                local panel_id=$(yq eval '.panels | to_entries | .[] | select(.value.is_local == true) | .key' config.yaml 2>/dev/null | head -1)
+                
+                if [ -n "$panel_id" ]; then
+                    # Записываем только в local_panel.alias
+                    yq eval -i ".panels.${panel_id}.alias = \"${server_label}\"" config.yaml
+                    echo -e "${GREEN}✅ Метка сервера сохранена в ${panel_id}.alias: ${server_label}${NC}"
+                else
+                    echo -e "${YELLOW}⚠️  Локальная панель не найдена${NC}"
+                fi
+            else
+                echo -e "${YELLOW}⚠️  Метка сервера не введена, используется значение по умолчанию${NC}"
+            fi
+        fi
+    fi
+    
     # Проверка XUI_URL, XUI_USERNAME, XUI_PASSWORD
     echo -e "\n${YELLOW}🔍 Проверка параметров 3x-ui панели...${NC}"
     

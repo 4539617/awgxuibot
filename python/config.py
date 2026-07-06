@@ -224,6 +224,7 @@ class ConfigManager:
                     transport=panel_data.get('transport', 'xhttp'),
                     security=panel_data.get('security', 'reality'),
                     tls_sni=panel_data.get('tls_sni', ''),
+                    tls_fingerprint=panel_data.get('tls_fingerprint', 'chrome'),
                     reality_sni=panel_data.get('reality_sni', ''),
                     reality_fingerprint=panel_data.get('reality_fingerprint', 'chrome'),
                     reality_public_key=panel_data.get('reality_public_key', ''),
