@@ -4197,6 +4197,31 @@ install_3xui_v3() {
         USE_EXISTING_CERTS=true
         # Восстанавливаем сертификаты перед установкой
         restore_ssl_certs
+    else
+        # Подготовка к получению нового SSL-сертификата
+        echo -e "${YELLOW}🔧 Подготовка к получению SSL-сертификата...${NC}"
+        
+        # Очищаем старые ключи acme.sh если они есть
+        if [ -d "/root/.acme.sh" ]; then
+            echo -e "${YELLOW}🧹 Очистка старых ключей acme.sh...${NC}"
+            rm -rf /root/.acme.sh/*/
+            echo -e "${GREEN}✅ Старые ключи очищены${NC}"
+        fi
+        
+        # Проверяем что порт 80 свободен
+        if netstat -tuln 2>/dev/null | grep -q ":80 " || ss -tuln 2>/dev/null | grep -q ":80 "; then
+            echo -e "${YELLOW}⚠ Порт 80 занят, освобождаем...${NC}"
+            # Останавливаем возможные сервисы на порту 80
+            systemctl stop nginx 2>/dev/null || true
+            systemctl stop apache2 2>/dev/null || true
+            systemctl stop httpd 2>/dev/null || true
+            sleep 2
+            echo -e "${GREEN}✅ Порт 80 освобожден${NC}"
+        else
+            echo -e "${GREEN}✅ Порт 80 свободен${NC}"
+        fi
+        
+        echo -e "${GREEN}✅ Готово к получению SSL-сертификата${NC}\n"
     fi
     
     # Установка через официальный скрипт
@@ -4217,7 +4242,7 @@ install_3xui_v3() {
         # 2 - Let's Encrypt для IP (запросить новый сертификат)
         # y - подтверждение получения SSL
         echo -e "${YELLOW}⚠ Запрос нового SSL сертификата...${NC}"
-        printf '1\n2\ny\n\n\n\n\n\n\n\n\n' | bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh) 2>&1 | tee "$INSTALL_OUTPUT"
+        printf '1\n2\ny\n\n80\n' | bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh) 2>&1 | tee "$INSTALL_OUTPUT"
     fi
     
     # Проверка успешности установки
