@@ -197,7 +197,6 @@ async def cmd_start(message: Message, state: FSMContext):
                     f"• Alias: <code>{alias}</code>\n"
                     f"• Local: <code>{'Да' if is_local else 'Нет'}</code>\n"
                     f"• Version: <code>{xui_version}</code>\n"
-                    f"• URL: <code>{xui_url}</code>\n"
                 )
             
             await message.answer(
@@ -2368,7 +2367,6 @@ async def back_to_start_menu(callback_query: types.CallbackQuery, state: FSMCont
                 f"• Alias: <code>{alias}</code>\n"
                 f"• Local: <code>{'Да' if is_local else 'Нет'}</code>\n"
                 f"• Version: <code>{xui_version}</code>\n"
-                f"• URL: <code>{xui_url}</code>\n"
             )
         
         text = (
