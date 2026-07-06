@@ -1026,8 +1026,20 @@ install_bot() {
         fi
     fi
     
-    # Извлекаем параметры из inbound
-    extract_inbound_params
+    # Сначала пытаемся извлечь параметры из существующих инбаундов
+    echo -e "\n${YELLOW}🔍 Проверка существующих инбаундов...${NC}"
+    if extract_inbound_params; then
+        echo -e "${GREEN}✅ Параметры успешно извлечены из существующего инбаунда${NC}"
+    else
+        # Если не удалось извлечь (нет инбаундов), предлагаем создать
+        echo -e "${YELLOW}⚠️  Не удалось извлечь параметры из инбаундов${NC}"
+        if ! check_and_create_inbound_if_needed; then
+            echo -e "${RED}❌ Установка отменена${NC}"
+            return 1
+        fi
+        # После создания инбаунда извлекаем параметры снова
+        extract_inbound_params
+    fi
     
     # Остановка старых контейнеров
     echo -e "\n${YELLOW}🛑 Остановка старых контейнеров...${NC}"
@@ -1132,10 +1144,60 @@ check_and_create_inbound_if_needed() {
         return 1
     fi
     
-    # Получаем количество инбаундов
-    local INBOUND_COUNT=$(sqlite3 /etc/x-ui/x-ui.db "SELECT COUNT(*) FROM inbounds;" 2>/dev/null)
+    # Проверка наличия sqlite3
+    if ! command -v sqlite3 &> /dev/null; then
+        echo -e "${RED}❌ sqlite3 не установлен!${NC}"
+        echo -e "${YELLOW}Установка sqlite3...${NC}"
+        apt-get update -qq && apt-get install -y sqlite3 -qq
+    fi
     
-    if [ -z "$INBOUND_COUNT" ] || [ "$INBOUND_COUNT" -eq 0 ]; then
+    # Получаем количество инбаундов с улучшенной обработкой ошибок
+    local INBOUND_COUNT=""
+    local RETRY_COUNT=0
+    local MAX_RETRIES=3
+    
+    while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+        # Пробуем получить количество инбаундов
+        INBOUND_COUNT=$(sqlite3 /etc/x-ui/x-ui.db "SELECT COUNT(*) FROM inbounds;" 2>&1)
+        
+        # Проверяем на ошибку блокировки базы данных
+        if echo "$INBOUND_COUNT" | grep -q "database is locked"; then
+            echo -e "${YELLOW}⚠️  База данных заблокирована, попытка ${RETRY_COUNT}/${MAX_RETRIES}...${NC}"
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+            sleep 2
+            
+            # Пробуем освободить блокировку
+            if [ $RETRY_COUNT -eq 2 ]; then
+                echo -e "${YELLOW}🔄 Попытка освободить блокировку базы данных...${NC}"
+                systemctl stop x-ui > /dev/null 2>&1
+                sleep 2
+                sqlite3 /etc/x-ui/x-ui.db "PRAGMA wal_checkpoint(TRUNCATE);" > /dev/null 2>&1 || true
+                systemctl start x-ui > /dev/null 2>&1
+                sleep 3
+            fi
+            continue
+        fi
+        
+        # Проверяем, является ли результат числом
+        if [[ "$INBOUND_COUNT" =~ ^[0-9]+$ ]]; then
+            break
+        else
+            echo -e "${YELLOW}⚠️  Неожиданный результат запроса: ${INBOUND_COUNT}${NC}"
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+            sleep 1
+        fi
+    done
+    
+    # Если после всех попыток не получили число, считаем что инбаундов нет
+    if ! [[ "$INBOUND_COUNT" =~ ^[0-9]+$ ]]; then
+        echo -e "${YELLOW}⚠️  Не удалось получить количество инбаундов из базы данных${NC}"
+        echo -e "${YELLOW}⚠️  Последний результат: ${INBOUND_COUNT}${NC}"
+        INBOUND_COUNT=0
+    fi
+    
+    echo -e "${BLUE}📊 Найдено инбаундов в базе данных: ${INBOUND_COUNT}${NC}"
+    
+    if [ "$INBOUND_COUNT" -eq 0 ]; then
         echo -e "${YELLOW}⚠️  В панели 3x-ui не найдено ни одного инбаунда!${NC}"
         echo -e "${BLUE}Для работы бота необходимо создать хотя бы один инбаунд.${NC}"
         
