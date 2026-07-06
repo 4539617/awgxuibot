@@ -4617,10 +4617,11 @@ remove_3xui() {
     
     echo -e "${YELLOW}🗑️  Удаление 3x-ui панели...${NC}"
     
-    # Сохранение SSL сертификатов перед удалением
-    backup_ssl_certs
+    # Сохранение SSL сертификатов перед удалением (если есть)
+    backup_ssl_certs || true
     
     # Остановка сервиса
+    echo -e "${YELLOW}🛑 Остановка сервиса x-ui...${NC}"
     systemctl stop x-ui 2>/dev/null || true
     systemctl disable x-ui 2>/dev/null || true
     
