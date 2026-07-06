@@ -2012,28 +2012,26 @@ async def show_notification_settings(callback_query: types.CallbackQuery, state:
         ram = psutil.virtual_memory()
         disk = psutil.disk_usage('/')
         
-        system_stats = (
-            f"📊 <b>Текущее состояние системы:</b>\n\n"
-            f"💻 CPU: <b>{cpu_usage:.1f}%</b>\n\n"
-            f"🧠 RAM: <b>{ram.percent:.1f}%</b>\n"
-            f"   └ {ram.used / (1024**3):.2f} GB / {ram.total / (1024**3):.2f} GB\n\n"
-            f"💿 Диск: <b>{disk.percent:.1f}%</b>\n"
-            f"   └ {disk.used / (1024**3):.2f} GB / {disk.total / (1024**3):.2f} GB\n\n"
-        )
+        cpu_stats = f"<b>{cpu_usage:.1f}%</b>"
+        ram_stats = f"<b>{ram.percent:.1f}%</b>"
+        disk_stats = f"<b>{disk.percent:.1f}%</b>"
     except ImportError:
-        system_stats = "⚠️ <i>Мониторинг системы недоступен (psutil не установлен)</i>\n\n"
+        cpu_stats = "<i>N/A</i>"
+        ram_stats = "<i>N/A</i>"
+        disk_stats = "<i>N/A</i>"
     except Exception as e:
         logger.error(f"Ошибка получения статистики системы: {e}")
-        system_stats = "⚠️ <i>Ошибка получения данных о системе</i>\n\n"
+        cpu_stats = "<i>N/A</i>"
+        ram_stats = "<i>N/A</i>"
+        disk_stats = "<i>N/A</i>"
     
     # Формируем сообщение
-    message = system_stats
-    message += "🔔 <b>Настройки уведомлений</b>\n\n"
-    message += f"💻 Загрузка CPU {'✅' if cpu_alert else '❌'}\n"
+    message = "🔔 <b>Настройки уведомлений:</b>\n\n"
+    message += f"💻 CPU: {cpu_stats} {'✅' if cpu_alert else '❌'}\n"
     message += f"   └ Уведомление при загрузке > {cpu_threshold:.0f}%\n\n"
-    message += f"🧠 Загрузка RAM {'✅' if ram_alert else '❌'}\n"
+    message += f"🧠 RAM: {ram_stats} {'✅' if ram_alert else '❌'}\n"
     message += f"   └ Уведомление при загрузке > {ram_threshold:.0f}%\n\n"
-    message += f"💿 Заполнение диска {'✅' if disk_alert else '❌'}\n"
+    message += f"💿 Диск: {disk_stats} {'✅' if disk_alert else '❌'}\n"
     message += f"   └ Уведомление при заполнении > {disk_threshold:.0f}%\n\n"
     message += f"⏱️ Интервал проверки: <b>{int(check_interval)}</b> сек (из config.yaml)\n\n"
     message += "Нажмите на переключатель для изменения настройки"
@@ -2046,7 +2044,7 @@ async def show_notification_settings(callback_query: types.CallbackQuery, state:
                 callback_data="toggle_cpu_alert"
             ),
             InlineKeyboardButton(
-                text=f"⚙️ {cpu_threshold:.0f}%",
+                text=f"✏️ {cpu_threshold:.0f}%",
                 callback_data="edit_cpu_threshold"
             )
         ],
@@ -2056,7 +2054,7 @@ async def show_notification_settings(callback_query: types.CallbackQuery, state:
                 callback_data="toggle_ram_alert"
             ),
             InlineKeyboardButton(
-                text=f"⚙️ {ram_threshold:.0f}%",
+                text=f"✏️ {ram_threshold:.0f}%",
                 callback_data="edit_ram_threshold"
             )
         ],
@@ -2066,7 +2064,7 @@ async def show_notification_settings(callback_query: types.CallbackQuery, state:
                 callback_data="toggle_disk_alert"
             ),
             InlineKeyboardButton(
-                text=f"⚙️ {disk_threshold:.0f}%",
+                text=f"✏️ {disk_threshold:.0f}%",
                 callback_data="edit_disk_threshold"
             )
         ],
