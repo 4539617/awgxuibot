@@ -1316,22 +1316,33 @@ install_xuibot() {
             fi
         else
             echo -e "${YELLOW}⚠️  Метка сервера не заполнена${NC}"
-            echo -e "${BLUE}📝 Введите метку сервера для идентификации:${NC}"
-            read -p "Метка сервера: " server_label
+            echo -e "${BLUE}📝 Введите метку VPS для идентификации (до 5 символов латиницей):${NC}"
+            echo -e "${BLUE}Примеры: srv01, vps1, main, node1${NC}"
+            read -p "Метка VPS: " server_label
             
-            if [ -n "$server_label" ]; then
-                # Находим локальную панель
-                local panel_id=$(yq eval '.panels | to_entries | .[] | select(.value.is_local == true) | .key' config.yaml 2>/dev/null | head -1)
-                
-                if [ -n "$panel_id" ]; then
-                    # Записываем только в local_panel.alias
-                    yq eval -i ".panels.${panel_id}.alias = \"${server_label}\"" config.yaml
-                    echo -e "${GREEN}✅ Метка сервера сохранена в ${panel_id}.alias: ${server_label}${NC}"
-                else
-                    echo -e "${YELLOW}⚠️  Локальная панель не найдена${NC}"
-                fi
+            # Валидация: только латиница и цифры, до 5 символов
+            while [[ ! "$server_label" =~ ^[a-zA-Z0-9]{1,5}$ ]]; do
+                echo -e "${RED}❌ Неверный формат! Используйте только латинские буквы и цифры, до 5 символов${NC}"
+                read -p "Введите метку VPS: " server_label
+            done
+            
+            # Преобразуем в верхний регистр
+            server_label="${server_label^^}"
+            
+            # Находим локальную панель
+            local panel_id=$(yq eval '.panels | to_entries | .[] | select(.value.is_local == true) | .key' config.yaml 2>/dev/null | head -1)
+            
+            if [ -n "$panel_id" ]; then
+                # Записываем в server_label и local_panel.alias
+                yq eval -i ".common.server_label = \"${server_label}\"" config.yaml
+                yq eval -i ".panels.${panel_id}.alias = \"${server_label}\"" config.yaml
+                echo -e "${GREEN}✅ Метка VPS сохранена: ${server_label}${NC}"
+                echo -e "${GREEN}✅ Метка установлена в ${panel_id}.alias${NC}"
             else
-                echo -e "${YELLOW}⚠️  Метка сервера не введена, используется значение по умолчанию${NC}"
+                echo -e "${YELLOW}⚠️  Локальная панель не найдена${NC}"
+                # Все равно сохраняем в server_label
+                yq eval -i ".common.server_label = \"${server_label}\"" config.yaml
+                echo -e "${GREEN}✅ Метка VPS сохранена: ${server_label}${NC}"
             fi
         fi
     fi
