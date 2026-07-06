@@ -1812,6 +1812,16 @@ async def show_server_status(callback_query: types.CallbackQuery, state: FSMCont
         # TCP connections
         tcp_count = status.get('tcpCount', 0)
         
+        # Получаем общий трафик всех клиентов
+        try:
+            all_clients = await xui_client.get_all_clients()
+            total_traffic_up = sum(c.get('up', 0) for c in all_clients)
+            total_traffic_down = sum(c.get('down', 0) for c in all_clients)
+        except Exception as e:
+            logger.error(f"Ошибка получения трафика клиентов: {e}")
+            total_traffic_up = 0
+            total_traffic_down = 0
+        
         # Формируем сообщение
         message = "<b>🖥️ Сервер</b>\n\n"
         
@@ -1826,6 +1836,10 @@ async def show_server_status(callback_query: types.CallbackQuery, state: FSMCont
         message += f"🌐 <b>Сеть:</b>\n"
         message += f"   ⬆️ Отправлено: {format_bytes(net_up)}\n"
         message += f"   ⬇️ Получено: {format_bytes(net_down)}\n\n"
+        
+        message += f"📊 <b>Общий объем трафика:</b>\n"
+        message += f"   ⬆️ Отправлено: {format_bytes(total_traffic_up)}\n"
+        message += f"   ⬇️ Получено: {format_bytes(total_traffic_down)}\n\n"
         
         # Статус Xray с эмодзи
         xray_emoji = "✅" if xray_state == "running" else "❌"
