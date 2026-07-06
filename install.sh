@@ -447,12 +447,9 @@ add_local_panel_to_config() {
     yq eval -i ".panels.${panel_id}.reality_private_key = \"\"" config.yaml
     yq eval -i ".panels.${panel_id}.reality_short_id = \"\"" config.yaml
     
-    # Устанавливаем эту панель как default_panel если default_panel не установлен
-    local current_default=$(yq eval ".default_panel" config.yaml 2>/dev/null)
-    if [ -z "$current_default" ] || [ "$current_default" = "null" ]; then
-        yq eval -i ".default_panel = \"${panel_id}\"" config.yaml
-        echo -e "${GREEN}✅ Панель ${panel_id} установлена как default_panel${NC}"
-    fi
+    # ВСЕГДА устанавливаем локальную панель как default_panel при первой установке
+    yq eval -i ".default_panel = \"${panel_id}\"" config.yaml
+    echo -e "${GREEN}✅ Панель ${panel_id} установлена как default_panel${NC}"
     
     echo -e "${GREEN}✅ Локальная панель ${panel_id} успешно добавлена в config.yaml${NC}"
     return 0
