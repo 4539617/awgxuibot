@@ -4239,10 +4239,11 @@ install_3xui_v3() {
         echo -e "${BLUE}📁 Путь к сертификатам: /root/cert/${SERVER_IP}/${NC}"
         printf '1\n3\n/root/cert/%s/fullchain.pem\n/root/cert/%s/privkey.pem\n\n\n\n\n\n\n' "$SERVER_IP" "$SERVER_IP" | bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh) 2>&1 | tee "$INSTALL_OUTPUT"
     else
-        # 2 - Let's Encrypt для IP (запросить новый сертификат)
-        # y - подтверждение получения SSL
-        echo -e "${YELLOW}⚠ Запрос нового SSL сертификата...${NC}"
-        printf '1\n2\ny\n\n80\n' | bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh) 2>&1 | tee "$INSTALL_OUTPUT"
+        # Запускаем установщик в интерактивном режиме
+        echo -e "${YELLOW}⚠ Запуск установщика панели...${NC}"
+        echo -e "${BLUE}ℹ️  Установщик задаст вам вопросы о настройке${NC}"
+        echo -e "${BLUE}ℹ️  Рекомендуется: опция 1 для SQLite, опция 2 для SSL (Let's Encrypt IP)${NC}\n"
+        bash <(curl -Ls https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh) 2>&1 | tee "$INSTALL_OUTPUT"
     fi
     
     # Проверка успешности установки
