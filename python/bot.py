@@ -743,17 +743,15 @@ async def cmd_all_clients(message: Message):
             if traffic_mb >= 1:
                 button_text += f" ({traffic_mb:.0f}MB)"
             
-            # Добавляем иконку статуса
-            if client['status'] == 'active':
+            # Для онлайн клиентов показываем только 🟢, для остальных - иконку статуса
+            if is_online:
+                button_text = f"🟢 {button_text}"
+            elif client['status'] == 'active':
                 button_text = f"✅ {button_text}"
             elif client['status'] == 'inactive':
                 button_text = f"⏸️ {button_text}"
             else:  # expired
                 button_text = f"⏰ {button_text}"
-            
-            # Добавляем иконку онлайн перед всем остальным
-            if is_online:
-                button_text = f"🔌 {button_text}"
             
             row.append(InlineKeyboardButton(text=button_text, callback_data=f"allclient_{client['uuid']}"))
             
@@ -1377,17 +1375,15 @@ async def back_to_allclients(callback_query: types.CallbackQuery, is_refresh: bo
             if traffic_mb >= 1:
                 button_text += f" ({traffic_mb:.0f}MB)"
             
-            # Добавляем иконку статуса
-            if client['status'] == 'active':
+            # Для онлайн клиентов показываем только 🟢, для остальных - иконку статуса
+            if is_online:
+                button_text = f"🟢 {button_text}"
+            elif client['status'] == 'active':
                 button_text = f"✅ {button_text}"
             elif client['status'] == 'inactive':
                 button_text = f"⏸️ {button_text}"
             else:  # expired
                 button_text = f"⏰ {button_text}"
-            
-            # Добавляем иконку онлайн перед всем остальным
-            if is_online:
-                button_text = f"🔌 {button_text}"
             
             row.append(InlineKeyboardButton(text=button_text, callback_data=f"allclient_{client['uuid']}"))
             

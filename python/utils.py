@@ -1226,7 +1226,7 @@ class XUIClient:
         return len(online_clients)
     
     async def _get_online_clients_v2(self) -> list:
-        """Получение списка онлайн клиентов для v2 панели через inbound list"""
+        """Получение списка онлайн клиентов для v2 панели через last_online из БД"""
         if not self.session:
             await self.login()
         
@@ -1264,18 +1264,33 @@ class XUIClient:
                         if client_stats:
                             logger.info(f"🔍 [v2] Найдено clientStats: {len(client_stats)} записей")
                             
+                            # Текущее время в миллисекундах
+                            import time
+                            current_time_ms = int(time.time() * 1000)
+                            # Считаем онлайн если last_online обновлялся в последние 2 минуты
+                            online_threshold_ms = 2 * 60 * 1000  # 2 минуты в миллисекундах
+                            
                             online_emails = []
                             for stat in client_stats:
-                                logger.info(f"🔍 [v2] Stat keys: {list(stat.keys())}")
-                                logger.info(f"🔍 [v2] Stat: email={stat.get('email')}, enable={stat.get('enable')}")
+                                email = stat.get('email', '')
+                                enable = stat.get('enable', False)
+                                last_online = stat.get('last_online', 0)
                                 
-                                # Для v2 проверяем наличие активного трафика
-                                if stat.get('enable', False):
-                                    email = stat.get('email', '')
-                                    if email:
-                                        online_emails.append(email)
+                                logger.debug(f"🔍 [v2] Client: {email}, enable={enable}, last_online={last_online}")
+                                
+                                # Проверяем: клиент включен И был онлайн в последние 2 минуты
+                                if enable and email:
+                                    if last_online > 0:
+                                        time_diff_ms = current_time_ms - last_online
+                                        if time_diff_ms <= online_threshold_ms:
+                                            online_emails.append(email)
+                                            logger.info(f"✅ [v2] {email} онлайн (last_online: {time_diff_ms/1000:.0f}s назад)")
+                                        else:
+                                            logger.debug(f"⏸️ [v2] {email} оффлайн (last_online: {time_diff_ms/1000:.0f}s назад)")
+                                    else:
+                                        logger.debug(f"⏸️ [v2] {email} никогда не был онлайн")
                             
-                            logger.info(f"🔍 [v2] Найдено активных клиентов: {len(online_emails)}")
+                            logger.info(f"🔍 [v2] Найдено онлайн клиентов: {len(online_emails)}")
                             return online_emails
                         else:
                             logger.warning(f"🔍 [v2] clientStats отсутствует в inbound")
