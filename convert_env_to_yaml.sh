@@ -65,7 +65,7 @@ common:
   admin_ids:
     - ${env_vars[ADMIN_IDS]}
   server_port: ${env_vars[SERVER_PORT]:-443}
-  server_label: ""
+  server_label: "${env_vars[SERVER_LABEL]:-}"
   api_timeout: ${env_vars[API_TIMEOUT]:-30}
   xhttp_mode: "${env_vars[XHTTP_MODE]:-auto}"
   tls_fingerprint: "${env_vars[TLS_FINGERPRINT]:-edge}"

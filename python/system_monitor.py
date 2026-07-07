@@ -18,7 +18,7 @@ class SystemMonitor:
     
     Функции:
     - Проверка CPU, RAM, Disk каждые N секунд
-    - Отправка уведомлений при превышении порогов
+    - Отправка уведомлений при превышении порогов (после 3 последовательных проверок)
     - Настраиваемые пороги для каждого ресурса
     - Защита от спама уведомлений
     """
@@ -38,6 +38,7 @@ class SystemMonitor:
         
         # Параметры мониторинга
         self.check_interval = self._get_check_interval()
+        self.threshold_check_count = 3  # Количество последовательных проверок перед отправкой уведомления
         
         # Контроль выполнения
         self.running = False
@@ -51,6 +52,13 @@ class SystemMonitor:
         }
         self.alert_cooldown = 300  # 5 минут между повторными уведомлениями
         
+        # Счетчики последовательных превышений порогов
+        self.consecutive_threshold_exceeded: Dict[str, int] = {
+            'cpu': 0,
+            'ram': 0,
+            'disk': 0
+        }
+        
         # Состояние превышения порогов (для отслеживания восстановления)
         self.threshold_exceeded: Dict[str, bool] = {
             'cpu': False,
@@ -60,6 +68,7 @@ class SystemMonitor:
         
         logger.info(f"🔍 SystemMonitor инициализирован:")
         logger.info(f"  - Интервал проверки: {self.check_interval}с")
+        logger.info(f"  - Порог проверок для уведомления: {self.threshold_check_count}")
         logger.info(f"  - Cooldown уведомлений: {self.alert_cooldown}с")
     
     def _get_check_interval(self) -> int:
@@ -156,7 +165,7 @@ class SystemMonitor:
     
     async def _check_threshold(self, resource_type: str, current_value: float, threshold: float, display_name: str):
         """
-        Проверка превышения порога для ресурса
+        Проверка превышения порога для ресурса с трехкратной проверкой
         
         Args:
             resource_type: Тип ресурса ('cpu', 'ram', 'disk')
@@ -166,22 +175,45 @@ class SystemMonitor:
         """
         exceeded = current_value >= threshold
         was_exceeded = self.threshold_exceeded.get(resource_type, False)
+        consecutive_count = self.consecutive_threshold_exceeded.get(resource_type, 0)
         
-        if exceeded and not was_exceeded:
-            # Порог только что превышен
-            self.threshold_exceeded[resource_type] = True
-            await self._send_alert(resource_type, display_name, current_value, threshold, exceeded=True)
-            logger.warning(f"⚠️ {display_name}: {current_value:.1f}% (порог: {threshold:.0f}%)")
-        
-        elif not exceeded and was_exceeded:
-            # Ресурс восстановился
-            self.threshold_exceeded[resource_type] = False
-            await self._send_alert(resource_type, display_name, current_value, threshold, exceeded=False)
-            logger.info(f"✅ {display_name}: восстановлен до {current_value:.1f}%")
-        
-        elif exceeded:
-            # Порог все еще превышен - проверяем cooldown для повторного уведомления
-            await self._send_alert(resource_type, display_name, current_value, threshold, exceeded=True, repeat=True)
+        if exceeded:
+            # Увеличиваем счетчик последовательных превышений
+            self.consecutive_threshold_exceeded[resource_type] = consecutive_count + 1
+            new_count = self.consecutive_threshold_exceeded[resource_type]
+            
+            if not was_exceeded:
+                # Порог превышен, но еще не достигли порога проверок
+                if new_count < self.threshold_check_count:
+                    logger.warning(
+                        f"⚠️ {display_name}: {current_value:.1f}% (порог: {threshold:.0f}%) "
+                        f"[{new_count}/{self.threshold_check_count}]"
+                    )
+                elif new_count == self.threshold_check_count:
+                    # Достигли порога проверок - отправляем уведомление
+                    self.threshold_exceeded[resource_type] = True
+                    await self._send_alert(resource_type, display_name, current_value, threshold, exceeded=True)
+                    logger.warning(
+                        f"🚨 {display_name}: {current_value:.1f}% (порог: {threshold:.0f}%) "
+                        f"[{new_count}/{self.threshold_check_count}] - УВЕДОМЛЕНИЕ ОТПРАВЛЕНО"
+                    )
+            else:
+                # Порог все еще превышен - проверяем cooldown для повторного уведомления
+                await self._send_alert(resource_type, display_name, current_value, threshold, exceeded=True, repeat=True)
+        else:
+            # Порог не превышен - сбрасываем счетчик
+            if consecutive_count > 0:
+                logger.debug(
+                    f"✅ {display_name}: {current_value:.1f}% - счетчик сброшен "
+                    f"(было {consecutive_count}/{self.threshold_check_count})"
+                )
+            self.consecutive_threshold_exceeded[resource_type] = 0
+            
+            if was_exceeded:
+                # Ресурс восстановился после превышения порога
+                self.threshold_exceeded[resource_type] = False
+                await self._send_alert(resource_type, display_name, current_value, threshold, exceeded=False)
+                logger.info(f"✅ {display_name}: восстановлен до {current_value:.1f}%")
     
     async def _send_alert(self, resource_type: str, display_name: str, current_value: float, 
                          threshold: float, exceeded: bool, repeat: bool = False):
@@ -286,12 +318,14 @@ class SystemMonitor:
         return {
             'running': self.running,
             'check_interval': self.check_interval,
+            'threshold_check_count': self.threshold_check_count,
             'alert_cooldown': self.alert_cooldown,
             'settings': settings,
             'thresholds': thresholds,
+            'consecutive_threshold_exceeded': self.consecutive_threshold_exceeded,
             'threshold_exceeded': self.threshold_exceeded,
             'last_alert_time': {
-                k: v.isoformat() if v else None 
+                k: v.isoformat() if v else None
                 for k, v in self.last_alert_time.items()
             }
         }

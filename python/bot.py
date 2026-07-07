@@ -255,8 +255,10 @@ async def cmd_new(message: Message, state: FSMContext):
         await message.answer("⛔ Вы заблокированы администратором.")
         return
 
+    current_panel = config.get_current_panel()
+    panel_alias = current_panel.alias if current_panel else "N/A"
     await message.answer(
-        "📝 Введите комментарий к подключению:\n\n",
+        f"📝 Введите комментарий к новому бессрочному ключу для панели {panel_alias}:\n\n",
         parse_mode="HTML"
     )
     await state.set_state(NewClientState.waiting_for_comment)
@@ -2450,10 +2452,14 @@ async def callback_cmd_new(callback_query: types.CallbackQuery, state: FSMContex
         [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
     ])
     
+    # Получаем alias текущей панели
+    current_panel = config.get_current_panel()
+    panel_alias = current_panel.alias if current_panel else "N/A"
+    
     # Всегда отправляем новое сообщение для навигации
     await bot.send_message(
         callback_query.message.chat.id,
-        "📝 Введите комментарий к подключению:\n\n",
+        f"📝 Введите комментарий к новому бессрочному ключу для панели {panel_alias}:\n\n",
         parse_mode="HTML",
         reply_markup=keyboard
     )
@@ -2481,10 +2487,14 @@ async def callback_cmd_tempkey(callback_query: types.CallbackQuery, state: FSMCo
         [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
     ])
     
+    # Получаем alias текущей панели
+    current_panel = config.get_current_panel()
+    panel_alias = current_panel.alias if current_panel else "N/A"
+    
     # Всегда отправляем новое сообщение для навигации
     await bot.send_message(
         callback_query.message.chat.id,
-        "📝 Введите комментарий к подключению:\n\n",
+        f"📝 Введите комментарий к новому временному ключу для панели {panel_alias}:\n\n",
         parse_mode="HTML",
         reply_markup=keyboard
     )
