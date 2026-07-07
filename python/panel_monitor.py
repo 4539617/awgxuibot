@@ -225,6 +225,10 @@ class PanelMonitor:
         """
         logger.info(f"🔄 Начало процесса failover с панели {failed_panel_id}")
         
+        # Получаем конфигурацию недоступной панели для отображения алиаса
+        failed_panel_config = self.config_manager.get_panel(failed_panel_id)
+        failed_panel_alias = failed_panel_config.alias if failed_panel_config else failed_panel_id
+        
         # Получаем список панелей по приоритету (порядок в config.yaml)
         panels_by_priority = await self._get_panels_by_priority()
         
@@ -263,9 +267,8 @@ class PanelMonitor:
                 if success:
                     await self._notify_admins(
                         f"🔄 <b>Автоматическое переключение панели</b>\n\n"
-                        f"❌ Недоступна: <code>{failed_panel_id}</code>\n"
-                        f"✅ Переключено на: <code>{panel_id}</code>\n"
-                        f"📡 Alias: <b>{panel_config.alias}</b>\n\n"
+                        f"❌ Недоступна: <b>{failed_panel_alias}</b> <code>{failed_panel_id}</code>\n"
+                        f"✅ Переключено на: <b>{panel_config.alias}</b> <code>{panel_id}</code>\n\n"
                         f"⏰ Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
                     )
                     return
