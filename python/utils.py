@@ -1230,11 +1230,12 @@ class XUIClient:
         if not self.session:
             await self.login()
         
-        inbound_id = self.config.xui.inbound_id
+        # Конвертируем inbound_id в int для сравнения (в config может быть строка)
+        inbound_id = int(self.config.xui.inbound_id)
         endpoint = f"{self.config.xui.url}/xui/API/inbounds/list"
         headers = await self._get_headers()
         
-        logger.info(f"🔍 [v2] Запрос списка inbounds: {endpoint}")
+        logger.info(f"🔍 [v2] Запрос списка inbounds для ID={inbound_id}: {endpoint}")
         
         try:
             async with self.session.get(endpoint, headers=headers) as resp:
@@ -1248,15 +1249,20 @@ class XUIClient:
                         inbounds = result.get('obj', [])
                         logger.info(f"🔍 [v2] Получено inbounds: {len(inbounds)}")
                         
-                        # Ищем нужный inbound
+                        # Логируем все ID для диагностики
+                        for inb in inbounds:
+                            logger.info(f"🔍 [v2] Найден inbound: id={inb.get('id')} (type={type(inb.get('id'))}), port={inb.get('port')}")
+                        
+                        # Ищем нужный inbound (сравниваем как int)
                         target_inbound = None
                         for inbound in inbounds:
-                            if inbound.get('id') == inbound_id:
+                            if int(inbound.get('id', 0)) == inbound_id:
                                 target_inbound = inbound
+                                logger.info(f"✅ [v2] Найден целевой inbound ID={inbound_id}")
                                 break
                         
                         if not target_inbound:
-                            logger.warning(f"🔍 [v2] Inbound {inbound_id} не найден")
+                            logger.warning(f"🔍 [v2] Inbound {inbound_id} не найден среди {[inb.get('id') for inb in inbounds]}")
                             return []
                         
                         # Проверяем clientStats
