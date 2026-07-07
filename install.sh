@@ -5253,9 +5253,9 @@ install_awg() {
             2) install_awg_version "v2" "51821" ;;
             3)
                 echo -e "\n${YELLOW}Установка AWG v1...${NC}"
-                install_awg_version "v1" "51820"
+                install_awg_version "v1" "51820" "auto"
                 echo -e "\n${YELLOW}Установка AWG v2...${NC}"
-                install_awg_version "v2" "51821"
+                install_awg_version "v2" "51821" "auto"
                 ;;
             4) return 0 ;;
             *) echo -e "${RED}❌ Неверный выбор${NC}"; return 1 ;;
@@ -5267,6 +5267,7 @@ install_awg() {
 install_awg_version() {
     local version=$1
     local default_port=$2
+    local auto_mode=$3  # Новый параметр для автоматического режима
     local container_name="amnezia-awg"
     
     if [ "$version" = "v2" ]; then
@@ -5278,17 +5279,29 @@ install_awg_version() {
     # Проверяем, установлен ли AWG
     if docker ps -a --format '{{.Names}}' | grep -q "^${container_name}$"; then
         echo -e "${YELLOW}⚠️  AWG $version уже установлен!${NC}"
-        read -p "Переустановить? (y/n): " reinstall
-        if [ "$reinstall" != "y" ]; then
-            return 0
+        if [ "$auto_mode" = "auto" ]; then
+            echo -e "${YELLOW}🗑️  Автоматическое удаление старого контейнера...${NC}"
+            docker stop $container_name 2>/dev/null || true
+            docker rm $container_name 2>/dev/null || true
+        else
+            read -p "Переустановить? (y/n): " reinstall
+            if [ "$reinstall" != "y" ]; then
+                return 0
+            fi
+            echo -e "${YELLOW}🗑️  Удаление старого контейнера...${NC}"
+            docker stop $container_name 2>/dev/null || true
+            docker rm $container_name 2>/dev/null || true
         fi
-        echo -e "${YELLOW}🗑️  Удаление старого контейнера...${NC}"
-        docker stop $container_name 2>/dev/null || true
-        docker rm $container_name 2>/dev/null || true
     fi
     
-    read -p "Введите порт для AWG $version (по умолчанию $default_port): " AWG_PORT
-    AWG_PORT=${AWG_PORT:-$default_port}
+    # В автоматическом режиме используем порт по умолчанию без запроса
+    if [ "$auto_mode" = "auto" ]; then
+        AWG_PORT=$default_port
+        echo -e "${BLUE}ℹ️  Используется порт по умолчанию: $AWG_PORT${NC}"
+    else
+        read -p "Введите порт для AWG $version (по умолчанию $default_port): " AWG_PORT
+        AWG_PORT=${AWG_PORT:-$default_port}
+    fi
     
     echo -e "${YELLOW}🔧 Установка AWG $version на порту $AWG_PORT...${NC}\n"
     
