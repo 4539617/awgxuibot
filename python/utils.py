@@ -613,7 +613,7 @@ class XUIClient:
                         clients = result.get('obj', [])
                         
                         if not clients:
-                            logger.warning("⚠️ Список клиентов пуст")
+                            logger.debug("ℹ️ Список клиентов пуст")
                             return []
                         
                         current_time = int(time.time() * 1000)
@@ -1218,6 +1218,47 @@ class XUIClient:
                     return {}
         except Exception as e:
             logger.error(f"Ошибка получения статуса сервера: {e}")
+            return {}
+    
+    async def get_online_clients_count(self) -> int:
+        """Получение количества онлайн клиентов через inbound stats"""
+        online_clients = await self.get_online_clients()
+        return len(online_clients)
+    
+    async def get_online_clients(self) -> list:
+        """Получение списка email онлайн клиентов через inbound stats"""
+        if not self.session:
+            await self.login()
+        
+        inbound_id = self.config.xui.inbound_id
+        endpoint = f"{self.config.xui.url}/panel/api/inbounds/clientStats/{inbound_id}"
+        headers = await self._get_headers()
+        
+        try:
+            async with self.session.get(endpoint, headers=headers) as resp:
+                if resp.status == 200:
+                    result = await resp.json()
+                    if result.get('success'):
+                        stats = result.get('obj', [])
+                        # Собираем email клиентов с активным трафиком (онлайн)
+                        online_emails = []
+                        for client_stat in stats:
+                            # Клиент считается онлайн если есть активность
+                            if client_stat.get('online', False):
+                                email = client_stat.get('email', '')
+                                if email:
+                                    online_emails.append(email)
+                        return online_emails
+                    else:
+                        logger.error(f"API вернул success=false: {result}")
+                        return []
+                else:
+                    text = await resp.text()
+                    logger.error(f"Ошибка получения статистики клиентов: {resp.status} - {text}")
+                    return []
+        except Exception as e:
+            logger.error(f"Ошибка получения онлайн клиентов: {e}")
+            return []
     
     async def download_backup(self):
         """Скачать бэкап базы данных"""

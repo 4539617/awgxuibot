@@ -1052,10 +1052,6 @@ export class RouteBot {
         chatId,
         `👤 *Введите имя пира*${ipInfo}\n\n` +
         `Это имя будет добавлено в комментарий на сервере для идентификации.\n\n` +
-        `Примеры:\n` +
-        `• \`John iPhone\`\n` +
-        `• \`Maria Laptop\`\n` +
-        `• \`Office PC\`\n\n` +
         `Или отправьте \`-\` чтобы пропустить`,
         {
           parse_mode: 'Markdown',
