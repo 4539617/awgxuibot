@@ -2114,8 +2114,7 @@ async def toggle_cpu_alert(callback_query: types.CallbackQuery, state: FSMContex
     config.users_db.set_notification_setting('cpu_alert', new_state)
     
     await callback_query.answer(
-        f"✅ Уведомления о CPU {'включены' if new_state else 'выключены'}",
-        show_alert=True
+        f"✅ CPU {'включены' if new_state else 'выключены'}"
     )
     
     # Обновляем окно настроек
@@ -2135,8 +2134,7 @@ async def toggle_ram_alert(callback_query: types.CallbackQuery, state: FSMContex
     config.users_db.set_notification_setting('ram_alert', new_state)
     
     await callback_query.answer(
-        f"✅ Уведомления о RAM {'включены' if new_state else 'выключены'}",
-        show_alert=True
+        f"✅ RAM {'включены' if new_state else 'выключены'}"
     )
     
     # Обновляем окно настроек
@@ -2156,8 +2154,7 @@ async def toggle_disk_alert(callback_query: types.CallbackQuery, state: FSMConte
     config.users_db.set_notification_setting('disk_alert', new_state)
     
     await callback_query.answer(
-        f"✅ Уведомления о диске {'включены' if new_state else 'выключены'}",
-        show_alert=True
+        f"✅ Диск {'включены' if new_state else 'выключены'}"
     )
     
     # Обновляем окно настроек
