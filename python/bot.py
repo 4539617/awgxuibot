@@ -3153,9 +3153,8 @@ async def show_panels_list(callback_query: types.CallbackQuery, state: FSMContex
             text += f"   {online_icon} {online_text}\n"
             
             # Добавляем URL если есть
-            url = getattr(panel_config, 'url', None)
-            if url:
-                text += f"    {url}\n"
+            if panel_config.xui_url:
+                text += f"    {panel_config.xui_url}\n"
             
             text += f"   ID: <code>{panel_id}</code>\n\n"
         
@@ -3246,7 +3245,7 @@ async def select_panel_to_connect(callback_query: types.CallbackQuery, state: FS
             alias = getattr(panel_config, 'alias', panel_id)
             is_current = panel_id == current_panel_id
             
-            button_text = f"{'🟢' if is_current else '⚪'} {alias}"
+            button_text = f"{'✅' if is_current else '⏸️'} {alias}"
             if is_current:
                 button_text += " (Текущая)"
             
