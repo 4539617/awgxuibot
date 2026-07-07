@@ -566,6 +566,11 @@ update_config_value() {
                     echo -e "${GREEN}✅ Обновлено: common.server_port${NC}"
                     return 0
                     ;;
+                "SERVER_LABEL")
+                    check_yq && yq eval -i ".common.server_label = \"${value}\"" config.yaml
+                    echo -e "${GREEN}✅ Обновлено: common.server_label${NC}"
+                    return 0
+                    ;;
                 "API_TIMEOUT")
                     check_yq && yq eval -i ".common.api_timeout = ${value}" config.yaml
                     echo -e "${GREEN}✅ Обновлено: common.api_timeout${NC}"
@@ -765,6 +770,16 @@ generate_reality_keys_via_api() {
 extract_inbound_params() {
     echo -e "${YELLOW}🔍 Извлечение параметров из панели...${NC}"
     
+    # Сохраняем существующий server_label перед обновлением параметров
+    if check_yq; then
+        local existing_label=$(yq eval '.common.server_label' config.yaml 2>/dev/null)
+        if [ -n "$existing_label" ] && [ "$existing_label" != "null" ] && [ "$existing_label" != '""' ]; then
+            echo -e "${BLUE}  Сохраняем существующую метку сервера: ${existing_label}${NC}"
+            # Сохраняем в глобальную переменную для последующего восстановления
+            PRESERVED_SERVER_LABEL="$existing_label"
+        fi
+    fi
+    
     # Проверяем is_local для panel1
     local IS_LOCAL=$(yq eval '.panels.panel1.is_local' config.yaml 2>/dev/null)
     if [ "$IS_LOCAL" = "false" ]; then
@@ -877,6 +892,12 @@ extract_inbound_params() {
             update_config_value "TLS_SNI" "${TLS_SNI}"
             echo -e "${GREEN}  ✓ TLS SNI обновлен: ${TLS_SNI}${NC}"
         fi
+    fi
+    
+    # Восстанавливаем server_label если он был сохранен
+    if [ -n "$PRESERVED_SERVER_LABEL" ]; then
+        update_config_value "SERVER_LABEL" "$PRESERVED_SERVER_LABEL"
+        echo -e "${GREEN}  ✓ Метка сервера восстановлена: ${PRESERVED_SERVER_LABEL}${NC}"
     fi
     
     echo -e "${GREEN}✅ Параметры успешно извлечены из панели${NC}"
