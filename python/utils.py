@@ -1270,26 +1270,24 @@ class XUIClient:
                         if client_stats:
                             logger.info(f"🔍 [v2] Найдено clientStats: {len(client_stats)} записей")
                             
-                            # Проверяем первый клиент чтобы понять есть ли last_online в API
+                            # API v2 использует camelCase: lastOnline вместо last_online
                             if client_stats:
                                 first_stat = client_stats[0]
                                 logger.info(f"🔍 [v2] Пример clientStat keys: {list(first_stat.keys())}")
-                                has_last_online = 'last_online' in first_stat
-                                logger.info(f"🔍 [v2] API содержит last_online: {has_last_online}")
                             
                             # Текущее время в миллисекундах
-                            import time
                             current_time_ms = int(time.time() * 1000)
-                            # Считаем онлайн если last_online обновлялся в последние 2 минуты
+                            # Считаем онлайн если lastOnline обновлялся в последние 2 минуты
                             online_threshold_ms = 2 * 60 * 1000  # 2 минуты в миллисекундах
                             
                             online_emails = []
                             for stat in client_stats:
                                 email = stat.get('email', '')
                                 enable = stat.get('enable', False)
-                                last_online = stat.get('last_online', 0)
+                                # API v2 использует camelCase!
+                                last_online = stat.get('lastOnline', 0)
                                 
-                                logger.info(f"🔍 [v2] Client: {email}, enable={enable}, last_online={last_online}")
+                                logger.info(f"🔍 [v2] Client: {email}, enable={enable}, lastOnline={last_online}")
                                 
                                 # Проверяем: клиент включен И был онлайн в последние 2 минуты
                                 if enable and email:
@@ -1297,13 +1295,13 @@ class XUIClient:
                                         time_diff_ms = current_time_ms - last_online
                                         if time_diff_ms <= online_threshold_ms:
                                             online_emails.append(email)
-                                            logger.info(f"✅ [v2] {email} онлайн (last_online: {time_diff_ms/1000:.0f}s назад)")
+                                            logger.info(f"✅ [v2] {email} ОНЛАЙН (lastOnline: {time_diff_ms/1000:.0f}s назад)")
                                         else:
-                                            logger.info(f"⏸️ [v2] {email} оффлайн (last_online: {time_diff_ms/1000:.0f}s назад)")
+                                            logger.info(f"⏸️ [v2] {email} оффлайн (lastOnline: {time_diff_ms/1000:.0f}s назад)")
                                     else:
-                                        logger.info(f"⏸️ [v2] {email} никогда не был онлайн (last_online=0)")
+                                        logger.info(f"⏸️ [v2] {email} никогда не был онлайн (lastOnline=0)")
                             
-                            logger.info(f"🔍 [v2] Найдено онлайн клиентов: {len(online_emails)}")
+                            logger.info(f"🎯 [v2] Найдено онлайн клиентов: {len(online_emails)} из {len(client_stats)}")
                             return online_emails
                         else:
                             logger.warning(f"🔍 [v2] clientStats отсутствует в inbound")
