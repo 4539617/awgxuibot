@@ -3129,7 +3129,7 @@ async def show_panels_list(callback_query: types.CallbackQuery, state: FSMContex
         statuses = await panel_manager.check_all_panels_status()
         
         # Формируем текст со списком панелей
-        text = "🔧 <b>Управление панелями</b>\n\n"
+        text = "🔧 <b>Панели 3xui</b>\n\n"
         
         for panel_id, panel_config in panels.items():
             alias = getattr(panel_config, 'alias', panel_id)
@@ -3137,16 +3137,27 @@ async def show_panels_list(callback_query: types.CallbackQuery, state: FSMContex
             is_current = panel_id == current_panel_id
             is_online = statuses.get(panel_id, False)
             
-            # Иконки статуса
-            current_icon = "🟢" if is_current else "⚪"
-            status_icon = "✅" if is_online else "❌"
-            status_text = "Доступна" if is_online else "Недоступна"
+            # Иконки статуса панели
+            panel_icon = "✅" if is_current else "⏸️"
             
-            text += f"{current_icon} <b>{alias}</b> <code>v{version}</code>\n"
-            text += f"   {status_icon} {status_text}"
-            if is_current:
-                text += " (Текущая)"
-            text += f"\n   ID: <code>{panel_id}</code>\n\n"
+            # Иконки онлайн статуса
+            if is_online:
+                online_icon = "🟢"
+                online_text = "Онлайн"
+            else:
+                online_icon = "🔴"
+                online_text = "Оффлайн"
+            
+            # Формируем строку панели
+            text += f"{panel_icon} <b>{alias}</b> <code>v{version}</code>\n"
+            text += f"   {online_icon} {online_text}\n"
+            
+            # Добавляем URL если есть
+            url = getattr(panel_config, 'url', None)
+            if url:
+                text += f"    {url}\n"
+            
+            text += f"   ID: <code>{panel_id}</code>\n\n"
         
         # Кнопки управления
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
