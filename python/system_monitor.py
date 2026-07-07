@@ -70,6 +70,7 @@ class SystemMonitor:
         logger.info(f"  - Интервал проверки: {self.check_interval}с")
         logger.info(f"  - Порог проверок для уведомления: {self.threshold_check_count}")
         logger.info(f"  - Cooldown уведомлений: {self.alert_cooldown}с")
+        logger.info(f"  - Администраторы для уведомлений: {self.admin_ids} (всего: {len(self.admin_ids)})")
     
     def _get_check_interval(self) -> int:
         """Получить интервал проверки из конфигурации"""
@@ -189,7 +190,7 @@ class SystemMonitor:
                         f"⚠️ {display_name}: {current_value:.1f}% (порог: {threshold:.0f}%) "
                         f"[{new_count}/{self.threshold_check_count}]"
                     )
-                elif new_count == self.threshold_check_count:
+                elif new_count >= self.threshold_check_count:
                     # Достигли порога проверок - отправляем уведомление
                     self.threshold_exceeded[resource_type] = True
                     await self._send_alert(resource_type, display_name, current_value, threshold, exceeded=True)
@@ -199,11 +200,12 @@ class SystemMonitor:
                     )
             else:
                 # Порог все еще превышен - проверяем cooldown для повторного уведомления
-                await self._send_alert(resource_type, display_name, current_value, threshold, exceeded=True, repeat=True)
+                if new_count >= self.threshold_check_count:
+                    await self._send_alert(resource_type, display_name, current_value, threshold, exceeded=True, repeat=True)
         else:
             # Порог не превышен - сбрасываем счетчик
             if consecutive_count > 0:
-                logger.debug(
+                logger.info(
                     f"✅ {display_name}: {current_value:.1f}% - счетчик сброшен "
                     f"(было {consecutive_count}/{self.threshold_check_count})"
                 )
@@ -215,7 +217,7 @@ class SystemMonitor:
                 await self._send_alert(resource_type, display_name, current_value, threshold, exceeded=False)
                 logger.info(f"✅ {display_name}: восстановлен до {current_value:.1f}%")
     
-    async def _send_alert(self, resource_type: str, display_name: str, current_value: float, 
+    async def _send_alert(self, resource_type: str, display_name: str, current_value: float,
                          threshold: float, exceeded: bool, repeat: bool = False):
         """
         Отправка уведомления администраторам
@@ -228,6 +230,13 @@ class SystemMonitor:
             exceeded: True если порог превышен, False если восстановлен
             repeat: True если это повторное уведомление о превышении
         """
+        # Проверка наличия администраторов
+        if not self.admin_ids:
+            logger.error(f"❌ Список администраторов пуст! Уведомление о {resource_type} не отправлено")
+            return
+        
+        logger.info(f"📤 Подготовка уведомления о {resource_type} для {len(self.admin_ids)} администратор(ов): {self.admin_ids}")
+        
         # Проверка cooldown
         now = datetime.now()
         last_alert = self.last_alert_time.get(resource_type)
@@ -236,6 +245,7 @@ class SystemMonitor:
             elapsed = (now - last_alert).total_seconds()
             if elapsed < self.alert_cooldown:
                 # Слишком рано для повторного уведомления
+                logger.debug(f"⏸️ Cooldown активен для {resource_type}: {elapsed:.0f}с / {self.alert_cooldown}с")
                 return
         
         # Формируем сообщение
@@ -260,16 +270,24 @@ class SystemMonitor:
         self.last_alert_time[resource_type] = now
         
         # Отправляем уведомления всем администраторам
+        sent_count = 0
         for admin_id in self.admin_ids:
             try:
+                logger.info(f"📨 Отправка уведомления о {resource_type} администратору {admin_id}...")
                 await self.bot.send_message(
                     chat_id=admin_id,
                     text=message,
                     parse_mode="HTML"
                 )
-                logger.info(f"📨 Уведомление о {resource_type} отправлено администратору {admin_id}")
+                sent_count += 1
+                logger.info(f"✅ Уведомление о {resource_type} успешно отправлено администратору {admin_id}")
             except Exception as e:
-                logger.error(f"❌ Ошибка отправки уведомления администратору {admin_id}: {e}")
+                logger.error(f"❌ Ошибка отправки уведомления администратору {admin_id}: {e}", exc_info=True)
+        
+        if sent_count > 0:
+            logger.info(f"📬 Уведомление о {resource_type} отправлено {sent_count}/{len(self.admin_ids)} администратор(ам)")
+        else:
+            logger.error(f"❌ Не удалось отправить уведомление о {resource_type} ни одному администратору!")
     
     def get_current_stats(self) -> Dict:
         """

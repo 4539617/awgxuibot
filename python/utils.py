@@ -613,7 +613,7 @@ class XUIClient:
                         clients = result.get('obj', [])
                         
                         if not clients:
-                            logger.warning("⚠️ Список клиентов пуст")
+                            logger.debug("ℹ️ Список клиентов пуст")
                             return []
                         
                         current_time = int(time.time() * 1000)
@@ -1218,6 +1218,153 @@ class XUIClient:
                     return {}
         except Exception as e:
             logger.error(f"Ошибка получения статуса сервера: {e}")
+            return {}
+    
+    async def get_online_clients_count(self) -> int:
+        """Получение количества онлайн клиентов через inbound stats"""
+        online_clients = await self.get_online_clients()
+        return len(online_clients)
+    
+    async def _get_online_clients_v2(self) -> list:
+        """Получение списка онлайн клиентов для v2 панели через last_online из БД"""
+        if not self.session:
+            await self.login()
+        
+        # Конвертируем inbound_id в int для сравнения (в config может быть строка)
+        inbound_id = int(self.config.xui.inbound_id)
+        endpoint = f"{self.config.xui.url}/xui/API/inbounds/list"
+        headers = await self._get_headers()
+        
+        logger.info(f"🔍 [v2] Запрос списка inbounds для ID={inbound_id}: {endpoint}")
+        
+        try:
+            async with self.session.get(endpoint, headers=headers) as resp:
+                logger.info(f"🔍 [v2] Статус ответа: {resp.status}")
+                
+                if resp.status == 200:
+                    result = await resp.json()
+                    logger.info(f"🔍 [v2] Ответ API success: {result.get('success')}")
+                    
+                    if result.get('success'):
+                        inbounds = result.get('obj', [])
+                        logger.info(f"🔍 [v2] Получено inbounds: {len(inbounds)}")
+                        
+                        # Логируем все ID для диагностики
+                        for inb in inbounds:
+                            logger.info(f"🔍 [v2] Найден inbound: id={inb.get('id')} (type={type(inb.get('id'))}), port={inb.get('port')}")
+                        
+                        # Ищем нужный inbound (сравниваем как int)
+                        target_inbound = None
+                        for inbound in inbounds:
+                            if int(inbound.get('id', 0)) == inbound_id:
+                                target_inbound = inbound
+                                logger.info(f"✅ [v2] Найден целевой inbound ID={inbound_id}")
+                                break
+                        
+                        if not target_inbound:
+                            logger.warning(f"🔍 [v2] Inbound {inbound_id} не найден среди {[inb.get('id') for inb in inbounds]}")
+                            return []
+                        
+                        # Проверяем clientStats
+                        client_stats = target_inbound.get('clientStats')
+                        if client_stats:
+                            logger.info(f"🔍 [v2] Найдено clientStats: {len(client_stats)} записей")
+                            
+                            # API v2 использует camelCase: lastOnline вместо last_online
+                            if client_stats:
+                                first_stat = client_stats[0]
+                                logger.info(f"🔍 [v2] Пример clientStat keys: {list(first_stat.keys())}")
+                            
+                            # Текущее время в миллисекундах
+                            current_time_ms = int(time.time() * 1000)
+                            # Считаем онлайн если lastOnline обновлялся в последние 2 минуты
+                            online_threshold_ms = 2 * 60 * 1000  # 2 минуты в миллисекундах
+                            
+                            online_emails = []
+                            for stat in client_stats:
+                                email = stat.get('email', '')
+                                enable = stat.get('enable', False)
+                                # API v2 использует camelCase!
+                                last_online = stat.get('lastOnline', 0)
+                                
+                                logger.info(f"🔍 [v2] Client: {email}, enable={enable}, lastOnline={last_online}")
+                                
+                                # Проверяем: клиент включен И был онлайн в последние 2 минуты
+                                if enable and email:
+                                    if last_online > 0:
+                                        time_diff_ms = current_time_ms - last_online
+                                        if time_diff_ms <= online_threshold_ms:
+                                            online_emails.append(email)
+                                            logger.info(f"✅ [v2] {email} ОНЛАЙН (lastOnline: {time_diff_ms/1000:.0f}s назад)")
+                                        else:
+                                            logger.info(f"⏸️ [v2] {email} оффлайн (lastOnline: {time_diff_ms/1000:.0f}s назад)")
+                                    else:
+                                        logger.info(f"⏸️ [v2] {email} никогда не был онлайн (lastOnline=0)")
+                            
+                            logger.info(f"🎯 [v2] Найдено онлайн клиентов: {len(online_emails)} из {len(client_stats)}")
+                            return online_emails
+                        else:
+                            logger.warning(f"🔍 [v2] clientStats отсутствует в inbound")
+                            return []
+                    else:
+                        logger.error(f"[v2] API вернул success=false: {result}")
+                        return []
+                else:
+                    text = await resp.text()
+                    logger.error(f"[v2] Ошибка получения inbounds: {resp.status} - {text}")
+                    return []
+        except Exception as e:
+            logger.error(f"[v2] Ошибка получения онлайн клиентов: {e}")
+            import traceback
+            logger.error(f"[v2] Traceback: {traceback.format_exc()}")
+            return []
+    
+    async def get_online_clients(self) -> list:
+        """Получение списка email онлайн клиентов"""
+        version = self.config.xui.version
+        logger.info(f"🔍 Определение метода для версии: {version}")
+        
+        # Для v2 используем альтернативный метод
+        if version.startswith('2.'):
+            logger.info(f"🔍 Используем метод для v2")
+            return await self._get_online_clients_v2()
+        
+        # Для v3 используем правильный API endpoint
+        if not self.session:
+            await self.login()
+        
+        endpoint = f"{self.config.xui.url}/panel/api/clients/onlines"
+        headers = await self._get_headers()
+        
+        logger.info(f"🔍 [v3] Запрос онлайн клиентов: {endpoint}")
+        
+        try:
+            async with self.session.post(endpoint, headers=headers) as resp:
+                logger.info(f"🔍 [v3] Статус ответа: {resp.status}")
+                
+                if resp.status == 200:
+                    result = await resp.json()
+                    logger.info(f"🔍 [v3] Ответ API success: {result.get('success')}")
+                    
+                    if result.get('success'):
+                        online_emails = result.get('obj', [])
+                        logger.info(f"🔍 [v3] Найдено онлайн клиентов: {len(online_emails)}")
+                        if online_emails:
+                            logger.info(f"🔍 [v3] Онлайн клиенты: {online_emails}")
+                        
+                        return online_emails
+                    else:
+                        logger.error(f"[v3] API вернул success=false: {result}")
+                        return []
+                else:
+                    text = await resp.text()
+                    logger.error(f"[v3] Ошибка получения онлайн клиентов: {resp.status} - {text}")
+                    return []
+        except Exception as e:
+            logger.error(f"[v3] Ошибка получения онлайн клиентов: {e}")
+            import traceback
+            logger.error(f"[v3] Traceback: {traceback.format_exc()}")
+            return []
     
     async def download_backup(self):
         """Скачать бэкап базы данных"""

@@ -669,11 +669,15 @@ async def cmd_all_clients(message: Message):
             await message.answer("📭 Нет ключей в системе.")
             return
         
+        # Получаем список онлайн клиентов
+        online_clients_emails = await xui_client.get_online_clients()
+        
         # Подсчитываем статистику
         total_count = len(all_clients)
         active_count = sum(1 for c in all_clients if c['status'] == 'active')
         inactive_count = sum(1 for c in all_clients if c['status'] == 'inactive')
         expired_count = sum(1 for c in all_clients if c['status'] == 'expired')
+        online_count = len(online_clients_emails)
         
         # Подсчитываем общий расход трафика
         total_traffic = 0
@@ -705,6 +709,7 @@ async def cmd_all_clients(message: Message):
         text += f"✅ Активных: {active_count}\n"
         text += f"⏸️ Неактивных: {inactive_count}\n"
         text += f"⏰ Просроченных: {expired_count}\n"
+        text += f"🟢 Онлайн: {online_count}\n"
         text += f"📊 Расход трафика: {format_traffic(total_traffic)}\n\n"
         
         # Ограничение на количество кнопок
@@ -720,6 +725,7 @@ async def cmd_all_clients(message: Message):
         for i, client in enumerate(clients_to_show):
             email = client['email']
             comment = client['comment']
+            is_online = email in online_clients_emails
             
             # Подсчитываем трафик клиента
             client_traffic = client.get('up', 0) + client.get('down', 0)
@@ -737,8 +743,10 @@ async def cmd_all_clients(message: Message):
             if traffic_mb >= 1:
                 button_text += f" ({traffic_mb:.0f}MB)"
             
-            # Добавляем иконку статуса
-            if client['status'] == 'active':
+            # Для онлайн клиентов показываем только 🟢, для остальных - иконку статуса
+            if is_online:
+                button_text = f"🟢 {button_text}"
+            elif client['status'] == 'active':
                 button_text = f"✅ {button_text}"
             elif client['status'] == 'inactive':
                 button_text = f"⏸️ {button_text}"
@@ -835,7 +843,7 @@ async def show_all_client_details(callback_query: types.CallbackQuery):
         # Формируем текст
         text = f"📋 <b>Информация о ключе</b>\n\n"
         text += f"{status_text}\n"
-        text += f"📧 <b>Email:</b> <code>{client['email']}</code>\n"
+        text += f"📧 <b>Имя ключа:</b> <code>{client['email']}</code>\n"
         # Убираем слово "Временный" из комментария для отображения
         display_comment = client['comment'] if client['comment'] else 'Не указан'
         if display_comment != 'Не указан':
@@ -1014,7 +1022,7 @@ async def refresh_client_details(callback_query: types.CallbackQuery, client_uui
         # Формируем текст
         text = f"📋 <b>Информация о ключе</b>\n\n"
         text += f"{status_text}\n"
-        text += f"📧 <b>Email:</b> <code>{client['email']}</code>\n"
+        text += f"📧 <b>Имя ключа:</b> <code>{client['email']}</code>\n"
         # Убираем слово "Временный" из комментария для отображения
         display_comment = client['comment'] if client['comment'] else 'Не указан'
         if display_comment != 'Не указан':
@@ -1181,7 +1189,7 @@ async def show_qr_code(callback_query: types.CallbackQuery):
         
         # Формируем информативный caption с VLESS-ссылкой и комментарием
         comment = client.get('comment', 'Не указан')
-        caption = f"""📱 <b>QR-код для подключения</b>
+        caption = f"""📱 <b>{client['email']}</b>
 
 🔑 <b>VLESS-ссылка:</b>
 <code>{vless_link}</code>
@@ -1253,6 +1261,10 @@ async def back_to_allclients(callback_query: types.CallbackQuery, is_refresh: bo
         
         # Получаем свежие данные
         all_clients = await xui_client.get_all_clients()
+        
+        # Получаем список онлайн клиентов
+        online_clients_emails = await xui_client.get_online_clients()
+        
         allclients_cache[user_id] = {
             'time': time.time(),
             'data': all_clients
@@ -1273,6 +1285,7 @@ async def back_to_allclients(callback_query: types.CallbackQuery, is_refresh: bo
             text += f"✅ Активных: 0\n"
             text += f"⏸️ Неактивных: 0\n"
             text += f"⏰ Просроченных: 0\n"
+            text += f"🟢 Онлайн: 0\n"
             text += f"📊 Расход трафика: 0 B\n\n"
             text += "📭 <i>Нет ключей в системе</i>"
             
@@ -1301,6 +1314,7 @@ async def back_to_allclients(callback_query: types.CallbackQuery, is_refresh: bo
         active_count = sum(1 for c in all_clients if c['status'] == 'active')
         inactive_count = sum(1 for c in all_clients if c['status'] == 'inactive')
         expired_count = sum(1 for c in all_clients if c['status'] == 'expired')
+        online_count = len(online_clients_emails)
         
         
         # Подсчитываем общий расход трафика для обновленного списка
@@ -1327,6 +1341,7 @@ async def back_to_allclients(callback_query: types.CallbackQuery, is_refresh: bo
         text += f"✅ Активных: {active_count}\n"
         text += f"⏸️ Неактивных: {inactive_count}\n"
         text += f"⏰ Просроченных: {expired_count}\n"
+        text += f"🟢 Онлайн: {online_count}\n"
         text += f"📊 Расход трафика: {format_traffic(total_traffic)}\n\n"
         
         # Ограничение на количество кнопок
@@ -1342,6 +1357,7 @@ async def back_to_allclients(callback_query: types.CallbackQuery, is_refresh: bo
         for i, client in enumerate(clients_to_show):
             email = client['email']
             comment = client['comment']
+            is_online = email in online_clients_emails
             
             # Подсчитываем трафик клиента
             client_traffic = client.get('up', 0) + client.get('down', 0)
@@ -1359,8 +1375,10 @@ async def back_to_allclients(callback_query: types.CallbackQuery, is_refresh: bo
             if traffic_mb >= 1:
                 button_text += f" ({traffic_mb:.0f}MB)"
             
-            # Добавляем иконку статуса
-            if client['status'] == 'active':
+            # Для онлайн клиентов показываем только 🟢, для остальных - иконку статуса
+            if is_online:
+                button_text = f"🟢 {button_text}"
+            elif client['status'] == 'active':
                 button_text = f"✅ {button_text}"
             elif client['status'] == 'inactive':
                 button_text = f"⏸️ {button_text}"
@@ -1648,7 +1666,7 @@ async def process_temp_key_request(callback_query: types.CallbackQuery):
             # Уведомляем администратора об успехе
             await callback_query.message.edit_text(
                 f"✅ Временный ключ на {duration_text} выдан пользователю {user_info}!\n\n"
-                f"📧 Email: {email}\n"
+                f"📧 Имя ключа: {email}\n"
                 f"🆔 UUID: <code>{result['uuid']}</code>",
                 parse_mode="HTML"
             )
@@ -1656,7 +1674,7 @@ async def process_temp_key_request(callback_query: types.CallbackQuery):
             await callback_query.message.edit_text(
                 f"⚠️ Ключ создан, но не удалось отправить пользователю {user_info}.\n\n"
                 f"Возможно, пользователь заблокировал бота.\n\n"
-                f"📧 Email: {email}\n"
+                f"📧 Имя ключа: {email}\n"
                 f"🆔 UUID: <code>{result['uuid']}</code>",
                 parse_mode="HTML"
             )
@@ -2114,8 +2132,7 @@ async def toggle_cpu_alert(callback_query: types.CallbackQuery, state: FSMContex
     config.users_db.set_notification_setting('cpu_alert', new_state)
     
     await callback_query.answer(
-        f"✅ Уведомления о CPU {'включены' if new_state else 'выключены'}",
-        show_alert=True
+        f"✅ CPU {'включены' if new_state else 'выключены'}"
     )
     
     # Обновляем окно настроек
@@ -2135,8 +2152,7 @@ async def toggle_ram_alert(callback_query: types.CallbackQuery, state: FSMContex
     config.users_db.set_notification_setting('ram_alert', new_state)
     
     await callback_query.answer(
-        f"✅ Уведомления о RAM {'включены' if new_state else 'выключены'}",
-        show_alert=True
+        f"✅ RAM {'включены' if new_state else 'выключены'}"
     )
     
     # Обновляем окно настроек
@@ -2156,8 +2172,7 @@ async def toggle_disk_alert(callback_query: types.CallbackQuery, state: FSMConte
     config.users_db.set_notification_setting('disk_alert', new_state)
     
     await callback_query.answer(
-        f"✅ Уведомления о диске {'включены' if new_state else 'выключены'}",
-        show_alert=True
+        f"✅ Диск {'включены' if new_state else 'выключены'}"
     )
     
     # Обновляем окно настроек
@@ -3114,7 +3129,7 @@ async def show_panels_list(callback_query: types.CallbackQuery, state: FSMContex
         statuses = await panel_manager.check_all_panels_status()
         
         # Формируем текст со списком панелей
-        text = "🔧 <b>Управление панелями</b>\n\n"
+        text = "🔧 <b>Панели 3xui</b>\n\n"
         
         for panel_id, panel_config in panels.items():
             alias = getattr(panel_config, 'alias', panel_id)
@@ -3122,16 +3137,26 @@ async def show_panels_list(callback_query: types.CallbackQuery, state: FSMContex
             is_current = panel_id == current_panel_id
             is_online = statuses.get(panel_id, False)
             
-            # Иконки статуса
-            current_icon = "🟢" if is_current else "⚪"
-            status_icon = "✅" if is_online else "❌"
-            status_text = "Доступна" if is_online else "Недоступна"
+            # Иконки статуса панели
+            panel_icon = "✅" if is_current else "⏸️"
             
-            text += f"{current_icon} <b>{alias}</b> <code>v{version}</code>\n"
-            text += f"   {status_icon} {status_text}"
-            if is_current:
-                text += " (Текущая)"
-            text += f"\n   ID: <code>{panel_id}</code>\n\n"
+            # Иконки онлайн статуса
+            if is_online:
+                online_icon = "🟢"
+                online_text = "Онлайн"
+            else:
+                online_icon = "🔴"
+                online_text = "Оффлайн"
+            
+            # Формируем строку панели
+            text += f"{panel_icon} <b>{alias}</b> <code>v{version}</code>\n"
+            text += f"   {online_icon} {online_text}\n"
+            
+            # Добавляем URL если есть
+            if panel_config.xui_url:
+                text += f"    {panel_config.xui_url}\n"
+            
+            text += f"   ID: <code>{panel_id}</code>\n\n"
         
         # Кнопки управления
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -3220,7 +3245,7 @@ async def select_panel_to_connect(callback_query: types.CallbackQuery, state: FS
             alias = getattr(panel_config, 'alias', panel_id)
             is_current = panel_id == current_panel_id
             
-            button_text = f"{'🟢' if is_current else '⚪'} {alias}"
+            button_text = f"{'✅' if is_current else '⏸️'} {alias}"
             if is_current:
                 button_text += " (Текущая)"
             
@@ -3322,6 +3347,9 @@ async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContex
                 active_clients = sum(1 for c in all_clients if c.get('enable', False))
                 inactive_clients = total_clients - active_clients
                 
+                # Получаем количество онлайн клиентов
+                online_clients = await xui_client.get_online_clients_count()
+                
                 # Подсчет трафика
                 total_traffic_up = sum(c.get('up', 0) for c in all_clients)
                 total_traffic_down = sum(c.get('down', 0) for c in all_clients)
@@ -3343,7 +3371,8 @@ async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContex
                     f"📊 <b>Статистика ключей:</b>\n"
                     f"• Всего ключей: <b>{total_clients}</b>\n"
                     f"• Активных: <b>{active_clients}</b> \n"
-                    f"• Неактивных: <b>{inactive_clients}</b> \n\n"
+                    f"• Неактивных: <b>{inactive_clients}</b> \n"
+                    f"• 🟢 Онлайн: <b>{online_clients}</b>\n\n"
                     f"📈 <b>Трафик:</b>\n"
                     f"• Загружено: <code>{format_bytes(total_traffic_up)}</code>\n"
                     f"• Скачано: <code>{format_bytes(total_traffic_down)}</code>\n"
@@ -3437,6 +3466,9 @@ async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContex
                         active_clients = sum(1 for c in all_clients if c.get('enable', False))
                         inactive_clients = total_clients - active_clients
                         
+                        # Получаем количество онлайн клиентов
+                        online_clients = await xui_client.get_online_clients_count()
+                        
                         # Подсчет трафика
                         total_traffic_up = sum(c.get('up', 0) for c in all_clients)
                         total_traffic_down = sum(c.get('down', 0) for c in all_clients)
@@ -3458,7 +3490,8 @@ async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContex
                             f"📊 <b>Статистика ключей:</b>\n"
                             f"• Всего ключей: <b>{total_clients}</b>\n"
                             f"• Активных: <b>{active_clients}</b> \n"
-                            f"• Неактивных: <b>{inactive_clients}</b> \n\n"
+                            f"• Неактивных: <b>{inactive_clients}</b> \n"
+                            f"• 🟢 Онлайн: <b>{online_clients}</b>\n\n"
                             f"📈 <b>Трафик:</b>\n"
                             f"• Загружено: <code>{format_bytes(total_traffic_up)}</code>\n"
                             f"• Скачано: <code>{format_bytes(total_traffic_down)}</code>\n"
