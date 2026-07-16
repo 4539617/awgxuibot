@@ -1302,18 +1302,53 @@ async def back_to_info(callback_query: types.CallbackQuery):
 @dp.callback_query(lambda c: c.data and c.data.startswith('showqr_'))
 async def show_qr_code(callback_query: types.CallbackQuery):
     """Показать QR-код для ключа"""
-    client_uuid = callback_query.data.split('_', 1)[1]
-    
+    # Формат callback_data: showqr_{panel_id}:{uuid}  или  showqr_{uuid} (старый)
+    raw = callback_query.data.split('_', 1)[1]
+    if ':' in raw:
+        panel_id_hint, client_uuid = raw.split(':', 1)
+    else:
+        panel_id_hint, client_uuid = None, raw
+
     try:
-        # Получаем детали клиента
-        client = await xui_client.get_client_details(client_uuid)
-        
+        # Определяем клиент для поиска ключа
+        if panel_id_hint:
+            try:
+                target_client = make_panel_client(panel_id_hint)
+                target_panel_cfg = config.panel_manager.get_panel(panel_id_hint)
+            except Exception:
+                target_client = xui_client
+                target_panel_cfg = config.get_current_panel()
+        else:
+            target_client = xui_client
+            target_panel_cfg = config.get_current_panel()
+
+        client = await target_client.get_client_details(client_uuid)
+
+        # Если не нашли на указанной панели — ищем по всем доступным
+        if not client:
+            for pid, pcfg in get_available_panels():
+                if pid == panel_id_hint:
+                    continue
+                try:
+                    pc = make_panel_client(pid)
+                    found = await pc.get_client_details(client_uuid)
+                    if found:
+                        client = found
+                        target_client = pc
+                        target_panel_cfg = pcfg
+                        break
+                except Exception:
+                    pass
+
         if not client:
             await callback_query.answer("❌ Ключ не найден!", show_alert=True)
             return
-        
+
+        inbound_id = target_panel_cfg.inbound_id if target_panel_cfg else config.xui.inbound_id
+        vpn_cfg = target_client.config.vpn
+
         # Генерируем VLESS ссылку
-        vless_link = await get_client_link(xui_client, client['email'], client_uuid, config.vpn, config.xui.inbound_id)
+        vless_link = await get_client_link(target_client, client['email'], client_uuid, vpn_cfg, inbound_id)
         if not vless_link:
             await callback_query.answer("❌ Ошибка получения ссылки!", show_alert=True)
             return
@@ -2728,12 +2763,12 @@ async def callback_cmd_myclients(callback_query: types.CallbackQuery, state: FSM
             comment = client.get('comment', '')
             status = client['status']
             panel_alias = client.get('_panel_alias', '')
+            pid = client.get('_panel_id', '')
             display_text = (comment.replace('Временный ', '') if comment else client['email'])[:22]
             icon = "✅" if status == 'active' else ("⏸️" if status == 'inactive' else "⏰")
             label = f"{icon} {display_text} · {panel_alias}" if panel_alias else f"{icon} {display_text}"
-            buttons.append([
-                InlineKeyboardButton(text=label, callback_data=f"showqr_{client['uuid']}")
-            ])
+            cb = f"showqr_{pid}:{client['uuid']}" if pid else f"showqr_{client['uuid']}"
+            buttons.append([InlineKeyboardButton(text=label, callback_data=cb)])
 
         buttons.append([
             InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_myclients"),
@@ -2830,12 +2865,12 @@ async def refresh_myclients(callback_query: types.CallbackQuery, state: FSMConte
             comment = client.get('comment', '')
             status = client['status']
             panel_alias = client.get('_panel_alias', '')
+            pid = client.get('_panel_id', '')
             display_text = (comment.replace('Временный ', '') if comment else client['email'])[:22]
             icon = "✅" if status == 'active' else ("⏸️" if status == 'inactive' else "⏰")
             label = f"{icon} {display_text} · {panel_alias}" if panel_alias else f"{icon} {display_text}"
-            buttons.append([
-                InlineKeyboardButton(text=label, callback_data=f"showqr_{client['uuid']}")
-            ])
+            cb = f"showqr_{pid}:{client['uuid']}" if pid else f"showqr_{client['uuid']}"
+            buttons.append([InlineKeyboardButton(text=label, callback_data=cb)])
 
         buttons.append([
             InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_myclients"),
