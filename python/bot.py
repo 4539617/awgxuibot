@@ -137,10 +137,13 @@ async def cmd_start(message: Message, state: FSMContext):
             # Получаем информацию о текущей панели
             current_panel = config.get_current_panel()
             panel_alias = current_panel.alias if current_panel else "N/A"
+            panel_location = getattr(current_panel, 'location_label', '') if current_panel else ''
+            location_line = f"📍 <b>Локация:</b> {panel_location}\n" if panel_location else ""
             
             await message.answer(
                 f"👤 Добро пожаловать, {first_name}!\n\n"
-                f"📡 <b>Панель:</b> <code>{panel_alias}</code>\n\n"
+                f"📡 <b>Панель:</b> <code>{panel_alias}</code>\n"
+                f"{location_line}\n"
                 f"🔐 <b>Настройки подключения:</b>\n"
                 f"• Transport: <code>{config.vpn.transport}</code>\n"
                 f"• Security: <code>{config.vpn.security}</code>\n\n"
@@ -191,10 +194,13 @@ async def cmd_start(message: Message, state: FSMContext):
                 is_local = current_panel.is_local
                 xui_version = current_panel.xui_version
                 xui_url = current_panel.xui_url
+                location = getattr(current_panel, 'location_label', '')
+                location_part = f"• Локация: {location}\n" if location else ""
                 
                 panel_info = (
                     f"\n📋 <b>Панель:</b>\n"
                     f"• Alias: <code>{alias}</code>\n"
+                    f"{location_part}"
                     f"• Local: <code>{'Да' if is_local else 'Нет'}</code>\n"
                     f"• Version: <code>{xui_version}</code>\n"
                 )
@@ -222,10 +228,13 @@ async def cmd_start(message: Message, state: FSMContext):
             # Получаем информацию о текущей панели
             current_panel = config.get_current_panel()
             panel_alias = current_panel.alias if current_panel else "N/A"
+            panel_location2 = getattr(current_panel, 'location_label', '') if current_panel else ''
+            location_line2 = f"📍 <b>Локация:</b> {panel_location2}\n" if panel_location2 else ""
             
             await message.answer(
                 f"👤 <b>Пользователь:</b> {username or first_name}\n"
-                f"📡 <b>Панель:</b> <code>{panel_alias}</code>\n\n"
+                f"📡 <b>Панель:</b> <code>{panel_alias}</code>\n"
+                f"{location_line2}\n"
                 f"🔐 <b>Настройки подключения:</b>\n"
                 f"• Transport: <code>{config.vpn.transport}</code>\n"
                 f"• Security: <code>{config.vpn.security}</code>\n\n"
@@ -2392,10 +2401,13 @@ async def back_to_start_menu(callback_query: types.CallbackQuery, state: FSMCont
             is_local = current_panel.is_local
             xui_version = current_panel.xui_version
             xui_url = current_panel.xui_url
+            location = getattr(current_panel, 'location_label', '')
+            location_part = f"• Локация: {location}\n" if location else ""
             
             panel_info = (
                 f"\n📋 <b>Панель:</b>\n"
                 f"• Alias: <code>{alias}</code>\n"
+                f"{location_part}"
                 f"• Local: <code>{'Да' if is_local else 'Нет'}</code>\n"
                 f"• Version: <code>{xui_version}</code>\n"
             )
