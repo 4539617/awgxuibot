@@ -423,7 +423,6 @@ async def process_new_comment(message: Message, state: FSMContext):
     panel_id = data.get('selected_panel_id') or config.panel_manager.get_current_panel_id()
 
     try:
-        local_client = make_panel_client(panel_id)
         panel_cfg = config.panel_manager.get_panel(panel_id)
     except Exception as e:
         await message.answer(f"❌ Ошибка получения панели: {e}")
@@ -440,36 +439,36 @@ async def process_new_comment(message: Message, state: FSMContext):
 
     status_msg = await message.answer(f"🔄 Ожидайте...")
 
-    result = await local_client.add_client(email, 0, 3650, comment)
+    async with make_panel_client(panel_id) as local_client:
+        result = await local_client.add_client(email, 0, 3650, comment)
 
-    if result['success']:
-        vless_link = await get_client_link(local_client, email, result['uuid'], local_client.config.vpn, panel_cfg.inbound_id)
-        if not vless_link:
-            await status_msg.edit_text(f"❌ Ошибка получения ссылки")
-            await state.clear()
-            return
+        if result['success']:
+            vless_link = await get_client_link(local_client, email, result['uuid'], local_client.config.vpn, panel_cfg.inbound_id)
+            if not vless_link:
+                await status_msg.edit_text(f"❌ Ошибка получения ссылки")
+                await state.clear()
+                return
 
-        await bot.delete_message(message.chat.id, status_msg.message_id)
+            await bot.delete_message(message.chat.id, status_msg.message_id)
 
-        location = getattr(panel_cfg, 'location_label', '')
-        loc_str = f" [{location}]" if location else ""
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [
-                InlineKeyboardButton(text="🔑 Показать ключ", callback_data=f"showlink_{result['uuid']}"),
-                InlineKeyboardButton(text="📱 Показать QR",   callback_data=f"showqr_{result['uuid']}")
-            ],
-            [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")]
-        ])
-        display_comment = comment.replace('Временный ', '')
-        await message.answer(
-            f"🔑 <b>Бессрочный ключ создан</b>\n\n"
-            f"📡 Панель: <b>{panel_cfg.alias}{loc_str}</b>\n"
-            f"📝 Комментарий: {display_comment}",
-            parse_mode="HTML",
-            reply_markup=keyboard
-        )
-    else:
-        await status_msg.edit_text(f"❌ Ошибка: {result.get('error')}")
+            location = getattr(panel_cfg, 'location_label', '')
+            loc_str = f" [{location}]" if location else ""
+            pid = data.get('selected_panel_id', '')
+            cb_qr = f"showqr_{pid}:{result['uuid']}" if pid else f"showqr_{result['uuid']}"
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="📱 Показать QR / Ключ", callback_data=cb_qr)],
+                [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")]
+            ])
+            display_comment = comment.replace('Временный ', '')
+            await message.answer(
+                f"🔑 <b>Бессрочный ключ создан</b>\n\n"
+                f"📡 Панель: <b>{panel_cfg.alias}{loc_str}</b>\n"
+                f"📝 Комментарий: {display_comment}",
+                parse_mode="HTML",
+                reply_markup=keyboard
+            )
+        else:
+            await status_msg.edit_text(f"❌ Ошибка: {result.get('error')}")
 
     await state.clear()
 
@@ -548,7 +547,6 @@ async def process_tempkey_comment(message: Message, state: FSMContext):
     days, duration_text = duration_map.get(duration, (1, '1 день'))
 
     try:
-        local_client = make_panel_client(panel_id)
         panel_cfg = config.panel_manager.get_panel(panel_id)
     except Exception as e:
         await message.answer(f"❌ Ошибка получения панели: {e}")
@@ -564,36 +562,36 @@ async def process_tempkey_comment(message: Message, state: FSMContext):
 
     status_msg = await message.answer(f"🔄 Создаю временный ключ на {duration_text}...")
 
-    result = await local_client.add_client(email, 0, days, f"{comment} (Временный {duration_text})")
+    async with make_panel_client(panel_id) as local_client:
+        result = await local_client.add_client(email, 0, days, f"{comment} (Временный {duration_text})")
 
-    if result['success']:
-        vless_link = await get_client_link(local_client, email, result['uuid'], local_client.config.vpn, panel_cfg.inbound_id)
-        if not vless_link:
-            await status_msg.edit_text(f"❌ Ошибка получения ссылки")
-            await state.clear()
-            return
+        if result['success']:
+            vless_link = await get_client_link(local_client, email, result['uuid'], local_client.config.vpn, panel_cfg.inbound_id)
+            if not vless_link:
+                await status_msg.edit_text(f"❌ Ошибка получения ссылки")
+                await state.clear()
+                return
 
-        await bot.delete_message(message.chat.id, status_msg.message_id)
+            await bot.delete_message(message.chat.id, status_msg.message_id)
 
-        location = getattr(panel_cfg, 'location_label', '')
-        loc_str = f" [{location}]" if location else ""
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [
-                InlineKeyboardButton(text="🔑 Показать ключ", callback_data=f"showlink_{result['uuid']}"),
-                InlineKeyboardButton(text="📱 Показать QR",   callback_data=f"showqr_{result['uuid']}")
-            ],
-            [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")]
-        ])
-        display_comment = comment.replace('Временный ', '')
-        await message.answer(
-            f"⏰ <b>Временный ключ на {duration_text} создан</b>\n\n"
-            f"📡 Панель: <b>{panel_cfg.alias}{loc_str}</b>\n"
-            f"📝 Комментарий: {display_comment}",
-            parse_mode="HTML",
-            reply_markup=keyboard
-        )
-    else:
-        await status_msg.edit_text(f"❌ Ошибка: {result.get('error')}")
+            location = getattr(panel_cfg, 'location_label', '')
+            loc_str = f" [{location}]" if location else ""
+            pid = data.get('selected_panel_id', '')
+            cb_qr = f"showqr_{pid}:{result['uuid']}" if pid else f"showqr_{result['uuid']}"
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="📱 Показать QR / Ключ", callback_data=cb_qr)],
+                [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")]
+            ])
+            display_comment = comment.replace('Временный ', '')
+            await message.answer(
+                f"⏰ <b>Временный ключ на {duration_text} создан</b>\n\n"
+                f"📡 Панель: <b>{panel_cfg.alias}{loc_str}</b>\n"
+                f"📝 Комментарий: {display_comment}",
+                parse_mode="HTML",
+                reply_markup=keyboard
+            )
+        else:
+            await status_msg.edit_text(f"❌ Ошибка: {result.get('error')}")
 
     await state.clear()
 
@@ -1310,45 +1308,42 @@ async def show_qr_code(callback_query: types.CallbackQuery):
         panel_id_hint, client_uuid = None, raw
 
     try:
-        # Определяем клиент для поиска ключа
+        # Находим клиент и панель для ключа
+        client = None
+        target_panel_cfg = None
+        vless_link = None
+
+        # Список панелей для поиска: сначала указанная, потом остальные
+        search_panels = []
         if panel_id_hint:
+            search_panels.append(panel_id_hint)
+        search_panels += [pid for pid, _ in get_available_panels() if pid != panel_id_hint]
+
+        for search_pid in search_panels:
             try:
-                target_client = make_panel_client(panel_id_hint)
-                target_panel_cfg = config.panel_manager.get_panel(panel_id_hint)
+                is_global = (search_pid == config.panel_manager.get_current_panel_id() and not panel_id_hint)
+                pc = xui_client if is_global else make_panel_client(search_pid)
+                found = await pc.get_client_details(client_uuid)
+                if found:
+                    client = found
+                    target_panel_cfg = config.panel_manager.get_panel(search_pid)
+                    inbound_id = target_panel_cfg.inbound_id if target_panel_cfg else config.xui.inbound_id
+                    vpn_cfg = pc.config.vpn
+                    vless_link = await get_client_link(pc, client['email'], client_uuid, vpn_cfg, inbound_id)
+                    if not is_global:
+                        await pc.close()
+                    break
+                if not is_global:
+                    await pc.close()
             except Exception:
-                target_client = xui_client
-                target_panel_cfg = config.get_current_panel()
-        else:
-            target_client = xui_client
-            target_panel_cfg = config.get_current_panel()
-
-        client = await target_client.get_client_details(client_uuid)
-
-        # Если не нашли на указанной панели — ищем по всем доступным
-        if not client:
-            for pid, pcfg in get_available_panels():
-                if pid == panel_id_hint:
-                    continue
-                try:
-                    pc = make_panel_client(pid)
-                    found = await pc.get_client_details(client_uuid)
-                    if found:
-                        client = found
-                        target_client = pc
-                        target_panel_cfg = pcfg
-                        break
-                except Exception:
-                    pass
+                pass
 
         if not client:
             await callback_query.answer("❌ Ключ не найден!", show_alert=True)
             return
 
-        inbound_id = target_panel_cfg.inbound_id if target_panel_cfg else config.xui.inbound_id
-        vpn_cfg = target_client.config.vpn
-
-        # Генерируем VLESS ссылку
-        vless_link = await get_client_link(target_client, client['email'], client_uuid, vpn_cfg, inbound_id)
+        # Генерируем VLESS ссылку (уже получена выше)
+        vless_link = vless_link
         if not vless_link:
             await callback_query.answer("❌ Ошибка получения ссылки!", show_alert=True)
             return
@@ -2729,12 +2724,12 @@ async def callback_cmd_myclients(callback_query: types.CallbackQuery, state: FSM
         available = get_available_panels()
         for panel_id, panel_cfg in available:
             try:
-                panel_client = make_panel_client(panel_id)
-                panel_clients = await panel_client.get_user_clients_by_username(username)
-                for c in panel_clients:
-                    c['_panel_id'] = panel_id
-                    c['_panel_alias'] = panel_cfg.alias
-                all_clients.extend(panel_clients)
+                async with make_panel_client(panel_id) as panel_client:
+                    panel_clients = await panel_client.get_user_clients_by_username(username)
+                    for c in panel_clients:
+                        c['_panel_id'] = panel_id
+                        c['_panel_alias'] = panel_cfg.alias
+                    all_clients.extend(panel_clients)
             except Exception as pe:
                 logger.warning(f"Не удалось получить ключи с панели {panel_id}: {pe}")
 
@@ -2831,12 +2826,12 @@ async def refresh_myclients(callback_query: types.CallbackQuery, state: FSMConte
         available = get_available_panels()
         for panel_id, panel_cfg in available:
             try:
-                panel_client = make_panel_client(panel_id)
-                panel_clients = await panel_client.get_user_clients_by_username(username)
-                for c in panel_clients:
-                    c['_panel_id'] = panel_id
-                    c['_panel_alias'] = panel_cfg.alias
-                all_clients.extend(panel_clients)
+                async with make_panel_client(panel_id) as panel_client:
+                    panel_clients = await panel_client.get_user_clients_by_username(username)
+                    for c in panel_clients:
+                        c['_panel_id'] = panel_id
+                        c['_panel_alias'] = panel_cfg.alias
+                    all_clients.extend(panel_clients)
             except Exception as pe:
                 logger.warning(f"Не удалось получить ключи с панели {panel_id}: {pe}")
 

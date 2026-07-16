@@ -113,6 +113,18 @@ class XUIClient:
                 timeout=aiohttp.ClientTimeout(total=self.config.xui.api_timeout)
             )
     
+    async def close(self):
+        """Закрыть aiohttp сессию"""
+        if self.session:
+            await self.session.close()
+            self.session = None
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_):
+        await self.close()
+
     def update_xui_config(self, new_xui_config):
         """Обновить конфигурацию XUI для переключения между панелями"""
         self.config.xui = new_xui_config
