@@ -3225,22 +3225,20 @@ async def select_panel_to_connect(callback_query: types.CallbackQuery, state: FS
             await callback_query.answer("❌ Панели не настроены", show_alert=True)
             return
         
-        # Формируем кнопки для выбора панели
-        # Показываем только панели v3+ (с API) или локальные панели (работают через БД)
+        # Формируем кнопки для выбора панели.
+        # Правило: показываем только если panel_id == "local_panel"
+        # ИЛИ (сетевая панель с версией 3+).
+        # Всё остальное (v2.x не-local_panel) — только в мониторинге.
         keyboard_buttons = []
         for panel_id, panel_config in panels.items():
-            # Локальные панели показываем всегда (работают через БД)
-            is_local = getattr(panel_config, 'is_local', False)
-            
-            if is_local:
-                logger.debug(f"✅ Локальная панель {panel_id} добавлена в список")
-            else:
-                # Для удаленных панелей проверяем версию (нужен API v3+)
-                is_v3_or_higher = panel_config.is_v3() if hasattr(panel_config, 'is_v3') else False
-                
-                if not is_v3_or_higher:
-                    logger.debug(f"⏭️ Пропуск панели {panel_id} (v2.x, удаленная, нет API)")
-                    continue
+            is_local_panel = (panel_id == "local_panel")
+            is_v3_or_higher = panel_config.is_v3() if hasattr(panel_config, 'is_v3') else False
+
+            if not is_local_panel and not is_v3_or_higher:
+                logger.debug(f"⏭️ Пропуск панели {panel_id} (v<3, не local_panel) — только мониторинг")
+                continue
+
+            logger.debug(f"✅ Панель {panel_id} добавлена в список переключения")
             
             alias = getattr(panel_config, 'alias', panel_id)
             is_current = panel_id == current_panel_id
