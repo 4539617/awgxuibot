@@ -3149,7 +3149,9 @@ async def show_panels_list(callback_query: types.CallbackQuery, state: FSMContex
                 online_text = "Оффлайн"
             
             # Формируем строку панели
-            text += f"{panel_icon} <b>{alias}</b> <code>v{version}</code>\n"
+            location = getattr(panel_config, 'location_label', '')
+            location_str = f" | 📍 {location}" if location else ""
+            text += f"{panel_icon} <b>{alias}</b> <code>v{version}</code>{location_str}\n"
             text += f"   {online_icon} {online_text}\n"
             
             # Добавляем URL если есть
@@ -3241,9 +3243,11 @@ async def select_panel_to_connect(callback_query: types.CallbackQuery, state: FS
             logger.debug(f"✅ Панель {panel_id} добавлена в список переключения")
             
             alias = getattr(panel_config, 'alias', panel_id)
+            location = getattr(panel_config, 'location_label', '')
             is_current = panel_id == current_panel_id
             
-            button_text = f"{'✅' if is_current else '⏸️'} {alias}"
+            location_str = f" [{location}]" if location else ""
+            button_text = f"{'✅' if is_current else '⏸️'} {alias}{location_str}"
             if is_current:
                 button_text += " (Текущая)"
             
@@ -3360,9 +3364,12 @@ async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContex
                         bytes_val /= 1024.0
                     return f"{bytes_val:.2f} PB"
                 
+                location = getattr(panel_config, 'location_label', '')
+                location_line = f"• Местонахождение: <b>{location}</b>\n" if location else ""
                 stats_text = (
                     f"🟢 <b>Текущая панель: {alias}</b>\n\n"
                     f"🔐 <b>Информация о панели:</b>\n"
+                    f"{location_line}"
                     f"• URL: <code>{getattr(panel_config, 'xui_url', 'N/A') or getattr(panel_config, 'url', 'N/A')}</code>\n"
                     f"• Версия: <code>{getattr(panel_config, 'xui_version', 'N/A') or getattr(panel_config, 'version', 'N/A')}</code>\n"
                     f"• Inbound ID: <code>{getattr(panel_config, 'inbound_id', 'N/A')}</code>\n\n"
@@ -3378,8 +3385,10 @@ async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContex
                 )
             except Exception as e:
                 logger.error(f"Ошибка получения статистики: {e}")
+                location_line2 = f"📍 Местонахождение: <b>{location}</b>\n" if location else ""
                 stats_text = (
                     f"🟢 <b>Текущая панель: {alias}</b>\n\n"
+                    f"{location_line2}"
                     f"🔐 URL: <code>{getattr(panel_config, 'xui_url', 'N/A') or getattr(panel_config, 'url', 'N/A')}</code>\n"
                     f"📋 Версия: <code>{getattr(panel_config, 'xui_version', 'N/A') or getattr(panel_config, 'version', 'N/A')}</code>\n"
                     f"🆔 Inbound ID: <code>{getattr(panel_config, 'inbound_id', 'N/A')}</code>\n\n"
@@ -3479,9 +3488,12 @@ async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContex
                                 bytes_val /= 1024.0
                             return f"{bytes_val:.2f} PB"
                         
+                        loc = getattr(panel_config, 'location_label', '')
+                        loc_line = f"• Местонахождение: <b>{loc}</b>\n" if loc else ""
                         stats_text = (
                             f"✅ <b>Успешно подключено к панели {alias}</b>\n\n"
                             f"🔐 <b>Информация о панели:</b>\n"
+                            f"{loc_line}"
                             f"• URL: <code>{new_xui_config.url}</code>\n"
                             f"• Версия: <code>{new_xui_config.version}</code>\n"
                             f"• Inbound ID: <code>{new_xui_config.inbound_id}</code>\n\n"
@@ -3497,8 +3509,10 @@ async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContex
                         )
                     except Exception as e:
                         logger.error(f"Ошибка получения статистики: {e}")
+                        loc_line2 = f"📍 Местонахождение: <b>{loc}</b>\n" if loc else ""
                         stats_text = (
                             f"✅ <b>Успешно подключено к панели {alias}</b>\n\n"
+                            f"{loc_line2}"
                             f"🔐 URL: <code>{new_xui_config.url}</code>\n"
                             f"📋 Версия: <code>{new_xui_config.version}</code>\n"
                             f"🆔 Inbound ID: <code>{new_xui_config.inbound_id}</code>\n\n"

@@ -54,6 +54,7 @@ class PanelConfig:
     alias: str
     enabled: bool
     is_local: bool = False
+    location_label: str = ""
     xui_version: str = "latest"
     xui_url: str = ""
     xui_username: str = ""
@@ -212,6 +213,7 @@ class ConfigManager:
                     alias=panel_data.get('alias', panel_id),
                     enabled=panel_data.get('enabled', True),
                     is_local=panel_data.get('is_local', False),
+                    location_label=panel_data.get('location_label', ''),
                     xui_version=panel_data.get('xui_version', '3.3.1'),
                     xui_url=panel_data.get('xui_url', ''),
                     xui_username=panel_data.get('xui_username', ''),
@@ -559,6 +561,7 @@ class ConfigManager:
                     'alias': panel.alias,
                     'enabled': panel.enabled,
                     'is_local': existing_is_local,  # Используем значение из файла
+                    'location_label': panel.location_label,
                     'xui_version': panel.xui_version,
                     'xui_url': panel.xui_url,
                     'xui_username': panel.xui_username,
