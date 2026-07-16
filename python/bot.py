@@ -32,6 +32,22 @@ dp = Dispatcher()
 
 xui_client = XUIClient(config)
 
+# Глобальная ссылка на монитор панелей (инициализируется в main())
+_panel_monitor = None
+
+
+def get_panel_online_status(panel_id: str) -> bool:
+    """Возвращает последний известный статус панели из монитора.
+    True = онлайн (или монитор ещё не запущен — не блокируем).
+    """
+    if _panel_monitor is None:
+        return True
+    state = _panel_monitor.panel_states.get(panel_id)
+    if state is None:
+        return True
+    return state.is_available
+
+
 def make_panel_client(panel_id: str) -> XUIClient:
     """Создаёт временный XUIClient для указанной панели (не меняет глобальный xui_client)"""
     xui_cfg = config.panel_manager.create_xui_config_from_panel(panel_id)
@@ -72,20 +88,43 @@ async def send_panel_select(chat_id: int, header: str, back_callback: str, key_t
         await bot.send_message(chat_id, "❌ Нет доступных панелей для создания ключей.")
         return
 
-    # Если панель одна — сразу сохранять не можем (нет state здесь), возвращаем список
     buttons = []
+    online_count = 0
     for panel_id, panel_cfg in available:
         alias = panel_cfg.alias or panel_id
         location = getattr(panel_cfg, 'location_label', '')
         loc_str = f" [{location}]" if location else ""
         is_current = (panel_id == current_panel_id)
-        icon = "✅" if is_current else "⏸️"
-        buttons.append([
-            InlineKeyboardButton(
-                text=f"{icon} {alias}{loc_str}",
-                callback_data=f"sel_panel_{key_type}:{panel_id}"
-            )
-        ])
+        is_online = get_panel_online_status(panel_id)
+
+        if is_online:
+            online_count += 1
+            icon = "✅" if is_current else "⏸️"
+            buttons.append([
+                InlineKeyboardButton(
+                    text=f"{icon} {alias}{loc_str} 🟢",
+                    callback_data=f"sel_panel_{key_type}:{panel_id}"
+                )
+            ])
+        else:
+            # Оффлайн — показываем, но кнопка ведёт на заглушку
+            buttons.append([
+                InlineKeyboardButton(
+                    text=f"🔴 {alias}{loc_str} — недоступна",
+                    callback_data=f"panel_offline:{panel_id}"
+                )
+            ])
+
+    if online_count == 0:
+        await bot.send_message(
+            chat_id,
+            "❌ <b>Все панели сейчас недоступны.</b>\n\nПопробуйте позже.",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔙 Назад", callback_data=back_callback)]
+            ])
+        )
+        return
 
     buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data=back_callback)])
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -112,12 +151,35 @@ async def _send_duration_select(chat_id: int, panel_alias: str):
     )
 
 
+# ─── Хендлер нажатия на недоступную панель ─────────────────────────────────
+@dp.callback_query(lambda c: c.data and c.data.startswith("panel_offline:"))
+async def on_panel_offline(callback_query: types.CallbackQuery):
+    panel_id = callback_query.data.split(":", 1)[1]
+    panel_cfg = config.panel_manager.get_panel(panel_id)
+    alias = panel_cfg.alias if panel_cfg else panel_id
+    location = getattr(panel_cfg, 'location_label', '') if panel_cfg else ''
+    loc_str = f" [{location}]" if location else ""
+    await callback_query.answer(
+        f"🔴 {alias}{loc_str} сейчас недоступна.\nВыберите другую панель.",
+        show_alert=True
+    )
+
+
 # ─── Хендлер выбора панели для бессрочного ключа ───────────────────────────
 @dp.callback_query(lambda c: c.data and c.data.startswith("sel_panel_new:"))
 async def on_select_panel_new(callback_query: types.CallbackQuery, state: FSMContext):
     panel_id = callback_query.data.split(":", 1)[1]
     if not is_allowed(callback_query.from_user.id):
         await callback_query.answer("⛔ Доступ запрещен", show_alert=True)
+        return
+    # Повторная проверка онлайн-статуса (мог измениться пока открыто меню)
+    if not get_panel_online_status(panel_id):
+        panel_cfg = config.panel_manager.get_panel(panel_id)
+        alias = panel_cfg.alias if panel_cfg else panel_id
+        await callback_query.answer(
+            f"🔴 {alias} сейчас недоступна. Выберите другую панель.",
+            show_alert=True
+        )
         return
     panel_cfg = config.panel_manager.get_panel(panel_id)
     if not panel_cfg:
@@ -145,6 +207,15 @@ async def on_select_panel_temp(callback_query: types.CallbackQuery, state: FSMCo
     panel_id = callback_query.data.split(":", 1)[1]
     if not is_allowed(callback_query.from_user.id):
         await callback_query.answer("⛔ Доступ запрещен", show_alert=True)
+        return
+    # Повторная проверка онлайн-статуса
+    if not get_panel_online_status(panel_id):
+        panel_cfg = config.panel_manager.get_panel(panel_id)
+        alias = panel_cfg.alias if panel_cfg else panel_id
+        await callback_query.answer(
+            f"🔴 {alias} сейчас недоступна. Выберите другую панель.",
+            show_alert=True
+        )
         return
     panel_cfg = config.panel_manager.get_panel(panel_id)
     if not panel_cfg:
@@ -390,8 +461,9 @@ async def cmd_new(message: Message, state: FSMContext):
         return
     await state.set_state(NewClientState.waiting_for_panel)
     available = get_available_panels()
-    if len(available) == 1:
-        panel_id, panel_cfg = available[0]
+    online_available = [(pid, pcfg) for pid, pcfg in available if get_panel_online_status(pid)]
+    if len(online_available) == 1:
+        panel_id, panel_cfg = online_available[0]
         await state.update_data(selected_panel_id=panel_id)
         await state.set_state(NewClientState.waiting_for_comment)
         await message.answer(
@@ -421,6 +493,23 @@ async def process_new_comment(message: Message, state: FSMContext):
 
     data = await state.get_data()
     panel_id = data.get('selected_panel_id') or config.panel_manager.get_current_panel_id()
+
+    # Проверяем онлайн-статус перед попыткой подключения
+    if not get_panel_online_status(panel_id):
+        panel_cfg_chk = config.panel_manager.get_panel(panel_id)
+        alias_chk = panel_cfg_chk.alias if panel_cfg_chk else panel_id
+        location_chk = getattr(panel_cfg_chk, 'location_label', '') if panel_cfg_chk else ''
+        loc_chk = f" [{location_chk}]" if location_chk else ""
+        await message.answer(
+            f"🔴 <b>Панель {alias_chk}{loc_chk} сейчас недоступна.</b>\n\n"
+            f"Попробуйте позже или выберите другую панель.",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+            ])
+        )
+        await state.clear()
+        return
 
     try:
         panel_cfg = config.panel_manager.get_panel(panel_id)
@@ -483,8 +572,9 @@ async def cmd_temp_key(message: Message, state: FSMContext):
         return
     await state.set_state(TempKeyState.waiting_for_panel)
     available = get_available_panels()
-    if len(available) == 1:
-        panel_id, panel_cfg = available[0]
+    online_available = [(pid, pcfg) for pid, pcfg in available if get_panel_online_status(pid)]
+    if len(online_available) == 1:
+        panel_id, panel_cfg = online_available[0]
         await state.update_data(selected_panel_id=panel_id)
         await state.set_state(TempKeyState.waiting_for_duration)
         await _send_duration_select(message.chat.id, panel_cfg.alias)
@@ -539,6 +629,23 @@ async def process_tempkey_comment(message: Message, state: FSMContext):
     data = await state.get_data()
     duration = data.get('temp_duration', '1d')
     panel_id = data.get('selected_panel_id') or config.panel_manager.get_current_panel_id()
+
+    # Проверяем онлайн-статус перед попыткой подключения
+    if not get_panel_online_status(panel_id):
+        panel_cfg_chk = config.panel_manager.get_panel(panel_id)
+        alias_chk = panel_cfg_chk.alias if panel_cfg_chk else panel_id
+        location_chk = getattr(panel_cfg_chk, 'location_label', '') if panel_cfg_chk else ''
+        loc_chk = f" [{location_chk}]" if location_chk else ""
+        await message.answer(
+            f"🔴 <b>Панель {alias_chk}{loc_chk} сейчас недоступна.</b>\n\n"
+            f"Попробуйте позже или выберите другую панель.",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+            ])
+        )
+        await state.clear()
+        return
 
     duration_map = {
         '1h': (1/24, '1 час'), '1d': (1, '1 день'),
@@ -2638,8 +2745,9 @@ async def callback_cmd_new(callback_query: types.CallbackQuery, state: FSMContex
     await callback_query.answer()
     await state.set_state(NewClientState.waiting_for_panel)
     available = get_available_panels()
-    if len(available) == 1:
-        panel_id, panel_cfg = available[0]
+    online_available = [(pid, pcfg) for pid, pcfg in available if get_panel_online_status(pid)]
+    if len(online_available) == 1:
+        panel_id, panel_cfg = online_available[0]
         await state.update_data(selected_panel_id=panel_id)
         await state.set_state(NewClientState.waiting_for_comment)
         await bot.send_message(
@@ -2672,8 +2780,9 @@ async def callback_cmd_tempkey(callback_query: types.CallbackQuery, state: FSMCo
     await callback_query.answer()
     await state.set_state(TempKeyState.waiting_for_panel)
     available = get_available_panels()
-    if len(available) == 1:
-        panel_id, panel_cfg = available[0]
+    online_available = [(pid, pcfg) for pid, pcfg in available if get_panel_online_status(pid)]
+    if len(online_available) == 1:
+        panel_id, panel_cfg = online_available[0]
         await state.update_data(selected_panel_id=panel_id)
         await state.set_state(TempKeyState.waiting_for_duration)
         await _send_duration_select(callback_query.message.chat.id, panel_cfg.alias)
@@ -2721,28 +2830,48 @@ async def callback_cmd_myclients(callback_query: types.CallbackQuery, state: FSM
             return
 
         all_clients = []
+        offline_panels = []
         available = get_available_panels()
         for panel_id, panel_cfg in available:
+            if not get_panel_online_status(panel_id):
+                offline_panels.append(panel_cfg.alias or panel_id)
+                continue
             try:
                 async with make_panel_client(panel_id) as panel_client:
                     panel_clients = await panel_client.get_user_clients_by_username(username)
+                    loc = getattr(panel_cfg, 'location_label', '')
                     for c in panel_clients:
                         c['_panel_id'] = panel_id
                         c['_panel_alias'] = panel_cfg.alias
+                        c['_panel_location'] = loc
                     all_clients.extend(panel_clients)
             except Exception as pe:
+                offline_panels.append(panel_cfg.alias or panel_id)
                 logger.warning(f"Не удалось получить ключи с панели {panel_id}: {pe}")
 
         # Статистика и панели
         active_count = sum(1 for c in all_clients if c['status'] == 'active')
         inactive_count = sum(1 for c in all_clients if c['status'] == 'inactive')
         expired_count = sum(1 for c in all_clients if c['status'] == 'expired')
-        panel_names = ", ".join(dict.fromkeys(c['_panel_alias'] for c in all_clients)) if all_clients else "—"
+        # panel_names с локацией: "rus [Москва], yun [Германия]"
+        seen_panels = {}
+        for c in all_clients:
+            pid = c.get('_panel_id', '')
+            if pid not in seen_panels:
+                alias = c.get('_panel_alias', '')
+                loc = c.get('_panel_location', '')
+                seen_panels[pid] = f"{alias} [{loc}]" if loc else alias
+        panel_names = ", ".join(seen_panels.values()) if seen_panels else "—"
+        offline_warn = (
+            f"\n⚠️ <i>Недоступны: {', '.join(offline_panels)} — ключи не загружены</i>"
+            if offline_panels else ""
+        )
 
         if not all_clients:
             text = f"🔑 <b>Мои ключи (0)</b>\n\n"
             text += f"✅ Активных: 0\n⏸️ Неактивных: 0\n⏰ Просроченных: 0\n\n"
             text += "📭 <i>У вас пока нет ключей.</i>"
+            text += offline_warn
             await bot.send_message(
                 callback_query.message.chat.id, text,
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -2758,10 +2887,12 @@ async def callback_cmd_myclients(callback_query: types.CallbackQuery, state: FSM
             comment = client.get('comment', '')
             status = client['status']
             panel_alias = client.get('_panel_alias', '')
+            panel_loc = client.get('_panel_location', '')
             pid = client.get('_panel_id', '')
-            display_text = (comment.replace('Временный ', '') if comment else client['email'])[:22]
+            display_text = (comment.replace('Временный ', '') if comment else client['email'])[:20]
             icon = "✅" if status == 'active' else ("⏸️" if status == 'inactive' else "⏰")
-            label = f"{icon} {display_text} · {panel_alias}" if panel_alias else f"{icon} {display_text}"
+            panel_tag = f"{panel_alias} [{panel_loc}]" if panel_loc else panel_alias
+            label = f"{icon} {display_text} · {panel_tag}" if panel_tag else f"{icon} {display_text}"
             cb = f"showqr_{pid}:{client['uuid']}" if pid else f"showqr_{client['uuid']}"
             buttons.append([InlineKeyboardButton(text=label, callback_data=cb)])
 
@@ -2774,8 +2905,9 @@ async def callback_cmd_myclients(callback_query: types.CallbackQuery, state: FSM
         text += f"📡 {panel_names}\n\n"
         text += f"✅ Активных: {active_count}\n"
         text += f"⏸️ Неактивных: {inactive_count}\n"
-        text += f"⏰ Просроченных: {expired_count}\n\n"
-        text += "Выберите ключ для просмотра:"
+        text += f"⏰ Просроченных: {expired_count}\n"
+        text += offline_warn + "\n"
+        text += "\nВыберите ключ для просмотра:"
 
         await bot.send_message(
             callback_query.message.chat.id, text,
@@ -2823,27 +2955,46 @@ async def refresh_myclients(callback_query: types.CallbackQuery, state: FSMConte
             return
 
         all_clients = []
+        offline_panels = []
         available = get_available_panels()
         for panel_id, panel_cfg in available:
+            if not get_panel_online_status(panel_id):
+                offline_panels.append(panel_cfg.alias or panel_id)
+                continue
             try:
                 async with make_panel_client(panel_id) as panel_client:
                     panel_clients = await panel_client.get_user_clients_by_username(username)
+                    loc = getattr(panel_cfg, 'location_label', '')
                     for c in panel_clients:
                         c['_panel_id'] = panel_id
                         c['_panel_alias'] = panel_cfg.alias
+                        c['_panel_location'] = loc
                     all_clients.extend(panel_clients)
             except Exception as pe:
+                offline_panels.append(panel_cfg.alias or panel_id)
                 logger.warning(f"Не удалось получить ключи с панели {panel_id}: {pe}")
 
         active_count = sum(1 for c in all_clients if c['status'] == 'active')
         inactive_count = sum(1 for c in all_clients if c['status'] == 'inactive')
         expired_count = sum(1 for c in all_clients if c['status'] == 'expired')
-        panel_names = ", ".join(dict.fromkeys(c['_panel_alias'] for c in all_clients)) if all_clients else "—"
+        offline_warn = (
+            f"\n⚠️ <i>Недоступны: {', '.join(offline_panels)} — ключи не загружены</i>"
+            if offline_panels else ""
+        )
+        seen_panels = {}
+        for c in all_clients:
+            pid = c.get('_panel_id', '')
+            if pid not in seen_panels:
+                alias = c.get('_panel_alias', '')
+                loc = c.get('_panel_location', '')
+                seen_panels[pid] = f"{alias} [{loc}]" if loc else alias
+        panel_names = ", ".join(seen_panels.values()) if seen_panels else "—"
 
         if not all_clients:
             text = f"🔑 <b>Мои ключи (0)</b>\n\n"
             text += f"✅ Активных: 0\n⏸️ Неактивных: 0\n⏰ Просроченных: 0\n\n"
             text += "📭 <i>У вас пока нет ключей.</i>"
+            text += offline_warn
             await callback_query.message.edit_text(
                 text,
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -2860,10 +3011,12 @@ async def refresh_myclients(callback_query: types.CallbackQuery, state: FSMConte
             comment = client.get('comment', '')
             status = client['status']
             panel_alias = client.get('_panel_alias', '')
+            panel_loc = client.get('_panel_location', '')
             pid = client.get('_panel_id', '')
-            display_text = (comment.replace('Временный ', '') if comment else client['email'])[:22]
+            display_text = (comment.replace('Временный ', '') if comment else client['email'])[:20]
             icon = "✅" if status == 'active' else ("⏸️" if status == 'inactive' else "⏰")
-            label = f"{icon} {display_text} · {panel_alias}" if panel_alias else f"{icon} {display_text}"
+            panel_tag = f"{panel_alias} [{panel_loc}]" if panel_loc else panel_alias
+            label = f"{icon} {display_text} · {panel_tag}" if panel_tag else f"{icon} {display_text}"
             cb = f"showqr_{pid}:{client['uuid']}" if pid else f"showqr_{client['uuid']}"
             buttons.append([InlineKeyboardButton(text=label, callback_data=cb)])
 
@@ -2876,8 +3029,9 @@ async def refresh_myclients(callback_query: types.CallbackQuery, state: FSMConte
         text += f"📡 {panel_names}\n\n"
         text += f"✅ Активных: {active_count}\n"
         text += f"⏸️ Неактивных: {inactive_count}\n"
-        text += f"⏰ Просроченных: {expired_count}\n\n"
-        text += "Выберите ключ для просмотра:"
+        text += f"⏰ Просроченных: {expired_count}\n"
+        text += offline_warn + "\n"
+        text += "\nВыберите ключ для просмотра:"
 
         await callback_query.message.edit_text(
             text,
@@ -3732,6 +3886,9 @@ async def main():
                 bot=bot,
                 admin_ids=config.common.admin_ids
             )
+            # Делаем монитор доступным глобально для проверки статусов панелей
+            global _panel_monitor
+            _panel_monitor = panel_monitor
             
             # Создаем экземпляр монитора системы (если доступен)
             if SYSTEM_MONITOR_AVAILABLE:
