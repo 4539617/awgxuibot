@@ -1205,8 +1205,9 @@ async def show_qr_code(callback_query: types.CallbackQuery):
 
 💬 <b>Комментарий:</b> {comment.replace('Временный ', '')}"""
         
-        # Добавляем кнопку "В главное меню"
+        # Добавляем кнопки навигации
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Мои ключи", callback_data="cmd_myclients")],
             [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")]
         ])
         
@@ -2441,10 +2442,13 @@ async def back_to_start_menu(callback_query: types.CallbackQuery, state: FSMCont
         # Получаем информацию о текущей панели
         current_panel = config.get_current_panel()
         panel_alias = current_panel.alias if current_panel else "N/A"
+        panel_location = getattr(current_panel, 'location_label', '') if current_panel else ''
+        location_line = f"📍 <b>Локация:</b> {panel_location}\n" if panel_location else ""
         
         text = (
             f"👤 <b>Пользователь:</b> {username or first_name}\n"
-            f"📡 <b>Панель:</b> <code>{panel_alias}</code>\n\n"
+            f"📡 <b>Панель:</b> <code>{panel_alias}</code>\n"
+            f"{location_line}\n"
             f"🔐 <b>Настройки подключения:</b>\n"
             f"• Transport: <code>{config.vpn.transport}</code>\n"
             f"• Security: <code>{config.vpn.security}</code>\n\n"
@@ -2627,7 +2631,7 @@ async def callback_cmd_myclients(callback_query: types.CallbackQuery, state: FSM
                 icon = "⏰"
             
             buttons.append([
-                InlineKeyboardButton(text=f"{icon} {display_text}", callback_data=f"myclient_{client['uuid']}")
+                InlineKeyboardButton(text=f"{icon} {display_text}", callback_data=f"showqr_{client['uuid']}")
             ])
         
         # Добавляем кнопки "Обновить" и "Назад"
@@ -2753,7 +2757,7 @@ async def refresh_myclients(callback_query: types.CallbackQuery, state: FSMConte
                 icon = "⏰"
             
             buttons.append([
-                InlineKeyboardButton(text=f"{icon} {display_text}", callback_data=f"myclient_{client['uuid']}")
+                InlineKeyboardButton(text=f"{icon} {display_text}", callback_data=f"showqr_{client['uuid']}")
             ])
         
         # Добавляем кнопки "Обновить" и "Назад"
