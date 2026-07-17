@@ -2578,7 +2578,12 @@ async def show_users_list(callback_query: types.CallbackQuery, state: FSMContext
                 )
             except Exception as e:
                 logger.error(f"Не удалось отредактировать сообщение: {e}")
-                await callback_query.answer("❌ Не удалось обновить", show_alert=True)
+                await bot.send_message(
+                    callback_query.message.chat.id,
+                    text,
+                    parse_mode="HTML",
+                    reply_markup=keyboard
+                )
         else:
             await bot.send_message(
                 callback_query.message.chat.id,
