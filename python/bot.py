@@ -323,9 +323,19 @@ async def cmd_start(message: Message, state: FSMContext):
 
     # Проверка наличия активных ключей у пользователя (автодобавление)
     if not is_allowed(user_id) and username:
-        # Проверяем есть ли у пользователя активные ключи в X-UI
-        has_keys = await xui_client.has_active_keys(username)
-        
+        # Проверяем есть ли у пользователя активные ключи на любой из доступных панелей
+        has_keys = False
+        for panel_id, panel_cfg in get_available_panels():
+            if not get_panel_online_status(panel_id):
+                continue
+            try:
+                async with make_panel_client(panel_id) as _pc:
+                    if await _pc.has_active_keys(username):
+                        has_keys = True
+                        break
+            except Exception as _e:
+                logger.warning(f"Автодобавление: не удалось проверить панель {panel_id}: {_e}")
+
         if has_keys:
             # Пользователь имеет активные ключи - добавляем автоматически
             admin_id = config.users_db.get_main_admin()
@@ -3189,7 +3199,7 @@ async def process_doblock_user(callback_query: types.CallbackQuery, state: FSMCo
         
         # Возвращаемся в меню пользователей
         callback_query.data = "show_users"
-        await show_users_list(callback_query, state)
+        await show_users_list(callback_query, state, is_refresh=True)
         
     except Exception as e:
         logger.error(f"Ошибка блокировки пользователя: {e}")
@@ -3218,7 +3228,7 @@ async def process_dounblock_user(callback_query: types.CallbackQuery, state: FSM
         
         # Возвращаемся в меню пользователей
         callback_query.data = "show_users"
-        await show_users_list(callback_query, state)
+        await show_users_list(callback_query, state, is_refresh=True)
         
     except Exception as e:
         logger.error(f"Ошибка разблокировки пользователя: {e}")
@@ -3252,7 +3262,7 @@ async def process_doremove_user(callback_query: types.CallbackQuery, state: FSMC
         
         # Возвращаемся в меню пользователей
         callback_query.data = "show_users"
-        await show_users_list(callback_query, state)
+        await show_users_list(callback_query, state, is_refresh=True)
         
     except Exception as e:
         logger.error(f"Ошибка удаления пользователя: {e}")
