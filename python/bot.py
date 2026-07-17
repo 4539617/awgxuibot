@@ -1824,11 +1824,17 @@ async def process_cleanup_expired(callback_query: types.CallbackQuery):
             if len(deleted_keys) > 10:
                 result_text += f"... и еще {len(deleted_keys) - 10}\n"
         
-        await callback_query.message.edit_text(result_text, parse_mode="HTML")
+        back_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Назад к списку ключей", callback_data="back_to_allclients")]
+        ])
+        await callback_query.message.edit_text(result_text, parse_mode="HTML", reply_markup=back_keyboard)
         
     except Exception as e:
         logger.error(f"Ошибка при очистке: {e}")
-        await callback_query.message.edit_text(f"❌ Ошибка при очистке: {str(e)}")
+        back_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Назад к списку ключей", callback_data="back_to_allclients")]
+        ])
+        await callback_query.message.edit_text(f"❌ Ошибка при очистке: {str(e)}", reply_markup=back_keyboard)
     
     await callback_query.answer()
 
