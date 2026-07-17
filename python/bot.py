@@ -2548,13 +2548,12 @@ async def show_users_list(callback_query: types.CallbackQuery, state: FSMContext
     if not is_admin(callback_query.from_user.id):
         await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
         return
-    
-    # Очищаем состояние при открытии нового окна
+
     await state.clear()
-    
+
     if not is_refresh:
         await callback_query.answer("⏳ Обновляю список...")
-    
+
     try:
         users = config.users_db.list_users()
         main_admin = config.users_db.get_main_admin()
@@ -2566,67 +2565,42 @@ async def show_users_list(callback_query: types.CallbackQuery, state: FSMContext
             admin_name = str(main_admin)
 
         text = f"👑 <b>Администратор:</b> {admin_name}\n\n"
+        buttons = []
 
         if users:
             text += "<b>📋 Пользователи:</b>\n"
             for user_id, username, added_at in users:
-                blocked_status = "🔒 Заблокирован" if config.users_db.is_blocked_by_admin(user_id) else "✅ Активен"
-                if username:
-                    text += f"• @{username} (ID: {user_id}) - {blocked_status} - добавлен {added_at[:10]}\n"
-                else:
-                    try:
-                        chat = await bot.get_chat(user_id)
-                        user_name = f"@{chat.username}" if chat.username else str(user_id)
-                        text += f"• {user_name} - {blocked_status} - добавлен {added_at[:10]}\n"
-                    except:
-                        text += f"• ID: {user_id} - {blocked_status} - добавлен {added_at[:10]}\n"
+                is_blocked = config.users_db.is_blocked_by_admin(user_id)
+                blocked_status = "🔒 Заблокирован" if is_blocked else "✅ Активен"
+                display_name = f"@{username}" if username else f"ID: {user_id}"
+                text += f"• {display_name} — {blocked_status} — добавлен {added_at[:10]}\n"
+                icon = "🔒" if is_blocked else "👤"
+                buttons.append([InlineKeyboardButton(
+                    text=f"{icon} {display_name}",
+                    callback_data=f"user_card_{user_id}"
+                )])
         else:
             text += "Нет добавленных пользователей."
 
-        # Добавляем кнопки действий и навигации
-        buttons = [
-            [InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_users")]
-        ]
-        
-        # Показываем кнопки действий только если есть пользователи
-        if users:
-            buttons.extend([
-                [InlineKeyboardButton(text="🔒 Заблокировать", callback_data="action_block")],
-                [InlineKeyboardButton(text="🔓 Разблокировать", callback_data="action_unblock")],
-                [InlineKeyboardButton(text="🗑 Удалить", callback_data="action_remove")]
-            ])
-        
-        buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")])
-        
+        buttons.append([
+            InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_users"),
+            InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")
+        ])
+
         keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
 
-        # Для refresh обновляем текущее сообщение, для навигации - отправляем новое
         if is_refresh:
             try:
-                await callback_query.message.edit_text(
-                    text,
-                    parse_mode="HTML",
-                    reply_markup=keyboard
-                )
-            except Exception as e:
-                logger.error(f"Не удалось отредактировать сообщение: {e}")
-                await bot.send_message(
-                    callback_query.message.chat.id,
-                    text,
-                    parse_mode="HTML",
-                    reply_markup=keyboard
-                )
+                await callback_query.message.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
+            except Exception:
+                await bot.send_message(callback_query.message.chat.id, text, parse_mode="HTML", reply_markup=keyboard)
         else:
-            await bot.send_message(
-                callback_query.message.chat.id,
-                text,
-                parse_mode="HTML",
-                reply_markup=keyboard
-            )
-        
+            await bot.send_message(callback_query.message.chat.id, text, parse_mode="HTML", reply_markup=keyboard)
+
     except Exception as e:
         logger.error(f"Ошибка получения списка пользователей: {e}")
         await callback_query.message.answer(f"❌ Ошибка: {str(e)}")
+
 
 @dp.callback_query(lambda c: c.data == "refresh_users")
 async def refresh_users(callback_query: types.CallbackQuery, state: FSMContext):
@@ -2634,10 +2608,57 @@ async def refresh_users(callback_query: types.CallbackQuery, state: FSMContext):
     if not is_admin(callback_query.from_user.id):
         await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
         return
-    
+
     await callback_query.answer("🔄 Обновление...")
-    # Вызываем функцию показа пользователей с флагом refresh
     await show_users_list(callback_query, state, is_refresh=True)
+
+
+@dp.callback_query(lambda c: c.data and c.data.startswith('user_card_'))
+async def show_user_card(callback_query: types.CallbackQuery, state: FSMContext):
+    """Показать карточку пользователя с кнопками управления"""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
+        return
+
+    target_user_id = int(callback_query.data.split('_')[2])
+    await callback_query.answer()
+
+    try:
+        users = config.users_db.list_users()
+        user_row = next((r for r in users if r[0] == target_user_id), None)
+
+        username = user_row[1] if user_row else None
+        added_at = user_row[2][:10] if user_row else "—"
+        is_blocked = config.users_db.is_blocked_by_admin(target_user_id)
+        is_main_admin = (target_user_id == config.users_db.get_main_admin())
+
+        display_name = f"@{username}" if username else f"ID: {target_user_id}"
+        status_text = "🔒 Заблокирован" if is_blocked else "✅ Активен"
+
+        text = (
+            f"👤 <b>Пользователь:</b> {display_name}\n"
+            f"🆔 ID: <code>{target_user_id}</code>\n"
+            f"📅 Добавлен: {added_at}\n"
+            f"Статус: {status_text}"
+        )
+
+        buttons = []
+        if not is_main_admin:
+            if is_blocked:
+                buttons.append([InlineKeyboardButton(text="🔓 Разблокировать", callback_data=f"dounblock_{target_user_id}")])
+            else:
+                buttons.append([InlineKeyboardButton(text="🔒 Заблокировать", callback_data=f"doblock_{target_user_id}")])
+            buttons.append([InlineKeyboardButton(text="🗑 Удалить", callback_data=f"doremove_{target_user_id}")])
+
+        buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="show_users")])
+
+        await callback_query.message.edit_text(
+            text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+        )
+
+    except Exception as e:
+        logger.error(f"Ошибка показа карточки пользователя: {e}")
+        await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
 
 
 @dp.callback_query(lambda c: c.data == "back_to_start")
@@ -3070,174 +3091,30 @@ async def callback_cmd_allclients(callback_query: types.CallbackQuery, state: FS
     await back_to_allclients(callback_query)
 
 
-@dp.callback_query(lambda c: c.data == "action_block")
-async def action_block_user(callback_query: types.CallbackQuery):
-    """Показать список пользователей для блокировки"""
-    if not is_admin(callback_query.from_user.id):
-        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
-        return
-    
-    await callback_query.answer()
-    
-    try:
-        users = config.users_db.list_users()
-        
-        if not users:
-            await callback_query.answer("Нет пользователей для блокировки", show_alert=True)
-            return
-        
-        # Фильтруем только активных пользователей
-        active_users = [(uid, uname, added) for uid, uname, added in users if not config.users_db.is_blocked_by_admin(uid)]
-        
-        if not active_users:
-            await callback_query.answer("Все пользователи уже заблокированы", show_alert=True)
-            return
-        
-        # Создаем кнопки для каждого пользователя
-        buttons = []
-        for user_id, username, _ in active_users:
-            try:
-                chat = await bot.get_chat(user_id)
-                user_name = f"@{chat.username}" if chat.username else f"ID: {user_id}"
-            except:
-                user_name = username if username else f"ID: {user_id}"
-            
-            buttons.append([InlineKeyboardButton(text=f"🔒 {user_name}", callback_data=f"doblock_{user_id}")])
-        
-        buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="show_users")])
-        
-        keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
-        
-        await callback_query.message.edit_text(
-            "🔒 <b>Выберите пользователя для блокировки:</b>",
-            parse_mode="HTML",
-            reply_markup=keyboard
-        )
-        
-    except Exception as e:
-        logger.error(f"Ошибка показа списка для блокировки: {e}")
-        await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
-
-
-@dp.callback_query(lambda c: c.data == "action_unblock")
-async def action_unblock_user(callback_query: types.CallbackQuery):
-    """Показать список заблокированных пользователей для разблокировки"""
-    if not is_admin(callback_query.from_user.id):
-        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
-        return
-    
-    await callback_query.answer()
-    
-    try:
-        # Получаем всех заблокированных пользователей
-        with sqlite3.connect(config.users_db.db_path) as conn:
-            cursor = conn.execute("SELECT user_id FROM blocked_users")
-            blocked_ids = [row[0] for row in cursor.fetchall()]
-        
-        if not blocked_ids:
-            await callback_query.answer("Нет заблокированных пользователей", show_alert=True)
-            return
-        
-        # Создаем кнопки для каждого заблокированного пользователя
-        buttons = []
-        for user_id in blocked_ids:
-            try:
-                chat = await bot.get_chat(user_id)
-                user_name = f"@{chat.username}" if chat.username else f"ID: {user_id}"
-            except:
-                user_name = f"ID: {user_id}"
-            
-            buttons.append([InlineKeyboardButton(text=f"🔓 {user_name}", callback_data=f"dounblock_{user_id}")])
-        
-        buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="show_users")])
-        
-        keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
-        
-        await callback_query.message.edit_text(
-            "🔓 <b>Выберите пользователя для разблокировки:</b>",
-            parse_mode="HTML",
-            reply_markup=keyboard
-        )
-        
-    except Exception as e:
-        logger.error(f"Ошибка показа списка для разблокировки: {e}")
-        await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
-
-
-@dp.callback_query(lambda c: c.data == "action_remove")
-async def action_remove_user(callback_query: types.CallbackQuery):
-    """Показать список пользователей для удаления"""
-    if not is_admin(callback_query.from_user.id):
-        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
-        return
-    
-    await callback_query.answer()
-    
-    try:
-        users = config.users_db.list_users()
-        
-        if not users:
-            await callback_query.answer("Нет пользователей для удаления", show_alert=True)
-            return
-        
-        # Создаем кнопки для каждого пользователя
-        buttons = []
-        for user_id, username, _ in users:
-            # Пропускаем главного администратора
-            if user_id == config.users_db.get_main_admin():
-                continue
-            
-            try:
-                chat = await bot.get_chat(user_id)
-                user_name = f"@{chat.username}" if chat.username else f"ID: {user_id}"
-            except:
-                user_name = username if username else f"ID: {user_id}"
-            
-            buttons.append([InlineKeyboardButton(text=f"🗑 {user_name}", callback_data=f"doremove_{user_id}")])
-        
-        if not buttons:
-            await callback_query.answer("Нет пользователей для удаления", show_alert=True)
-            return
-        
-        buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="show_users")])
-        
-        keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
-        
-        await callback_query.message.edit_text(
-            "🗑 <b>Выберите пользователя для удаления:</b>",
-            parse_mode="HTML",
-            reply_markup=keyboard
-        )
-        
-    except Exception as e:
-        logger.error(f"Ошибка показа списка для удаления: {e}")
-        await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
-
-
 @dp.callback_query(lambda c: c.data and c.data.startswith('doblock_'))
 async def process_doblock_user(callback_query: types.CallbackQuery, state: FSMContext):
-    """Заблокировать пользователя и вернуться в меню пользователей"""
+    """Заблокировать пользователя"""
     if not is_admin(callback_query.from_user.id):
         await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
         return
-    
+
     user_id = int(callback_query.data.split('_')[1])
-    
+
     try:
         if config.users_db.block_user(user_id, callback_query.from_user.id):
-            await callback_query.answer("✅ Пользователь заблокирован")
             try:
                 await bot.send_message(user_id, "⛔ Вы заблокированы администратором.")
             except:
                 pass
+            ok_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="✅ OK", callback_data="show_users")]
+            ])
+            await callback_query.answer()
+            await callback_query.message.edit_text(
+                "🔒 Пользователь заблокирован.", reply_markup=ok_keyboard
+            )
         else:
             await callback_query.answer("❌ Ошибка при блокировке!", show_alert=True)
-            return
-        
-        # Возвращаемся в меню пользователей
-        callback_query.data = "show_users"
-        await show_users_list(callback_query, state, is_refresh=True)
-        
     except Exception as e:
         logger.error(f"Ошибка блокировки пользователя: {e}")
         await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
@@ -3245,28 +3122,28 @@ async def process_doblock_user(callback_query: types.CallbackQuery, state: FSMCo
 
 @dp.callback_query(lambda c: c.data and c.data.startswith('dounblock_'))
 async def process_dounblock_user(callback_query: types.CallbackQuery, state: FSMContext):
-    """Разблокировать пользователя и вернуться в меню пользователей"""
+    """Разблокировать пользователя"""
     if not is_admin(callback_query.from_user.id):
         await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
         return
-    
+
     user_id = int(callback_query.data.split('_')[1])
-    
+
     try:
         if config.users_db.unblock_user(user_id):
-            await callback_query.answer("✅ Пользователь разблокирован")
             try:
                 await bot.send_message(user_id, "✅ Вы разблокированы администратором.")
             except:
                 pass
+            ok_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="✅ OK", callback_data="show_users")]
+            ])
+            await callback_query.answer()
+            await callback_query.message.edit_text(
+                "🔓 Пользователь разблокирован.", reply_markup=ok_keyboard
+            )
         else:
             await callback_query.answer("❌ Ошибка при разблокировке!", show_alert=True)
-            return
-        
-        # Возвращаемся в меню пользователей
-        callback_query.data = "show_users"
-        await show_users_list(callback_query, state, is_refresh=True)
-        
     except Exception as e:
         logger.error(f"Ошибка разблокировки пользователя: {e}")
         await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
@@ -3274,33 +3151,32 @@ async def process_dounblock_user(callback_query: types.CallbackQuery, state: FSM
 
 @dp.callback_query(lambda c: c.data and c.data.startswith('doremove_'))
 async def process_doremove_user(callback_query: types.CallbackQuery, state: FSMContext):
-    """Удалить пользователя и вернуться в меню пользователей"""
+    """Удалить пользователя"""
     if not is_admin(callback_query.from_user.id):
         await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
         return
-    
+
     user_id = int(callback_query.data.split('_')[1])
-    
-    # Проверка на удаление главного администратора
+
     if user_id == config.users_db.get_main_admin():
         await callback_query.answer("❌ Нельзя удалить главного администратора!", show_alert=True)
         return
-    
+
     try:
         if config.users_db.remove_user(user_id):
-            await callback_query.answer("✅ Пользователь удален")
             try:
                 await bot.send_message(user_id, "⛔ Ваш доступ отозван администратором.")
             except:
                 pass
+            ok_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="✅ OK", callback_data="show_users")]
+            ])
+            await callback_query.answer()
+            await callback_query.message.edit_text(
+                "🗑 Пользователь удалён.", reply_markup=ok_keyboard
+            )
         else:
             await callback_query.answer("❌ Ошибка при удалении!", show_alert=True)
-            return
-        
-        # Возвращаемся в меню пользователей
-        callback_query.data = "show_users"
-        await show_users_list(callback_query, state, is_refresh=True)
-        
     except Exception as e:
         logger.error(f"Ошибка удаления пользователя: {e}")
         await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
