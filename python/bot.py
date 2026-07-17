@@ -389,11 +389,22 @@ async def cmd_start(message: Message, state: FSMContext):
                 ]
             ])
 
-            panels_block = _build_panels_block()
+            current_panel = config.get_current_panel()
+            panel_info = ""
+            if current_panel:
+                location = getattr(current_panel, 'location_label', '')
+                transport = getattr(current_panel, 'transport', '') or (config.vpn.transport if hasattr(config, 'vpn') and config.vpn else 'N/A')
+                security = getattr(current_panel, 'security', '') or (config.vpn.security if hasattr(config, 'vpn') and config.vpn else 'N/A')
+                location_part = f"• Локация: <code>{location}</code>\n" if location else ""
+                panel_info = (
+                    f"📋 <b>Панель:</b> <code>{current_panel.alias}</code>\n"
+                    f"{location_part}"
+                    f"• <code>{'Локальная' if current_panel.is_local else 'Сетевая'}</code>  v<code>{current_panel.xui_version}</code>\n"
+                    f"• Transport: <code>{transport}</code>  Security: <code>{security}</code>\n"
+                )
             await message.answer(
-                f"👑 <b>Пользователь:</b> {username or first_name}\n\n"
-                f"{panels_block}"
-                f"📱 Выберите действие:",
+                f"👑 Администратор\n\n"
+                f"{panel_info}",
                 reply_markup=keyboard,
                 parse_mode="HTML"
             )
@@ -451,7 +462,7 @@ async def cmd_new(message: Message, state: FSMContext):
         return
     await send_panel_select(
         message.chat.id,
-        "🔑 <b>Создание бессрочного ключа</b>\n\nВыберите панель:",
+        "🔑 <b>Создание бессрочного ключа</b>\n\nВыберите сервер:",
         "back_to_start", "new"
     )
 
@@ -558,7 +569,7 @@ async def cmd_temp_key(message: Message, state: FSMContext):
         return
     await send_panel_select(
         message.chat.id,
-        "⏰ <b>Создание временного ключа</b>\n\nВыберите панель:",
+        "⏰ <b>Создание временного ключа</b>\n\nВыберите сервер:",
         "back_to_start", "temp"
     )
 
@@ -2617,8 +2628,6 @@ async def back_to_start_menu(callback_query: types.CallbackQuery, state: FSMCont
         await callback_query.message.edit_text("⛔ Отказано в доступе.")
         return
     
-    panels_block = _build_panels_block()
-
     if is_admin(user_id):
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [
@@ -2637,11 +2646,23 @@ async def back_to_start_menu(callback_query: types.CallbackQuery, state: FSMCont
                 InlineKeyboardButton(text="🔧 Панели", callback_data="show_panels")
             ]
         ])
+        current_panel = config.get_current_panel()
+        panel_info = ""
+        if current_panel:
+            location = getattr(current_panel, 'location_label', '')
+            transport = getattr(current_panel, 'transport', '') or (config.vpn.transport if hasattr(config, 'vpn') and config.vpn else 'N/A')
+            security = getattr(current_panel, 'security', '') or (config.vpn.security if hasattr(config, 'vpn') and config.vpn else 'N/A')
+            location_part = f"• Локация: <code>{location}</code>\n" if location else ""
+            panel_info = (
+                f"📋 <b>Панель:</b> <code>{current_panel.alias}</code>\n"
+                f"{location_part}"
+                f"• <code>{'Локальная' if current_panel.is_local else 'Сетевая'}</code>  v<code>{current_panel.xui_version}</code>\n"
+                f"• Transport: <code>{transport}</code>  Security: <code>{security}</code>\n"
+            )
         await bot.send_message(
             callback_query.message.chat.id,
-            f"👑 <b>Пользователь:</b> {username or first_name}\n\n"
-            f"{panels_block}"
-            f"📱 Выберите действие:",
+            f"👑 Администратор\n\n"
+            f"{panel_info}",
             parse_mode="HTML",
             reply_markup=keyboard
         )
@@ -2693,7 +2714,7 @@ async def callback_cmd_new(callback_query: types.CallbackQuery, state: FSMContex
         return
     await send_panel_select(
         callback_query.message.chat.id,
-        "🔑 <b>Создание бессрочного ключа</b>\n\nВыберите панель:",
+        "🔑 <b>Создание бессрочного ключа</b>\n\nВыберите сервер:",
         "back_to_start", "new"
     )
 
@@ -2720,7 +2741,7 @@ async def callback_cmd_tempkey(callback_query: types.CallbackQuery, state: FSMCo
         return
     await send_panel_select(
         callback_query.message.chat.id,
-        "⏰ <b>Создание временного ключа</b>\n\nВыберите панель:",
+        "⏰ <b>Создание временного ключа</b>\n\nВыберите сервер:",
         "back_to_start", "temp"
     )
 
@@ -3470,7 +3491,7 @@ async def select_panel_to_connect(callback_query: types.CallbackQuery, state: FS
         keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
         
         await callback_query.message.edit_text(
-            "🔌 <b>Выберите панель для подключения:</b>\n\n"
+            "🔌 <b>Выберите сервер для подключения:</b>\n\n"
             "⚠️ При переключении текущая панель будет сохранена.",
             parse_mode="HTML",
             reply_markup=keyboard
