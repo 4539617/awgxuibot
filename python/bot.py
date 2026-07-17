@@ -2617,6 +2617,8 @@ async def back_to_start_menu(callback_query: types.CallbackQuery, state: FSMCont
         await callback_query.message.edit_text("⛔ Отказано в доступе.")
         return
     
+    panels_block = _build_panels_block()
+
     if is_admin(user_id):
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [
@@ -2635,43 +2637,11 @@ async def back_to_start_menu(callback_query: types.CallbackQuery, state: FSMCont
                 InlineKeyboardButton(text="🔧 Панели", callback_data="show_panels")
             ]
         ])
-        
-        # Получаем информацию о текущей панели
-        current_panel = config.get_current_panel()
-        panel_info = ""
-        
-        # Используем актуальные данные из config.vpn (обновляются через refresh_vpn_config)
-        transport = config.vpn.transport if hasattr(config, 'vpn') and config.vpn else "N/A"
-        security = config.vpn.security if hasattr(config, 'vpn') and config.vpn else "N/A"
-        
-        if current_panel:
-            alias = current_panel.alias
-            is_local = current_panel.is_local
-            xui_version = current_panel.xui_version
-            xui_url = current_panel.xui_url
-            location = getattr(current_panel, 'location_label', '')
-            location_part = f"• Локация: {location}\n" if location else ""
-            
-            panel_info = (
-                f"\n📋 <b>Панель:</b>\n"
-                f"• Alias: <code>{alias}</code>\n"
-                f"{location_part}"
-                f"• Local: <code>{'Да' if is_local else 'Нет'}</code>\n"
-                f"• Version: <code>{xui_version}</code>\n"
-            )
-        
-        text = (
-            f"👑 Администратор\n\n\n"
-            f"🔐 <b>Настройки подключения:</b>\n"
-            f"• Transport: <code>{transport}</code>\n"
-            f"• Security: <code>{security}</code>"
-            f"{panel_info}"
-        )
-        
-        # Всегда отправляем новое сообщение для навигации
         await bot.send_message(
             callback_query.message.chat.id,
-            text,
+            f"👑 <b>Пользователь:</b> {username or first_name}\n\n"
+            f"{panels_block}"
+            f"📱 Выберите действие:",
             parse_mode="HTML",
             reply_markup=keyboard
         )
@@ -2685,27 +2655,11 @@ async def back_to_start_menu(callback_query: types.CallbackQuery, state: FSMCont
                 InlineKeyboardButton(text="🔑 Мои ключи", callback_data="cmd_myclients")
             ]
         ])
-        
-        # Получаем информацию о текущей панели
-        current_panel = config.get_current_panel()
-        panel_alias = current_panel.alias if current_panel else "N/A"
-        panel_location = getattr(current_panel, 'location_label', '') if current_panel else ''
-        location_line = f"📍 <b>Локация:</b> {panel_location}\n" if panel_location else ""
-        
-        text = (
-            f"👤 <b>Пользователь:</b> {username or first_name}\n"
-            f"📡 <b>Панель:</b> <code>{panel_alias}</code>\n"
-            f"{location_line}\n"
-            f"🔐 <b>Настройки подключения:</b>\n"
-            f"• Transport: <code>{config.vpn.transport}</code>\n"
-            f"• Security: <code>{config.vpn.security}</code>\n\n"
-            f"📱 Выберите действие:"
-        )
-        
-        # Всегда отправляем новое сообщение для навигации
         await bot.send_message(
             callback_query.message.chat.id,
-            text,
+            f"👤 <b>Пользователь:</b> {username or first_name}\n\n"
+            f"{panels_block}"
+            f"📱 Выберите действие:",
             parse_mode="HTML",
             reply_markup=keyboard
         )
