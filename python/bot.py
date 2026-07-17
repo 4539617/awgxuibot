@@ -2592,8 +2592,10 @@ async def show_users_list(callback_query: types.CallbackQuery, state: FSMContext
         if is_refresh:
             try:
                 await callback_query.message.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
-            except Exception:
-                await bot.send_message(callback_query.message.chat.id, text, parse_mode="HTML", reply_markup=keyboard)
+            except TelegramBadRequest as e:
+                if "message is not modified" not in str(e):
+                    logger.error(f"Не удалось отредактировать сообщение пользователей: {e}")
+                    await bot.send_message(callback_query.message.chat.id, text, parse_mode="HTML", reply_markup=keyboard)
         else:
             await bot.send_message(callback_query.message.chat.id, text, parse_mode="HTML", reply_markup=keyboard)
 
