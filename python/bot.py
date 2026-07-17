@@ -1461,6 +1461,18 @@ async def show_qr_code(callback_query: types.CallbackQuery):
             await callback_query.answer("❌ Ключ не найден!", show_alert=True)
             return
 
+        # Проверяем активность ключа
+        if client.get('status') != 'active':
+            status = client.get('status')
+            if status == 'expired':
+                msg = "⏰ Ключ просрочен и недоступен для использования."
+            elif status == 'inactive':
+                msg = "⏸️ Ключ не активен."
+            else:
+                msg = "❌ Ключ не активен."
+            await callback_query.answer(msg, show_alert=True)
+            return
+
         # Генерируем VLESS ссылку (уже получена выше)
         vless_link = vless_link
         if not vless_link:
