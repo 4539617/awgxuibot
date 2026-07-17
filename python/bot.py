@@ -2676,6 +2676,7 @@ async def back_to_start_menu(callback_query: types.CallbackQuery, state: FSMCont
                 InlineKeyboardButton(text="🔑 Мои ключи", callback_data="cmd_myclients")
             ]
         ])
+        panels_block = _build_panels_block()
         await bot.send_message(
             callback_query.message.chat.id,
             f"👤 <b>Пользователь:</b> {username or first_name}\n\n"
@@ -3356,35 +3357,28 @@ async def show_panels_list(callback_query: types.CallbackQuery, state: FSMContex
         
         # Формируем текст со списком панелей
         text = "🔧 <b>Панели 3xui</b>\n\n"
-        
+
         for panel_id, panel_config in panels.items():
             alias = getattr(panel_config, 'alias', panel_id)
             version = getattr(panel_config, 'xui_version', 'N/A')
             is_current = panel_id == current_panel_id
             is_online = statuses.get(panel_id, False)
-            
-            # Иконки статуса панели
+
             panel_icon = "✅" if is_current else "⏸️"
-            
-            # Иконки онлайн статуса
-            if is_online:
-                online_icon = "🟢"
-                online_text = "Онлайн"
-            else:
-                online_icon = "🔴"
-                online_text = "Оффлайн"
-            
-            # Формируем строку панели
+            online_icon = "🟢 Онлайн" if is_online else "🔴 Оффлайн"
+
             location = getattr(panel_config, 'location_label', '')
-            location_str = f" | 📍 {location}" if location else ""
-            text += f"{panel_icon} <b>{alias}</b> <code>v{version}</code>{location_str}\n"
-            text += f"   {online_icon} {online_text}\n"
-            
-            # Добавляем URL если есть
+            location_str = f"  |  📍 {location}" if location else ""
+
+            transport = (getattr(panel_config, 'transport', '') or '—').upper()
+            security = (getattr(panel_config, 'security', '') or '—').upper()
+
+            text += f"{panel_icon} <b>{alias}</b>  <code>v{version}</code>{location_str}\n"
+            text += f"   {online_icon}  |  🆔 <code>{panel_id}</code>\n"
+            text += f"   🔌 <code>{transport}</code> · <code>{security}</code>\n"
             if panel_config.xui_url:
-                text += f"    {panel_config.xui_url}\n"
-            
-            text += f"   ID: <code>{panel_id}</code>\n\n"
+                text += f"   <code>{panel_config.xui_url}</code>\n"
+            text += "\n"
         
         # Кнопки управления
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
