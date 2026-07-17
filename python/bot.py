@@ -11,6 +11,7 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.exceptions import TelegramBadRequest
 import sqlite3
 from config import config
 from utils import XUIClient, generate_vless_link, get_client_link, setup_logging
@@ -29,6 +30,19 @@ logger = logging.getLogger(__name__)
 
 bot = Bot(token=config.bot.token)
 dp = Dispatcher()
+
+
+@dp.errors()
+async def errors_handler(event, exception: Exception):
+    """Глушим типовые ошибки Telegram которые не требуют внимания."""
+    if isinstance(exception, TelegramBadRequest):
+        msg = str(exception)
+        if "message is not modified" in msg:
+            return True  # игнорируем — содержимое не изменилось
+        if "query is too old" in msg or "query ID is invalid" in msg:
+            return True  # игнорируем — пользователь нажал старую кнопку
+    return False  # остальные ошибки логируются как обычно
+
 
 xui_client = XUIClient(config)
 
