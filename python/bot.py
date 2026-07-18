@@ -2730,17 +2730,18 @@ async def back_to_start_menu(callback_query: types.CallbackQuery, state: FSMCont
             ]
         ])
         current_panel = config.get_current_panel()
+        current_panel_id = config.panel_manager.get_current_panel_id()
         panel_info = ""
         if current_panel:
             location = getattr(current_panel, 'location_label', '')
-            transport = getattr(current_panel, 'transport', '') or (config.vpn.transport if hasattr(config, 'vpn') and config.vpn else 'N/A')
-            security = getattr(current_panel, 'security', '') or (config.vpn.security if hasattr(config, 'vpn') and config.vpn else 'N/A')
-            location_part = f"• Локация: <code>{location}</code>\n" if location else ""
+            transport = (getattr(current_panel, 'transport', '') or (config.vpn.transport if hasattr(config, 'vpn') and config.vpn else 'N/A')).upper()
+            security = (getattr(current_panel, 'security', '') or (config.vpn.security if hasattr(config, 'vpn') and config.vpn else 'N/A')).upper()
+            location_part = f"📍 {location}\n" if location else ""
             panel_info = (
-                f"📋 <b>Панель:</b> <code>{current_panel.alias}</code>\n"
+                f"📡 <b>{current_panel.alias}</b> v{current_panel.xui_version}\n"
+                f"🆔 <code>{current_panel_id}</code>\n"
                 f"{location_part}"
-                f"• <code>{'Локальная' if current_panel.is_local else 'Сетевая'}</code>  v<code>{current_panel.xui_version}</code>\n"
-                f"• Transport: <code>{transport}</code>  Security: <code>{security}</code>\n"
+                f"🔌 <code>{transport}</code> · <code>{security}</code>\n"
             )
         await bot.send_message(
             callback_query.message.chat.id,
