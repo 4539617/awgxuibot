@@ -54,6 +54,7 @@ class PanelConfig:
     alias: str
     enabled: bool
     is_local: bool = False
+    location_label: str = ""
     xui_version: str = "latest"
     xui_url: str = ""
     xui_username: str = ""
@@ -212,6 +213,7 @@ class ConfigManager:
                     alias=panel_data.get('alias', panel_id),
                     enabled=panel_data.get('enabled', True),
                     is_local=panel_data.get('is_local', False),
+                    location_label=panel_data.get('location_label', ''),
                     xui_version=panel_data.get('xui_version', '3.3.1'),
                     xui_url=panel_data.get('xui_url', ''),
                     xui_username=panel_data.get('xui_username', ''),
@@ -559,6 +561,7 @@ class ConfigManager:
                     'alias': panel.alias,
                     'enabled': panel.enabled,
                     'is_local': existing_is_local,  # Используем значение из файла
+                    'location_label': panel.location_label,
                     'xui_version': panel.xui_version,
                     'xui_url': panel.xui_url,
                     'xui_username': panel.xui_username,
@@ -692,6 +695,13 @@ class UserDatabase:
                 VALUES ('cpu_threshold', 95.0), ('ram_threshold', 95.0), ('disk_threshold', 95.0)
             """)
             
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS pending_access_requests (
+                    user_id INTEGER PRIMARY KEY,
+                    requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS blocked_users (
                     user_id INTEGER PRIMARY KEY,
@@ -915,6 +925,43 @@ class UserDatabase:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute("SELECT 1 FROM user_history WHERE user_id = ?", (user_id,))
             return cursor.fetchone() is not None
+
+    def list_pending_requests(self) -> list:
+        """Вернуть список всех ожидающих запросов [(user_id, requested_at), ...]"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                "SELECT user_id, requested_at FROM pending_access_requests ORDER BY requested_at ASC"
+            )
+            return cursor.fetchall()
+
+    def has_pending_request(self, user_id: int) -> bool:
+        """Проверить есть ли ожидающий запрос на доступ от пользователя"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute("SELECT 1 FROM pending_access_requests WHERE user_id = ?", (user_id,))
+            return cursor.fetchone() is not None
+
+    def add_pending_request(self, user_id: int) -> bool:
+        """Записать запрос на доступ (чтобы не дублировать)"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute(
+                    "INSERT OR IGNORE INTO pending_access_requests (user_id) VALUES (?)",
+                    (user_id,)
+                )
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка сохранения pending-запроса: {e}")
+            return False
+
+    def remove_pending_request(self, user_id: int) -> bool:
+        """Удалить ожидающий запрос (после решения администратора)"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute("DELETE FROM pending_access_requests WHERE user_id = ?", (user_id,))
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка удаления pending-запроса: {e}")
+            return False
 
 
 class Config:

@@ -1722,6 +1722,7 @@ update_xuibot() {
     docker rm xuibot 2>/dev/null || true
     
     # Пересборка образа
+    docker_prune
     echo -e "${YELLOW}🐳 Пересборка образа...${NC}"
     $DOCKER_COMPOSE_CMD -f docker-compose.xuibot.yml build --no-cache
     
@@ -1968,6 +1969,7 @@ update_awgbot() {
     docker rm awgbot 2>/dev/null || true
     
     # Пересборка образа
+    docker_prune
     echo -e "${YELLOW}🐳 Пересборка образа...${NC}"
     $DOCKER_COMPOSE_CMD -f docker-compose.awgbot.yml build --no-cache
     
@@ -2128,6 +2130,15 @@ remove_awg_version() {
     echo -e "${GREEN}✅ AWG $version удален!${NC}"
 }
 
+# Очистка неиспользуемых Docker-ресурсов перед пересборкой
+docker_prune() {
+    echo -e "${YELLOW}🧹 Очистка неиспользуемых Docker-ресурсов...${NC}"
+    docker container prune -f 2>/dev/null | grep -E "deleted|freed|Deleted|Freed" || true
+    docker image prune -f 2>/dev/null | grep -E "deleted|freed|Deleted|Freed|reclaimed" || true
+    docker builder prune -f 2>/dev/null | grep -E "deleted|freed|Deleted|Freed|reclaimed" || true
+    echo -e "${GREEN}✅ Очистка завершена${NC}"
+}
+
 # Функция перезапуска контейнера XUIBOT с rebuild
 rebuild_xuibot() {
     echo -e "\n${BLUE}========================================${NC}"
@@ -2141,6 +2152,7 @@ rebuild_xuibot() {
     echo -e "${YELLOW}🛑 Остановка контейнера xuibot...${NC}"
     $DOCKER_COMPOSE_CMD -f docker-compose.xuibot.yml down 2>/dev/null || true
     
+    docker_prune
     echo -e "${YELLOW}🔨 Пересборка образа xuibot...${NC}"
     $DOCKER_COMPOSE_CMD -f docker-compose.xuibot.yml build --no-cache
     
@@ -2170,6 +2182,7 @@ rebuild_awgbot() {
     echo -e "${YELLOW}🛑 Остановка контейнера awgbot...${NC}"
     $DOCKER_COMPOSE_CMD -f docker-compose.awgbot.yml down 2>/dev/null || true
     
+    docker_prune
     echo -e "${YELLOW}🔨 Пересборка образа awgbot...${NC}"
     $DOCKER_COMPOSE_CMD -f docker-compose.awgbot.yml build --no-cache
     
