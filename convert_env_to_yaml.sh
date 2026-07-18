@@ -88,12 +88,11 @@ common:
   panel_failure_threshold: 3
   panel_check_timeout: 5
   allow_user_dns_queries: ${env_vars[ALLOW_USER_DNS_QUERIES]:-false}
-default_panel: local_panel
+default_panel: panel0
 panels:
-  local_panel:
+  panel0:
     alias: Локальная
     enabled: true
-    is_local: true
     xui_version: ${env_vars[XUI_VERSION]:-2.8.10}
     xui_url: ${env_vars[XUI_URL]}
     xui_username: ${env_vars[XUI_USERNAME]}

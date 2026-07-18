@@ -53,7 +53,6 @@ class PanelConfig:
     panel_id: str
     alias: str
     enabled: bool
-    is_local: bool = False
     location_label: str = ""
     xui_version: str = "latest"
     xui_url: str = ""
@@ -212,7 +211,6 @@ class ConfigManager:
                     panel_id=panel_id,
                     alias=panel_data.get('alias', panel_id),
                     enabled=panel_data.get('enabled', True),
-                    is_local=panel_data.get('is_local', False),
                     location_label=panel_data.get('location_label', ''),
                     xui_version=panel_data.get('xui_version', '3.3.1'),
                     xui_url=panel_data.get('xui_url', ''),
@@ -497,8 +495,8 @@ class ConfigManager:
     def _save_config(self):
         """Сохраняет текущую конфигурацию в файл"""
         try:
-            # ВАЖНО: Загружаем текущий config.yaml чтобы сохранить is_local и server_label
-            # is_local и server_label НЕ должны изменяться программно!
+            # ВАЖНО: Загружаем текущий config.yaml чтобы сохранить server_label
+            # server_label НЕ должен изменяться программно!
             existing_config = {}
             if os.path.exists(self.config_path):
                 with open(self.config_path, 'r', encoding='utf-8') as f:
@@ -551,16 +549,9 @@ class ConfigManager:
             
             # Добавляем панели
             for panel_id, panel in self.panels.items():
-                # ВАЖНО: Сохраняем is_local из существующего файла, если он там есть
-                # is_local НЕ должен изменяться программно!
-                existing_is_local = panel.is_local
-                if existing_config.get('panels', {}).get(panel_id, {}).get('is_local') is not None:
-                    existing_is_local = existing_config['panels'][panel_id]['is_local']
-                
                 config_dict['panels'][panel_id] = {
                     'alias': panel.alias,
                     'enabled': panel.enabled,
-                    'is_local': existing_is_local,  # Используем значение из файла
                     'location_label': panel.location_label,
                     'xui_version': panel.xui_version,
                     'xui_url': panel.xui_url,

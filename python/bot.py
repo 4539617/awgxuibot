@@ -79,12 +79,12 @@ def make_panel_client(panel_id: str) -> XUIClient:
 
 def get_available_panels() -> list:
     """Возвращает список панелей доступных пользователям для создания ключей.
-    Правило: local_panel (по ID) или сетевые v3+.
+    Правило: panel0 (по ID) или сетевые v3+.
     """
     panels = config.panel_manager.get_all_panels()
     result = []
     for panel_id, panel_cfg in panels.items():
-        is_local_panel = (panel_id == "local_panel")
+        is_local_panel = (panel_id == "panel0")
         is_v3 = panel_cfg.is_v3() if hasattr(panel_cfg, 'is_v3') else False
         if is_local_panel or is_v3:
             result.append((panel_id, panel_cfg))
@@ -3488,16 +3488,16 @@ async def select_panel_to_connect(callback_query: types.CallbackQuery, state: FS
             return
         
         # Формируем кнопки для выбора панели.
-        # Правило: показываем только если panel_id == "local_panel"
+        # Правило: показываем только если panel_id == "panel0"
         # ИЛИ (сетевая панель с версией 3+).
-        # Всё остальное (v2.x не-local_panel) — только в мониторинге.
+        # Всё остальное (v2.x не-panel0) — только в мониторинге.
         keyboard_buttons = []
         for panel_id, panel_config in panels.items():
-            is_local_panel = (panel_id == "local_panel")
+            is_local_panel = (panel_id == "panel0")
             is_v3_or_higher = panel_config.is_v3() if hasattr(panel_config, 'is_v3') else False
 
             if not is_local_panel and not is_v3_or_higher:
-                logger.debug(f"⏭️ Пропуск панели {panel_id} (v<3, не local_panel) — только мониторинг")
+                logger.debug(f"⏭️ Пропуск панели {panel_id} (v<3, не panel0) — только мониторинг")
                 continue
 
             logger.debug(f"✅ Панель {panel_id} добавлена в список переключения")
