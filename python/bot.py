@@ -2595,6 +2595,13 @@ async def show_users_list(callback_query: types.CallbackQuery, state: FSMContext
         else:
             text += "Нет добавленных пользователей."
 
+        pending = config.users_db.list_pending_requests()
+        if pending:
+            buttons.append([InlineKeyboardButton(
+                text=f"📋 Запросы на доступ ({len(pending)})",
+                callback_data="show_pending_requests"
+            )])
+
         buttons.append([
             InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_users"),
             InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")
@@ -2626,6 +2633,100 @@ async def refresh_users(callback_query: types.CallbackQuery, state: FSMContext):
 
     await callback_query.answer("🔄 Обновление...")
     await show_users_list(callback_query, state, is_refresh=True)
+
+
+@dp.callback_query(lambda c: c.data == "show_pending_requests")
+async def show_pending_requests(callback_query: types.CallbackQuery):
+    """Показать список ожидающих запросов на доступ"""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
+        return
+
+    await callback_query.answer()
+
+    pending = config.users_db.list_pending_requests()
+
+    if not pending:
+        await bot.send_message(
+            callback_query.message.chat.id,
+            "✅ Нет ожидающих запросов на доступ.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔙 Назад", callback_data="show_users")]
+            ])
+        )
+        return
+
+    buttons = []
+    for uid, requested_at in pending:
+        try:
+            chat = await bot.get_chat(uid)
+            label = f"@{chat.username}" if chat.username else chat.first_name or str(uid)
+        except:
+            label = str(uid)
+        buttons.append([InlineKeyboardButton(
+            text=f"🕐 {label}",
+            callback_data=f"pending_card_{uid}"
+        )])
+
+    buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="show_users")])
+
+    await bot.send_message(
+        callback_query.message.chat.id,
+        f"📋 <b>Запросы на доступ ({len(pending)})</b>\n\nВыберите пользователя:",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+    )
+
+
+@dp.callback_query(lambda c: c.data and c.data.startswith("pending_card_"))
+async def show_pending_card(callback_query: types.CallbackQuery):
+    """Показать карточку ожидающего запроса с кнопками решения"""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
+        return
+
+    user_id = int(callback_query.data.split("_", 2)[2])
+
+    # Если запрос уже обработан — сообщить и вернуть в список
+    if not config.users_db.has_pending_request(user_id):
+        await callback_query.answer("ℹ️ Запрос уже обработан", show_alert=True)
+        await show_pending_requests(callback_query)
+        return
+
+    await callback_query.answer()
+
+    try:
+        chat = await bot.get_chat(user_id)
+        username = chat.username
+        first_name = chat.first_name or ""
+        last_name = chat.last_name or ""
+        user_info = f"@{username}" if username else first_name
+        user_full_name = f"{first_name} {last_name}".strip()
+    except:
+        username = None
+        user_info = str(user_id)
+        user_full_name = str(user_id)
+
+    admin_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Разрешить", callback_data=f"approve_{user_id}")],
+        [InlineKeyboardButton(text="🕐 Ключ на 1 час", callback_data=f"temp_1h_{user_id}"),
+         InlineKeyboardButton(text="📅 Ключ на 1 день", callback_data=f"temp_1d_{user_id}")],
+        [InlineKeyboardButton(text="📅 Ключ на 3 дня", callback_data=f"temp_3d_{user_id}"),
+         InlineKeyboardButton(text="📅 Ключ на 7 дней", callback_data=f"temp_7d_{user_id}")],
+        [InlineKeyboardButton(text="📅 Ключ на 30 дней", callback_data=f"temp_30d_{user_id}")],
+        [InlineKeyboardButton(text="❌ Заблокировать", callback_data=f"deny_{user_id}")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="show_pending_requests")]
+    ])
+
+    await bot.send_message(
+        callback_query.message.chat.id,
+        f"🆕 <b>Запрос на доступ</b>\n\n"
+        f"👤 Пользователь: {user_info}\n"
+        f"📝 Имя: {user_full_name}\n"
+        f"🆔 ID: <code>{user_id}</code>",
+        reply_markup=admin_keyboard,
+        parse_mode="HTML"
+    )
 
 
 @dp.callback_query(lambda c: c.data and c.data.startswith('user_card_'))

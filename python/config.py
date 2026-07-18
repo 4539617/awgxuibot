@@ -926,6 +926,14 @@ class UserDatabase:
             cursor = conn.execute("SELECT 1 FROM user_history WHERE user_id = ?", (user_id,))
             return cursor.fetchone() is not None
 
+    def list_pending_requests(self) -> list:
+        """Вернуть список всех ожидающих запросов [(user_id, requested_at), ...]"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                "SELECT user_id, requested_at FROM pending_access_requests ORDER BY requested_at ASC"
+            )
+            return cursor.fetchall()
+
     def has_pending_request(self, user_id: int) -> bool:
         """Проверить есть ли ожидающий запрос на доступ от пользователя"""
         with sqlite3.connect(self.db_path) as conn:
