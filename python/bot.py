@@ -1779,6 +1779,14 @@ async def process_request_access(callback_query: types.CallbackQuery):
         await callback_query.answer()
         return
 
+    # Если запрос уже был отправлен и ожидает решения — ничего не делаем
+    if config.users_db.has_pending_request(user_id):
+        await callback_query.answer()
+        return
+
+    # Фиксируем запрос как ожидающий
+    config.users_db.add_pending_request(user_id)
+
     admin_id = config.users_db.get_main_admin()
     user_info = f"@{username}" if username else first_name
     user_full_name = f"{first_name} {last_name if last_name else ''}".strip()
@@ -1882,6 +1890,8 @@ async def process_admin_decision(callback_query: types.CallbackQuery):
     except:
         user_info = str(user_id)
 
+    config.users_db.remove_pending_request(user_id)
+
     if action == "approve":
         if config.users_db.add_user(user_id, username, callback_query.from_user.id):
             await callback_query.message.edit_text(f"✅ Пользователь {user_info} добавлен!")
@@ -1932,6 +1942,8 @@ async def process_temp_key_request(callback_query: types.CallbackQuery):
         user_info = str(user_id)
         username = str(user_id)
         first_name = str(user_id)
+
+    config.users_db.remove_pending_request(user_id)
 
     # Генерируем email для временного ключа
     random_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))

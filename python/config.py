@@ -696,6 +696,13 @@ class UserDatabase:
             """)
             
             conn.execute("""
+                CREATE TABLE IF NOT EXISTS pending_access_requests (
+                    user_id INTEGER PRIMARY KEY,
+                    requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            conn.execute("""
                 CREATE TABLE IF NOT EXISTS blocked_users (
                     user_id INTEGER PRIMARY KEY,
                     blocked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -918,6 +925,35 @@ class UserDatabase:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute("SELECT 1 FROM user_history WHERE user_id = ?", (user_id,))
             return cursor.fetchone() is not None
+
+    def has_pending_request(self, user_id: int) -> bool:
+        """Проверить есть ли ожидающий запрос на доступ от пользователя"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute("SELECT 1 FROM pending_access_requests WHERE user_id = ?", (user_id,))
+            return cursor.fetchone() is not None
+
+    def add_pending_request(self, user_id: int) -> bool:
+        """Записать запрос на доступ (чтобы не дублировать)"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute(
+                    "INSERT OR IGNORE INTO pending_access_requests (user_id) VALUES (?)",
+                    (user_id,)
+                )
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка сохранения pending-запроса: {e}")
+            return False
+
+    def remove_pending_request(self, user_id: int) -> bool:
+        """Удалить ожидающий запрос (после решения администратора)"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute("DELETE FROM pending_access_requests WHERE user_id = ?", (user_id,))
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка удаления pending-запроса: {e}")
+            return False
 
 
 class Config:
