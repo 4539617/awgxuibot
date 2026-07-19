@@ -409,13 +409,9 @@ async def cmd_start(message: Message, state: FSMContext):
                 ],
                 [
                     InlineKeyboardButton(text="🔑 Мои ключи", callback_data="cmd_myclients"),
-                    InlineKeyboardButton(text="📋 Все ключи", callback_data="cmd_allclients")
                 ],
                 [
                     InlineKeyboardButton(text="🖥️ Сервер", callback_data="server_status"),
-                    InlineKeyboardButton(text="👥 Пользователи", callback_data="show_users")
-                ],
-                [
                     InlineKeyboardButton(text="🔧 Панели", callback_data="show_panels")
                 ]
             ])
@@ -1049,7 +1045,7 @@ async def cmd_all_clients(message: Message):
         
         # Добавляем кнопку "Назад"
         buttons.append([
-            InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")
+            InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_server_status")
         ])
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -1727,7 +1723,7 @@ async def back_to_allclients(callback_query: types.CallbackQuery, is_refresh: bo
         # Добавляем кнопки "Обновить" и "Назад"
         buttons.append([
             InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_allclients"),
-            InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")
+            InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_server_status")
         ])
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -2216,6 +2212,10 @@ async def show_server_status(callback_query: types.CallbackQuery, state: FSMCont
                 InlineKeyboardButton(text="📥 JSON конфиг", callback_data="export_json_config")
             ],
             [
+                InlineKeyboardButton(text="📋 Все ключи", callback_data="cmd_allclients"),
+                InlineKeyboardButton(text="👥 Пользователи", callback_data="show_users")
+            ],
+            [
                 InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")
             ]
         ])
@@ -2663,7 +2663,7 @@ async def show_users_list(callback_query: types.CallbackQuery, state: FSMContext
 
         buttons.append([
             InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_users"),
-            InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")
+            InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_server_status")
         ])
 
         keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -2879,13 +2879,9 @@ async def back_to_start_menu(callback_query: types.CallbackQuery, state: FSMCont
             ],
             [
                 InlineKeyboardButton(text="🔑 Мои ключи", callback_data="cmd_myclients"),
-                InlineKeyboardButton(text="📋 Все ключи", callback_data="cmd_allclients")
             ],
             [
                 InlineKeyboardButton(text="🖥️ Сервер", callback_data="server_status"),
-                InlineKeyboardButton(text="👥 Пользователи", callback_data="show_users")
-            ],
-            [
                 InlineKeyboardButton(text="🔧 Панели", callback_data="show_panels")
             ]
         ])
