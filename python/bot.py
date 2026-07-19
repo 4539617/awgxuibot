@@ -2445,14 +2445,11 @@ async def show_notification_settings(callback_query: types.CallbackQuery, state:
             settings.get('ram_alert',  False),
             settings.get('disk_alert', False),
         ])
-        # Индикатор мониторинга: 🔔 только если хоть один включён
         monitor_icon = "🔔" if alerts_on > 0 else ""
 
-        location   = getattr(panel_cfg, 'location_label', '') or ''
-        loc_str    = f"📍 {location}" if location else ""
-        id_str     = f"🆔 {panel_id}"
-        sub_line   = f"{loc_str}  {id_str}" if loc_str else id_str
-        btn_text   = f"{status_icon}{monitor_icon} {alias}\n{sub_line}"
+        location = getattr(panel_cfg, 'location_label', '') or ''
+        sub_line = f"📍 {location}" if location else ""
+        btn_text = f"{status_icon}{monitor_icon} {alias}\n{sub_line}" if sub_line else f"{status_icon}{monitor_icon} {alias}"
         buttons.append([InlineKeyboardButton(text=btn_text, callback_data=f"notif_panel_{panel_id}")])
 
     buttons.append([
@@ -2463,8 +2460,9 @@ async def show_notification_settings(callback_query: types.CallbackQuery, state:
     kb = InlineKeyboardMarkup(inline_keyboard=buttons)
     try:
         await callback_query.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
-    except Exception:
-        await bot.send_message(callback_query.message.chat.id, text, parse_mode="HTML", reply_markup=kb)
+    except TelegramBadRequest as e:
+        if "message is not modified" not in str(e):
+            await bot.send_message(callback_query.message.chat.id, text, parse_mode="HTML", reply_markup=kb)
 
 
 # ─── ЭКРАН 2: настройки конкретной панели ──────────────────────────────────
