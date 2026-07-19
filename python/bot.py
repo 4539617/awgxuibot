@@ -411,7 +411,7 @@ async def cmd_start(message: Message, state: FSMContext):
                     InlineKeyboardButton(text="🔑 Мои ключи", callback_data="cmd_myclients"),
                 ],
                 [
-                    InlineKeyboardButton(text="🖥️ Сервер", callback_data="server_status"),
+                    InlineKeyboardButton(text="⚙️ Администрирование", callback_data="server_status"),
                 ]
             ])
 
@@ -2174,7 +2174,7 @@ async def show_server_status(callback_query: types.CallbackQuery, state: FSMCont
             total_traffic_down = 0
         
         # Формируем сообщение
-        message = "<b>🖥️ Сервер</b>\n\n"
+        message = "<b>⚙️ Администрирование</b>\n\n"
         
         message += f"💻 <b>CPU:</b> {cpu:.1f}%\n\n"
         
@@ -2883,7 +2883,7 @@ async def back_to_start_menu(callback_query: types.CallbackQuery, state: FSMCont
                 InlineKeyboardButton(text="🔑 Мои ключи", callback_data="cmd_myclients"),
             ],
             [
-                InlineKeyboardButton(text="🖥️ Сервер", callback_data="server_status"),
+                InlineKeyboardButton(text="⚙️ Администрирование", callback_data="server_status"),
             ]
         ])
         current_panel = config.get_current_panel()
