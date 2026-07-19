@@ -2411,21 +2411,10 @@ show_status() {
         # Значение по умолчанию для DB_PATH
         [ -z "$db_path" ] && db_path="/app/data/bot_users.db"
         
-        # Получаем количество пользователей из базы данных
-        local user_count=0
-        local admin_ids=$(get_config_value "ADMIN_IDS")
-        local main_admin=$(echo "$admin_ids" | cut -d',' -f1)
-        
-        # Проверяем базу данных внутри контейнера
-        if [ -n "$main_admin" ]; then
-            user_count=$(docker exec xuibot sqlite3 "$db_path" "SELECT COUNT(*) FROM allowed_users WHERE user_id != ${main_admin};" 2>/dev/null || echo "0")
-        fi
-        
         if [ "$xui_bot_username" != "Unknown" ]; then
             echo -e "  Ссылка: https://t.me/${xui_bot_username}"
         fi
         echo -e "  XUI Bot: ${GREEN}✅ Запущен${NC}"
-        echo -e "  Пользователей: ${user_count}"
         
         # Проверка автозагрузки
         local xui_restart_policy=$(docker inspect xuibot --format='{{.HostConfig.RestartPolicy.Name}}' 2>/dev/null)
