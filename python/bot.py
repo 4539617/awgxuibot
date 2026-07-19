@@ -2403,13 +2403,25 @@ async def show_notification_settings(callback_query: types.CallbackQuery, state:
     text = "🔔 <b>Настройки уведомлений</b>\n\nВыберите сервер для настройки мониторинга ресурсов.\n"
     text += f"⏱️ Интервал: <code>{int(check_interval)}</code> сек\n"
 
+    def _badge(v, thr):
+        if v is None: return "—"
+        if v >= thr: return f"🚨{v:.0f}%"
+        if v >= thr - 5: return f"⚠️{v:.0f}%"
+        return f"✅{v:.0f}%"
+
     buttons = []
     for panel_id, panel_cfg in panels.items():
-        alias = getattr(panel_cfg, 'alias', panel_id) or panel_id
+        # Тот же фильтр что в "Подключить": panel0 или v3+
+        is_local = (panel_id == "panel0")
+        is_v3    = panel_cfg.is_v3() if hasattr(panel_cfg, 'is_v3') else False
+        if not is_local and not is_v3:
+            continue
+
+        alias      = getattr(panel_cfg, 'alias', panel_id) or panel_id
         settings   = config.users_db.get_panel_notification_settings(panel_id)
         thresholds = config.users_db.get_panel_thresholds(panel_id)
 
-        # Получаем текущие значения
+        # Текущие значения ресурсов
         if panel_id == "panel0":
             stats = local_stats
         else:
@@ -2423,22 +2435,19 @@ async def show_notification_settings(callback_query: types.CallbackQuery, state:
         ram_thr  = thresholds.get('ram_threshold', 95.0)
         disk_thr = thresholds.get('disk_threshold', 95.0)
 
-        # Иконка состояния панели
         panel_online = get_panel_online_status(panel_id)
-        status_icon = "🟢" if panel_online else "🔴"
+        status_icon  = "🟢" if panel_online else "🔴"
 
-        # Собираем строку статистики для кнопки
-        def _badge(v, thr):
-            if v is None: return "—"
-            if v >= thr: return f"🚨{v:.0f}%"
-            if v >= thr - 5: return f"⚠️{v:.0f}%"
-            return f"✅{v:.0f}%"
+        alerts_on = sum([
+            settings.get('cpu_alert',  False),
+            settings.get('ram_alert',  False),
+            settings.get('disk_alert', False),
+        ])
+        # Индикатор мониторинга: 🔔 если хоть один включён, иначе 🔕
+        monitor_icon = "🔔" if alerts_on > 0 else "🔕"
 
         stats_line = f"CPU {_badge(cpu_val, cpu_thr)}  RAM {_badge(ram_val, ram_thr)}  Диск {_badge(disk_val, disk_thr)}"
-        alerts_on  = sum([settings.get('cpu_alert', False), settings.get('ram_alert', False), settings.get('disk_alert', False)])
-        alert_line = f"🔔 {alerts_on}/3 алертов вкл"
-
-        btn_text = f"{status_icon} {panel_id} · {alias}\n{stats_line}  {alert_line}"
+        btn_text   = f"{status_icon} {monitor_icon} {alias}\n{stats_line}"
         buttons.append([InlineKeyboardButton(text=btn_text, callback_data=f"notif_panel_{panel_id}")])
 
     buttons.append([
@@ -2455,12 +2464,14 @@ async def show_notification_settings(callback_query: types.CallbackQuery, state:
 
 # ─── ЭКРАН 2: настройки конкретной панели ──────────────────────────────────
 @dp.callback_query(lambda c: c.data and c.data.startswith("notif_panel_"))
-async def show_panel_notification(callback_query: types.CallbackQuery, state: FSMContext):
+async def show_panel_notification(callback_query: types.CallbackQuery, state: FSMContext,
+                                  _already_answered: bool = False):
     """Экран 2 — настройки уведомлений конкретной панели"""
     if not is_admin(callback_query.from_user.id):
         await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
         return
-    await callback_query.answer()
+    if not _already_answered:
+        await callback_query.answer()
 
     panel_id   = callback_query.data[len("notif_panel_"):]
     panel_cfg  = config.panel_manager.get_panel(panel_id)
@@ -2547,9 +2558,9 @@ async def toggle_panel_alert(callback_query: types.CallbackQuery, state: FSMCont
     config.users_db.set_panel_notification_setting(panel_id, setting, new_val)
     names = {'cpu': 'CPU', 'ram': 'RAM', 'disk': 'Диск'}
     await callback_query.answer(f"{'✅' if new_val else '❌'} {names.get(resource, resource)} {'вкл' if new_val else 'выкл'}")
-    # Перерисовываем экран панели
+    # Перерисовываем экран панели (answer уже вызван выше)
     callback_query.data = f"notif_panel_{panel_id}"
-    await show_panel_notification(callback_query, state)
+    await show_panel_notification(callback_query, state, _already_answered=True)
 
 
 # ─── Редактирование порога ──────────────────────────────────────────────────
