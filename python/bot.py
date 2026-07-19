@@ -412,7 +412,6 @@ async def cmd_start(message: Message, state: FSMContext):
                 ],
                 [
                     InlineKeyboardButton(text="🖥️ Сервер", callback_data="server_status"),
-                    InlineKeyboardButton(text="🔧 Панели", callback_data="show_panels")
                 ]
             ])
 
@@ -2216,6 +2215,9 @@ async def show_server_status(callback_query: types.CallbackQuery, state: FSMCont
                 InlineKeyboardButton(text="👥 Пользователи", callback_data="show_users")
             ],
             [
+                InlineKeyboardButton(text="🔧 Панели", callback_data="show_panels")
+            ],
+            [
                 InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")
             ]
         ])
@@ -2882,7 +2884,6 @@ async def back_to_start_menu(callback_query: types.CallbackQuery, state: FSMCont
             ],
             [
                 InlineKeyboardButton(text="🖥️ Сервер", callback_data="server_status"),
-                InlineKeyboardButton(text="🔧 Панели", callback_data="show_panels")
             ]
         ])
         current_panel = config.get_current_panel()
@@ -3427,7 +3428,7 @@ async def show_panels_list(callback_query: types.CallbackQuery, state: FSMContex
                     diagnostic_text,
                     parse_mode="HTML",
                     reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                        [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_start")]
+                        [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_server_status")]
                     ])
                 )
             else:
@@ -3436,7 +3437,7 @@ async def show_panels_list(callback_query: types.CallbackQuery, state: FSMContex
                     diagnostic_text,
                     parse_mode="HTML",
                     reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                        [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_start")]
+                        [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_server_status")]
                     ])
                 )
             return
@@ -3491,7 +3492,7 @@ async def show_panels_list(callback_query: types.CallbackQuery, state: FSMContex
                 InlineKeyboardButton(text="🔌 Подключить", callback_data="select_panel_to_connect")
             ],
             [
-                InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_start")
+                InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_server_status")
             ]
         ])
         
