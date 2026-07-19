@@ -190,12 +190,14 @@ class RemoteMonitor:
 
                 if stats is None:
                     logger.debug(f"RemoteMonitor: нет данных от {panel_id}")
-                    # Отслеживаем недоступность
-                    await self._check_availability(panel_id, cfg, available=False)
+                    # Доступность отслеживаем только для сетевых панелей
+                    if panel_id != "panel0":
+                        await self._check_availability(panel_id, cfg, available=False)
                     continue
 
-                # Панель ответила — сбрасываем счётчик недоступности
-                await self._check_availability(panel_id, cfg, available=True)
+                # Панель ответила — сбрасываем счётчик недоступности (только сетевые)
+                if panel_id != "panel0":
+                    await self._check_availability(panel_id, cfg, available=True)
 
                 # Кешируем для UI
                 self.last_stats[panel_id] = {

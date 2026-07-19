@@ -2544,12 +2544,15 @@ async def show_panel_notification(callback_query: types.CallbackQuery, state: FS
     text += _fmt_resource("RAM",  "🧠", ram_val,  ram_thr,  ram_on)
     text += "\n"
     text += _fmt_resource("Диск", "💿", disk_val, disk_thr, disk_on)
-    text += "\n"
-    avail_str = "✅ вкл" if avail_on else "❌ выкл"
-    text += f"📡 Доступность: {avail_str}  <i>(алерт после 3 неудач)</i>\n"
+    is_remote = (panel_id != "panel0")
+
+    if is_remote:
+        text += "\n"
+        avail_str = "✅ вкл" if avail_on else "❌ выкл"
+        text += f"📡 Доступность: {avail_str}  <i>(алерт после 3 неудач)</i>\n"
     text += f"\n⏱️ Интервал: <code>{int(check_interval)}</code> с  ·  <code>{updated}</code>"
 
-    kb = InlineKeyboardMarkup(inline_keyboard=[
+    rows = [
         [
             InlineKeyboardButton(text=f"💻 CPU {'✅ Вкл' if cpu_on else '❌ Выкл'}", callback_data=f"ntoggle_{panel_id}_cpu"),
             InlineKeyboardButton(text=f"✏️ {cpu_thr:.0f}%",  callback_data=f"nedit_{panel_id}_cpu"),
@@ -2562,12 +2565,15 @@ async def show_panel_notification(callback_query: types.CallbackQuery, state: FS
             InlineKeyboardButton(text=f"💿 Диск {'✅ Вкл' if disk_on else '❌ Выкл'}", callback_data=f"ntoggle_{panel_id}_disk"),
             InlineKeyboardButton(text=f"✏️ {disk_thr:.0f}%", callback_data=f"nedit_{panel_id}_disk"),
         ],
-        [
+    ]
+    if is_remote:
+        rows.append([
             InlineKeyboardButton(text=f"📡 Доступность {'✅ Вкл' if avail_on else '❌ Выкл'}", callback_data=f"ntoggle_{panel_id}_availability"),
-        ],
-        [InlineKeyboardButton(text="🔄 Обновить", callback_data=f"notif_panel_{panel_id}")],
-        [InlineKeyboardButton(text="🔙 К списку серверов", callback_data="notification_settings")],
-    ])
+        ])
+    rows.append([InlineKeyboardButton(text="🔄 Обновить", callback_data=f"notif_panel_{panel_id}")])
+    rows.append([InlineKeyboardButton(text="🔙 К списку серверов", callback_data="notification_settings")])
+
+    kb = InlineKeyboardMarkup(inline_keyboard=rows)
 
     try:
         await callback_query.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
