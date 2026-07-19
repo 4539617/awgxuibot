@@ -2514,9 +2514,10 @@ async def show_panel_notification(callback_query: types.CallbackQuery, state: FS
     settings   = config.users_db.get_panel_notification_settings(panel_id)
     thresholds = config.users_db.get_panel_thresholds(panel_id)
 
-    cpu_on   = settings.get('cpu_alert', False)
-    ram_on   = settings.get('ram_alert', False)
-    disk_on  = settings.get('disk_alert', False)
+    cpu_on   = settings.get('cpu_alert',          False)
+    ram_on   = settings.get('ram_alert',          False)
+    disk_on  = settings.get('disk_alert',         False)
+    avail_on = settings.get('availability_alert', False)
     cpu_thr  = thresholds.get('cpu_threshold', 95.0)
     ram_thr  = thresholds.get('ram_threshold', 95.0)
     disk_thr = thresholds.get('disk_threshold', 95.0)
@@ -2543,6 +2544,9 @@ async def show_panel_notification(callback_query: types.CallbackQuery, state: FS
     text += _fmt_resource("RAM",  "🧠", ram_val,  ram_thr,  ram_on)
     text += "\n"
     text += _fmt_resource("Диск", "💿", disk_val, disk_thr, disk_on)
+    text += "\n"
+    avail_str = "✅ вкл" if avail_on else "❌ выкл"
+    text += f"📡 Доступность: {avail_str}  <i>(алерт после 3 неудач)</i>\n"
     text += f"\n⏱️ Интервал: <code>{int(check_interval)}</code> с  ·  <code>{updated}</code>"
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -2557,6 +2561,9 @@ async def show_panel_notification(callback_query: types.CallbackQuery, state: FS
         [
             InlineKeyboardButton(text=f"💿 Диск {'✅ Вкл' if disk_on else '❌ Выкл'}", callback_data=f"ntoggle_{panel_id}_disk"),
             InlineKeyboardButton(text=f"✏️ {disk_thr:.0f}%", callback_data=f"nedit_{panel_id}_disk"),
+        ],
+        [
+            InlineKeyboardButton(text=f"📡 Доступность {'✅ Вкл' if avail_on else '❌ Выкл'}", callback_data=f"ntoggle_{panel_id}_availability"),
         ],
         [InlineKeyboardButton(text="🔄 Обновить", callback_data=f"notif_panel_{panel_id}")],
         [InlineKeyboardButton(text="🔙 К списку серверов", callback_data="notification_settings")],
@@ -2583,7 +2590,7 @@ async def toggle_panel_alert(callback_query: types.CallbackQuery, state: FSMCont
     current  = config.users_db.get_panel_notification_setting(panel_id, setting)
     new_val  = not current
     config.users_db.set_panel_notification_setting(panel_id, setting, new_val)
-    names = {'cpu': 'CPU', 'ram': 'RAM', 'disk': 'Диск'}
+    names = {'cpu': 'CPU', 'ram': 'RAM', 'disk': 'Диск', 'availability': 'Доступность'}
     await callback_query.answer(f"{'✅' if new_val else '❌'} {names.get(resource, resource)} {'вкл' if new_val else 'выкл'}")
     # Перерисовываем экран (data не мутируем — CallbackQuery frozen в pydantic v2)
     await show_panel_notification(callback_query, state, _already_answered=True, _panel_id_override=panel_id)

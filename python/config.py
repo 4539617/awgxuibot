@@ -966,7 +966,7 @@ class UserDatabase:
             )
             rows = {row[0]: bool(row[1]) for row in cursor.fetchall()}
         # Значения по умолчанию
-        defaults = {'cpu_alert': False, 'ram_alert': False, 'disk_alert': False}
+        defaults = {'cpu_alert': False, 'ram_alert': False, 'disk_alert': False, 'availability_alert': False}
         defaults.update(rows)
         return defaults
 

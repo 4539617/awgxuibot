@@ -96,6 +96,10 @@ class RemoteMonitor:
         self.threshold_exceeded: Dict[str, Dict[str, bool]]               = {}
         self.consecutive_count:  Dict[str, Dict[str, int]]                = {}
 
+        # Счётчик недоступности и флаг "панель была недоступна"
+        self.unavail_count:    Dict[str, int]  = {}   # сколько раз подряд stats is None
+        self.unavail_alerted:  Dict[str, bool] = {}   # уведомление о недоступности уже отправлено
+
         # Кеш последних значений для UI: {panel_id: {'cpu', 'ram', 'disk', 'updated_at'}}
         self.last_stats: Dict[str, dict] = {}
 
@@ -112,9 +116,10 @@ class RemoteMonitor:
         for panel_id, cfg in panels.items():
             settings = self.config.users_db.get_panel_notification_settings(panel_id)
             has_alert = any([
-                settings.get('cpu_alert', False),
-                settings.get('ram_alert', False),
-                settings.get('disk_alert', False),
+                settings.get('cpu_alert',          False),
+                settings.get('ram_alert',          False),
+                settings.get('disk_alert',         False),
+                settings.get('availability_alert', False),
             ])
             if not has_alert:
                 continue
@@ -149,6 +154,8 @@ class RemoteMonitor:
             self.last_alert_time[panel_id]    = {'cpu': None, 'ram': None, 'disk': None}
             self.threshold_exceeded[panel_id] = {'cpu': False, 'ram': False, 'disk': False}
             self.consecutive_count[panel_id]  = {'cpu': 0, 'ram': 0, 'disk': 0}
+            self.unavail_count[panel_id]      = 0
+            self.unavail_alerted[panel_id]    = False
 
     # ── lifecycle ────────────────────────────────────────────────────────────
 
@@ -183,7 +190,12 @@ class RemoteMonitor:
 
                 if stats is None:
                     logger.debug(f"RemoteMonitor: нет данных от {panel_id}")
+                    # Отслеживаем недоступность
+                    await self._check_availability(panel_id, cfg, available=False)
                     continue
+
+                # Панель ответила — сбрасываем счётчик недоступности
+                await self._check_availability(panel_id, cfg, available=True)
 
                 # Кешируем для UI
                 self.last_stats[panel_id] = {
@@ -210,6 +222,56 @@ class RemoteMonitor:
                     await self._check(panel_id, alias, resource, value, threshold, label)
 
             await asyncio.sleep(check_interval)
+
+    # ── логика доступности ──────────────────────────────────────────────────
+
+    async def _check_availability(self, panel_id: str, cfg, available: bool):
+        """Отслеживает недоступность панели и отправляет уведомление после threshold_check_count неудач."""
+        self._init_panel_state(panel_id)
+        settings = self.config.users_db.get_panel_notification_settings(panel_id)
+        if not settings.get('availability_alert', False):
+            # Алерт выключен — просто сбрасываем счётчик при восстановлении
+            if available:
+                self.unavail_count[panel_id] = 0
+            return
+
+        alias = getattr(cfg, 'alias', panel_id) or panel_id
+
+        if not available:
+            self.unavail_count[panel_id] += 1
+            count = self.unavail_count[panel_id]
+            logger.debug(f"RemoteMonitor: {panel_id} недоступна ({count}/{self.threshold_check_count})")
+            if count >= self.threshold_check_count and not self.unavail_alerted[panel_id]:
+                self.unavail_alerted[panel_id] = True
+                await self._send_availability_alert(panel_id, alias, available=False)
+        else:
+            if self.unavail_alerted[panel_id]:
+                # Панель восстановилась — шлём уведомление о восстановлении
+                self.unavail_alerted[panel_id] = False
+                await self._send_availability_alert(panel_id, alias, available=True)
+            self.unavail_count[panel_id] = 0
+
+    async def _send_availability_alert(self, panel_id: str, alias: str, available: bool):
+        """Отправляет уведомление о доступности панели."""
+        now = datetime.now()
+        if available:
+            text = (
+                f"✅ <b>Панель восстановлена</b>\n\n"
+                f"🖥️ <b>{panel_id} · {alias}</b>\n\n"
+                f"⏰ {now.strftime('%H:%M:%S')}"
+            )
+        else:
+            text = (
+                f"🔴 <b>ПАНЕЛЬ НЕДОСТУПНА</b>\n\n"
+                f"🖥️ <b>{panel_id} · {alias}</b>\n\n"
+                f"Не отвечает {self.threshold_check_count} раза подряд\n"
+                f"⏰ {now.strftime('%H:%M:%S')}"
+            )
+        for admin_id in self.admin_ids:
+            try:
+                await self.bot.send_message(chat_id=admin_id, text=text, parse_mode="HTML")
+            except Exception as e:
+                logger.error(f"RemoteMonitor: ошибка отправки availability алерта {admin_id}: {e}")
 
     # ── логика превышения порогов ────────────────────────────────────────────
 
