@@ -2541,8 +2541,9 @@ async def show_panel_notification(callback_query: types.CallbackQuery, state: FS
 
     try:
         await callback_query.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
-    except Exception:
-        await bot.send_message(callback_query.message.chat.id, text, parse_mode="HTML", reply_markup=kb)
+    except TelegramBadRequest as e:
+        if "message is not modified" not in str(e):
+            await bot.send_message(callback_query.message.chat.id, text, parse_mode="HTML", reply_markup=kb)
 
 
 # ─── Переключение алертов ───────────────────────────────────────────────────
