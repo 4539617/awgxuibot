@@ -32,6 +32,7 @@ default_panel: "panel0"
 panels:
   panel0:
     alias: "Локальная"
+    location_label: ""
     enabled: true
     xui_version: ""
     xui_url: ""

@@ -1354,6 +1354,23 @@ install_xuibot() {
         fi
     fi
     
+    # Проверка и запрос location_label
+    echo -e "\n${YELLOW}🔍 Проверка метки локации...${NC}"
+    if check_yq; then
+        local panel_id_loc=$(get_local_panel_id)
+        LOCATION_LABEL=$(yq eval ".panels.${panel_id_loc}.location_label" config.yaml 2>/dev/null)
+        
+        if [ -n "$LOCATION_LABEL" ] && [ "$LOCATION_LABEL" != "null" ] && [ "$LOCATION_LABEL" != '""' ]; then
+            echo -e "${GREEN}✅ Найдена метка локации: ${LOCATION_LABEL}${NC}"
+        else
+            echo -e "${YELLOW}⚠️  Метка локации не заполнена${NC}"
+            echo -e "${BLUE}📝 Введите метку локации для идентификации сервера (например: Германия, Frankfurt, DE):${NC}"
+            read -p "Метка локации: " location_label
+            yq eval -i ".panels.${panel_id_loc}.location_label = \"${location_label}\"" config.yaml
+            echo -e "${GREEN}✅ Метка локации сохранена: ${location_label}${NC}"
+        fi
+    fi
+    
     # Проверка XUI_URL, XUI_USERNAME, XUI_PASSWORD
     echo -e "\n${YELLOW}🔍 Проверка параметров 3x-ui панели...${NC}"
     
