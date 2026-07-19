@@ -2468,7 +2468,8 @@ async def show_notification_settings(callback_query: types.CallbackQuery, state:
 # ─── ЭКРАН 2: настройки конкретной панели ──────────────────────────────────
 @dp.callback_query(lambda c: c.data and c.data.startswith("notif_panel_"))
 async def show_panel_notification(callback_query: types.CallbackQuery, state: FSMContext,
-                                  _already_answered: bool = False):
+                                  _already_answered: bool = False,
+                                  _panel_id_override: str = None):
     """Экран 2 — настройки уведомлений конкретной панели"""
     if not is_admin(callback_query.from_user.id):
         await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
@@ -2476,7 +2477,7 @@ async def show_panel_notification(callback_query: types.CallbackQuery, state: FS
     if not _already_answered:
         await callback_query.answer()
 
-    panel_id   = callback_query.data[len("notif_panel_"):]
+    panel_id   = _panel_id_override or callback_query.data[len("notif_panel_"):]
     panel_cfg  = config.panel_manager.get_panel(panel_id)
     if not panel_cfg:
         await callback_query.answer("❌ Панель не найдена", show_alert=True)
@@ -2562,9 +2563,8 @@ async def toggle_panel_alert(callback_query: types.CallbackQuery, state: FSMCont
     config.users_db.set_panel_notification_setting(panel_id, setting, new_val)
     names = {'cpu': 'CPU', 'ram': 'RAM', 'disk': 'Диск'}
     await callback_query.answer(f"{'✅' if new_val else '❌'} {names.get(resource, resource)} {'вкл' if new_val else 'выкл'}")
-    # Перерисовываем экран панели (answer уже вызван выше)
-    callback_query.data = f"notif_panel_{panel_id}"
-    await show_panel_notification(callback_query, state, _already_answered=True)
+    # Перерисовываем экран (data не мутируем — CallbackQuery frozen в pydantic v2)
+    await show_panel_notification(callback_query, state, _already_answered=True, _panel_id_override=panel_id)
 
 
 # ─── Редактирование порога ──────────────────────────────────────────────────
