@@ -2446,8 +2446,11 @@ async def show_notification_settings(callback_query: types.CallbackQuery, state:
         # Индикатор мониторинга: 🔔 только если хоть один включён
         monitor_icon = "🔔" if alerts_on > 0 else ""
 
-        stats_line = f"CPU {_badge(cpu_val, cpu_thr)}  RAM {_badge(ram_val, ram_thr)}  Диск {_badge(disk_val, disk_thr)}"
-        btn_text   = f"{status_icon}{monitor_icon} {alias}\n{stats_line}"
+        location   = getattr(panel_cfg, 'location_label', '') or ''
+        loc_str    = f"📍 {location}" if location else ""
+        id_str     = f"🆔 {panel_id}"
+        sub_line   = f"{loc_str}  {id_str}" if loc_str else id_str
+        btn_text   = f"{status_icon}{monitor_icon} {alias}\n{sub_line}"
         buttons.append([InlineKeyboardButton(text=btn_text, callback_data=f"notif_panel_{panel_id}")])
 
     buttons.append([
