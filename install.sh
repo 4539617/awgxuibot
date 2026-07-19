@@ -351,25 +351,17 @@ check_yq() {
 
 # Получить ID локальной панели из config.yaml
 get_local_panel_id() {
-    if [ ! -f "config.yaml" ]; then
-        echo ""
-        return 1
+    # Локальная панель всегда panel0
+    if [ -f "config.yaml" ] && check_yq &>/dev/null; then
+        local panel_id=$(yq eval '.panels.panel0 | key' config.yaml 2>/dev/null)
+        if [ -z "$panel_id" ] || [ "$panel_id" = "null" ]; then
+            # Панель panel0 не существует в конфиге
+            echo -e "${YELLOW}⚠️  Панель panel0 не найдена в config.yaml${NC}" >&2
+            echo ""
+            return 1
+        fi
     fi
-    
-    check_yq || return 1
-    
-    # Ищем панель с is_local: true
-    local panel_id=$(yq eval '.panels | to_entries | .[] | select(.value.is_local == true) | .key' config.yaml 2>/dev/null | head -1)
-    
-    # ВАЖНО: НЕ используем default_panel как fallback!
-    # Инсталлятор должен работать ТОЛЬКО с локальной панелью
-    if [ -z "$panel_id" ]; then
-        echo -e "${YELLOW}⚠️  Локальная (is_local: true) не найдена в config.yaml${NC}" >&2
-        echo ""
-        return 1
-    fi
-    
-    echo "$panel_id"
+    echo "panel0"
 }
 
 # Оборачивает IP в скобки если это IPv6, чтобы URL был валидным (RFC 3986)
@@ -413,12 +405,12 @@ add_local_panel_to_config() {
     fi
     
     # Генерируем уникальный ID для новой панели
-    local panel_id="local_panel"
+    local panel_id="panel0"
     local counter=1
     
     # Проверяем, существует ли панель с таким ID
     while yq eval ".panels.${panel_id}" config.yaml 2>/dev/null | grep -qv "null"; do
-        panel_id="local_panel${counter}"
+        panel_id="panel${counter}"
         counter=$((counter + 1))
     done
     
@@ -427,7 +419,6 @@ add_local_panel_to_config() {
     # Добавляем новую панель в config.yaml
     yq eval -i ".panels.${panel_id}.alias = \"Локальная\"" config.yaml
     yq eval -i ".panels.${panel_id}.enabled = true" config.yaml
-    yq eval -i ".panels.${panel_id}.is_local = true" config.yaml
     yq eval -i ".panels.${panel_id}.xui_version = \"${xui_version}\"" config.yaml
     yq eval -i ".panels.${panel_id}.xui_url = \"${xui_url}\"" config.yaml
     yq eval -i ".panels.${panel_id}.xui_username = \"${xui_username}\"" config.yaml
@@ -780,13 +771,8 @@ extract_inbound_params() {
         fi
     fi
     
-    # Проверяем is_local для panel1
-    local IS_LOCAL=$(yq eval '.panels.panel1.is_local' config.yaml 2>/dev/null)
-    if [ "$IS_LOCAL" = "false" ]; then
-        echo -e "${BLUE}ℹ️  Панель удаленная (is_local: false)${NC}"
-        echo -e "${BLUE}ℹ️  Параметры будут обновлены ботом через API при подключении${NC}"
-        return 0
-    fi
+    # panel0 — локальная, параметры извлекаем из БД
+    # Остальные панели (panel1, panel2...) — удалённые, параметры обновляются через API
     
     # Проверка наличия базы данных
     if [ ! -f "/etc/x-ui/x-ui.db" ]; then
@@ -1316,7 +1302,7 @@ install_xuibot() {
     # Создание config.yaml если не существует
     create_config_if_not_exists
     
-    # Проверка и копирование server_label в local_panel.alias
+    # Проверка и копирование server_label в panel0.alias
     echo -e "\n${YELLOW}🔍 Проверка метки сервера...${NC}"
     if check_yq; then
         SERVER_LABEL=$(yq eval '.common.server_label' config.yaml 2>/dev/null)
@@ -1326,10 +1312,10 @@ install_xuibot() {
             echo -e "${GREEN}✅ Найдена метка сервера: ${SERVER_LABEL}${NC}"
             
             # Находим локальную панель
-            local panel_id=$(yq eval '.panels | to_entries | .[] | select(.value.is_local == true) | .key' config.yaml 2>/dev/null | head -1)
+            local panel_id="panel0"
             
             if [ -n "$panel_id" ]; then
-                # Копируем значение в local_panel.alias
+                # Копируем значение в panel0.alias
                 yq eval -i ".panels.${panel_id}.alias = \"${SERVER_LABEL}\"" config.yaml
                 echo -e "${GREEN}✅ Метка сервера скопирована в ${panel_id}.alias${NC}"
             else
@@ -1351,10 +1337,10 @@ install_xuibot() {
             server_label="${server_label^^}"
             
             # Находим локальную панель
-            local panel_id=$(yq eval '.panels | to_entries | .[] | select(.value.is_local == true) | .key' config.yaml 2>/dev/null | head -1)
+            local panel_id="panel0"
             
             if [ -n "$panel_id" ]; then
-                # Записываем в server_label и local_panel.alias
+                # Записываем в server_label и panel0.alias
                 yq eval -i ".common.server_label = \"${server_label}\"" config.yaml
                 yq eval -i ".panels.${panel_id}.alias = \"${server_label}\"" config.yaml
                 echo -e "${GREEN}✅ Метка VPS сохранена: ${server_label}${NC}"
@@ -1365,6 +1351,23 @@ install_xuibot() {
                 yq eval -i ".common.server_label = \"${server_label}\"" config.yaml
                 echo -e "${GREEN}✅ Метка VPS сохранена: ${server_label}${NC}"
             fi
+        fi
+    fi
+    
+    # Проверка и запрос location_label
+    echo -e "\n${YELLOW}🔍 Проверка метки локации...${NC}"
+    if check_yq; then
+        local panel_id_loc=$(get_local_panel_id)
+        LOCATION_LABEL=$(yq eval ".panels.${panel_id_loc}.location_label" config.yaml 2>/dev/null)
+        
+        if [ -n "$LOCATION_LABEL" ] && [ "$LOCATION_LABEL" != "null" ] && [ "$LOCATION_LABEL" != '""' ]; then
+            echo -e "${GREEN}✅ Найдена метка локации: ${LOCATION_LABEL}${NC}"
+        else
+            echo -e "${YELLOW}⚠️  Метка локации не заполнена${NC}"
+            echo -e "${BLUE}📝 Введите метку локации для идентификации сервера (например: Германия, Frankfurt, DE):${NC}"
+            read -p "Метка локации: " location_label
+            yq eval -i ".panels.${panel_id_loc}.location_label = \"${location_label}\"" config.yaml
+            echo -e "${GREEN}✅ Метка локации сохранена: ${location_label}${NC}"
         fi
     fi
     
@@ -2321,11 +2324,15 @@ show_status() {
             echo -e "  Состояние: ${GREEN}Запущена${NC}"
             echo -e "  Всего ключей: ${total_keys}"
             
-            # Получаем данные подключения из local_panel
-            local xui_url=$(grep -A 20 "local_panel:" config.yaml | grep "xui_url:" | head -1 | awk '{print $2}')
-            local xui_username=$(grep -A 20 "local_panel:" config.yaml | grep "xui_username:" | head -1 | awk '{print $2}')
-            local xui_password=$(grep -A 20 "local_panel:" config.yaml | grep "xui_password:" | head -1 | awk '{print $2}')
-            local xui_api_token=$(grep -A 20 "local_panel:" config.yaml | grep "xui_api_token:" | head -1 | awk '{print $2}')
+            # Получаем данные подключения из локальной панели
+            local _lpid=$(get_local_panel_id 2>/dev/null)
+            local xui_url="" xui_username="" xui_password="" xui_api_token=""
+            if [ -n "$_lpid" ] && check_yq &>/dev/null; then
+                xui_url=$(yq eval ".panels.${_lpid}.xui_url" config.yaml 2>/dev/null)
+                xui_username=$(yq eval ".panels.${_lpid}.xui_username" config.yaml 2>/dev/null)
+                xui_password=$(yq eval ".panels.${_lpid}.xui_password" config.yaml 2>/dev/null)
+                xui_api_token=$(yq eval ".panels.${_lpid}.xui_api_token" config.yaml 2>/dev/null)
+            fi
             
             # Выводим данные подключения если они есть
             if [ -n "$xui_url" ]; then
@@ -2404,21 +2411,10 @@ show_status() {
         # Значение по умолчанию для DB_PATH
         [ -z "$db_path" ] && db_path="/app/data/bot_users.db"
         
-        # Получаем количество пользователей из базы данных
-        local user_count=0
-        local admin_ids=$(get_config_value "ADMIN_IDS")
-        local main_admin=$(echo "$admin_ids" | cut -d',' -f1)
-        
-        # Проверяем базу данных внутри контейнера
-        if [ -n "$main_admin" ]; then
-            user_count=$(docker exec xuibot sqlite3 "$db_path" "SELECT COUNT(*) FROM allowed_users WHERE user_id != ${main_admin};" 2>/dev/null || echo "0")
-        fi
-        
         if [ "$xui_bot_username" != "Unknown" ]; then
             echo -e "  Ссылка: https://t.me/${xui_bot_username}"
         fi
         echo -e "  XUI Bot: ${GREEN}✅ Запущен${NC}"
-        echo -e "  Пользователей: ${user_count}"
         
         # Проверка автозагрузки
         local xui_restart_policy=$(docker inspect xuibot --format='{{.HostConfig.RestartPolicy.Name}}' 2>/dev/null)

@@ -53,7 +53,6 @@ class PanelConfig:
     panel_id: str
     alias: str
     enabled: bool
-    is_local: bool = False
     location_label: str = ""
     xui_version: str = "latest"
     xui_url: str = ""
@@ -212,7 +211,6 @@ class ConfigManager:
                     panel_id=panel_id,
                     alias=panel_data.get('alias', panel_id),
                     enabled=panel_data.get('enabled', True),
-                    is_local=panel_data.get('is_local', False),
                     location_label=panel_data.get('location_label', ''),
                     xui_version=panel_data.get('xui_version', '3.3.1'),
                     xui_url=panel_data.get('xui_url', ''),
@@ -497,8 +495,8 @@ class ConfigManager:
     def _save_config(self):
         """Сохраняет текущую конфигурацию в файл"""
         try:
-            # ВАЖНО: Загружаем текущий config.yaml чтобы сохранить is_local и server_label
-            # is_local и server_label НЕ должны изменяться программно!
+            # ВАЖНО: Загружаем текущий config.yaml чтобы сохранить server_label
+            # server_label НЕ должен изменяться программно!
             existing_config = {}
             if os.path.exists(self.config_path):
                 with open(self.config_path, 'r', encoding='utf-8') as f:
@@ -551,16 +549,9 @@ class ConfigManager:
             
             # Добавляем панели
             for panel_id, panel in self.panels.items():
-                # ВАЖНО: Сохраняем is_local из существующего файла, если он там есть
-                # is_local НЕ должен изменяться программно!
-                existing_is_local = panel.is_local
-                if existing_config.get('panels', {}).get(panel_id, {}).get('is_local') is not None:
-                    existing_is_local = existing_config['panels'][panel_id]['is_local']
-                
                 config_dict['panels'][panel_id] = {
                     'alias': panel.alias,
                     'enabled': panel.enabled,
-                    'is_local': existing_is_local,  # Используем значение из файла
                     'location_label': panel.location_label,
                     'xui_version': panel.xui_version,
                     'xui_url': panel.xui_url,
@@ -671,6 +662,26 @@ class UserDatabase:
                 )
             """)
             
+            # Новые таблицы с поддержкой panel_id
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS panel_notification_settings (
+                    panel_id TEXT NOT NULL,
+                    setting_name TEXT NOT NULL,
+                    enabled INTEGER DEFAULT 0,
+                    PRIMARY KEY (panel_id, setting_name)
+                )
+            """)
+
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS panel_notification_thresholds (
+                    panel_id TEXT NOT NULL,
+                    threshold_name TEXT NOT NULL,
+                    threshold_value REAL DEFAULT 95.0,
+                    PRIMARY KEY (panel_id, threshold_name)
+                )
+            """)
+
+            # Старые таблицы оставляем для обратной совместимости
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS notification_settings (
                     setting_name TEXT PRIMARY KEY,
@@ -920,7 +931,80 @@ class UserDatabase:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute("SELECT threshold_name, threshold_value FROM notification_thresholds")
             return {row[0]: float(row[1]) for row in cursor.fetchall()}
-    
+
+    # ── Per-panel notification methods ──────────────────────────────────────
+
+    def get_panel_notification_setting(self, panel_id: str, setting_name: str) -> bool:
+        """Получить настройку уведомления для конкретной панели"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                "SELECT enabled FROM panel_notification_settings WHERE panel_id=? AND setting_name=?",
+                (panel_id, setting_name)
+            )
+            result = cursor.fetchone()
+            return bool(result[0]) if result else False
+
+    def set_panel_notification_setting(self, panel_id: str, setting_name: str, enabled: bool) -> bool:
+        """Сохранить настройку уведомления для конкретной панели"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute(
+                    "INSERT OR REPLACE INTO panel_notification_settings (panel_id, setting_name, enabled) VALUES (?,?,?)",
+                    (panel_id, setting_name, 1 if enabled else 0)
+                )
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка сохранения panel_notification_setting: {e}")
+            return False
+
+    def get_panel_notification_settings(self, panel_id: str) -> dict:
+        """Получить все настройки уведомлений для панели"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                "SELECT setting_name, enabled FROM panel_notification_settings WHERE panel_id=?",
+                (panel_id,)
+            )
+            rows = {row[0]: bool(row[1]) for row in cursor.fetchall()}
+        # Значения по умолчанию
+        defaults = {'cpu_alert': False, 'ram_alert': False, 'disk_alert': False, 'availability_alert': False}
+        defaults.update(rows)
+        return defaults
+
+    def get_panel_threshold(self, panel_id: str, threshold_name: str, default: float = 95.0) -> float:
+        """Получить порог для конкретной панели"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                "SELECT threshold_value FROM panel_notification_thresholds WHERE panel_id=? AND threshold_name=?",
+                (panel_id, threshold_name)
+            )
+            result = cursor.fetchone()
+            return float(result[0]) if result else default
+
+    def set_panel_threshold(self, panel_id: str, threshold_name: str, value: float) -> bool:
+        """Сохранить порог для конкретной панели"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute(
+                    "INSERT OR REPLACE INTO panel_notification_thresholds (panel_id, threshold_name, threshold_value) VALUES (?,?,?)",
+                    (panel_id, threshold_name, value)
+                )
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка сохранения panel_threshold: {e}")
+            return False
+
+    def get_panel_thresholds(self, panel_id: str) -> dict:
+        """Получить все пороги для панели"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                "SELECT threshold_name, threshold_value FROM panel_notification_thresholds WHERE panel_id=?",
+                (panel_id,)
+            )
+            rows = {row[0]: float(row[1]) for row in cursor.fetchall()}
+        defaults = {'cpu_threshold': 95.0, 'ram_threshold': 95.0, 'disk_threshold': 95.0}
+        defaults.update(rows)
+        return defaults
+
     def was_user_registered(self, user_id: int) -> bool:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute("SELECT 1 FROM user_history WHERE user_id = ?", (user_id,))

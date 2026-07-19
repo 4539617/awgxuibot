@@ -18,6 +18,12 @@ from utils import XUIClient, generate_vless_link, get_client_link, setup_logging
 from panel_monitor import PanelMonitor
 
 try:
+    from remote_monitor import RemoteMonitor
+    REMOTE_MONITOR_AVAILABLE = True
+except ImportError:
+    REMOTE_MONITOR_AVAILABLE = False
+
+try:
     from system_monitor import SystemMonitor
     SYSTEM_MONITOR_AVAILABLE = True
 except ImportError:
@@ -48,6 +54,7 @@ xui_client = XUIClient(config)
 
 # Глобальная ссылка на монитор панелей (инициализируется в main())
 _panel_monitor = None
+_remote_monitor = None  # RemoteMonitor — мониторинг удалённых панелей
 
 
 def get_panel_online_status(panel_id: str) -> bool:
@@ -79,12 +86,12 @@ def make_panel_client(panel_id: str) -> XUIClient:
 
 def get_available_panels() -> list:
     """Возвращает список панелей доступных пользователям для создания ключей.
-    Правило: local_panel (по ID) или сетевые v3+.
+    Правило: panel0 (по ID) или сетевые v3+.
     """
     panels = config.panel_manager.get_all_panels()
     result = []
     for panel_id, panel_cfg in panels.items():
-        is_local_panel = (panel_id == "local_panel")
+        is_local_panel = (panel_id == "panel0")
         is_v3 = panel_cfg.is_v3() if hasattr(panel_cfg, 'is_v3') else False
         if is_local_panel or is_v3:
             result.append((panel_id, panel_cfg))
@@ -402,14 +409,9 @@ async def cmd_start(message: Message, state: FSMContext):
                 ],
                 [
                     InlineKeyboardButton(text="🔑 Мои ключи", callback_data="cmd_myclients"),
-                    InlineKeyboardButton(text="📋 Все ключи", callback_data="cmd_allclients")
                 ],
                 [
-                    InlineKeyboardButton(text="🖥️ Сервер", callback_data="server_status"),
-                    InlineKeyboardButton(text="👥 Пользователи", callback_data="show_users")
-                ],
-                [
-                    InlineKeyboardButton(text="🔧 Панели", callback_data="show_panels")
+                    InlineKeyboardButton(text="⚙️ Администрирование", callback_data="server_status"),
                 ]
             ])
 
@@ -453,6 +455,13 @@ async def cmd_start(message: Message, state: FSMContext):
                 parse_mode="HTML"
             )
     else:
+        # Если запрос уже ожидает решения — молчим (не показываем кнопку повторно)
+        if config.users_db.has_pending_request(user_id):
+            await message.answer(
+                "⏳ Ваш запрос на доступ уже отправлен.\n\nОжидайте решения администратора.",
+                parse_mode="HTML"
+            )
+            return
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="✅ Запросить доступ", callback_data="request_access")]
         ])
@@ -467,7 +476,8 @@ async def cmd_start(message: Message, state: FSMContext):
 @dp.message(Command("new"))
 async def cmd_new(message: Message, state: FSMContext):
     if not is_allowed(message.from_user.id):
-        await message.answer("⛔ Доступ запрещен. Пожалуйста, сначала выполните /start")
+        if not config.users_db.has_pending_request(message.from_user.id):
+            await message.answer("⛔ Доступ запрещен. Пожалуйста, сначала выполните /start")
         return
     if is_blocked_by_admin(message.from_user.id):
         await message.answer("⛔ Вы заблокированы администратором.")
@@ -578,7 +588,8 @@ async def process_new_comment(message: Message, state: FSMContext):
 @dp.message(Command("tempkey"))
 async def cmd_temp_key(message: Message, state: FSMContext):
     if not is_allowed(message.from_user.id):
-        await message.answer("⛔ Доступ запрещен. Пожалуйста, сначала выполните /start")
+        if not config.users_db.has_pending_request(message.from_user.id):
+            await message.answer("⛔ Доступ запрещен. Пожалуйста, сначала выполните /start")
         return
     if is_blocked_by_admin(message.from_user.id):
         await message.answer("⛔ Вы заблокированы администратором.")
@@ -719,7 +730,8 @@ async def process_tempkey_comment(message: Message, state: FSMContext):
 @dp.message(Command("myclients"))
 async def cmd_my_clients(message: Message):
     if not is_allowed(message.from_user.id):
-        await message.answer("⛔ Доступ запрещен. Пожалуйста, сначала выполните /start")
+        if not config.users_db.has_pending_request(message.from_user.id):
+            await message.answer("⛔ Доступ запрещен. Пожалуйста, сначала выполните /start")
         return
 
     username = message.from_user.username
@@ -1032,7 +1044,7 @@ async def cmd_all_clients(message: Message):
         
         # Добавляем кнопку "Назад"
         buttons.append([
-            InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")
+            InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_server_status")
         ])
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -1710,7 +1722,7 @@ async def back_to_allclients(callback_query: types.CallbackQuery, is_refresh: bo
         # Добавляем кнопки "Обновить" и "Назад"
         buttons.append([
             InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_allclients"),
-            InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")
+            InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_server_status")
         ])
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -1735,7 +1747,8 @@ async def back_to_allclients(callback_query: types.CallbackQuery, is_refresh: bo
 @dp.message(Command("help"))
 async def cmd_help(message: Message):
     if not is_allowed(message.from_user.id):
-        await message.answer("⛔ Доступ запрещен. Отправьте /start для запроса доступа.")
+        if not config.users_db.has_pending_request(message.from_user.id):
+            await message.answer("⛔ Доступ запрещен. Отправьте /start для запроса доступа.")
         return
 
     if is_admin(message.from_user.id):
@@ -2015,41 +2028,33 @@ class EditThresholdState(StatesGroup):
 
 @dp.message(EditThresholdState.waiting_for_value)
 async def process_threshold_value(message: types.Message, state: FSMContext):
-    """Обработка нового значения порога"""
+    """Обработка нового значения порога для конкретной панели"""
     if not is_admin(message.from_user.id):
         return
-    
+
     try:
         value = float(message.text.strip().replace('%', ''))
-        
         if value < 1 or value > 99:
             await message.answer("❌ Значение должно быть от 1 до 99%")
             return
-        
+
         data = await state.get_data()
         threshold_type = data.get('threshold_type')
-        
-        threshold_names = {
-            'cpu': '💻 CPU',
-            'ram': '🧠 RAM',
-            'disk': '💿 Диск'
-        }
-        
-        config.users_db.set_threshold(f"{threshold_type}_threshold", value)
-        
-        # Создаем клавиатуру с кнопкой возврата
+        panel_id       = data.get('panel_id', 'panel0')
+
+        threshold_names = {'cpu': '💻 CPU', 'ram': '🧠 RAM', 'disk': '💿 Диск'}
+        config.users_db.set_panel_threshold(panel_id, f"{threshold_type}_threshold", value)
+
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔔 Настройки уведомлений", callback_data="notification_settings")]
+            [InlineKeyboardButton(text="🔔 Назад к настройкам", callback_data=f"notif_panel_{panel_id}")]
         ])
-        
         await message.answer(
-            f"✅ Порог {threshold_names.get(threshold_type, threshold_type)} обновлен: <b>{value:.0f}%</b>",
+            f"✅ Порог {threshold_names.get(threshold_type, threshold_type)} для <b>{panel_id}</b> обновлён: <b>{value:.0f}%</b>",
             parse_mode="HTML",
             reply_markup=keyboard
         )
-        
         await state.clear()
-        
+
     except ValueError:
         await message.answer("❌ Неверный формат. Введите число от 1 до 99")
 
@@ -2067,6 +2072,9 @@ async def handle_unknown(message: Message, state: FSMContext):
         return
 
     if not is_allowed(user_id):
+        # Если запрос уже ожидает решения — полностью молчим
+        if config.users_db.has_pending_request(user_id):
+            return
         if check_antiflood(user_id):
             await message.answer(
                 f"⚠️ Вы отправляете слишком много сообщений!\n\nЗаблокированы на {ANTIFLOOD_BLOCK_TIME // 60} минут.")
@@ -2165,9 +2173,31 @@ async def show_server_status(callback_query: types.CallbackQuery, state: FSMCont
             total_traffic_up = 0
             total_traffic_down = 0
         
+        # Получаем данные текущей панели
+        current_panel     = config.get_current_panel()
+        current_panel_id  = config.panel_manager.get_current_panel_id()
+        panel_alias       = getattr(current_panel, 'alias', current_panel_id) or current_panel_id if current_panel else current_panel_id or '—'
+        panel_version     = getattr(current_panel, 'xui_version', '') if current_panel else ''
+        panel_location    = getattr(current_panel, 'location_label', '') if current_panel else ''
+        panel_transport   = (getattr(current_panel, 'transport', '') or '').upper() if current_panel else ''
+        panel_security    = (getattr(current_panel, 'security', '')  or '').upper() if current_panel else ''
+
         # Формируем сообщение
-        message = "<b>🖥️ Сервер</b>\n\n"
-        
+        message = "<b>⚙️ Администрирование</b>\n\n"
+
+        # Блок текущей панели
+        message += f"📡 <b>{panel_alias}</b>"
+        if panel_version:
+            message += f"  <code>v{panel_version}</code>"
+        message += "\n"
+        if current_panel_id:
+            message += f"🆔 <code>{current_panel_id}</code>\n"
+        if panel_location:
+            message += f"📍 {panel_location}\n"
+        if panel_transport or panel_security:
+            message += f"🔌 <code>{panel_transport}</code> · <code>{panel_security}</code>\n"
+        message += "\n"
+
         message += f"💻 <b>CPU:</b> {cpu:.1f}%\n\n"
         
         message += f"🧠 <b>RAM:</b> {mem_percent:.1f}%\n"
@@ -2201,6 +2231,13 @@ async def show_server_status(callback_query: types.CallbackQuery, state: FSMCont
             [
                 InlineKeyboardButton(text="🔔 Уведомления", callback_data="notification_settings"),
                 InlineKeyboardButton(text="📥 JSON конфиг", callback_data="export_json_config")
+            ],
+            [
+                InlineKeyboardButton(text="📋 Все ключи", callback_data="cmd_allclients"),
+                InlineKeyboardButton(text="👥 Пользователи", callback_data="show_users")
+            ],
+            [
+                InlineKeyboardButton(text="🔧 Панели", callback_data="show_panels")
             ],
             [
                 InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")
@@ -2337,195 +2374,253 @@ async def create_backup(callback_query: types.CallbackQuery, state: FSMContext):
         await callback_query.message.answer(f"❌ Ошибка: {str(e)}")
 
 
-@dp.callback_query(lambda c: c.data == "notification_settings")
-async def show_notification_settings(callback_query: types.CallbackQuery, state: FSMContext):
-    """Показать настройки уведомлений"""
-    if not is_admin(callback_query.from_user.id):
-        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
-        return
-    
-    await callback_query.answer()
-    
-    # Получаем текущие настройки
-    settings = config.users_db.get_all_notification_settings()
-    cpu_alert = settings.get('cpu_alert', False)
-    ram_alert = settings.get('ram_alert', False)
-    disk_alert = settings.get('disk_alert', False)
-    
-    # Получаем пороги
-    thresholds = config.users_db.get_all_thresholds()
-    cpu_threshold = thresholds.get('cpu_threshold', 95.0)
-    ram_threshold = thresholds.get('ram_threshold', 95.0)
-    disk_threshold = thresholds.get('disk_threshold', 95.0)
-    
-    # Получаем интервал проверки из конфигурации
-    check_interval = config.common.panel_check_interval if hasattr(config.common, 'panel_check_interval') else 30
-    
-    # Получаем текущие данные о системе
+# ─── helper: получить текущие stats panel0 через psutil ────────────────────
+def _get_local_stats() -> dict:
     try:
         import psutil
-        cpu_usage = psutil.cpu_percent(interval=0.5)
-        ram = psutil.virtual_memory()
-        disk = psutil.disk_usage('/')
-        
-        cpu_stats = f"<b>{cpu_usage:.1f}%</b>"
-        ram_stats = f"<b>{ram.percent:.1f}%</b>"
-        disk_stats = f"<b>{disk.percent:.1f}%</b>"
-    except ImportError:
-        cpu_stats = "<i>N/A</i>"
-        ram_stats = "<i>N/A</i>"
-        disk_stats = "<i>N/A</i>"
-    except Exception as e:
-        logger.error(f"Ошибка получения статистики системы: {e}")
-        cpu_stats = "<i>N/A</i>"
-        ram_stats = "<i>N/A</i>"
-        disk_stats = "<i>N/A</i>"
-    
-    # Формируем сообщение
-    message = "🔔 <b>Настройки уведомлений:</b>\n\n"
-    message += f"💻 CPU: {cpu_stats} {'✅' if cpu_alert else '❌'}\n"
-    message += f"   └ Уведомление при загрузке > {cpu_threshold:.0f}%\n\n"
-    message += f"🧠 RAM: {ram_stats} {'✅' if ram_alert else '❌'}\n"
-    message += f"   └ Уведомление при загрузке > {ram_threshold:.0f}%\n\n"
-    message += f"💿 Диск: {disk_stats} {'✅' if disk_alert else '❌'}\n"
-    message += f"   └ Уведомление при заполнении > {disk_threshold:.0f}%\n\n"
-    message += f"⏱️ Интервал проверки: <b>{int(check_interval)}</b> сек (из config.yaml)\n\n"
-    message += "Нажмите на переключатель для изменения настройки"
-    
-    # Создаем клавиатуру с переключателями
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(
-                text=f"💻 CPU {'✅ Вкл' if cpu_alert else '❌ Выкл'}",
-                callback_data="toggle_cpu_alert"
-            ),
-            InlineKeyboardButton(
-                text=f"✏️ {cpu_threshold:.0f}%",
-                callback_data="edit_cpu_threshold"
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text=f"🧠 RAM {'✅ Вкл' if ram_alert else '❌ Выкл'}",
-                callback_data="toggle_ram_alert"
-            ),
-            InlineKeyboardButton(
-                text=f"✏️ {ram_threshold:.0f}%",
-                callback_data="edit_ram_threshold"
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text=f"💿 Диск {'✅ Вкл' if disk_alert else '❌ Выкл'}",
-                callback_data="toggle_disk_alert"
-            ),
-            InlineKeyboardButton(
-                text=f"✏️ {disk_threshold:.0f}%",
-                callback_data="edit_disk_threshold"
-            )
-        ],
-        [InlineKeyboardButton(text="🔄 Обновить", callback_data="notification_settings")],
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_server_status")]
+        cpu   = psutil.cpu_percent(interval=0.3)
+        ram   = psutil.virtual_memory()
+        disk  = psutil.disk_usage('/')
+        return {'cpu': round(cpu, 1), 'ram': round(ram.percent, 1), 'disk': round(disk.percent, 1)}
+    except Exception:
+        return {}
+
+
+# ─── helper: форматировать строку ресурса ───────────────────────────────────
+def _fmt_resource(label: str, icon: str, value, threshold: float, alert_on: bool) -> str:
+    if value is None:
+        val_str = "<i>N/A</i>"
+        status  = ""
+    else:
+        val_str = f"<b>{value:.1f}%</b>"
+        diff = value - threshold
+        if diff >= 0:
+            status = f"  <b>🚨 +{diff:.1f}%</b>"
+        elif diff >= -5:
+            status = "  <b>⚠️ внимание</b>"
+        else:
+            status = "  ✅"
+    alert_str = "✅ вкл" if alert_on else "❌ выкл"
+    return f"{icon} {label}: {val_str}{status}\n   └ порог <code>{threshold:.0f}%</code>  ·  {alert_str}\n"
+
+
+# ─── ЭКРАН 1: список серверов ───────────────────────────────────────────────
+@dp.callback_query(lambda c: c.data == "notification_settings")
+async def show_notification_settings(callback_query: types.CallbackQuery, state: FSMContext):
+    """Экран 1 — список серверов с уведомлениями"""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
+        return
+    await callback_query.answer()
+
+    panels = config.panel_manager.get_all_panels()
+    check_interval = getattr(config.common, 'panel_check_interval', 30)
+
+    # Получаем кеш удалённых данных если RemoteMonitor запущен
+    remote_stats: dict = {}
+    if REMOTE_MONITOR_AVAILABLE and _remote_monitor is not None:
+        remote_stats = _remote_monitor.last_stats
+
+    # Локальные данные (panel0)
+    local_stats = _get_local_stats()
+
+    text = "🔔 <b>Настройки уведомлений</b>\n\nВыберите сервер для настройки мониторинга ресурсов.\n"
+    text += f"⏱️ Интервал: <code>{int(check_interval)}</code> сек\n"
+
+    def _badge(v, thr):
+        if v is None: return "—"
+        if v >= thr: return f"🚨{v:.0f}%"
+        if v >= thr - 5: return f"⚠️{v:.0f}%"
+        return f"✅{v:.0f}%"
+
+    buttons = []
+    for panel_id, panel_cfg in panels.items():
+        # Тот же фильтр что в "Подключить": panel0 или v3+
+        is_local = (panel_id == "panel0")
+        is_v3    = panel_cfg.is_v3() if hasattr(panel_cfg, 'is_v3') else False
+        if not is_local and not is_v3:
+            continue
+
+        alias      = getattr(panel_cfg, 'alias', panel_id) or panel_id
+        settings   = config.users_db.get_panel_notification_settings(panel_id)
+        thresholds = config.users_db.get_panel_thresholds(panel_id)
+
+        # Текущие значения ресурсов
+        if panel_id == "panel0":
+            stats = local_stats
+        else:
+            stats = remote_stats.get(panel_id, {})
+
+        cpu_val  = stats.get('cpu')
+        ram_val  = stats.get('ram')
+        disk_val = stats.get('disk')
+
+        cpu_thr  = thresholds.get('cpu_threshold', 95.0)
+        ram_thr  = thresholds.get('ram_threshold', 95.0)
+        disk_thr = thresholds.get('disk_threshold', 95.0)
+
+        panel_online = get_panel_online_status(panel_id)
+        status_icon  = "🟢" if panel_online else "🔴"
+
+        alerts_on = sum([
+            settings.get('cpu_alert',  False),
+            settings.get('ram_alert',  False),
+            settings.get('disk_alert', False),
+        ])
+        monitor_icon = "🔔" if alerts_on > 0 else ""
+
+        location = getattr(panel_cfg, 'location_label', '') or ''
+        sub_line = f"📍 {location}" if location else ""
+        btn_text = f"{status_icon}{monitor_icon} {alias}\n{sub_line}" if sub_line else f"{status_icon}{monitor_icon} {alias}"
+        buttons.append([InlineKeyboardButton(text=btn_text, callback_data=f"notif_panel_{panel_id}")])
+
+    buttons.append([
+        InlineKeyboardButton(text="🔄 Обновить", callback_data="notification_settings"),
+        InlineKeyboardButton(text="🔙 Назад",    callback_data="back_to_server_status"),
     ])
-    
+
+    kb = InlineKeyboardMarkup(inline_keyboard=buttons)
     try:
-        await callback_query.message.edit_text(
-            message,
-            parse_mode="HTML",
-            reply_markup=keyboard
-        )
-    except:
-        await callback_query.message.answer(
-            message,
-            parse_mode="HTML",
-            reply_markup=keyboard
-        )
+        await callback_query.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
+    except TelegramBadRequest as e:
+        if "message is not modified" not in str(e):
+            await bot.send_message(callback_query.message.chat.id, text, parse_mode="HTML", reply_markup=kb)
 
 
-@dp.callback_query(lambda c: c.data == "toggle_cpu_alert")
-async def toggle_cpu_alert(callback_query: types.CallbackQuery, state: FSMContext):
-    """Переключить уведомление о загрузке CPU"""
+# ─── ЭКРАН 2: настройки конкретной панели ──────────────────────────────────
+@dp.callback_query(lambda c: c.data and c.data.startswith("notif_panel_"))
+async def show_panel_notification(callback_query: types.CallbackQuery, state: FSMContext,
+                                  _already_answered: bool = False,
+                                  _panel_id_override: str = None):
+    """Экран 2 — настройки уведомлений конкретной панели"""
     if not is_admin(callback_query.from_user.id):
         await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
         return
-    
-    # Получаем текущее состояние и переключаем
-    current = config.users_db.get_notification_setting('cpu_alert')
-    new_state = not current
-    config.users_db.set_notification_setting('cpu_alert', new_state)
-    
-    await callback_query.answer(
-        f"✅ CPU {'включены' if new_state else 'выключены'}"
-    )
-    
-    # Обновляем окно настроек
-    await show_notification_settings(callback_query, state)
+    if not _already_answered:
+        await callback_query.answer()
+
+    panel_id   = _panel_id_override or callback_query.data[len("notif_panel_"):]
+    panel_cfg  = config.panel_manager.get_panel(panel_id)
+    if not panel_cfg:
+        await callback_query.answer("❌ Панель не найдена", show_alert=True)
+        return
+
+    alias   = getattr(panel_cfg, 'alias', panel_id) or panel_id
+    version = getattr(panel_cfg, 'xui_version', '')
+    addr    = getattr(panel_cfg, 'server_address', '') or getattr(panel_cfg, 'server_ip', '') or ''
+    transport = (getattr(panel_cfg, 'transport', '') or '').upper()
+    security  = (getattr(panel_cfg, 'security', '')  or '').upper()
+
+    settings   = config.users_db.get_panel_notification_settings(panel_id)
+    thresholds = config.users_db.get_panel_thresholds(panel_id)
+
+    cpu_on   = settings.get('cpu_alert',          False)
+    ram_on   = settings.get('ram_alert',          False)
+    disk_on  = settings.get('disk_alert',         False)
+    avail_on = settings.get('availability_alert', False)
+    cpu_thr  = thresholds.get('cpu_threshold', 95.0)
+    ram_thr  = thresholds.get('ram_threshold', 95.0)
+    disk_thr = thresholds.get('disk_threshold', 95.0)
+
+    # Текущие значения
+    if panel_id == "panel0":
+        stats = _get_local_stats()
+    elif REMOTE_MONITOR_AVAILABLE and _remote_monitor is not None:
+        stats = _remote_monitor.last_stats.get(panel_id, {})
+    else:
+        stats = {}
+
+    cpu_val  = stats.get('cpu')
+    ram_val  = stats.get('ram')
+    disk_val = stats.get('disk')
+    updated  = stats.get('updated_at', '—') if panel_id != "panel0" else datetime.now().strftime('%H:%M:%S')
+
+    check_interval = getattr(config.common, 'panel_check_interval', 30)
+
+    text  = f"🔔 <b>Уведомления · {panel_id} · {alias}</b>\n"
+    text += f"📍 {addr}  v{version}  {transport}/{security}\n\n"
+    text += _fmt_resource("CPU",  "💻", cpu_val,  cpu_thr,  cpu_on)
+    text += "\n"
+    text += _fmt_resource("RAM",  "🧠", ram_val,  ram_thr,  ram_on)
+    text += "\n"
+    text += _fmt_resource("Диск", "💿", disk_val, disk_thr, disk_on)
+    is_remote = (panel_id != "panel0")
+
+    if is_remote:
+        text += "\n"
+        avail_str = "✅ вкл" if avail_on else "❌ выкл"
+        text += f"📡 Доступность: {avail_str}  <i>(алерт после 3 неудач)</i>\n"
+    text += f"\n⏱️ Интервал: <code>{int(check_interval)}</code> с  ·  <code>{updated}</code>"
+
+    rows = [
+        [
+            InlineKeyboardButton(text=f"💻 CPU {'✅ Вкл' if cpu_on else '❌ Выкл'}", callback_data=f"ntoggle_{panel_id}_cpu"),
+            InlineKeyboardButton(text=f"✏️ {cpu_thr:.0f}%",  callback_data=f"nedit_{panel_id}_cpu"),
+        ],
+        [
+            InlineKeyboardButton(text=f"🧠 RAM {'✅ Вкл' if ram_on else '❌ Выкл'}", callback_data=f"ntoggle_{panel_id}_ram"),
+            InlineKeyboardButton(text=f"✏️ {ram_thr:.0f}%",  callback_data=f"nedit_{panel_id}_ram"),
+        ],
+        [
+            InlineKeyboardButton(text=f"💿 Диск {'✅ Вкл' if disk_on else '❌ Выкл'}", callback_data=f"ntoggle_{panel_id}_disk"),
+            InlineKeyboardButton(text=f"✏️ {disk_thr:.0f}%", callback_data=f"nedit_{panel_id}_disk"),
+        ],
+    ]
+    if is_remote:
+        rows.append([
+            InlineKeyboardButton(text=f"📡 Доступность {'✅ Вкл' if avail_on else '❌ Выкл'}", callback_data=f"ntoggle_{panel_id}_availability"),
+        ])
+    rows.append([InlineKeyboardButton(text="🔄 Обновить", callback_data=f"notif_panel_{panel_id}")])
+    rows.append([InlineKeyboardButton(text="🔙 К списку серверов", callback_data="notification_settings")])
+
+    kb = InlineKeyboardMarkup(inline_keyboard=rows)
+
+    try:
+        await callback_query.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
+    except TelegramBadRequest as e:
+        if "message is not modified" not in str(e):
+            await bot.send_message(callback_query.message.chat.id, text, parse_mode="HTML", reply_markup=kb)
 
 
-@dp.callback_query(lambda c: c.data == "toggle_ram_alert")
-async def toggle_ram_alert(callback_query: types.CallbackQuery, state: FSMContext):
-    """Переключить уведомление о загрузке RAM"""
+# ─── Переключение алертов ───────────────────────────────────────────────────
+@dp.callback_query(lambda c: c.data and c.data.startswith("ntoggle_"))
+async def toggle_panel_alert(callback_query: types.CallbackQuery, state: FSMContext):
+    """ntoggle_{panel_id}_{resource}"""
     if not is_admin(callback_query.from_user.id):
         await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
         return
-    
-    # Получаем текущее состояние и переключаем
-    current = config.users_db.get_notification_setting('ram_alert')
-    new_state = not current
-    config.users_db.set_notification_setting('ram_alert', new_state)
-    
-    await callback_query.answer(
-        f"✅ RAM {'включены' if new_state else 'выключены'}"
-    )
-    
-    # Обновляем окно настроек
-    await show_notification_settings(callback_query, state)
+    parts    = callback_query.data.split("_", 2)  # ['ntoggle', panel_id, resource]
+    panel_id = parts[1]
+    resource = parts[2]  # cpu | ram | disk
+    setting  = f"{resource}_alert"
+    current  = config.users_db.get_panel_notification_setting(panel_id, setting)
+    new_val  = not current
+    config.users_db.set_panel_notification_setting(panel_id, setting, new_val)
+    names = {'cpu': 'CPU', 'ram': 'RAM', 'disk': 'Диск', 'availability': 'Доступность'}
+    await callback_query.answer(f"{'✅' if new_val else '❌'} {names.get(resource, resource)} {'вкл' if new_val else 'выкл'}")
+    # Перерисовываем экран (data не мутируем — CallbackQuery frozen в pydantic v2)
+    await show_panel_notification(callback_query, state, _already_answered=True, _panel_id_override=panel_id)
 
 
-@dp.callback_query(lambda c: c.data == "toggle_disk_alert")
-async def toggle_disk_alert(callback_query: types.CallbackQuery, state: FSMContext):
-    """Переключить уведомление о заполнении диска"""
+# ─── Редактирование порога ──────────────────────────────────────────────────
+@dp.callback_query(lambda c: c.data and c.data.startswith("nedit_"))
+async def start_edit_panel_threshold(callback_query: types.CallbackQuery, state: FSMContext):
+    """nedit_{panel_id}_{resource}"""
     if not is_admin(callback_query.from_user.id):
         await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
         return
-    
-    # Получаем текущее состояние и переключаем
-    current = config.users_db.get_notification_setting('disk_alert')
-    new_state = not current
-    config.users_db.set_notification_setting('disk_alert', new_state)
-    
-    await callback_query.answer(
-        f"✅ Диск {'включены' if new_state else 'выключены'}"
-    )
-    
-    # Обновляем окно настроек
-    await show_notification_settings(callback_query, state)
+    parts    = callback_query.data.split("_", 2)
+    panel_id = parts[1]
+    resource = parts[2]
+    names    = {'cpu': '💻 CPU', 'ram': '🧠 RAM', 'disk': '💿 Диск'}
+    current  = config.users_db.get_panel_threshold(panel_id, f"{resource}_threshold", 95.0)
 
-
-@dp.callback_query(lambda c: c.data.startswith("edit_") and c.data.endswith("_threshold"))
-async def edit_threshold(callback_query: types.CallbackQuery, state: FSMContext):
-    """Начать редактирование порога"""
-    if not is_admin(callback_query.from_user.id):
-        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
-        return
-    
-    threshold_type = callback_query.data.replace("edit_", "").replace("_threshold", "")
-    
-    threshold_names = {
-        'cpu': '💻 CPU',
-        'ram': '🧠 RAM',
-        'disk': '💿 Диск'
-    }
-    
     await state.set_state(EditThresholdState.waiting_for_value)
-    await state.update_data(threshold_type=threshold_type)
-    
-    current_value = config.users_db.get_threshold(f"{threshold_type}_threshold", 95.0)
-    
+    await state.update_data(threshold_type=resource, panel_id=panel_id)
     await callback_query.message.answer(
-        f"⚙️ <b>Редактирование порога {threshold_names.get(threshold_type, threshold_type)}</b>\n\n"
-        f"Текущее значение: <b>{current_value:.0f}%</b>\n\n"
-        f"Введите новое значение порога (от 1 до 99):",
+        f"⚙️ <b>Порог {names.get(resource, resource)}</b>  ·  <b>{panel_id}</b>\n\n"
+        f"Текущее значение: <b>{current:.0f}%</b>\n\n"
+        f"Введите новое значение (1–99):",
         parse_mode="HTML"
     )
     await callback_query.answer()
@@ -2604,7 +2699,7 @@ async def show_users_list(callback_query: types.CallbackQuery, state: FSMContext
 
         buttons.append([
             InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_users"),
-            InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")
+            InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_server_status")
         ])
 
         keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -2820,14 +2915,9 @@ async def back_to_start_menu(callback_query: types.CallbackQuery, state: FSMCont
             ],
             [
                 InlineKeyboardButton(text="🔑 Мои ключи", callback_data="cmd_myclients"),
-                InlineKeyboardButton(text="📋 Все ключи", callback_data="cmd_allclients")
             ],
             [
-                InlineKeyboardButton(text="🖥️ Сервер", callback_data="server_status"),
-                InlineKeyboardButton(text="👥 Пользователи", callback_data="show_users")
-            ],
-            [
-                InlineKeyboardButton(text="🔧 Панели", callback_data="show_panels")
+                InlineKeyboardButton(text="⚙️ Администрирование", callback_data="server_status"),
             ]
         ])
         current_panel = config.get_current_panel()
@@ -2875,7 +2965,10 @@ async def callback_cmd_new(callback_query: types.CallbackQuery, state: FSMContex
     """Обработчик кнопки 'Создать ключ'"""
     user_id = callback_query.from_user.id
     if not is_allowed(user_id):
-        await callback_query.answer("⛔ Доступ запрещен", show_alert=True)
+        if config.users_db.has_pending_request(user_id):
+            await callback_query.answer()
+        else:
+            await callback_query.answer("⛔ Доступ запрещен", show_alert=True)
         return
     if is_blocked_by_admin(user_id):
         await callback_query.answer("⛔ Вы заблокированы администратором", show_alert=True)
@@ -2910,7 +3003,10 @@ async def callback_cmd_tempkey(callback_query: types.CallbackQuery, state: FSMCo
     """Обработчик кнопки 'Временный ключ'"""
     user_id = callback_query.from_user.id
     if not is_allowed(user_id):
-        await callback_query.answer("⛔ Доступ запрещен", show_alert=True)
+        if config.users_db.has_pending_request(user_id):
+            await callback_query.answer()
+        else:
+            await callback_query.answer("⛔ Доступ запрещен", show_alert=True)
         return
     if is_blocked_by_admin(user_id):
         await callback_query.answer("⛔ Вы заблокированы администратором", show_alert=True)
@@ -2945,7 +3041,10 @@ async def callback_cmd_myclients(callback_query: types.CallbackQuery, state: FSM
     
     # Проверка доступа
     if not is_allowed(user_id):
-        await callback_query.answer("⛔ Доступ запрещен", show_alert=True)
+        if config.users_db.has_pending_request(user_id):
+            await callback_query.answer()
+        else:
+            await callback_query.answer("⛔ Доступ запрещен", show_alert=True)
         return
     
     if is_blocked_by_admin(user_id):
@@ -3363,7 +3462,7 @@ async def show_panels_list(callback_query: types.CallbackQuery, state: FSMContex
                     diagnostic_text,
                     parse_mode="HTML",
                     reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                        [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_start")]
+                        [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_server_status")]
                     ])
                 )
             else:
@@ -3372,7 +3471,7 @@ async def show_panels_list(callback_query: types.CallbackQuery, state: FSMContex
                     diagnostic_text,
                     parse_mode="HTML",
                     reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                        [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_start")]
+                        [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_server_status")]
                     ])
                 )
             return
@@ -3427,7 +3526,7 @@ async def show_panels_list(callback_query: types.CallbackQuery, state: FSMContex
                 InlineKeyboardButton(text="🔌 Подключить", callback_data="select_panel_to_connect")
             ],
             [
-                InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_start")
+                InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_server_status")
             ]
         ])
         
@@ -3488,16 +3587,16 @@ async def select_panel_to_connect(callback_query: types.CallbackQuery, state: FS
             return
         
         # Формируем кнопки для выбора панели.
-        # Правило: показываем только если panel_id == "local_panel"
+        # Правило: показываем только если panel_id == "panel0"
         # ИЛИ (сетевая панель с версией 3+).
-        # Всё остальное (v2.x не-local_panel) — только в мониторинге.
+        # Всё остальное (v2.x не-panel0) — только в мониторинге.
         keyboard_buttons = []
         for panel_id, panel_config in panels.items():
-            is_local_panel = (panel_id == "local_panel")
+            is_local_panel = (panel_id == "panel0")
             is_v3_or_higher = panel_config.is_v3() if hasattr(panel_config, 'is_v3') else False
 
             if not is_local_panel and not is_v3_or_higher:
-                logger.debug(f"⏭️ Пропуск панели {panel_id} (v<3, не local_panel) — только мониторинг")
+                logger.debug(f"⏭️ Пропуск панели {panel_id} (v<3, не panel0) — только мониторинг")
                 continue
 
             logger.debug(f"✅ Панель {panel_id} добавлена в список переключения")
@@ -3860,81 +3959,81 @@ async def main():
             logger.error(f"❌ Ошибка обновления параметров панели при запуске: {e}")
         
         # Инициализация и запуск мониторинга панелей и системы
-        panel_monitor = None
-        system_monitor = None
-        panel_monitoring_task = None
-        system_monitoring_task = None
-        
+        panel_monitor   = None
+        system_monitor  = None
+        remote_monitor  = None
+        panel_monitoring_task   = None
+        system_monitoring_task  = None
+        remote_monitoring_task  = None
+
         try:
-            # Создаем экземпляр монитора панелей
+            # ── Монитор панелей (доступность) ───────────────────────────────
             panel_monitor = PanelMonitor(
                 config_manager=config.panel_manager,
                 bot=bot,
                 admin_ids=config.common.admin_ids
             )
-            # Делаем монитор доступным глобально для проверки статусов панелей
             global _panel_monitor
             _panel_monitor = panel_monitor
-            
-            # Создаем экземпляр монитора системы (если доступен)
-            if SYSTEM_MONITOR_AVAILABLE:
-                system_monitor = SystemMonitor(
+
+            # ── RemoteMonitor — опрашивает ВСЕ панели (panel0 через psutil, остальные через XUI API)
+            # SystemMonitor запускается только как fallback если RemoteMonitor недоступен
+            if REMOTE_MONITOR_AVAILABLE:
+                remote_monitor = RemoteMonitor(
                     config=config,
                     bot=bot,
                     admin_ids=config.common.admin_ids
                 )
-            
-            # Запускаем мониторинг панелей в фоновой задаче
+                global _remote_monitor
+                _remote_monitor = remote_monitor
+                logger.info("✅ RemoteMonitor будет мониторить все панели (включая panel0)")
+            elif SYSTEM_MONITOR_AVAILABLE:
+                # Fallback: только если RemoteMonitor недоступен
+                system_monitor = SystemMonitor(
+                    config=config,
+                    bot=bot,
+                    admin_ids=config.common.admin_ids,
+                    panel_id="panel0"
+                )
+                logger.info("⚠️ RemoteMonitor недоступен — используется SystemMonitor для panel0")
+
+            # ── Запуск задач ─────────────────────────────────────────────────
             if panel_monitor.enabled:
-                logger.info("🔍 Запуск фонового мониторинга панелей...")
+                logger.info("🔍 Запуск мониторинга доступности панелей...")
                 panel_monitoring_task = asyncio.create_task(panel_monitor.start_monitoring())
                 logger.info("✅ Мониторинг панелей запущен")
             else:
-                logger.info("⏸️ Мониторинг панелей отключен в конфигурации")
-            
-            # Запускаем мониторинг системы в фоновой задаче (если доступен)
-            if SYSTEM_MONITOR_AVAILABLE and system_monitor:
-                logger.info("🔍 Запуск фонового мониторинга системы...")
+                logger.info("⏸️ Мониторинг панелей отключён в конфигурации")
+
+            if REMOTE_MONITOR_AVAILABLE and remote_monitor:
+                logger.info("🔍 Запуск RemoteMonitor (все панели по кругу)...")
+                remote_monitoring_task = asyncio.create_task(remote_monitor.start_monitoring())
+                logger.info("✅ RemoteMonitor запущен")
+            elif SYSTEM_MONITOR_AVAILABLE and system_monitor:
+                logger.info("🔍 Запуск SystemMonitor (fallback, только panel0)...")
                 system_monitoring_task = asyncio.create_task(system_monitor.start_monitoring())
-                logger.info("✅ Мониторинг системы запущен")
+                logger.info("✅ SystemMonitor запущен")
             else:
-                logger.info("⏸️ Мониторинг системы недоступен (system_monitor.py не найден)")
-            
-            # Запуск polling бота
+                logger.info("⏸️ Мониторинг ресурсов недоступен")
+
+            # ── Polling ──────────────────────────────────────────────────────
             await dp.start_polling(bot)
-            
+
         finally:
-            # Graceful shutdown мониторинга панелей
-            if panel_monitor and panel_monitoring_task:
-                logger.info("🛑 Остановка мониторинга панелей...")
-                await panel_monitor.stop_monitoring()
-                
-                if not panel_monitoring_task.done():
-                    try:
-                        await asyncio.wait_for(panel_monitoring_task, timeout=5.0)
-                    except asyncio.TimeoutError:
-                        logger.warning("⚠️ Таймаут при остановке мониторинга панелей")
-                        panel_monitoring_task.cancel()
-                    except asyncio.CancelledError:
-                        pass
-                
-                logger.info("✅ Мониторинг панелей остановлен")
-            
-            # Graceful shutdown мониторинга системы
-            if SYSTEM_MONITOR_AVAILABLE and system_monitor and system_monitoring_task:
-                logger.info("🛑 Остановка мониторинга системы...")
-                await system_monitor.stop_monitoring()
-                
-                if not system_monitoring_task.done():
-                    try:
-                        await asyncio.wait_for(system_monitoring_task, timeout=5.0)
-                    except asyncio.TimeoutError:
-                        logger.warning("⚠️ Таймаут при остановке мониторинга системы")
-                        system_monitoring_task.cancel()
-                    except asyncio.CancelledError:
-                        pass
-                
-                logger.info("✅ Мониторинг системы остановлен")
+            async def _stop(name, monitor, task):
+                if monitor and task:
+                    logger.info(f"🛑 Остановка {name}...")
+                    await monitor.stop_monitoring()
+                    if not task.done():
+                        try:
+                            await asyncio.wait_for(task, timeout=5.0)
+                        except (asyncio.TimeoutError, asyncio.CancelledError):
+                            task.cancel()
+                    logger.info(f"✅ {name} остановлен")
+
+            await _stop("мониторинга панелей", panel_monitor, panel_monitoring_task)
+            await _stop("мониторинга системы", system_monitor, system_monitoring_task)
+            await _stop("удалённого мониторинга", remote_monitor, remote_monitoring_task)
     else:
         logger.error("❌ Не удалось подключиться к X-UI")
         return
