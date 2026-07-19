@@ -2173,9 +2173,31 @@ async def show_server_status(callback_query: types.CallbackQuery, state: FSMCont
             total_traffic_up = 0
             total_traffic_down = 0
         
+        # Получаем данные текущей панели
+        current_panel     = config.get_current_panel()
+        current_panel_id  = config.panel_manager.get_current_panel_id()
+        panel_alias       = getattr(current_panel, 'alias', current_panel_id) or current_panel_id if current_panel else current_panel_id or '—'
+        panel_version     = getattr(current_panel, 'xui_version', '') if current_panel else ''
+        panel_location    = getattr(current_panel, 'location_label', '') if current_panel else ''
+        panel_transport   = (getattr(current_panel, 'transport', '') or '').upper() if current_panel else ''
+        panel_security    = (getattr(current_panel, 'security', '')  or '').upper() if current_panel else ''
+
         # Формируем сообщение
         message = "<b>⚙️ Администрирование</b>\n\n"
-        
+
+        # Блок текущей панели
+        message += f"📡 <b>{panel_alias}</b>"
+        if panel_version:
+            message += f"  <code>v{panel_version}</code>"
+        message += "\n"
+        if current_panel_id:
+            message += f"🆔 <code>{current_panel_id}</code>\n"
+        if panel_location:
+            message += f"📍 {panel_location}\n"
+        if panel_transport or panel_security:
+            message += f"🔌 <code>{panel_transport}</code> · <code>{panel_security}</code>\n"
+        message += "\n"
+
         message += f"💻 <b>CPU:</b> {cpu:.1f}%\n\n"
         
         message += f"🧠 <b>RAM:</b> {mem_percent:.1f}%\n"
