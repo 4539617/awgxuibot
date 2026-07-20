@@ -2113,13 +2113,6 @@ async def show_server_status(callback_query: types.CallbackQuery, state: FSMCont
         # Получаем статус сервера
         status = await xui_client.get_server_status()
         
-        if not status:
-            if is_refresh:
-                await callback_query.message.edit_text("❌ Не удалось получить статус сервера")
-            else:
-                await callback_query.message.answer("❌ Не удалось получить статус сервера")
-            return
-        
         # Форматируем данные
         def format_bytes(bytes_value):
             """Конвертация байтов в читаемый формат"""
@@ -2131,47 +2124,6 @@ async def show_server_status(callback_query: types.CallbackQuery, state: FSMCont
                 return f"{bytes_value / 1024:.2f} KB"
             else:
                 return f"{bytes_value} B"
-        
-        # CPU
-        cpu = status.get('cpu', 0)
-        
-        # Memory
-        mem = status.get('mem', {})
-        mem_current = mem.get('current', 0)
-        mem_total = mem.get('total', 1)
-        mem_percent = (mem_current / mem_total * 100) if mem_total > 0 else 0
-        
-        # Disk
-        disk = status.get('disk', {})
-        disk_current = disk.get('current', 0)
-        disk_total = disk.get('total', 1)
-        disk_percent = (disk_current / disk_total * 100) if disk_total > 0 else 0
-        
-        # Network
-        net_io = status.get('netIO', {})
-        net_up = net_io.get('up', 0)
-        net_down = net_io.get('down', 0)
-        
-        # Xray
-        xray = status.get('xray', {})
-        xray_state = xray.get('state', 'unknown')
-        xray_version = xray.get('version', 'unknown')
-        
-        # Статус Xray с эмодзи
-        xray_emoji = "✅" if xray_state == "running" else "❌"
-        
-        # TCP connections
-        tcp_count = status.get('tcpCount', 0)
-        
-        # Получаем общий трафик всех клиентов
-        try:
-            all_clients = await xui_client.get_all_clients()
-            total_traffic_up = sum(c.get('up', 0) for c in all_clients)
-            total_traffic_down = sum(c.get('down', 0) for c in all_clients)
-        except Exception as e:
-            logger.error(f"Ошибка получения трафика клиентов: {e}")
-            total_traffic_up = 0
-            total_traffic_down = 0
         
         # Получаем данные текущей панели
         current_panel     = config.get_current_panel()
@@ -2198,28 +2150,66 @@ async def show_server_status(callback_query: types.CallbackQuery, state: FSMCont
             message += f"🔌 <code>{panel_transport}</code> · <code>{panel_security}</code>\n"
         message += "\n"
 
-        message += f"💻 <b>CPU:</b> {cpu:.1f}%\n\n"
-        
-        message += f"🧠 <b>RAM:</b> {mem_percent:.1f}%\n"
-        message += f"   └ {format_bytes(mem_current)} / {format_bytes(mem_total)}\n\n"
-        
-        message += f"💿 <b>Диск:</b> {disk_percent:.1f}%\n"
-        message += f"   └ {format_bytes(disk_current)} / {format_bytes(disk_total)}\n\n"
-        
-        message += f"🌐 <b>Сеть:</b>\n"
-        message += f"   ⬆️ Отправлено: {format_bytes(net_up)}\n"
-        message += f"   ⬇️ Получено: {format_bytes(net_down)}\n\n"
-        
-        message += f"📊 <b>Общий объем трафика:</b>\n"
-        message += f"   ⬆️ Отправлено: {format_bytes(total_traffic_up)}\n"
-        message += f"   ⬇️ Получено: {format_bytes(total_traffic_down)}\n\n"
-        
-        # Статус Xray с эмодзи
-        xray_emoji = "✅" if xray_state == "running" else "❌"
-        message += f"🔐 <b>Xray:</b> {xray_emoji} {xray_state}\n"
-        message += f"   └ Версия: {xray_version}\n\n"
-        
-        message += f"🔌 <b>TCP соединений:</b> {tcp_count}"
+        if status:
+            # CPU
+            cpu = status.get('cpu', 0)
+            
+            # Memory
+            mem = status.get('mem', {})
+            mem_current = mem.get('current', 0)
+            mem_total = mem.get('total', 1)
+            mem_percent = (mem_current / mem_total * 100) if mem_total > 0 else 0
+            
+            # Disk
+            disk = status.get('disk', {})
+            disk_current = disk.get('current', 0)
+            disk_total = disk.get('total', 1)
+            disk_percent = (disk_current / disk_total * 100) if disk_total > 0 else 0
+            
+            # Network
+            net_io = status.get('netIO', {})
+            net_up = net_io.get('up', 0)
+            net_down = net_io.get('down', 0)
+            
+            # Xray
+            xray = status.get('xray', {})
+            xray_state = xray.get('state', 'unknown')
+            xray_version = xray.get('version', 'unknown')
+            
+            # TCP connections
+            tcp_count = status.get('tcpCount', 0)
+            
+            # Получаем общий трафик всех клиентов
+            try:
+                all_clients = await xui_client.get_all_clients()
+                total_traffic_up = sum(c.get('up', 0) for c in all_clients)
+                total_traffic_down = sum(c.get('down', 0) for c in all_clients)
+            except Exception as e:
+                logger.error(f"Ошибка получения трафика клиентов: {e}")
+                total_traffic_up = 0
+                total_traffic_down = 0
+
+            message += f"💻 <b>CPU:</b> {cpu:.1f}%\n\n"
+            
+            message += f"🧠 <b>RAM:</b> {mem_percent:.1f}%\n"
+            message += f"   └ {format_bytes(mem_current)} / {format_bytes(mem_total)}\n\n"
+            
+            message += f"💿 <b>Диск:</b> {disk_percent:.1f}%\n"
+            message += f"   └ {format_bytes(disk_current)} / {format_bytes(disk_total)}\n\n"
+            
+            message += f"🌐 <b>Сеть:</b>\n"
+            message += f"   ⬆️ Отправлено: {format_bytes(net_up)}\n"
+            message += f"   ⬇️ Получено: {format_bytes(net_down)}\n\n"
+            
+            message += f"📊 <b>Общий объем трафика:</b>\n"
+            message += f"   ⬆️ Отправлено: {format_bytes(total_traffic_up)}\n"
+            message += f"   ⬇️ Получено: {format_bytes(total_traffic_down)}\n\n"
+            
+            xray_emoji = "✅" if xray_state == "running" else "❌"
+            message += f"🔐 <b>Xray:</b> {xray_emoji} {xray_state}\n"
+            message += f"   └ Версия: {xray_version}\n\n"
+            
+            message += f"🔌 <b>TCP соединений:</b> {tcp_count}"
         
         
         # Добавляем кнопки в два ряда

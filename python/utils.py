@@ -1226,7 +1226,7 @@ class XUIClient:
                         return {}
                 else:
                     text = await resp.text()
-                    logger.error(f"Ошибка получения статуса сервера: {resp.status} - {text}")
+                    logger.warning(f"Статус сервера недоступен (HTTP {resp.status}): панель может не поддерживать этот API")
                     return {}
         except Exception as e:
             logger.error(f"Ошибка получения статуса сервера: {e}")
