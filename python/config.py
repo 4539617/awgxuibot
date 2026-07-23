@@ -376,13 +376,25 @@ class ConfigManager:
         try:
             import json
             import logging
+            from urllib.parse import urlparse
             logger = logging.getLogger(__name__)
             
             panel = self.get_panel(panel_id)
             if not panel:
                 logger.error(f"❌ Панель {panel_id} не найдена")
                 return False
-            
+
+            # Автоматически определяем server_address из xui_url если он не задан вручную.
+            # xui_url всегда содержит хост/IP (например https://185.218.19.28:57833/secret),
+            # поэтому это самый надёжный источник — не зависит от настроек панели.
+            if not panel.server_address and not panel.server_ip and panel.xui_url:
+                parsed = urlparse(panel.xui_url)
+                host = parsed.hostname or ''
+                if host:
+                    panel.server_address = host
+                    panel.server_ip = host
+                    logger.info(f"🌐 server_address определён из xui_url: {host}")
+
             logger.info(f"🔍 Извлечение параметров из панели {panel_id} через API")
             logger.info(f"   Inbound ID: {panel.inbound_id}")
             
@@ -548,7 +560,20 @@ class ConfigManager:
                 config_dict['common']['server_label'] = existing_server_label
             
             # Добавляем панели
+            existing_panels = existing_config.get('panels', {})
             for panel_id, panel in self.panels.items():
+                # server_address / server_ip задаются вручную и не должны затираться
+                # при программном сохранении (fetch_and_update_panel_settings не трогает их).
+                existing_panel = existing_panels.get(panel_id, {})
+                server_address = panel.server_address or existing_panel.get('server_address', '') or ''
+                server_ip = panel.server_ip or existing_panel.get('server_ip', '') or ''
+
+                # Обновляем объект в памяти — чтобы make_panel_client читал актуальный адрес
+                if server_address:
+                    panel.server_address = server_address
+                if server_ip:
+                    panel.server_ip = server_ip
+
                 config_dict['panels'][panel_id] = {
                     'alias': panel.alias,
                     'enabled': panel.enabled,
@@ -560,8 +585,8 @@ class ConfigManager:
                     'xui_api_token': panel.xui_api_token,
                     'xui_db_path': panel.xui_db_path,
                     'inbound_id': panel.inbound_id,
-                    'server_address': panel.server_address,
-                    'server_ip': panel.server_ip,
+                    'server_address': server_address,
+                    'server_ip': server_ip,
                     'transport': panel.transport,
                     'security': panel.security,
                     'tls_sni': panel.tls_sni,
