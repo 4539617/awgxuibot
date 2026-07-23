@@ -2896,9 +2896,29 @@ async def back_to_start_menu(callback_query: types.CallbackQuery, state: FSMCont
     await _show_main_menu(callback_query, state, edit=False)
 
 
+async def _refresh_panel_states_now():
+    """Выполняет живую проверку всех панелей и обновляет кэш panel_states монитора.
+    Вызывается при нажатии кнопки 🔄 Обновить — чтобы статус был реальным, а не устаревшим."""
+    if _panel_monitor is None:
+        return
+    try:
+        panels = config.panel_manager.get_all_panels()
+        for panel_id, panel_cfg in panels.items():
+            try:
+                is_available = await config.panel_manager.check_panel_status(panel_cfg)
+            except Exception:
+                is_available = False
+            state = _panel_monitor.panel_states.get(panel_id)
+            if state is not None:
+                state.is_available = is_available
+    except Exception as e:
+        logger.warning(f"Ошибка обновления статусов панелей: {e}")
+
+
 @dp.callback_query(lambda c: c.data == "refresh_main_menu")
 async def refresh_main_menu(callback_query: types.CallbackQuery, state: FSMContext):
     """Обновить главное меню на месте — редактирует текущее сообщение."""
+    await _refresh_panel_states_now()
     await _show_main_menu(callback_query, state, edit=True)
 
 
