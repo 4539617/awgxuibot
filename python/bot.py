@@ -140,6 +140,33 @@ def _build_panels_block() -> str:
     return "\n".join(lines) + "\n\n"
 
 
+def _build_panels_block_admin() -> str:
+    """Список панелей для главного меню администратора — формат как в окне Панели 3xui."""
+    panels = config.panel_manager.get_all_panels()
+    if not panels:
+        return ""
+    current_panel_id = config.panel_manager.get_current_panel_id()
+    lines = []
+    for panel_id, p in panels.items():
+        online_icon = "🟢 Онлайн" if get_panel_online_status(panel_id) else "🔴 Оффлайн"
+        is_current = panel_id == current_panel_id
+        panel_icon = "✅" if is_current else "⏸️"
+        location = p.location_label or ''
+        location_str = f"  |  📍 {location}" if location else ""
+        transport = (getattr(p, 'transport', '') or '—').upper()
+        security = (getattr(p, 'security', '') or '—').upper()
+        url = getattr(p, 'xui_url', '') or ''
+        line = (
+            f"{panel_icon} <b>{p.alias}</b>  <code>v{p.xui_version}</code>{location_str}\n"
+            f"   {online_icon}  |  🆔 <code>{panel_id}</code>\n"
+            f"   🔌 <code>{transport}</code> · <code>{security}</code>"
+        )
+        if url:
+            line += f"\n   <code>{url}</code>"
+        lines.append(line)
+    return "\n".join(lines) + "\n\n"
+
+
 
 async def send_panel_select(chat_id: int, header: str, back_callback: str, key_type: str):
     """Отправляет экран выбора панели.
@@ -432,29 +459,18 @@ async def cmd_start(message: Message, state: FSMContext):
                 ],
                 [
                     InlineKeyboardButton(text="🔑 Мои ключи", callback_data="cmd_myclients"),
+                    InlineKeyboardButton(text="🔄 Обновить", callback_data="back_to_start"),
                 ],
                 [
                     InlineKeyboardButton(text="⚙️ Администрирование", callback_data="server_status"),
                 ]
             ])
 
-            current_panel = config.get_current_panel()
-            current_panel_id = config.panel_manager.get_current_panel_id()
-            panel_info = ""
-            if current_panel:
-                location = getattr(current_panel, 'location_label', '')
-                transport = (getattr(current_panel, 'transport', '') or (config.vpn.transport if hasattr(config, 'vpn') and config.vpn else 'N/A')).upper()
-                security = (getattr(current_panel, 'security', '') or (config.vpn.security if hasattr(config, 'vpn') and config.vpn else 'N/A')).upper()
-                location_part = f"📍 {location}\n" if location else ""
-                panel_info = (
-                    f"📡 <b>{current_panel.alias}</b> v{current_panel.xui_version}\n"
-                    f"🆔 <code>{current_panel_id}</code>\n"
-                    f"{location_part}"
-                    f"🔌 <code>{transport}</code> · <code>{security}</code>\n"
-                )
+            panels_block = _build_panels_block_admin()
             await message.answer(
                 f"👑 Администратор\n\n"
-                f"{panel_info}",
+                f"{panels_block}"
+                f"📱 Выберите действие:",
                 reply_markup=keyboard,
                 parse_mode="HTML"
             )
@@ -2250,7 +2266,7 @@ async def show_server_status(callback_query: types.CallbackQuery, state: FSMCont
                 InlineKeyboardButton(text="👥 Пользователи", callback_data="show_users")
             ],
             [
-                InlineKeyboardButton(text="🔧 Панели", callback_data="show_panels")
+                InlineKeyboardButton(text="🔌 Подключить", callback_data="select_panel_to_connect")
             ],
             [
                 InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")
@@ -2928,29 +2944,18 @@ async def back_to_start_menu(callback_query: types.CallbackQuery, state: FSMCont
             ],
             [
                 InlineKeyboardButton(text="🔑 Мои ключи", callback_data="cmd_myclients"),
+                InlineKeyboardButton(text="🔄 Обновить", callback_data="back_to_start"),
             ],
             [
                 InlineKeyboardButton(text="⚙️ Администрирование", callback_data="server_status"),
             ]
         ])
-        current_panel = config.get_current_panel()
-        current_panel_id = config.panel_manager.get_current_panel_id()
-        panel_info = ""
-        if current_panel:
-            location = getattr(current_panel, 'location_label', '')
-            transport = (getattr(current_panel, 'transport', '') or (config.vpn.transport if hasattr(config, 'vpn') and config.vpn else 'N/A')).upper()
-            security = (getattr(current_panel, 'security', '') or (config.vpn.security if hasattr(config, 'vpn') and config.vpn else 'N/A')).upper()
-            location_part = f"📍 {location}\n" if location else ""
-            panel_info = (
-                f"📡 <b>{current_panel.alias}</b> v{current_panel.xui_version}\n"
-                f"🆔 <code>{current_panel_id}</code>\n"
-                f"{location_part}"
-                f"🔌 <code>{transport}</code> · <code>{security}</code>\n"
-            )
+        panels_block = _build_panels_block_admin()
         await bot.send_message(
             callback_query.message.chat.id,
             f"👑 Администратор\n\n"
-            f"{panel_info}",
+            f"{panels_block}"
+            f"📱 Выберите действие:",
             parse_mode="HTML",
             reply_markup=keyboard
         )
