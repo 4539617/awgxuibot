@@ -3639,7 +3639,7 @@ async def select_panel_to_connect(callback_query: types.CallbackQuery, state: FS
             ])
         
         keyboard_buttons.append([
-            InlineKeyboardButton(text="◀️ Назад", callback_data="show_panels")
+            InlineKeyboardButton(text="◀️ Назад", callback_data="server_status")
         ])
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
@@ -3710,7 +3710,7 @@ async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContex
                             "Не удалось авторизоваться.",
                             parse_mode="HTML",
                             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                                [InlineKeyboardButton(text="◀️ Назад", callback_data="show_panels")]
+                                [InlineKeyboardButton(text="◀️ Назад", callback_data="server_status")]
                             ])
                         )
                         return
@@ -3779,7 +3779,7 @@ async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContex
                 stats_text,
                 parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="◀️ К списку панелей", callback_data="show_panels")],
+                    [InlineKeyboardButton(text="◀️ К списку панелей", callback_data="server_status")],
                     [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_start")]
                 ])
             )
@@ -3800,7 +3800,7 @@ async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContex
                 "Проверьте настройки подключения и доступность сервера.",
                 parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="◀️ Назад", callback_data="show_panels")]
+                    [InlineKeyboardButton(text="◀️ Назад", callback_data="server_status")]
                 ])
             )
             return
@@ -3903,7 +3903,7 @@ async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContex
                         stats_text,
                         parse_mode="HTML",
                         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                            [InlineKeyboardButton(text="◀️ К списку панелей", callback_data="show_panels")],
+                            [InlineKeyboardButton(text="◀️ К списку панелей", callback_data="server_status")],
                             [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_start")]
                         ])
                     )
@@ -3925,21 +3925,21 @@ async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContex
                         "Возвращено подключение к предыдущей панели.",
                         parse_mode="HTML",
                         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                            [InlineKeyboardButton(text="◀️ Назад", callback_data="show_panels")]
+                            [InlineKeyboardButton(text="◀️ Назад", callback_data="server_status")]
                         ])
                     )
             else:
                 await callback_query.message.edit_text(
                     f"❌ Ошибка создания конфигурации для панели {alias}",
                     reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                        [InlineKeyboardButton(text="◀️ Назад", callback_data="show_panels")]
+                        [InlineKeyboardButton(text="◀️ Назад", callback_data="server_status")]
                     ])
                 )
         else:
             await callback_query.message.edit_text(
                 f"❌ Ошибка переключения на панель {alias}",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="◀️ Назад", callback_data="show_panels")]
+                    [InlineKeyboardButton(text="◀️ Назад", callback_data="server_status")]
                 ])
             )
         
@@ -3948,7 +3948,7 @@ async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContex
         await callback_query.message.edit_text(
             f"❌ Ошибка: {str(e)}",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="◀️ Назад", callback_data="show_panels")]
+                [InlineKeyboardButton(text="◀️ Назад", callback_data="server_status")]
             ])
         )
 
