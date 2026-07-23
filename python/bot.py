@@ -39,8 +39,9 @@ dp = Dispatcher()
 
 
 @dp.errors()
-async def errors_handler(event, exception: Exception):
+async def errors_handler(event: types.ErrorEvent):
     """Глушим типовые ошибки Telegram которые не требуют внимания."""
+    exception = event.exception
     if isinstance(exception, TelegramBadRequest):
         msg = str(exception)
         if "message is not modified" in msg:
