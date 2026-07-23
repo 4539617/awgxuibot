@@ -110,7 +110,11 @@ class XUIClient:
             self.session = aiohttp.ClientSession(
                 connector=connector,
                 cookie_jar=cookie_jar,
-                timeout=aiohttp.ClientTimeout(total=self.config.xui.api_timeout)
+                timeout=aiohttp.ClientTimeout(
+                    total=self.config.xui.api_timeout,
+                    connect=10,       # быстрый fail при недоступном хосте
+                    sock_connect=10,
+                )
             )
     
     async def close(self):
@@ -437,13 +441,16 @@ class XUIClient:
         else:
             total_bytes = total_gb * 1024 * 1024 * 1024
         
-        # Получаем реальные настройки inbound из панели для определения flow
+        # Получаем реальные настройки inbound из панели для определения flow.
+        # Используем короткий таймаут: этот запрос вспомогательный, зависание не должно
+        # блокировать основной запрос создания клиента на полный api_timeout.
         flow = ""
         try:
             endpoint_get = f"{self.config.xui.url}/panel/api/inbounds/get/{self.config.xui.inbound_id}"
             headers = await self._get_headers()
-            
-            async with self.session.get(endpoint_get, headers=headers) as resp:
+            inbound_timeout = aiohttp.ClientTimeout(total=15, connect=8, sock_connect=8)
+
+            async with self.session.get(endpoint_get, headers=headers, timeout=inbound_timeout) as resp:
                 if resp.status == 200:
                     result = await resp.json()
                     if result.get('success'):

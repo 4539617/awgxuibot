@@ -74,11 +74,33 @@ def make_panel_client(panel_id: str) -> XUIClient:
     xui_cfg = config.panel_manager.create_xui_config_from_panel(panel_id)
     if not xui_cfg:
         raise ValueError(f"Панель {panel_id} не найдена")
-    # Создаём временный объект-обёртку с нужными атрибутами config.xui и config.vpn
+
+    panel_cfg = config.panel_manager.get_panel(panel_id)
+
     import types as _types
+
+    # Строим vpn-конфиг из конкретной панели, а не из глобального config.vpn.
+    # Это важно: server_address (и все Reality-параметры) должны браться
+    # из той панели, для которой создаётся клиент.
+    server_addr = (panel_cfg.server_address or panel_cfg.server_ip or '').strip()
+    panel_vpn = _types.SimpleNamespace(
+        server_address=server_addr,
+        server_port=config.common.server_port,
+        transport=panel_cfg.transport,
+        security=panel_cfg.security,
+        tls_sni=panel_cfg.tls_sni,
+        tls_fingerprint=panel_cfg.tls_fingerprint or config.common.tls_fingerprint,
+        tls_alpn=config.common.tls_alpn,
+        reality_sni=panel_cfg.reality_sni,
+        reality_fingerprint=panel_cfg.reality_fingerprint,
+        reality_public_key=panel_cfg.reality_public_key,
+        reality_short_id=panel_cfg.reality_short_id,
+        xhttp_mode=config.common.xhttp_mode,
+    )
+
     tmp_config = _types.SimpleNamespace(
         xui=xui_cfg,
-        vpn=config.vpn,
+        vpn=panel_vpn,
         common=config.common,
     )
     return XUIClient(tmp_config)
