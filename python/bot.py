@@ -459,7 +459,7 @@ async def cmd_start(message: Message, state: FSMContext):
                 ],
                 [
                     InlineKeyboardButton(text="🔑 Мои ключи", callback_data="cmd_myclients"),
-                    InlineKeyboardButton(text="🔄 Обновить", callback_data="back_to_start"),
+                    InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_main_menu"),
                 ],
                 [
                     InlineKeyboardButton(text="⚙️ Администрирование", callback_data="server_status"),
@@ -2903,39 +2903,44 @@ async def show_user_card(callback_query: types.CallbackQuery, state: FSMContext)
 
 @dp.callback_query(lambda c: c.data == "back_to_start")
 async def back_to_start_menu(callback_query: types.CallbackQuery, state: FSMContext):
-    """Вернуться в главное меню /start"""
+    """Вернуться в главное меню /start — всегда отправляет новое сообщение."""
+    await _show_main_menu(callback_query, state, edit=False)
+
+
+@dp.callback_query(lambda c: c.data == "refresh_main_menu")
+async def refresh_main_menu(callback_query: types.CallbackQuery, state: FSMContext):
+    """Обновить главное меню на месте — редактирует текущее сообщение."""
+    await _show_main_menu(callback_query, state, edit=True)
+
+
+async def _show_main_menu(callback_query: types.CallbackQuery, state: FSMContext, edit: bool):
+    """Внутренняя функция показа главного меню. edit=True — редактировать, False — новое."""
     user_id = callback_query.from_user.id
     username = callback_query.from_user.username
     first_name = callback_query.from_user.first_name
-    
-    # Очищаем состояние при возврате в главное меню
+
     await state.clear()
-    
     await callback_query.answer()
-    
+
     # Обновляем конфигурацию из текущей панели
     try:
         panel_manager = config.panel_manager
         current_panel_id = panel_manager.get_current_panel_id()
-        
         if current_panel_id:
             panel_config = panel_manager.get_panel(current_panel_id)
             if panel_config:
-                # Обновляем transport и security из панели
                 if hasattr(panel_config, 'transport'):
                     config.vpn.transport = panel_config.transport
                 if hasattr(panel_config, 'security'):
                     config.vpn.security = panel_config.security
-                
                 logger.info(f"🔄 Конфигурация обновлена из панели {current_panel_id}")
     except Exception as e:
         logger.error(f"Ошибка обновления конфигурации: {e}")
-    
-    # Проверяем права доступа
+
     if not is_allowed(user_id):
         await callback_query.message.edit_text("⛔ Отказано в доступе.")
         return
-    
+
     if is_admin(user_id):
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [
@@ -2944,21 +2949,18 @@ async def back_to_start_menu(callback_query: types.CallbackQuery, state: FSMCont
             ],
             [
                 InlineKeyboardButton(text="🔑 Мои ключи", callback_data="cmd_myclients"),
-                InlineKeyboardButton(text="🔄 Обновить", callback_data="back_to_start"),
+                InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_main_menu"),
             ],
             [
                 InlineKeyboardButton(text="⚙️ Администрирование", callback_data="server_status"),
             ]
         ])
         panels_block = _build_panels_block_admin()
-        await bot.send_message(
-            callback_query.message.chat.id,
-            f"👑 Администратор\n\n"
-            f"{panels_block}"
-            f"📱 Выберите действие:",
-            parse_mode="HTML",
-            reply_markup=keyboard
-        )
+        text = f"👑 Администратор\n\n{panels_block}📱 Выберите действие:"
+        if edit:
+            await callback_query.message.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
+        else:
+            await bot.send_message(callback_query.message.chat.id, text, parse_mode="HTML", reply_markup=keyboard)
     else:
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [
@@ -2970,14 +2972,15 @@ async def back_to_start_menu(callback_query: types.CallbackQuery, state: FSMCont
             ]
         ])
         panels_block = _build_panels_block()
-        await bot.send_message(
-            callback_query.message.chat.id,
+        text = (
             f"👤 <b>Пользователь:</b> {username or first_name}\n\n"
             f"{panels_block}"
-            f"📱 Выберите действие:",
-            parse_mode="HTML",
-            reply_markup=keyboard
+            f"📱 Выберите действие:"
         )
+        if edit:
+            await callback_query.message.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
+        else:
+            await bot.send_message(callback_query.message.chat.id, text, parse_mode="HTML", reply_markup=keyboard)
 @dp.callback_query(lambda c: c.data == "cmd_new")
 async def callback_cmd_new(callback_query: types.CallbackQuery, state: FSMContext):
     """Обработчик кнопки 'Создать ключ'"""
