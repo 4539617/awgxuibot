@@ -421,6 +421,9 @@ async def cmd_start(message: Message, state: FSMContext):
             # Уведомления администратору отключены
             # Пользователь добавлен автоматически при наличии активных ключей
             
+            # Живая проверка доступности панелей перед показом меню
+            await _refresh_panel_states_now()
+
             # Показываем меню пользователя с кнопками
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
                 [
@@ -435,8 +438,7 @@ async def cmd_start(message: Message, state: FSMContext):
             panels_block = _build_panels_block()
             await message.answer(
                 f"👤 <b>Пользователь:</b> {username or first_name}\n\n"
-                f"{panels_block}"
-                f"📱 Выберите действие:",
+                f"{panels_block}",
                 reply_markup=keyboard,
                 parse_mode="HTML"
             )
@@ -475,6 +477,9 @@ async def cmd_start(message: Message, state: FSMContext):
                 parse_mode="HTML"
             )
         else:
+            # Живая проверка доступности панелей перед показом меню
+            await _refresh_panel_states_now()
+
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
                 [
                     InlineKeyboardButton(text="➕ Создать ключ", callback_data="cmd_new"),
@@ -488,8 +493,7 @@ async def cmd_start(message: Message, state: FSMContext):
             panels_block = _build_panels_block()
             await message.answer(
                 f"👤 <b>Пользователь:</b> {username or first_name}\n\n"
-                f"{panels_block}"
-                f"📱 Выберите действие:",
+                f"{panels_block}",
                 reply_markup=keyboard,
                 parse_mode="HTML"
             )
@@ -524,6 +528,13 @@ async def cmd_new(message: Message, state: FSMContext):
     await state.set_state(NewClientState.waiting_for_panel)
     available = get_available_panels()
     online_available = [(pid, pcfg) for pid, pcfg in available if get_panel_online_status(pid)]
+    if len(online_available) == 0:
+        await message.answer(
+            "🔴 <b>Все серверы сейчас недоступны.</b>\n\nСоздание ключей временно невозможно. Попробуйте позже.",
+            parse_mode="HTML"
+        )
+        await state.clear()
+        return
     if len(online_available) == 1:
         panel_id, panel_cfg = online_available[0]
         await state.update_data(selected_panel_id=panel_id)
@@ -636,6 +647,13 @@ async def cmd_temp_key(message: Message, state: FSMContext):
     await state.set_state(TempKeyState.waiting_for_panel)
     available = get_available_panels()
     online_available = [(pid, pcfg) for pid, pcfg in available if get_panel_online_status(pid)]
+    if len(online_available) == 0:
+        await message.answer(
+            "🔴 <b>Все серверы сейчас недоступны.</b>\n\nСоздание ключей временно невозможно. Попробуйте позже.",
+            parse_mode="HTML"
+        )
+        await state.clear()
+        return
     if len(online_available) == 1:
         panel_id, panel_cfg = online_available[0]
         await state.update_data(selected_panel_id=panel_id)
@@ -2971,6 +2989,9 @@ async def _show_main_menu(callback_query: types.CallbackQuery, state: FSMContext
         else:
             await bot.send_message(callback_query.message.chat.id, text, parse_mode="HTML", reply_markup=keyboard)
     else:
+        # Живая проверка доступности панелей перед показом меню
+        await _refresh_panel_states_now()
+
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [
                 InlineKeyboardButton(text="➕ Создать ключ", callback_data="cmd_new"),
@@ -2984,7 +3005,6 @@ async def _show_main_menu(callback_query: types.CallbackQuery, state: FSMContext
         text = (
             f"👤 <b>Пользователь:</b> {username or first_name}\n\n"
             f"{panels_block}"
-            f"📱 Выберите действие:"
         )
         if edit:
             await callback_query.message.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
@@ -3007,6 +3027,18 @@ async def callback_cmd_new(callback_query: types.CallbackQuery, state: FSMContex
     await state.set_state(NewClientState.waiting_for_panel)
     available = get_available_panels()
     online_available = [(pid, pcfg) for pid, pcfg in available if get_panel_online_status(pid)]
+    if len(online_available) == 0:
+        # Все панели недоступны
+        await bot.send_message(
+            callback_query.message.chat.id,
+            "🔴 <b>Все серверы сейчас недоступны.</b>\n\nСоздание ключей временно невозможно. Попробуйте позже.",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+            ])
+        )
+        await state.clear()
+        return
     if len(online_available) == 1:
         panel_id, panel_cfg = online_available[0]
         await state.update_data(selected_panel_id=panel_id)
@@ -3045,6 +3077,18 @@ async def callback_cmd_tempkey(callback_query: types.CallbackQuery, state: FSMCo
     await state.set_state(TempKeyState.waiting_for_panel)
     available = get_available_panels()
     online_available = [(pid, pcfg) for pid, pcfg in available if get_panel_online_status(pid)]
+    if len(online_available) == 0:
+        # Все панели недоступны
+        await bot.send_message(
+            callback_query.message.chat.id,
+            "🔴 <b>Все серверы сейчас недоступны.</b>\n\nСоздание ключей временно невозможно. Попробуйте позже.",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+            ])
+        )
+        await state.clear()
+        return
     if len(online_available) == 1:
         panel_id, panel_cfg = online_available[0]
         await state.update_data(selected_panel_id=panel_id)
