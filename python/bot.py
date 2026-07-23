@@ -2499,8 +2499,8 @@ async def show_notification_settings(callback_query: types.CallbackQuery, state:
         monitor_icon = "🔔" if alerts_on > 0 else ""
 
         location = getattr(panel_cfg, 'location_label', '') or ''
-        sub_line = f"📍 {location}" if location else ""
-        btn_text = f"{status_icon}{monitor_icon} {alias}\n{sub_line}" if sub_line else f"{status_icon}{monitor_icon} {alias}"
+        loc_part = f" · {location}" if location else ""
+        btn_text = f"{status_icon}{monitor_icon} {alias}{loc_part}"
         buttons.append([InlineKeyboardButton(text=btn_text, callback_data=f"notif_panel_{panel_id}")])
 
     buttons.append([
@@ -3626,10 +3626,8 @@ async def select_panel_to_connect(callback_query: types.CallbackQuery, state: FS
             location = getattr(panel_config, 'location_label', '')
             is_current = panel_id == current_panel_id
             
-            location_str = f" [{location}]" if location else ""
+            location_str = f" · {location}" if location else ""
             button_text = f"{'✅' if is_current else '⏸️'} {alias}{location_str}"
-            if is_current:
-                button_text += " (Текущая)"
             
             keyboard_buttons.append([
                 InlineKeyboardButton(
