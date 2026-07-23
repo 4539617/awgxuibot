@@ -205,22 +205,36 @@ class ConfigManager:
             )
             
             # Загружаем панели
+            from urllib.parse import urlparse as _urlparse
             panels_data = data.get('panels', {})
             for panel_id, panel_data in panels_data.items():
+                xui_url = panel_data.get('xui_url', '')
+                # Если server_address не задан вручную — берём hostname из xui_url.
+                # Это универсально работает и для IP, и для доменов.
+                server_address = panel_data.get('server_address', '') or ''
+                server_ip      = panel_data.get('server_ip', '') or ''
+                if (not server_address or not server_ip) and xui_url:
+                    host = _urlparse(xui_url).hostname or ''
+                    if host:
+                        if not server_address:
+                            server_address = host
+                        if not server_ip:
+                            server_ip = host
+
                 self.panels[panel_id] = PanelConfig(
                     panel_id=panel_id,
                     alias=panel_data.get('alias', panel_id),
                     enabled=panel_data.get('enabled', True),
                     location_label=panel_data.get('location_label', ''),
                     xui_version=panel_data.get('xui_version', '3.3.1'),
-                    xui_url=panel_data.get('xui_url', ''),
+                    xui_url=xui_url,
                     xui_username=panel_data.get('xui_username', ''),
                     xui_password=panel_data.get('xui_password', ''),
                     xui_api_token=panel_data.get('xui_api_token', ''),
                     inbound_id=panel_data.get('inbound_id', 1),
                     xui_db_path=panel_data.get('xui_db_path', '/etc/x-ui/x-ui.db'),
-                    server_address=panel_data.get('server_address', ''),
-                    server_ip=panel_data.get('server_ip', ''),
+                    server_address=server_address,
+                    server_ip=server_ip,
                     transport=panel_data.get('transport', 'xhttp'),
                     security=panel_data.get('security', 'reality'),
                     tls_sni=panel_data.get('tls_sni', ''),
