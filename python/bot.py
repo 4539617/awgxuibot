@@ -39,8 +39,9 @@ dp = Dispatcher()
 
 
 @dp.errors()
-async def errors_handler(event, exception: Exception):
+async def errors_handler(event: types.ErrorEvent):
     """Глушим типовые ошибки Telegram которые не требуют внимания."""
+    exception = event.exception
     if isinstance(exception, TelegramBadRequest):
         msg = str(exception)
         if "message is not modified" in msg:
@@ -74,11 +75,33 @@ def make_panel_client(panel_id: str) -> XUIClient:
     xui_cfg = config.panel_manager.create_xui_config_from_panel(panel_id)
     if not xui_cfg:
         raise ValueError(f"Панель {panel_id} не найдена")
-    # Создаём временный объект-обёртку с нужными атрибутами config.xui и config.vpn
+
+    panel_cfg = config.panel_manager.get_panel(panel_id)
+
     import types as _types
+
+    # Строим vpn-конфиг из конкретной панели, а не из глобального config.vpn.
+    # Это важно: server_address (и все Reality-параметры) должны браться
+    # из той панели, для которой создаётся клиент.
+    server_addr = (panel_cfg.server_address or panel_cfg.server_ip or '').strip()
+    panel_vpn = _types.SimpleNamespace(
+        server_address=server_addr,
+        server_port=config.common.server_port,
+        transport=panel_cfg.transport,
+        security=panel_cfg.security,
+        tls_sni=panel_cfg.tls_sni,
+        tls_fingerprint=panel_cfg.tls_fingerprint or config.common.tls_fingerprint,
+        tls_alpn=config.common.tls_alpn,
+        reality_sni=panel_cfg.reality_sni,
+        reality_fingerprint=panel_cfg.reality_fingerprint,
+        reality_public_key=panel_cfg.reality_public_key,
+        reality_short_id=panel_cfg.reality_short_id,
+        xhttp_mode=config.common.xhttp_mode,
+    )
+
     tmp_config = _types.SimpleNamespace(
         xui=xui_cfg,
-        vpn=config.vpn,
+        vpn=panel_vpn,
         common=config.common,
     )
     return XUIClient(tmp_config)
@@ -114,6 +137,33 @@ def _build_panels_block() -> str:
             f"{status} <b>{p.alias}</b>{loc_part}\n"
             f"   <code>{transport}</code> · <code>{security}</code>"
         )
+    return "\n".join(lines) + "\n\n"
+
+
+def _build_panels_block_admin() -> str:
+    """Список панелей для главного меню администратора — формат как в окне Панели 3xui."""
+    panels = config.panel_manager.get_all_panels()
+    if not panels:
+        return ""
+    current_panel_id = config.panel_manager.get_current_panel_id()
+    lines = []
+    for panel_id, p in panels.items():
+        online_icon = "🟢 Онлайн" if get_panel_online_status(panel_id) else "🔴 Оффлайн"
+        is_current = panel_id == current_panel_id
+        panel_icon = "✅" if is_current else "⏸️"
+        location = p.location_label or ''
+        location_str = f"  |  📍 {location}" if location else ""
+        transport = (getattr(p, 'transport', '') or '—').upper()
+        security = (getattr(p, 'security', '') or '—').upper()
+        url = getattr(p, 'xui_url', '') or ''
+        line = (
+            f"{panel_icon} <b>{p.alias}</b>  <code>v{p.xui_version}</code>{location_str}\n"
+            f"   {online_icon}  |  🆔 <code>{panel_id}</code>\n"
+            f"   🔌 <code>{transport}</code> · <code>{security}</code>"
+        )
+        if url:
+            line += f"\n   <a href=\"{url}\">{url}</a>"
+        lines.append(line)
     return "\n".join(lines) + "\n\n"
 
 
@@ -371,6 +421,9 @@ async def cmd_start(message: Message, state: FSMContext):
             # Уведомления администратору отключены
             # Пользователь добавлен автоматически при наличии активных ключей
             
+            # Живая проверка доступности панелей перед показом меню
+            await _refresh_panel_states_now()
+
             # Показываем меню пользователя с кнопками
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
                 [
@@ -385,8 +438,7 @@ async def cmd_start(message: Message, state: FSMContext):
             panels_block = _build_panels_block()
             await message.answer(
                 f"👤 <b>Пользователь:</b> {username or first_name}\n\n"
-                f"{panels_block}"
-                f"📱 Выберите действие:",
+                f"{panels_block}",
                 reply_markup=keyboard,
                 parse_mode="HTML"
             )
@@ -409,33 +461,25 @@ async def cmd_start(message: Message, state: FSMContext):
                 ],
                 [
                     InlineKeyboardButton(text="🔑 Мои ключи", callback_data="cmd_myclients"),
+                    InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_main_menu"),
                 ],
                 [
                     InlineKeyboardButton(text="⚙️ Администрирование", callback_data="server_status"),
                 ]
             ])
 
-            current_panel = config.get_current_panel()
-            current_panel_id = config.panel_manager.get_current_panel_id()
-            panel_info = ""
-            if current_panel:
-                location = getattr(current_panel, 'location_label', '')
-                transport = (getattr(current_panel, 'transport', '') or (config.vpn.transport if hasattr(config, 'vpn') and config.vpn else 'N/A')).upper()
-                security = (getattr(current_panel, 'security', '') or (config.vpn.security if hasattr(config, 'vpn') and config.vpn else 'N/A')).upper()
-                location_part = f"📍 {location}\n" if location else ""
-                panel_info = (
-                    f"📡 <b>{current_panel.alias}</b> v{current_panel.xui_version}\n"
-                    f"🆔 <code>{current_panel_id}</code>\n"
-                    f"{location_part}"
-                    f"🔌 <code>{transport}</code> · <code>{security}</code>\n"
-                )
+            panels_block = _build_panels_block_admin()
             await message.answer(
                 f"👑 Администратор\n\n"
-                f"{panel_info}",
+                f"{panels_block}"
+                f"📱 Выберите действие:",
                 reply_markup=keyboard,
                 parse_mode="HTML"
             )
         else:
+            # Живая проверка доступности панелей перед показом меню
+            await _refresh_panel_states_now()
+
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
                 [
                     InlineKeyboardButton(text="➕ Создать ключ", callback_data="cmd_new"),
@@ -449,8 +493,7 @@ async def cmd_start(message: Message, state: FSMContext):
             panels_block = _build_panels_block()
             await message.answer(
                 f"👤 <b>Пользователь:</b> {username or first_name}\n\n"
-                f"{panels_block}"
-                f"📱 Выберите действие:",
+                f"{panels_block}",
                 reply_markup=keyboard,
                 parse_mode="HTML"
             )
@@ -485,6 +528,13 @@ async def cmd_new(message: Message, state: FSMContext):
     await state.set_state(NewClientState.waiting_for_panel)
     available = get_available_panels()
     online_available = [(pid, pcfg) for pid, pcfg in available if get_panel_online_status(pid)]
+    if len(online_available) == 0:
+        await message.answer(
+            "🔴 <b>Все серверы сейчас недоступны.</b>\n\nСоздание ключей временно невозможно. Попробуйте позже.",
+            parse_mode="HTML"
+        )
+        await state.clear()
+        return
     if len(online_available) == 1:
         panel_id, panel_cfg = online_available[0]
         await state.update_data(selected_panel_id=panel_id)
@@ -597,6 +647,13 @@ async def cmd_temp_key(message: Message, state: FSMContext):
     await state.set_state(TempKeyState.waiting_for_panel)
     available = get_available_panels()
     online_available = [(pid, pcfg) for pid, pcfg in available if get_panel_online_status(pid)]
+    if len(online_available) == 0:
+        await message.answer(
+            "🔴 <b>Все серверы сейчас недоступны.</b>\n\nСоздание ключей временно невозможно. Попробуйте позже.",
+            parse_mode="HTML"
+        )
+        await state.clear()
+        return
     if len(online_available) == 1:
         panel_id, panel_cfg = online_available[0]
         await state.update_data(selected_panel_id=panel_id)
@@ -2113,13 +2170,6 @@ async def show_server_status(callback_query: types.CallbackQuery, state: FSMCont
         # Получаем статус сервера
         status = await xui_client.get_server_status()
         
-        if not status:
-            if is_refresh:
-                await callback_query.message.edit_text("❌ Не удалось получить статус сервера")
-            else:
-                await callback_query.message.answer("❌ Не удалось получить статус сервера")
-            return
-        
         # Форматируем данные
         def format_bytes(bytes_value):
             """Конвертация байтов в читаемый формат"""
@@ -2131,47 +2181,6 @@ async def show_server_status(callback_query: types.CallbackQuery, state: FSMCont
                 return f"{bytes_value / 1024:.2f} KB"
             else:
                 return f"{bytes_value} B"
-        
-        # CPU
-        cpu = status.get('cpu', 0)
-        
-        # Memory
-        mem = status.get('mem', {})
-        mem_current = mem.get('current', 0)
-        mem_total = mem.get('total', 1)
-        mem_percent = (mem_current / mem_total * 100) if mem_total > 0 else 0
-        
-        # Disk
-        disk = status.get('disk', {})
-        disk_current = disk.get('current', 0)
-        disk_total = disk.get('total', 1)
-        disk_percent = (disk_current / disk_total * 100) if disk_total > 0 else 0
-        
-        # Network
-        net_io = status.get('netIO', {})
-        net_up = net_io.get('up', 0)
-        net_down = net_io.get('down', 0)
-        
-        # Xray
-        xray = status.get('xray', {})
-        xray_state = xray.get('state', 'unknown')
-        xray_version = xray.get('version', 'unknown')
-        
-        # Статус Xray с эмодзи
-        xray_emoji = "✅" if xray_state == "running" else "❌"
-        
-        # TCP connections
-        tcp_count = status.get('tcpCount', 0)
-        
-        # Получаем общий трафик всех клиентов
-        try:
-            all_clients = await xui_client.get_all_clients()
-            total_traffic_up = sum(c.get('up', 0) for c in all_clients)
-            total_traffic_down = sum(c.get('down', 0) for c in all_clients)
-        except Exception as e:
-            logger.error(f"Ошибка получения трафика клиентов: {e}")
-            total_traffic_up = 0
-            total_traffic_down = 0
         
         # Получаем данные текущей панели
         current_panel     = config.get_current_panel()
@@ -2198,28 +2207,55 @@ async def show_server_status(callback_query: types.CallbackQuery, state: FSMCont
             message += f"🔌 <code>{panel_transport}</code> · <code>{panel_security}</code>\n"
         message += "\n"
 
-        message += f"💻 <b>CPU:</b> {cpu:.1f}%\n\n"
-        
-        message += f"🧠 <b>RAM:</b> {mem_percent:.1f}%\n"
-        message += f"   └ {format_bytes(mem_current)} / {format_bytes(mem_total)}\n\n"
-        
-        message += f"💿 <b>Диск:</b> {disk_percent:.1f}%\n"
-        message += f"   └ {format_bytes(disk_current)} / {format_bytes(disk_total)}\n\n"
-        
-        message += f"🌐 <b>Сеть:</b>\n"
-        message += f"   ⬆️ Отправлено: {format_bytes(net_up)}\n"
-        message += f"   ⬇️ Получено: {format_bytes(net_down)}\n\n"
-        
-        message += f"📊 <b>Общий объем трафика:</b>\n"
-        message += f"   ⬆️ Отправлено: {format_bytes(total_traffic_up)}\n"
-        message += f"   ⬇️ Получено: {format_bytes(total_traffic_down)}\n\n"
-        
-        # Статус Xray с эмодзи
-        xray_emoji = "✅" if xray_state == "running" else "❌"
-        message += f"🔐 <b>Xray:</b> {xray_emoji} {xray_state}\n"
-        message += f"   └ Версия: {xray_version}\n\n"
-        
-        message += f"🔌 <b>TCP соединений:</b> {tcp_count}"
+        if status:
+            # CPU
+            cpu = status.get('cpu', 0)
+            
+            # Memory
+            mem = status.get('mem', {})
+            mem_current = mem.get('current', 0)
+            mem_total = mem.get('total', 1)
+            mem_percent = (mem_current / mem_total * 100) if mem_total > 0 else 0
+            
+            # Disk
+            disk = status.get('disk', {})
+            disk_current = disk.get('current', 0)
+            disk_total = disk.get('total', 1)
+            disk_percent = (disk_current / disk_total * 100) if disk_total > 0 else 0
+            
+            # Network
+            net_io = status.get('netIO', {})
+            net_up = net_io.get('up', 0)
+            net_down = net_io.get('down', 0)
+            
+            # Xray
+            xray = status.get('xray', {})
+            xray_state = xray.get('state', 'unknown')
+            xray_version = xray.get('version', 'unknown')
+            
+            # TCP connections
+            tcp_count = status.get('tcpCount', 0)
+            
+            # Получаем общий трафик всех клиентов
+            try:
+                all_clients = await xui_client.get_all_clients()
+                total_traffic_up = sum(c.get('up', 0) for c in all_clients)
+                total_traffic_down = sum(c.get('down', 0) for c in all_clients)
+            except Exception as e:
+                logger.error(f"Ошибка получения трафика клиентов: {e}")
+                total_traffic_up = 0
+                total_traffic_down = 0
+
+            xray_emoji = "✅" if xray_state == "running" else "❌"
+            message += (
+                f"💻 <b>CPU:</b> {cpu:.1f}%\n"
+                f"🧠 <b>RAM:</b> {mem_percent:.1f}% | {format_bytes(mem_current)} / {format_bytes(mem_total)}\n"
+                f"💿 <b>Диск:</b> {disk_percent:.1f}% | {format_bytes(disk_current)} / {format_bytes(disk_total)}\n"
+                f"🌐 <b>Сеть:</b> ⬆️ {format_bytes(net_up)} ⬇️ {format_bytes(net_down)}\n"
+                f"📊 <b>Трафик:</b> ⬆️ {format_bytes(total_traffic_up)} ⬇️ {format_bytes(total_traffic_down)}\n"
+                f"🔐 <b>Xray:</b> {xray_emoji} {xray_state} <code>v{xray_version}</code>\n"
+                f"🔌 <b>TCP:</b> {tcp_count}"
+            )
         
         
         # Добавляем кнопки в два ряда
@@ -2237,7 +2273,7 @@ async def show_server_status(callback_query: types.CallbackQuery, state: FSMCont
                 InlineKeyboardButton(text="👥 Пользователи", callback_data="show_users")
             ],
             [
-                InlineKeyboardButton(text="🔧 Панели", callback_data="show_panels")
+                InlineKeyboardButton(text="🔌 Подключить", callback_data="select_panel_to_connect")
             ],
             [
                 InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")
@@ -2470,8 +2506,8 @@ async def show_notification_settings(callback_query: types.CallbackQuery, state:
         monitor_icon = "🔔" if alerts_on > 0 else ""
 
         location = getattr(panel_cfg, 'location_label', '') or ''
-        sub_line = f"📍 {location}" if location else ""
-        btn_text = f"{status_icon}{monitor_icon} {alias}\n{sub_line}" if sub_line else f"{status_icon}{monitor_icon} {alias}"
+        loc_part = f" · {location}" if location else ""
+        btn_text = f"{status_icon}{monitor_icon} {alias}{loc_part}"
         buttons.append([InlineKeyboardButton(text=btn_text, callback_data=f"notif_panel_{panel_id}")])
 
     buttons.append([
@@ -2874,39 +2910,64 @@ async def show_user_card(callback_query: types.CallbackQuery, state: FSMContext)
 
 @dp.callback_query(lambda c: c.data == "back_to_start")
 async def back_to_start_menu(callback_query: types.CallbackQuery, state: FSMContext):
-    """Вернуться в главное меню /start"""
+    """Вернуться в главное меню /start — всегда отправляет новое сообщение."""
+    await _show_main_menu(callback_query, state, edit=False)
+
+
+async def _refresh_panel_states_now():
+    """Выполняет живую проверку всех панелей и обновляет кэш panel_states монитора.
+    Вызывается при нажатии кнопки 🔄 Обновить — чтобы статус был реальным, а не устаревшим."""
+    if _panel_monitor is None:
+        return
+    try:
+        panels = config.panel_manager.get_all_panels()
+        for panel_id, panel_cfg in panels.items():
+            try:
+                is_available = await config.panel_manager.check_panel_status(panel_cfg)
+            except Exception:
+                is_available = False
+            state = _panel_monitor.panel_states.get(panel_id)
+            if state is not None:
+                state.is_available = is_available
+    except Exception as e:
+        logger.warning(f"Ошибка обновления статусов панелей: {e}")
+
+
+@dp.callback_query(lambda c: c.data == "refresh_main_menu")
+async def refresh_main_menu(callback_query: types.CallbackQuery, state: FSMContext):
+    """Обновить главное меню на месте — редактирует текущее сообщение."""
+    await _refresh_panel_states_now()
+    await _show_main_menu(callback_query, state, edit=True)
+
+
+async def _show_main_menu(callback_query: types.CallbackQuery, state: FSMContext, edit: bool):
+    """Внутренняя функция показа главного меню. edit=True — редактировать, False — новое."""
     user_id = callback_query.from_user.id
     username = callback_query.from_user.username
     first_name = callback_query.from_user.first_name
-    
-    # Очищаем состояние при возврате в главное меню
+
     await state.clear()
-    
     await callback_query.answer()
-    
+
     # Обновляем конфигурацию из текущей панели
     try:
         panel_manager = config.panel_manager
         current_panel_id = panel_manager.get_current_panel_id()
-        
         if current_panel_id:
             panel_config = panel_manager.get_panel(current_panel_id)
             if panel_config:
-                # Обновляем transport и security из панели
                 if hasattr(panel_config, 'transport'):
                     config.vpn.transport = panel_config.transport
                 if hasattr(panel_config, 'security'):
                     config.vpn.security = panel_config.security
-                
                 logger.info(f"🔄 Конфигурация обновлена из панели {current_panel_id}")
     except Exception as e:
         logger.error(f"Ошибка обновления конфигурации: {e}")
-    
-    # Проверяем права доступа
+
     if not is_allowed(user_id):
         await callback_query.message.edit_text("⛔ Отказано в доступе.")
         return
-    
+
     if is_admin(user_id):
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [
@@ -2915,33 +2976,22 @@ async def back_to_start_menu(callback_query: types.CallbackQuery, state: FSMCont
             ],
             [
                 InlineKeyboardButton(text="🔑 Мои ключи", callback_data="cmd_myclients"),
+                InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_main_menu"),
             ],
             [
                 InlineKeyboardButton(text="⚙️ Администрирование", callback_data="server_status"),
             ]
         ])
-        current_panel = config.get_current_panel()
-        current_panel_id = config.panel_manager.get_current_panel_id()
-        panel_info = ""
-        if current_panel:
-            location = getattr(current_panel, 'location_label', '')
-            transport = (getattr(current_panel, 'transport', '') or (config.vpn.transport if hasattr(config, 'vpn') and config.vpn else 'N/A')).upper()
-            security = (getattr(current_panel, 'security', '') or (config.vpn.security if hasattr(config, 'vpn') and config.vpn else 'N/A')).upper()
-            location_part = f"📍 {location}\n" if location else ""
-            panel_info = (
-                f"📡 <b>{current_panel.alias}</b> v{current_panel.xui_version}\n"
-                f"🆔 <code>{current_panel_id}</code>\n"
-                f"{location_part}"
-                f"🔌 <code>{transport}</code> · <code>{security}</code>\n"
-            )
-        await bot.send_message(
-            callback_query.message.chat.id,
-            f"👑 Администратор\n\n"
-            f"{panel_info}",
-            parse_mode="HTML",
-            reply_markup=keyboard
-        )
+        panels_block = _build_panels_block_admin()
+        text = f"👑 Администратор\n\n{panels_block}📱 Выберите действие:"
+        if edit:
+            await callback_query.message.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
+        else:
+            await bot.send_message(callback_query.message.chat.id, text, parse_mode="HTML", reply_markup=keyboard)
     else:
+        # Живая проверка доступности панелей перед показом меню
+        await _refresh_panel_states_now()
+
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [
                 InlineKeyboardButton(text="➕ Создать ключ", callback_data="cmd_new"),
@@ -2952,14 +3002,14 @@ async def back_to_start_menu(callback_query: types.CallbackQuery, state: FSMCont
             ]
         ])
         panels_block = _build_panels_block()
-        await bot.send_message(
-            callback_query.message.chat.id,
+        text = (
             f"👤 <b>Пользователь:</b> {username or first_name}\n\n"
             f"{panels_block}"
-            f"📱 Выберите действие:",
-            parse_mode="HTML",
-            reply_markup=keyboard
         )
+        if edit:
+            await callback_query.message.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
+        else:
+            await bot.send_message(callback_query.message.chat.id, text, parse_mode="HTML", reply_markup=keyboard)
 @dp.callback_query(lambda c: c.data == "cmd_new")
 async def callback_cmd_new(callback_query: types.CallbackQuery, state: FSMContext):
     """Обработчик кнопки 'Создать ключ'"""
@@ -2977,6 +3027,18 @@ async def callback_cmd_new(callback_query: types.CallbackQuery, state: FSMContex
     await state.set_state(NewClientState.waiting_for_panel)
     available = get_available_panels()
     online_available = [(pid, pcfg) for pid, pcfg in available if get_panel_online_status(pid)]
+    if len(online_available) == 0:
+        # Все панели недоступны
+        await bot.send_message(
+            callback_query.message.chat.id,
+            "🔴 <b>Все серверы сейчас недоступны.</b>\n\nСоздание ключей временно невозможно. Попробуйте позже.",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+            ])
+        )
+        await state.clear()
+        return
     if len(online_available) == 1:
         panel_id, panel_cfg = online_available[0]
         await state.update_data(selected_panel_id=panel_id)
@@ -3015,6 +3077,18 @@ async def callback_cmd_tempkey(callback_query: types.CallbackQuery, state: FSMCo
     await state.set_state(TempKeyState.waiting_for_panel)
     available = get_available_panels()
     online_available = [(pid, pcfg) for pid, pcfg in available if get_panel_online_status(pid)]
+    if len(online_available) == 0:
+        # Все панели недоступны
+        await bot.send_message(
+            callback_query.message.chat.id,
+            "🔴 <b>Все серверы сейчас недоступны.</b>\n\nСоздание ключей временно невозможно. Попробуйте позже.",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+            ])
+        )
+        await state.clear()
+        return
     if len(online_available) == 1:
         panel_id, panel_cfg = online_available[0]
         await state.update_data(selected_panel_id=panel_id)
@@ -3605,10 +3679,8 @@ async def select_panel_to_connect(callback_query: types.CallbackQuery, state: FS
             location = getattr(panel_config, 'location_label', '')
             is_current = panel_id == current_panel_id
             
-            location_str = f" [{location}]" if location else ""
+            location_str = f" · {location}" if location else ""
             button_text = f"{'✅' if is_current else '⏸️'} {alias}{location_str}"
-            if is_current:
-                button_text += " (Текущая)"
             
             keyboard_buttons.append([
                 InlineKeyboardButton(
@@ -3618,7 +3690,7 @@ async def select_panel_to_connect(callback_query: types.CallbackQuery, state: FS
             ])
         
         keyboard_buttons.append([
-            InlineKeyboardButton(text="◀️ Назад", callback_data="show_panels")
+            InlineKeyboardButton(text="◀️ Назад", callback_data="server_status")
         ])
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
@@ -3689,7 +3761,7 @@ async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContex
                             "Не удалось авторизоваться.",
                             parse_mode="HTML",
                             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                                [InlineKeyboardButton(text="◀️ Назад", callback_data="show_panels")]
+                                [InlineKeyboardButton(text="◀️ Назад", callback_data="server_status")]
                             ])
                         )
                         return
@@ -3758,7 +3830,7 @@ async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContex
                 stats_text,
                 parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="◀️ К списку панелей", callback_data="show_panels")],
+                    [InlineKeyboardButton(text="◀️ К списку панелей", callback_data="server_status")],
                     [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_start")]
                 ])
             )
@@ -3779,7 +3851,7 @@ async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContex
                 "Проверьте настройки подключения и доступность сервера.",
                 parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="◀️ Назад", callback_data="show_panels")]
+                    [InlineKeyboardButton(text="◀️ Назад", callback_data="server_status")]
                 ])
             )
             return
@@ -3882,7 +3954,7 @@ async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContex
                         stats_text,
                         parse_mode="HTML",
                         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                            [InlineKeyboardButton(text="◀️ К списку панелей", callback_data="show_panels")],
+                            [InlineKeyboardButton(text="◀️ К списку панелей", callback_data="server_status")],
                             [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_start")]
                         ])
                     )
@@ -3904,21 +3976,21 @@ async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContex
                         "Возвращено подключение к предыдущей панели.",
                         parse_mode="HTML",
                         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                            [InlineKeyboardButton(text="◀️ Назад", callback_data="show_panels")]
+                            [InlineKeyboardButton(text="◀️ Назад", callback_data="server_status")]
                         ])
                     )
             else:
                 await callback_query.message.edit_text(
                     f"❌ Ошибка создания конфигурации для панели {alias}",
                     reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                        [InlineKeyboardButton(text="◀️ Назад", callback_data="show_panels")]
+                        [InlineKeyboardButton(text="◀️ Назад", callback_data="server_status")]
                     ])
                 )
         else:
             await callback_query.message.edit_text(
                 f"❌ Ошибка переключения на панель {alias}",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="◀️ Назад", callback_data="show_panels")]
+                    [InlineKeyboardButton(text="◀️ Назад", callback_data="server_status")]
                 ])
             )
         
@@ -3927,7 +3999,7 @@ async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContex
         await callback_query.message.edit_text(
             f"❌ Ошибка: {str(e)}",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="◀️ Назад", callback_data="show_panels")]
+                [InlineKeyboardButton(text="◀️ Назад", callback_data="server_status")]
             ])
         )
 

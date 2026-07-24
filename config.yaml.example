@@ -27,7 +27,7 @@ common:
   panel_failure_threshold: 3
   panel_check_timeout: 5
 
-default_panel: "panel0"
+default_panel: panel0
 
 panels:
   panel0:

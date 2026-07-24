@@ -11,7 +11,7 @@ NC='\033[0m'
 # Константы
 WORK_DIR="/opt/awgxuibot"
 DEFAULT_REALITY_SNI="www.nvidia.com"
-DEFAULT_REALITY_FINGERPRINT="edge"  # Варианты: edge, chrome, firefox, safari
+DEFAULT_REALITY_FINGERPRINT="firefox"  # Варианты: edge, chrome, firefox, safari
 
 
 echo -e "${BLUE}========================================${NC}"
@@ -433,7 +433,7 @@ add_local_panel_to_config() {
     yq eval -i ".panels.${panel_id}.tls_sni = \"\"" config.yaml
     yq eval -i ".panels.${panel_id}.tls_fingerprint = \"chrome\"" config.yaml
     yq eval -i ".panels.${panel_id}.reality_sni = \"www.nvidia.com\"" config.yaml
-    yq eval -i ".panels.${panel_id}.reality_fingerprint = \"edge\"" config.yaml
+    yq eval -i ".panels.${panel_id}.reality_fingerprint = \"firefox\"" config.yaml
     yq eval -i ".panels.${panel_id}.reality_public_key = \"\"" config.yaml
     yq eval -i ".panels.${panel_id}.reality_private_key = \"\"" config.yaml
     yq eval -i ".panels.${panel_id}.reality_short_id = \"\"" config.yaml
@@ -3199,7 +3199,7 @@ EOF
   "port": 443,
   "protocol": "vless",
   "settings": "{\n  \"clients\": [],\n  \"decryption\": \"none\",\n  \"encryption\": \"none\"\n}",
-  "streamSettings": "{\n  \"network\": \"xhttp\",\n  \"security\": \"reality\",\n  \"externalProxy\": [],\n  \"realitySettings\": {\n    \"show\": false,\n    \"xver\": 0,\n    \"target\": \"www.nvidia.com:443\",\n    \"serverNames\": [\n      \"www.nvidia.com\"\n    ],\n    \"privateKey\": \"REALITY_PRIVATE_KEY_PLACEHOLDER\",\n    \"minClientVer\": \"\",\n    \"maxClientVer\": \"\",\n    \"maxTimediff\": 0,\n    \"shortIds\": [\n      \"REALITY_SHORT_ID_PLACEHOLDER\"\n    ],\n    \"settings\": {\n      \"publicKey\": \"REALITY_PUBLIC_KEY_PLACEHOLDER\",\n      \"fingerprint\": \"edge\",\n      \"serverName\": \"\",\n      \"spiderX\": \"/\"\n    }\n  },\n  \"xhttpSettings\": {\n    \"path\": \"/\",\n    \"host\": \"\",\n    \"headers\": {},\n    \"scMaxBufferedPosts\": 30,\n    \"scMaxEachPostBytes\": \"1000000\",\n    \"scStreamUpServerSecs\": \"20-80\",\n    \"noSSEHeader\": false,\n    \"xPaddingBytes\": \"100-1000\",\n    \"mode\": \"auto\",\n    \"xPaddingObfsMode\": false,\n    \"scMinPostsIntervalMs\": \"30\"\n  }\n}",
+  "streamSettings": "{\n  \"network\": \"xhttp\",\n  \"security\": \"reality\",\n  \"externalProxy\": [],\n  \"realitySettings\": {\n    \"show\": false,\n    \"xver\": 0,\n    \"target\": \"www.nvidia.com:443\",\n    \"serverNames\": [\n      \"www.nvidia.com\"\n    ],\n    \"privateKey\": \"REALITY_PRIVATE_KEY_PLACEHOLDER\",\n    \"minClientVer\": \"\",\n    \"maxClientVer\": \"\",\n    \"maxTimediff\": 0,\n    \"shortIds\": [\n      \"REALITY_SHORT_ID_PLACEHOLDER\"\n    ],\n    \"settings\": {\n      \"publicKey\": \"REALITY_PUBLIC_KEY_PLACEHOLDER\",\n      \"fingerprint\": \"firefox\",\n      \"serverName\": \"\",\n      \"spiderX\": \"/\"\n    }\n  },\n  \"xhttpSettings\": {\n    \"path\": \"/\",\n    \"host\": \"\",\n    \"headers\": {},\n    \"scMaxBufferedPosts\": 30,\n    \"scMaxEachPostBytes\": \"1000000\",\n    \"scStreamUpServerSecs\": \"20-80\",\n    \"noSSEHeader\": false,\n    \"xPaddingBytes\": \"100-1000\",\n    \"mode\": \"auto\",\n    \"xPaddingObfsMode\": false,\n    \"scMinPostsIntervalMs\": \"30\"\n  }\n}",
   "tag": "inbound-443",
   "sniffing": "{\n  \"enabled\": false,\n  \"destOverride\": [\n    \"http\",\n    \"tls\",\n    \"quic\",\n    \"fakedns\"\n  ],\n  \"metadataOnly\": false,\n  \"routeOnly\": false\n}",
   "remark": "VLESS-Reality-xHTTP"
@@ -3242,7 +3242,7 @@ INBOUND_EOF
     "shortIds": ["${REALITY_SHORT_ID}"],
     "settings": {
       "publicKey": "${REALITY_PUBLIC_KEY}",
-      "fingerprint": "edge",
+      "fingerprint": "firefox",
       "serverName": "",
       "spiderX": "/"
     }
