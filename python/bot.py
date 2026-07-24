@@ -3830,7 +3830,7 @@ async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContex
                 stats_text,
                 parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="◀️ К списку панелей", callback_data="server_status")],
+                    [InlineKeyboardButton(text="◀️ Назад", callback_data="server_status")],
                     [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_start")]
                 ])
             )
@@ -3954,7 +3954,7 @@ async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContex
                         stats_text,
                         parse_mode="HTML",
                         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                            [InlineKeyboardButton(text="◀️ К списку панелей", callback_data="server_status")],
+                            [InlineKeyboardButton(text="◀️ Назад", callback_data="server_status")],
                             [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_start")]
                         ])
                     )
