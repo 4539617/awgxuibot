@@ -13,7 +13,7 @@ common:
   min_days: 1
   default_traffic_gb: 100
   default_days: 30
-  db_path: "/app/data/bot_users.db"
+  db_path: "/app/data/awgxuibot.db"
   db_backup_enabled: true
   db_backup_interval: 24
   log_level: "INFO"

@@ -75,7 +75,7 @@ common:
   min_days: ${env_vars[MIN_DAYS]:-1}
   default_traffic_gb: ${env_vars[DEFAULT_TRAFFIC_GB]:-100}
   default_days: ${env_vars[DEFAULT_DAYS]:-30}
-  db_path: "${env_vars[DB_PATH]:-/app/data/bot_users.db}"
+  db_path: "${env_vars[DB_PATH]:-/app/data/awgxuibot.db}"
   db_backup_enabled: ${env_vars[DB_BACKUP_ENABLED]:-true}
   db_backup_interval: ${env_vars[DB_BACKUP_INTERVAL]:-24}
   log_level: "${env_vars[LOG_LEVEL]:-INFO}"

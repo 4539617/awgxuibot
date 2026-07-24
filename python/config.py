@@ -32,7 +32,7 @@ class CommonConfig:
     min_days: int = 1
     default_traffic_gb: int = 100
     default_days: int = 30
-    db_path: str = "/app/data/bot_users.db"
+    db_path: str = "/app/data/awgxuibot.db"
     db_backup_enabled: bool = True
     db_backup_interval: int = 24
     log_level: str = "INFO"
@@ -188,7 +188,7 @@ class ConfigManager:
                 min_days=safe_int(common_data.get('min_days', 1), 1),
                 default_traffic_gb=safe_int(common_data.get('default_traffic_gb', 100), 100),
                 default_days=safe_int(common_data.get('default_days', 30), 30),
-                db_path=common_data.get('db_path', '/app/data/bot_users.db'),
+                db_path=common_data.get('db_path', '/app/data/awgxuibot.db'),
                 db_backup_enabled=safe_bool(common_data.get('db_backup_enabled', True), True),
                 db_backup_interval=safe_int(common_data.get('db_backup_interval', 24), 24),
                 log_level=common_data.get('log_level', 'INFO'),
@@ -648,7 +648,7 @@ class ConfigManager:
 class UserDatabase:
     """База данных пользователей с поддержкой мультипанелей"""
     
-    def __init__(self, db_path: str = "/app/data/bot_users.db", admin_ids: List[int] = None):
+    def __init__(self, db_path: str = "/app/data/awgxuibot.db", admin_ids: List[int] = None):
         self.db_path = db_path
         self.admin_ids = admin_ids or []
         self._init_db()
@@ -766,6 +766,18 @@ class UserDatabase:
                     first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
+            """)
+
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS panel_outages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    panel_id TEXT NOT NULL,
+                    started_at TIMESTAMP NOT NULL
+                )
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_panel_outages_panel_id
+                ON panel_outages(panel_id)
             """)
             
             # Добавляем главного админа

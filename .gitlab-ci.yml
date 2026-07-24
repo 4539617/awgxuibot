@@ -67,7 +67,7 @@ deploy_production:
       DEFAULT_DAYS=${DEFAULT_DAYS:-30}
       
       # Database
-      DB_PATH=/app/data/bot_users.db
+      DB_PATH=/app/data/awgxuibot.db
       DB_BACKUP_ENABLED=true
       DB_BACKUP_INTERVAL=24
       
