@@ -417,7 +417,7 @@ add_local_panel_to_config() {
     echo -e "${GREEN}✅ Создание новой локальной панели: ${panel_id}${NC}"
     
     # Добавляем новую панель в config.yaml
-    yq eval -i ".panels.${panel_id}.alias = \"Локальная\"" config.yaml
+    yq eval -i ".panels.${panel_id}.alias = \"LocalPanel\"" config.yaml
     yq eval -i ".panels.${panel_id}.enabled = true" config.yaml
     yq eval -i ".panels.${panel_id}.xui_version = \"${xui_version}\"" config.yaml
     yq eval -i ".panels.${panel_id}.xui_url = \"${xui_url}\"" config.yaml
@@ -1368,6 +1368,28 @@ install_xuibot() {
             read -p "Метка локации: " location_label
             yq eval -i ".panels.${panel_id_loc}.location_label = \"${location_label}\"" config.yaml
             echo -e "${GREEN}✅ Метка локации сохранена: ${location_label}${NC}"
+        fi
+    fi
+    
+    # Проверка и запрос alias панели
+    echo -e "\n${YELLOW}🔍 Проверка псевдонима панели...${NC}"
+    if check_yq; then
+        local panel_id_alias=$(get_local_panel_id)
+        PANEL_ALIAS=$(yq eval ".panels.${panel_id_alias}.alias" config.yaml 2>/dev/null)
+        
+        if [ -z "$PANEL_ALIAS" ] || [ "$PANEL_ALIAS" = "null" ] || [ "$PANEL_ALIAS" = '""' ] || [ "$PANEL_ALIAS" = "LocalPanel" ]; then
+            echo -e "${YELLOW}⚠️  Псевдоним панели не задан (текущее: ${PANEL_ALIAS:-пусто})${NC}"
+            echo -e "${BLUE}📝 Введите псевдоним панели для отображения в боте (Enter — оставить пустым):${NC}"
+            echo -e "${BLUE}Примеры: Основная, Frankfurt, VPS-1${NC}"
+            read -p "Псевдоним панели: " panel_alias
+            yq eval -i ".panels.${panel_id_alias}.alias = \"${panel_alias}\"" config.yaml
+            if [ -n "$panel_alias" ]; then
+                echo -e "${GREEN}✅ Псевдоним панели сохранён: ${panel_alias}${NC}"
+            else
+                echo -e "${GREEN}✅ Псевдоним панели оставлен пустым${NC}"
+            fi
+        else
+            echo -e "${GREEN}✅ Найден псевдоним панели: ${PANEL_ALIAS}${NC}"
         fi
     fi
     
@@ -2837,12 +2859,8 @@ check_and_offer_existing_certs() {
     get_cert_info "$CERT_BACKUP_DIR/fullchain.pem"
     echo -e "${BLUE}════════════════════════════════════════${NC}\n"
     
-    if [ -z "$NONINTERACTIVE" ]; then
-        read -p "Использовать существующие сертификаты? (Enter - Да, 0 - Запросить новый): " use_existing
-    else
-        use_existing=""
-        echo -e "${BLUE}ℹ️  Автоматический режим: используем существующие сертификаты${NC}"
-    fi
+    use_existing="0"
+    echo -e "${YELLOW}⚠ Автоматически: будет запрошен новый SSL сертификат${NC}"
     
     if [[ "$use_existing" == "0" ]]; then
         echo -e "${YELLOW}⚠ Будет запрошен новый SSL сертификат${NC}"
