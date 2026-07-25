@@ -172,7 +172,7 @@ export class CascadeClient {
 
     const options = {
       method,
-      headers: { 'X-Api-Token': this.token },
+      headers: { 'Authorization': `Bearer ${this.token}` },
       timeout: opts.timeout || 15_000,
     };
     if (body !== null) {
@@ -326,7 +326,7 @@ export class CascadeClient {
     await this.ensureToken();
     const res = await fetch(
       `${this.url}/api/tunnel-interfaces/${ifaceId}/peers/${peerId}/config`,
-      { headers: { 'X-Api-Token': this.token } }
+      { headers: { 'Authorization': `Bearer ${this.token}` } }
     );
     if (!res.ok) throw new Error(`getPeerConfig: HTTP ${res.status}`);
     return res.text();
@@ -340,7 +340,7 @@ export class CascadeClient {
     await this.ensureToken();
     const res = await fetch(
       `${this.url}/api/tunnel-interfaces/${ifaceId}/peers/${peerId}/qrcode.svg`,
-      { headers: { 'X-Api-Token': this.token } }
+      { headers: { 'Authorization': `Bearer ${this.token}` } }
     );
     if (!res.ok) throw new Error(`getPeerQRCode: HTTP ${res.status}`);
     return res.text();

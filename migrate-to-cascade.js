@@ -311,7 +311,7 @@ async function cascadeImportServer(baseUrl, token, name, confContent, opts = {})
     method:  'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-Api-Token':  token,
+      'Authorization': `Bearer ${token}`,
     },
     body: JSON.stringify(body),
   });
