@@ -921,7 +921,7 @@ create_static_params() {
     update_config_value "DEFAULT_DAYS" "30"
     
     # База данных
-    update_config_value "DB_PATH" "/app/data/bot_users.db"
+    update_config_value "DB_PATH" "/app/data/awgxuibot.db"
     update_config_value "DB_BACKUP_ENABLED" "true"
     update_config_value "DB_BACKUP_INTERVAL" "24"
     
@@ -2431,7 +2431,7 @@ show_status() {
         local db_path=$(get_config_value "DB_PATH")
         
         # Значение по умолчанию для DB_PATH
-        [ -z "$db_path" ] && db_path="/app/data/bot_users.db"
+        [ -z "$db_path" ] && db_path="/app/data/awgxuibot.db"
         
         if [ "$xui_bot_username" != "Unknown" ]; then
             echo -e "  Ссылка: https://t.me/${xui_bot_username}"

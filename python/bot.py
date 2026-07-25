@@ -2273,7 +2273,7 @@ async def show_server_status(callback_query: types.CallbackQuery, state: FSMCont
                 InlineKeyboardButton(text="👥 Пользователи", callback_data="show_users")
             ],
             [
-                InlineKeyboardButton(text="🔌 Подключить", callback_data="select_panel_to_connect")
+                InlineKeyboardButton(text="🖥️ Серверы", callback_data="select_panel_to_connect")
             ],
             [
                 InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")
@@ -3597,7 +3597,7 @@ async def show_panels_list(callback_query: types.CallbackQuery, state: FSMContex
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [
                 InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_panels"),
-                InlineKeyboardButton(text="🔌 Подключить", callback_data="select_panel_to_connect")
+                InlineKeyboardButton(text="🖥️ Серверы", callback_data="select_panel_to_connect")
             ],
             [
                 InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_server_status")
@@ -3695,9 +3695,29 @@ async def select_panel_to_connect(callback_query: types.CallbackQuery, state: FS
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
         
+        # Собираем статистику обрывов по панелям из монитора
+        stats_lines = []
+        if _panel_monitor:
+            for pid, panel_config in panels.items():
+                alias = getattr(panel_config, 'alias', pid)
+                state = _panel_monitor.panel_states.get(pid)
+                if state is None:
+                    continue
+                count = len(state.outage_events)
+                if count == 0:
+                    stats_lines.append(f"  {alias}: сбоев нет")
+                else:
+                    first_dt = state.outage_events[0].strftime('%d.%m %H:%M')
+                    last_dt = state.outage_events[-1].strftime('%d.%m %H:%M')
+                    stats_lines.append(f"  {alias}: <b>{count}</b> сбоев  ({first_dt} — {last_dt})")
+
+        if stats_lines:
+            stats_block = "📊 <b>Статистика сбоев:</b>\n" + "\n".join(stats_lines)
+        else:
+            stats_block = "📊 Статистика сбоев пока недоступна"
+
         await callback_query.message.edit_text(
-            "🔌 <b>Выберите сервер для подключения:</b>\n\n"
-            "⚠️ При переключении текущая панель будет сохранена.",
+            f"🖥️ <b>Серверы</b>\n\n{stats_block}",
             parse_mode="HTML",
             reply_markup=keyboard
         )
