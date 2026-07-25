@@ -52,3 +52,33 @@ panels:
     reality_public_key: ""
     reality_private_key: ""
     reality_short_id: ""
+
+# ── Cascade Web UI ────────────────────────────────────────────────────────────
+# Если заполнена хотя бы одна запись — бот использует Cascade API вместо
+# прямых docker exec вызовов. Каждая запись — отдельный Cascade-сервер.
+#
+# Режим аутентификации (выбери один):
+#   a) token    — вставь готовый API-токен из Cascade UI (Settings → Tokens)
+#   b) username + password — бот получит токен автоматически при старте
+#
+# Пример: один локальный сервер Cascade с AWG v2
+#
+# cascade:
+#   primary:
+#     url: "http://localhost:51821"
+#     token: ""           # вставь токен ИЛИ укажи username/password ниже
+#     username: "admin"
+#     password: ""
+#     # version: "v2"     # опционально: принудить к v2. Обычно определяется авто.
+#
+# Пример: два сервера (основной + резервный)
+#
+# cascade:
+#   main_server:
+#     url: "http://localhost:51821"
+#     token: "токен-с-основного-сервера"
+#   backup_server:
+#     url: "http://backup.example.com:51821"
+#     token: "токен-с-резервного-сервера"
+#
+cascade: {}

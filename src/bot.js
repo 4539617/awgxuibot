@@ -15,6 +15,7 @@ const execAsync = promisify(exec);
 import { processBatFile } from './batFileProcessor.js';
 import { processAwgConfig } from './awgConverter.js';
 import { AWGManager } from './awgManager.js';
+import { AWGManagerCascade } from './awgManagerCascade.js';
 import { logger } from './logger.js';
 import fs from 'fs';
 import path from 'path';
@@ -26,8 +27,14 @@ export class RouteBot {
     // Anti-flood: max 5 requests per minute
     this.antiFlood = new AntiFlood(10, 60000);
     this.antiFlood.startCleanup();
-    // AWG Manager
-    this.awgManager = new AWGManager();
+    // AWG Manager: Cascade API если настроен, иначе прямой docker exec
+    if (config.cascadeEnabled) {
+      this.awgManager = new AWGManagerCascade(config.cascadeServers);
+      logger.info(`RouteBot: using Cascade API mode (${config.cascadeServers.length} server(s))`);
+    } else {
+      this.awgManager = new AWGManager();
+      logger.info('RouteBot: using direct docker exec mode');
+    }
     // VPS label sessions storage
     this.vpsLabelSessions = new Map();
     // Message ID storage for editing instead of sending new messages
@@ -1726,25 +1733,31 @@ export class RouteBot {
       let interfaceMessage = '';
       
       if (containerStatus.running) {
-        try {
-          await execAsync(`docker exec ${container.name} wg show ${configFile} 2>&1`);
+        if (config.cascadeEnabled) {
+          // В Cascade-режиме интерфейс уже проверен через checkContainer → getInterface
           interfaceStatus = 'ready';
           interfaceMessage = '\n✅ *Статус интерфейса:* Работает\n';
-        } catch (error) {
-          const errorMsg = error.message || error.toString();
-          
-          if (errorMsg.includes('does not exist') || errorMsg.includes('No such device')) {
-            interfaceStatus = 'starting';
-            interfaceMessage = '\n⏳ *Статус интерфейса:* Запускается\n';
-            serverStatusEmoji = '⏳';
-          } else if (errorMsg.includes('Unable to access interface')) {
-            interfaceStatus = 'error';
-            interfaceMessage = '\n⚠️ *Статус интерфейса:* Ошибка\n';
-            serverStatusEmoji = '⚠️';
-          } else {
-            interfaceStatus = 'unknown';
-            interfaceMessage = '\n❓ *Статус интерфейса:* Неизвестно\n';
-            serverStatusEmoji = '❓';
+        } else {
+          try {
+            await execAsync(`docker exec ${container.name} wg show ${configFile} 2>&1`);
+            interfaceStatus = 'ready';
+            interfaceMessage = '\n✅ *Статус интерфейса:* Работает\n';
+          } catch (error) {
+            const errorMsg = error.message || error.toString();
+            
+            if (errorMsg.includes('does not exist') || errorMsg.includes('No such device')) {
+              interfaceStatus = 'starting';
+              interfaceMessage = '\n⏳ *Статус интерфейса:* Запускается\n';
+              serverStatusEmoji = '⏳';
+            } else if (errorMsg.includes('Unable to access interface')) {
+              interfaceStatus = 'error';
+              interfaceMessage = '\n⚠️ *Статус интерфейса:* Ошибка\n';
+              serverStatusEmoji = '⚠️';
+            } else {
+              interfaceStatus = 'unknown';
+              interfaceMessage = '\n❓ *Статус интерфейса:* Неизвестно\n';
+              serverStatusEmoji = '❓';
+            }
           }
         }
       }
@@ -1902,6 +1915,31 @@ export class RouteBot {
   }
 
   async getClientsStats(containerName, version) {
+    // Cascade-режим: получаем handshake из listPeers (latestHandshakeAt)
+    if (config.cascadeEnabled) {
+      try {
+        const clients = await this.awgManager.getClientsWithStatus(containerName, version);
+        const stats = {};
+        for (const c of clients) {
+          if (c.ip) {
+            const handshake = c.lastHandshake
+              ? this.formatHandshakeTime(new Date(c.lastHandshake).toLocaleString('ru-RU'))
+              : null;
+            stats[c.ip] = {
+              ip: c.ip,
+              lastHandshake: handshake,
+              transfer: null,
+            };
+          }
+        }
+        return stats;
+      } catch (error) {
+        logger.error(`Error getting clients stats (cascade):`, error);
+        return {};
+      }
+    }
+
+    // docker exec режим
     try {
       const interfaceName = version === 'v2' ? 'awg0' : 'wg0';
       
@@ -2092,52 +2130,57 @@ export class RouteBot {
       }
       
       // Delete peer from server config
-      const configPath = container.configPath;
       const configFile = version === 'v2' ? 'awg0.conf' : 'wg0.conf';
       
       // Remove peer section for this IP
       await this.bot.deleteMessage(chatId, processingMsg.message_id);
       
       try {
-        // Read current config
-        const { stdout: currentConfig } = await execAsync(
-          `docker exec ${container.name} cat ${configPath}`
-        );
-        
-        // Remove peer section for this IP
-        // Используем regex который захватывает комментарий перед [Peer] и всю секцию до следующего [Peer] или конца файла
-        const escapedIP = ip.replace(/\./g, '\\.');
-        const peerSectionRegex = new RegExp(
-          `(#[^\\n]*\\n)?\\[Peer\\]\\n([^\\[]*)AllowedIPs\\s*=\\s*${escapedIP}\\/32[^\\[]*`,
-          'g'
-        );
-        
-        // Удаляем найденную секцию пира
-        const newConfig = currentConfig.replace(peerSectionRegex, '');
-        
-        // Write new config
-        const tempFile = `/tmp/awg_config_${Date.now()}.conf`;
-        await execAsync(`echo '${newConfig.replace(/'/g, "'\\''")}' > ${tempFile}`);
-        await execAsync(`docker cp ${tempFile} ${container.name}:${configPath}`);
-        await execAsync(`rm ${tempFile}`);
-        
-        // Restart WireGuard interface
-        const configName = configFile.replace('.conf', '');
-        const fullConfigPath = `/etc/amnezia/amneziawg/${configFile}`;
-        
-        logger.info(`Restarting WireGuard interface ${configName}...`);
-        await execAsync(`docker exec ${container.name} wg-quick down ${fullConfigPath} || true`);
-        await execAsync(`docker exec ${container.name} wg-quick up ${fullConfigPath}`);
-        
-        logger.info(`Successfully deleted client ${ip} from ${container.name}`);
-        
-        // Используем новую функцию полной проверки здоровья сервера
-        logger.info(`Starting comprehensive health check...`);
-        const healthStatus = await this.awgManager.checkServerHealthAfterChange(
-          container.name,
-          15,  // maxAttempts
-          1000 // delayMs
-        );
+        let healthStatus;
+
+        if (config.cascadeEnabled) {
+          // Cascade-режим: удаляем через REST API
+          await this.awgManager.deletePeer(container.name, ip);
+          logger.info(`Successfully deleted client ${ip} via Cascade API`);
+          healthStatus = await this.awgManager.checkServerHealthAfterChange(container.name);
+        } else {
+          // docker exec режим
+          const configPath = container.configPath;
+
+          // Read current config
+          const { stdout: currentConfig } = await execAsync(
+            `docker exec ${container.name} cat ${configPath}`
+          );
+          
+          // Remove peer section for this IP
+          const escapedIP = ip.replace(/\./g, '\\.');
+          const peerSectionRegex = new RegExp(
+            `(#[^\\n]*\\n)?\\[Peer\\]\\n([^\\[]*)AllowedIPs\\s*=\\s*${escapedIP}\\/32[^\\[]*`,
+            'g'
+          );
+          const newConfig = currentConfig.replace(peerSectionRegex, '');
+          
+          // Write new config
+          const tempFile = `/tmp/awg_config_${Date.now()}.conf`;
+          await execAsync(`echo '${newConfig.replace(/'/g, "'\\''")}' > ${tempFile}`);
+          await execAsync(`docker cp ${tempFile} ${container.name}:${configPath}`);
+          await execAsync(`rm ${tempFile}`);
+          
+          // Restart WireGuard interface
+          const fullConfigPath = `/etc/amnezia/amneziawg/${configFile}`;
+          logger.info(`Restarting WireGuard interface...`);
+          await execAsync(`docker exec ${container.name} wg-quick down ${fullConfigPath} || true`);
+          await execAsync(`docker exec ${container.name} wg-quick up ${fullConfigPath}`);
+          logger.info(`Successfully deleted client ${ip} from ${container.name}`);
+          
+          // Проверяем здоровье сервера после перезапуска
+          logger.info(`Starting comprehensive health check...`);
+          healthStatus = await this.awgManager.checkServerHealthAfterChange(
+            container.name,
+            15,  // maxAttempts
+            1000 // delayMs
+          );
+        }
         
         // Создаем кнопки для перехода к списку клиентов и главному меню
         const keyboard = {

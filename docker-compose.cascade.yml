@@ -1,0 +1,77 @@
+# docker-compose.cascade.yml
+#
+# Разворачивает Cascade (веб-UI для AmneziaWG / WireGuard) рядом с AWGBot.
+# Запуск: docker compose -f docker-compose.cascade.yml up -d
+#
+# ── Первый запуск ────────────────────────────────────────────────────────────
+# 1. Запустить: docker compose -f docker-compose.cascade.yml up -d
+# 2. Открыть Cascade UI: http://<server-ip>:51821
+# 3. В UI создать пароль + API-токен (Settings → Tokens)
+# 4. Вставить токен в config.yaml → cascade.primary.token
+# 5. Перезапустить бот: docker compose -f docker-compose.awgbot.yml restart
+#
+# ── Миграция существующих AWG серверов ─────────────────────────────────────
+# node migrate-to-cascade.js          (читает cascade.url/token из config.yaml)
+# docker stop amnezia-awg amnezia-awg2 (после успешной миграции)
+#
+# ── Multi-VPS ────────────────────────────────────────────────────────────────
+# На каждом VPS установить Cascade, затем в primary:
+# Settings → Remote Servers → Add → вставить URL и токен удалённого сервера
+# Бот работает только с primary, который проксирует запросы на remotes.
+
+services:
+  cascade:
+    # Pre-built image. Для локальной сборки: cd 294/cascade-0.9.2 && ./build.sh
+    image: ghcr.io/johnnyvbut/cascade:latest
+    container_name: cascade
+    restart: unless-stopped
+
+    # WireGuard/AWG требует доступа к ядру — используем network_mode: host.
+    # Порт 51821 (TCP) доступен напрямую через хостовую сеть.
+    network_mode: host
+
+    cap_add:
+      - NET_ADMIN
+      # SYS_MODULE нужен для kernel module режима (awg-quick + kernel driver).
+      # Можно убрать если используется userspace режим (AWG_USERSPACE_IMPL=amneziawg-go).
+      - SYS_MODULE
+
+    devices:
+      - /dev/net/tun:/dev/net/tun
+
+    volumes:
+      # Постоянное хранилище: SQLite DB, wg/awg конфиги, ключи
+      - ./cascade-data:/etc/wireguard/data
+      # Реальное имя хоста для отображения в UI
+      - /etc/hostname:/host_hostname:ro
+
+    environment:
+      # ── Порт Web UI (TCP) ──────────────────────────────────────────────────
+      # По умолчанию 51821. Cascade слушает на этом порту.
+      - PORT=51821
+
+      # ── Bcrypt-хэш пароля администратора ───────────────────────────────────
+      # Сгенерировать: htpasswd -bnBC 10 "" "yourpassword" | tr -d ':\n'
+      # Либо через скрипт: bash 294/cascade-0.9.2/generate-password.sh
+      # Если оставить пустым — Cascade запустится без пароля (open mode).
+      # Первый вход без пароля → создайте пользователя в UI.
+      - PASSWORD_HASH=
+
+      # ── Публичный IP/хост сервера ───────────────────────────────────────────
+      # Используется в Endpoint строках клиентских конфигов.
+      # Если оставить пустым — Cascade определит автоматически через ifconfig.me.
+      - WG_HOST=
+
+      # ── UDP-порт WireGuard/AWG по умолчанию ────────────────────────────────
+      # Используется при создании новых интерфейсов через UI.
+      # Конкретный порт задаётся при создании интерфейса — здесь только дефолт.
+      - WG_PORT=51820
+
+      # ── Debug логи ─────────────────────────────────────────────────────────
+      - DEBUG=false
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

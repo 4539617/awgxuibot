@@ -2050,6 +2050,174 @@ remove_awgbot() {
     echo -e "${GREEN}✅ AWG Бот удален!${NC}"
 }
 
+# ============================================
+# CASCADE WEB UI Functions
+# ============================================
+
+install_cascade() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Установка Cascade Web UI${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+
+    if [ ! -f "docker-compose.cascade.yml" ]; then
+        echo -e "${RED}❌ Файл docker-compose.cascade.yml не найден!${NC}"
+        echo -e "${YELLOW}Убедитесь что файл присутствует в директории: $(pwd)${NC}"
+        return 1
+    fi
+
+    # Проверяем, установлен ли уже Cascade
+    if docker ps -a --format '{{.Names}}' | grep -q "^cascade$"; then
+        echo -e "${YELLOW}⚠️  Cascade уже установлен.${NC}"
+        read -p "Переустановить? (y/n): " reinstall
+        if [ "$reinstall" != "y" ]; then
+            return 0
+        fi
+        echo -e "${YELLOW}🗑️  Остановка старого контейнера...${NC}"
+        docker compose -f docker-compose.cascade.yml down 2>/dev/null || true
+    fi
+
+    echo -e "${YELLOW}🚀 Запуск Cascade Web UI...${NC}"
+    if docker compose -f docker-compose.cascade.yml up -d; then
+        sleep 3
+        local status=$(docker ps --filter name="^cascade$" --format "{{.Status}}" 2>/dev/null)
+        if [[ "$status" == *"Up"* ]]; then
+            local server_ip=$(curl -4 -s ifconfig.me 2>/dev/null || echo "YOUR_SERVER_IP")
+            echo -e "\n${GREEN}✅ Cascade Web UI успешно установлен!${NC}"
+            echo -e "${BLUE}========================================${NC}"
+            echo -e "${GREEN}🌐 Веб-интерфейс: ${YELLOW}http://${server_ip}:3000${NC}"
+            echo -e "${BLUE}========================================${NC}"
+            echo -e "${YELLOW}💡 Для миграции существующих AWG серверов используйте пункт меню 26${NC}"
+        else
+            echo -e "${RED}❌ Cascade не запустился. Проверьте логи:${NC}"
+            docker logs cascade 2>&1 | tail -20
+            return 1
+        fi
+    else
+        echo -e "${RED}❌ Ошибка запуска Cascade${NC}"
+        return 1
+    fi
+}
+
+show_cascade_logs() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Логи Cascade Web UI${NC}"
+    echo -e "${BLUE}========================================${NC}"
+
+    if ! docker ps -a --format '{{.Names}}' | grep -q "^cascade$"; then
+        echo -e "${RED}❌ Контейнер cascade не найден${NC}"
+        return 1
+    fi
+
+    echo -e "${YELLOW}Последние 100 строк логов (Ctrl+C для выхода):${NC}\n"
+    docker logs --tail=100 -f cascade 2>&1
+}
+
+update_cascade() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Пересборка Cascade Web UI${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+
+    if [ ! -f "docker-compose.cascade.yml" ]; then
+        echo -e "${RED}❌ Файл docker-compose.cascade.yml не найден!${NC}"
+        return 1
+    fi
+
+    echo -e "${YELLOW}🔄 Пересборка и перезапуск Cascade...${NC}"
+    docker compose -f docker-compose.cascade.yml down 2>/dev/null || true
+    docker compose -f docker-compose.cascade.yml up -d --build
+
+    sleep 3
+    local status=$(docker ps --filter name="^cascade$" --format "{{.Status}}" 2>/dev/null)
+    if [[ "$status" == *"Up"* ]]; then
+        echo -e "${GREEN}✅ Cascade успешно обновлён и запущен${NC}"
+    else
+        echo -e "${RED}❌ Cascade не запустился после пересборки${NC}"
+        docker logs cascade 2>&1 | tail -20
+        return 1
+    fi
+}
+
+remove_cascade() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Удаление Cascade Web UI${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+
+    read -p "⚠️  Вы уверены что хотите удалить Cascade? (нажмите Enter для подтверждения или 0 для отмены): " confirm
+    if [[ "$confirm" == "0" ]]; then
+        echo -e "${YELLOW}Отменено${NC}"
+        return
+    fi
+
+    echo -e "${YELLOW}🗑️  Удаление Cascade...${NC}"
+    if [ -f "docker-compose.cascade.yml" ]; then
+        docker compose -f docker-compose.cascade.yml down -v 2>/dev/null || true
+    else
+        docker stop cascade 2>/dev/null || true
+        docker rm cascade 2>/dev/null || true
+    fi
+
+    docker rmi cascade 2>/dev/null || true
+    echo -e "${GREEN}✅ Cascade удалён!${NC}"
+    echo -e "${YELLOW}💡 Данные Cascade сохранены в ./cascade-data (удалите вручную при необходимости)${NC}"
+}
+
+migrate_to_cascade_menu() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Миграция AWG в Cascade${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+
+    # Проверяем что Cascade запущен
+    if ! docker ps --format '{{.Names}}' | grep -q "^cascade$"; then
+        echo -e "${RED}❌ Cascade не запущен! Сначала установите Cascade (пункт 22)${NC}"
+        return 1
+    fi
+
+    # Проверяем наличие скрипта миграции
+    if [ ! -f "migrate-to-cascade.js" ]; then
+        echo -e "${RED}❌ Файл migrate-to-cascade.js не найден!${NC}"
+        return 1
+    fi
+
+    # Проверяем Node.js
+    if ! command -v node &>/dev/null; then
+        echo -e "${RED}❌ Node.js не установлен. Установите для работы миграции.${NC}"
+        return 1
+    fi
+
+    echo -e "${YELLOW}Этот инструмент мигрирует существующие AWG контейнеры в Cascade.${NC}"
+    echo -e "${YELLOW}Существующие клиенты продолжат работать без переконфигурации.${NC}\n"
+
+    echo -e "${GREEN}1)${NC} Мигрировать AWG v1 и v2"
+    echo -e "${GREEN}2)${NC} Мигрировать только AWG v1"
+    echo -e "${GREEN}3)${NC} Мигрировать только AWG v2"
+    echo -e "${GREEN}4)${NC} Пробный запуск (dry-run, без изменений)"
+    echo -e "${GREEN}0)${NC} Вернуться"
+    read -p "Введите номер: " migrate_choice
+
+    case $migrate_choice in
+        1)
+            echo -e "${YELLOW}🔄 Миграция AWG v1 и v2...${NC}"
+            node migrate-to-cascade.js
+            ;;
+        2)
+            echo -e "${YELLOW}🔄 Миграция AWG v1...${NC}"
+            node migrate-to-cascade.js --v1-only
+            ;;
+        3)
+            echo -e "${YELLOW}🔄 Миграция AWG v2...${NC}"
+            node migrate-to-cascade.js --v2-only
+            ;;
+        4)
+            echo -e "${YELLOW}🔍 Пробный запуск миграции...${NC}"
+            node migrate-to-cascade.js --dry-run
+            ;;
+        0) return 0 ;;
+        *) echo -e "${RED}❌ Неверный выбор${NC}" ;;
+    esac
+}
+
+
+
 
 # Объединенная функция удаления AWG
 remove_awg() {
@@ -2480,10 +2648,35 @@ show_status() {
     
     
     # ============================================
+    # CASCADE WEB UI
+    # ============================================
+    echo -e "\n${YELLOW}${BOLD}CASCADE WEB UI:${NC}"
+
+    if docker ps --format '{{.Names}}' | grep -q "^cascade$"; then
+        local cascade_port=$(docker inspect cascade --format='{{range $p,$c := .HostConfig.PortBindings}}{{$p}}{{end}}' 2>/dev/null | grep -oP '^\d+' | head -1)
+        [ -z "$cascade_port" ] && cascade_port="3000"
+        local server_ip_c=$(curl -4 -s --max-time 3 ifconfig.me 2>/dev/null || echo "")
+        echo -e "  Cascade: ${GREEN}✅ Запущен${NC}"
+        if [ -n "$server_ip_c" ]; then
+            echo -e "  Веб-интерфейс: ${GREEN}http://${server_ip_c}:${cascade_port}${NC}"
+        else
+            echo -e "  Порт: ${cascade_port}"
+        fi
+        local cascade_version=$(docker inspect cascade --format='{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | grep '^CASCADE_VERSION=' | cut -d= -f2)
+        [ -n "$cascade_version" ] && echo -e "  Версия: ${cascade_version}"
+    elif docker ps -a --format '{{.Names}}' | grep -q "^cascade$"; then
+        echo -e "  Cascade: ${YELLOW}⚠️  Остановлен${NC}"
+        echo -e "  ${YELLOW}Запустите: docker start cascade${NC}"
+    else
+        echo -e "  Cascade: ${RED}❌ Не установлен${NC}"
+        echo -e "  ${BLUE}Установите через пункт меню 22${NC}"
+    fi
+
+    # ============================================
     # SYSTEM AUTOSTART
     # ============================================
     echo -e "\n${YELLOW}${BOLD}SYSTEM AUTOSTART:${NC}"
-    
+
     # Проверка Docker в автозагрузке
     if systemctl is-enabled docker &>/dev/null; then
         echo -e "  Docker: ${GREEN}✅ Включен в автозагрузку${NC}"
@@ -2491,7 +2684,7 @@ show_status() {
         echo -e "  Docker: ${RED}❌ Не включен в автозагрузку${NC}"
         echo -e "  ${YELLOW}Для включения выполните: systemctl enable docker${NC}"
     fi
-    
+
     echo -e "\n${BLUE}========================================${NC}"
 }
 
@@ -2508,21 +2701,23 @@ remove_all() {
     echo -e "  - 3x-ui панель"
     echo -e "  - AWG v1 сервер"
     echo -e "  - AWG v2 сервер"
+    echo -e "  - Cascade Web UI"
     echo -e "  - Все конфигурации и данные"
     echo -e ""
     read -p "Вы уверены? (нажмите Enter для подтверждения или 0 для отмены): " confirm
-    
+
     if [[ "$confirm" == "0" ]]; then
         echo -e "${YELLOW}Отменено${NC}"
         return
     fi
-    
+
     echo -e "${YELLOW}🗑️  Удаление всех компонентов...${NC}"
-    
-    # Остановка всех контейнеров
+
+    # Остановка всех контейнеров (включая Cascade)
     echo -e "${YELLOW}🛑 Остановка контейнеров...${NC}"
-    docker stop awgbot xuibot amnezia-awg amnezia-awg2 2>/dev/null || true
-    docker rm awgbot xuibot amnezia-awg amnezia-awg2 2>/dev/null || true
+    docker stop awgbot xuibot amnezia-awg amnezia-awg2 cascade 2>/dev/null || true
+    docker rm awgbot xuibot amnezia-awg amnezia-awg2 cascade 2>/dev/null || true
+    docker rmi cascade 2>/dev/null || true
     
     # Удаление образов
     echo -e "${YELLOW}🗑️  Удаление образов...${NC}"
@@ -4801,37 +4996,109 @@ remove_3xui() {
 # ============================================
 
 # Генерация ключей AWG через Docker
+# $1 — "v1" (используем wg) или "v2" (используем awg из образа amnezia-awg2)
 generate_awg_keys() {
-    echo -e "${YELLOW}🔑 Генерация ключей...${NC}"
-    
+    local version="${1:-v1}"
+    echo -e "${YELLOW}🔑 Генерация ключей (${version})...${NC}"
+
+    local wg_bin="wg"
+    local docker_image="alpine:latest"
+    local install_cmd="apk add -q wireguard-tools >/dev/null 2>&1 &&"
+
+    # Для v2 используем бинарник awg из образа amnezia-awg2
+    if [ "$version" = "v2" ]; then
+        wg_bin="awg"
+        # Если образ amnezia-awg2 доступен — используем его awg бинарник напрямую
+        if docker images --format "{{.Repository}}:{{.Tag}}" | grep -q "^amnezia-awg2:latest$"; then
+            docker_image="amnezia-awg2:latest"
+            install_cmd=""
+        elif docker ps -a --format '{{.Names}}' | grep -q "^amnezia-awg2$"; then
+            # Контейнер существует — генерируем внутри него
+            local private_key=$(docker exec amnezia-awg2 awg genkey 2>/dev/null)
+            if [ -z "$private_key" ]; then
+                echo -e "${RED}❌ Ошибка генерации приватного ключа через amnezia-awg2${NC}"
+                return 1
+            fi
+            local public_key=$(echo "$private_key" | docker exec -i amnezia-awg2 awg pubkey 2>/dev/null)
+            if [ -z "$public_key" ]; then
+                echo -e "${RED}❌ Ошибка генерации публичного ключа через amnezia-awg2${NC}"
+                return 1
+            fi
+            local preshared_key=$(docker exec amnezia-awg2 awg genpsk 2>/dev/null)
+            if [ -z "$preshared_key" ]; then
+                echo -e "${RED}❌ Ошибка генерации preshared ключа через amnezia-awg2${NC}"
+                return 1
+            fi
+            export AWG_PRIVATE_KEY="$private_key"
+            export AWG_PUBLIC_KEY="$public_key"
+            export AWG_PRESHARED_KEY="$preshared_key"
+            echo -e "${GREEN}✅ Ключи успешно сгенерированы (awg, через контейнер)${NC}"
+            return 0
+        else
+            # Fallback: используем wg для генерации ключей (ключи совместимы с awg)
+            echo -e "${YELLOW}⚠️  Образ amnezia-awg2 не найден, используем wg для генерации ключей${NC}"
+            wg_bin="wg"
+            docker_image="alpine:latest"
+            install_cmd="apk add -q wireguard-tools >/dev/null 2>&1 &&"
+        fi
+    fi
+
     # Генерируем приватный ключ
-    local private_key=$(docker run --rm alpine:latest sh -c "apk add -q wireguard-tools >/dev/null 2>&1 && wg genkey" 2>/dev/null)
+    local private_key=$(docker run --rm "$docker_image" sh -c "${install_cmd} ${wg_bin} genkey" 2>/dev/null)
     if [ -z "$private_key" ]; then
         echo -e "${RED}❌ Ошибка генерации приватного ключа${NC}"
         return 1
     fi
-    
+
     # Генерируем публичный ключ из приватного
-    local public_key=$(echo "$private_key" | docker run --rm -i alpine:latest sh -c "apk add -q wireguard-tools >/dev/null 2>&1 && wg pubkey" 2>/dev/null)
+    local public_key=$(echo "$private_key" | docker run --rm -i "$docker_image" sh -c "${install_cmd} ${wg_bin} pubkey" 2>/dev/null)
     if [ -z "$public_key" ]; then
         echo -e "${RED}❌ Ошибка генерации публичного ключа${NC}"
         return 1
     fi
-    
+
     # Генерируем preshared key
-    local preshared_key=$(docker run --rm alpine:latest sh -c "apk add -q wireguard-tools >/dev/null 2>&1 && wg genpsk" 2>/dev/null)
+    local preshared_key=$(docker run --rm "$docker_image" sh -c "${install_cmd} ${wg_bin} genpsk" 2>/dev/null)
     if [ -z "$preshared_key" ]; then
         echo -e "${RED}❌ Ошибка генерации preshared ключа${NC}"
         return 1
     fi
-    
+
     # Экспортируем ключи
     export AWG_PRIVATE_KEY="$private_key"
     export AWG_PUBLIC_KEY="$public_key"
     export AWG_PRESHARED_KEY="$preshared_key"
-    
+
     echo -e "${GREEN}✅ Ключи успешно сгенерированы${NC}"
     return 0
+}
+
+# Генерация случайного числа в диапазоне [lo, hi] (без bc)
+rand_range() {
+    local lo=$1
+    local hi=$2
+    local range=$(( hi - lo + 1 ))
+    echo $(( lo + RANDOM % range ))
+}
+
+# Генерация 4 непересекающихся диапазонов H1-H4 для AWG v2
+# Зеркало алгоритма FIX-4 из settings.go:generateRandomHRanges()
+# Пространство uint32 (5 .. 0xFFFFFFFF) делится на 4 равные зоны,
+# в каждой выбирается случайное начало диапазона размером 50 000 000.
+generate_h_ranges() {
+    local range_size=50000000
+    local max_uint32=4294967295
+    local zone_size=$(( (max_uint32 - 5) / 4 ))
+
+    for zone in 0 1 2 3; do
+        local zone_start=$(( 5 + zone * zone_size ))
+        local zone_end=$(( zone_start + zone_size - 1 ))
+        local max_start=$(( zone_end - range_size ))
+        # RANDOM даёт 0..32767; для больших диапазонов комбинируем
+        local start=$(( zone_start + ( (RANDOM * 32768 + RANDOM) % (max_start - zone_start + 1) ) ))
+        local end=$(( start + range_size ))
+        echo "${start}-${end}"
+    done
 }
 
 # Создание конфигурации AWG сервера
@@ -4839,12 +5106,12 @@ create_awg_server_config() {
     local version=$1
     local port=$2
     local config_path=$3
-    
+
     echo -e "${YELLOW}📝 Создание конфигурации для ${version}...${NC}"
-    
+
     # Создаём директорию
     mkdir -p "$config_path"
-    
+
     # Параметры для v1
     local jc=6
     local jmin=10
@@ -4856,20 +5123,25 @@ create_awg_server_config() {
     local h3=1955843234
     local h4=1872536766
     local config_file="wg0.conf"
-    
-    # Параметры для v2 (отличаются)
+
+    # Параметры для v2 (отличаются) — H1-H4 генерируем случайно
     if [ "$version" = "v2" ]; then
+        jc=6
+        jmin=10
+        jmax=50
         s1=103
         s2=79
-        local s3=31
-        local s4=9
-        h1="1726271876-1813116022"
-        h2="1831845225-2080655774"
-        h3="2099907137-2143693563"
-        h4="2146332087-2147440200"
+        local s3=64
+        local s4=4
+        # Генерируем 4 непересекающихся диапазона H1-H4
+        mapfile -t h_ranges < <(generate_h_ranges)
+        h1="${h_ranges[0]}"
+        h2="${h_ranges[1]}"
+        h3="${h_ranges[2]}"
+        h4="${h_ranges[3]}"
         config_file="awg0.conf"
     fi
-    
+
     # Создаём конфигурационный файл
     cat > "$config_path/$config_file" <<EOF
 [Interface]
@@ -4882,7 +5154,7 @@ Jmax = $jmax
 S1 = $s1
 S2 = $s2
 EOF
-    
+
     # Для v2 добавляем дополнительные параметры
     if [ "$version" = "v2" ]; then
         cat >> "$config_path/$config_file" <<EOF
@@ -4890,7 +5162,7 @@ S3 = $s3
 S4 = $s4
 EOF
     fi
-    
+
     # Добавляем H-параметры
     cat >> "$config_path/$config_file" <<EOF
 H1 = $h1
@@ -4899,6 +5171,42 @@ H3 = $h3
 H4 = $h4
 EOF
     
+    # Для v2 генерируем и добавляем I1-I5 параметры (CPS-мимикрия трафика)
+    # Формат: I1=<hex>, I2=<hex>, I3=<hex>, I4=<hex>, I5=<hex>
+    # Используем openssl для генерации случайных байт, если node недоступен
+    if [ "$version" = "v2" ]; then
+        echo -e "${YELLOW}📝 Генерация I1-I5 параметров для AWG v2...${NC}"
+        local i_params=""
+        if command -v node &>/dev/null && [ -f "src/awg/generator.js" ]; then
+            # Используем генератор Node.js
+            i_params=$(STANDALONE_MODE=true node --input-type=module <<'NODESCRIPT' 2>/dev/null
+import { generate } from './src/awg/generator.js';
+const p = generate({ profile: 'random', intensity: 'medium' });
+console.log(`I1=${p.I1}\nI2=${p.I2}\nI3=${p.I3}\nI4=${p.I4}\nI5=${p.I5}`);
+NODESCRIPT
+)
+        fi
+        if [ -n "$i_params" ]; then
+            echo "$i_params" >> "$config_path/$config_file"
+            echo -e "${GREEN}✅ I1-I5 параметры добавлены (Node.js генератор)${NC}"
+        else
+            # Fallback: генерируем случайные hex-строки через openssl
+            local i1=$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | xxd -p | tr -d '\n')
+            local i2=$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | xxd -p | tr -d '\n')
+            local i3=$(openssl rand -hex 16 2>/dev/null || head -c 16 /dev/urandom | xxd -p | tr -d '\n')
+            local i4=$(openssl rand -hex 16 2>/dev/null || head -c 16 /dev/urandom | xxd -p | tr -d '\n')
+            local i5=$(openssl rand -hex 16 2>/dev/null || head -c 16 /dev/urandom | xxd -p | tr -d '\n')
+            cat >> "$config_path/$config_file" <<EOF
+I1 = $i1
+I2 = $i2
+I3 = $i3
+I4 = $i4
+I5 = $i5
+EOF
+            echo -e "${GREEN}✅ I1-I5 параметры добавлены (fallback генератор)${NC}"
+        fi
+    fi
+
     # Сохраняем ключи
     echo "$AWG_PRIVATE_KEY" > "$config_path/wireguard_server_private_key.key"
     echo "$AWG_PUBLIC_KEY" > "$config_path/wireguard_server_public_key.key"
@@ -5069,7 +5377,7 @@ install_awg_standalone() {
     fi
     
     echo -e "${BLUE}📦 Standalone установка AWG $version${NC}"
-    
+
     # Шаг 1: Проверка порта
     echo -e "${YELLOW}🔍 Проверка порта $port...${NC}"
     if netstat -tuln 2>/dev/null | grep -q ":${port} " || ss -tuln 2>/dev/null | grep -q ":${port} "; then
@@ -5077,9 +5385,9 @@ install_awg_standalone() {
         return 1
     fi
     echo -e "${GREEN}✅ Порт $port свободен${NC}"
-    
-    # Шаг 2: Генерация ключей
-    if ! generate_awg_keys; then
+
+    # Шаг 2: Генерация ключей (передаём версию — v2 использует awg бинарник)
+    if ! generate_awg_keys "$version"; then
         return 1
     fi
     
@@ -5124,24 +5432,28 @@ install_awg_standalone() {
     # Шаг 7: Запуск AWG интерфейса
     echo -e "${YELLOW}🚀 Запуск AWG интерфейса...${NC}"
     local interface_name="wg0"
+    local quick_bin="wg-quick"
+    local show_bin="wg"
     if [ "$version" = "v2" ]; then
         interface_name="awg0"
+        quick_bin="awg-quick"
+        show_bin="awg"
     fi
-    
-    if docker exec "$container_name" wg-quick up "$interface_name" 2>&1 | grep -q "interface:"; then
+
+    if docker exec "$container_name" $quick_bin up "$interface_name" 2>&1 | grep -q "interface:"; then
         echo -e "${GREEN}✅ AWG интерфейс запущен${NC}"
     else
         echo -e "${YELLOW}⚠️  Попытка запуска AWG интерфейса...${NC}"
-        docker exec "$container_name" wg-quick up "$interface_name" 2>&1 || true
+        docker exec "$container_name" $quick_bin up "$interface_name" 2>&1 || true
     fi
-    
+
     # Проверка что интерфейс запущен
     sleep 2
-    if docker exec "$container_name" wg show 2>/dev/null | grep -q "interface:"; then
+    if docker exec "$container_name" $show_bin show 2>/dev/null | grep -q "interface:"; then
         echo -e "${GREEN}✅ AWG интерфейс работает${NC}"
     else
         echo -e "${YELLOW}⚠️  AWG интерфейс не запущен. Запустите вручную:${NC}"
-        echo -e "${BLUE}docker exec $container_name wg-quick up $interface_name${NC}"
+        echo -e "${BLUE}docker exec $container_name $quick_bin up $interface_name${NC}"
     fi
     
     # Шаг 7: Настройка NAT и маршрутизации
@@ -5629,7 +5941,14 @@ show_menu() {
     echo -e "${YELLOW}Системные утилиты:${NC}"
     echo -e "${GREEN}21)${NC} Анализ диска и памяти"
     echo -e "${BLUE}---${NC}"
-    echo -e "${RED}99)${NC} Удалить ВСЁ (AWG + Боты + 3x-ui)"
+    echo -e "${YELLOW}CASCADE WEB UI:${NC}"
+    echo -e "${GREEN}22)${NC} Установка Cascade Web UI"
+    echo -e "${GREEN}23)${NC} Логи Cascade"
+    echo -e "${GREEN}24)${NC} Пересборка Cascade"
+    echo -e "${GREEN}25)${NC} Удаление Cascade"
+    echo -e "${GREEN}26)${NC} Миграция AWG → Cascade"
+    echo -e "${BLUE}---${NC}"
+    echo -e "${RED}99)${NC} Удалить ВСЁ (AWG + Боты + 3x-ui + Cascade)"
     echo -e "${GREEN}0)${NC} Выход"
     echo -e "${BLUE}========================================${NC}"
 }
@@ -5878,6 +6197,37 @@ while true; do
             else
                 echo -e "${RED}❌ Файл disk_analyzer.sh не найден!${NC}"
             fi
+            ;;
+        22)
+            sync_repository
+            if [ $? -ne 0 ]; then
+                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
+                if [[ "$continue_choice" == "0" ]]; then
+                    echo -e "${YELLOW}Операция отменена${NC}"
+                    continue
+                fi
+            fi
+            install_cascade
+            ;;
+        23)
+            show_cascade_logs
+            ;;
+        24)
+            sync_repository
+            if [ $? -ne 0 ]; then
+                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
+                if [[ "$continue_choice" == "0" ]]; then
+                    echo -e "${YELLOW}Операция отменена${NC}"
+                    continue
+                fi
+            fi
+            update_cascade
+            ;;
+        25)
+            remove_cascade
+            ;;
+        26)
+            migrate_to_cascade_menu
             ;;
         99)
             sync_repository
