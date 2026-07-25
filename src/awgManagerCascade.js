@@ -94,26 +94,77 @@ export class AWGManagerCascade {
         continue;
       }
 
-      // Регистрируем каждый интерфейс как версию AWG
-      for (const iface of ifaces) {
-        // protocol: "amneziawg-2.0" → v2, "wireguard-1.0" → v1
-        const version = iface.protocol === 'amneziawg-2.0' ? 'v2' : 'v1';
-        const key = srv.version || version; // можно принудительно задать в конфиге
+      // Регистрируем каждый интерфейс как версию AWG.
+      //
+      // Порядок определения версии (от высшего приоритета к низшему):
+      //   1. srv.version из config.yaml — принудительно задан администратором
+      //   2. iface.name содержит "v1"/"v2" — например "AWG-v1-migrated"
+      //   3. Порядковый номер интерфейса (wg10=v1, wg11=v2, wg12=v1...)
+      //      — первый незарегистрированный идёт в v1, второй в v2
+      //   4. protocol: wireguard-1.0 → v1, amneziawg-2.0 → v2
+      //      (если оба одного протокола — используем порядок по п.3)
 
-        if (!this.versionMap.has(key)) {
-          this.versionMap.set(key, {
-            client,
-            interfaceId: iface.id,
-            interfaceName: iface.name,
-            serverLabel: srv.label,
-            version: key,
-            protocol: iface.protocol,
-            publicKey: iface.publicKey,
-            address: iface.address,
-            listenPort: iface.listenPort,
-          });
-          logger.info(`[CascadeManager] Registered ${key} → ${iface.name} on ${srv.label}`);
+      // Сортируем интерфейсы по имени чтобы порядок был стабильным
+      const sortedIfaces = [...ifaces].sort((a, b) => a.id.localeCompare(b.id));
+
+      for (const iface of sortedIfaces) {
+        // Шаг 1: принудительная версия из конфига
+        if (srv.version) {
+          const key = srv.version;
+          if (!this.versionMap.has(key)) {
+            this.versionMap.set(key, {
+              client,
+              interfaceId:   iface.id,
+              interfaceName: iface.name,
+              serverLabel:   srv.label,
+              version:       key,
+              protocol:      iface.protocol,
+              publicKey:     iface.publicKey,
+              address:       iface.address,
+              listenPort:    iface.listenPort,
+            });
+            logger.info(`[CascadeManager] Registered ${key} → ${iface.name} on ${srv.label} (forced)`);
+          }
+          continue;
         }
+
+        // Шаг 2: имя интерфейса явно содержит v1/v2
+        let key = null;
+        const nameLower = (iface.name || '').toLowerCase();
+        if (nameLower.includes('v1') || nameLower.includes('-v1') || nameLower.includes('_v1')) {
+          key = 'v1';
+        } else if (nameLower.includes('v2') || nameLower.includes('-v2') || nameLower.includes('_v2')) {
+          key = 'v2';
+        }
+
+        // Шаг 3: по протоколу
+        if (!key) {
+          key = iface.protocol === 'wireguard-1.0' ? 'v1' : 'v2';
+        }
+
+        // Если слот занят — ищем свободный
+        if (this.versionMap.has(key)) {
+          const alt = key === 'v1' ? 'v2' : 'v1';
+          if (!this.versionMap.has(alt)) {
+            key = alt;
+          } else {
+            // Оба слота заняты — регистрируем под именем интерфейса
+            key = iface.id;
+          }
+        }
+
+        this.versionMap.set(key, {
+          client,
+          interfaceId:   iface.id,
+          interfaceName: iface.name,
+          serverLabel:   srv.label,
+          version:       key,
+          protocol:      iface.protocol,
+          publicKey:     iface.publicKey,
+          address:       iface.address,
+          listenPort:    iface.listenPort,
+        });
+        logger.info(`[CascadeManager] Registered ${key} → ${iface.name} (${iface.id}) on ${srv.label}`);
       }
     }
 
