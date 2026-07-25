@@ -32,7 +32,7 @@ class CommonConfig:
     min_days: int = 1
     default_traffic_gb: int = 100
     default_days: int = 30
-    db_path: str = "/app/data/bot_users.db"
+    db_path: str = "/app/data/awgxuibot.db"
     db_backup_enabled: bool = True
     db_backup_interval: int = 24
     log_level: str = "INFO"
@@ -53,7 +53,7 @@ class PanelConfig:
     panel_id: str
     alias: str
     enabled: bool
-    is_local: bool = False
+    location_label: str = ""
     xui_version: str = "latest"
     xui_url: str = ""
     xui_username: str = ""
@@ -188,7 +188,7 @@ class ConfigManager:
                 min_days=safe_int(common_data.get('min_days', 1), 1),
                 default_traffic_gb=safe_int(common_data.get('default_traffic_gb', 100), 100),
                 default_days=safe_int(common_data.get('default_days', 30), 30),
-                db_path=common_data.get('db_path', '/app/data/bot_users.db'),
+                db_path=common_data.get('db_path', '/app/data/awgxuibot.db'),
                 db_backup_enabled=safe_bool(common_data.get('db_backup_enabled', True), True),
                 db_backup_interval=safe_int(common_data.get('db_backup_interval', 24), 24),
                 log_level=common_data.get('log_level', 'INFO'),
@@ -205,22 +205,36 @@ class ConfigManager:
             )
             
             # Загружаем панели
+            from urllib.parse import urlparse as _urlparse
             panels_data = data.get('panels', {})
             for panel_id, panel_data in panels_data.items():
+                xui_url = panel_data.get('xui_url', '')
+                # Если server_address не задан вручную — берём hostname из xui_url.
+                # Это универсально работает и для IP, и для доменов.
+                server_address = panel_data.get('server_address', '') or ''
+                server_ip      = panel_data.get('server_ip', '') or ''
+                if (not server_address or not server_ip) and xui_url:
+                    host = _urlparse(xui_url).hostname or ''
+                    if host:
+                        if not server_address:
+                            server_address = host
+                        if not server_ip:
+                            server_ip = host
+
                 self.panels[panel_id] = PanelConfig(
                     panel_id=panel_id,
                     alias=panel_data.get('alias', panel_id),
                     enabled=panel_data.get('enabled', True),
-                    is_local=panel_data.get('is_local', False),
+                    location_label=panel_data.get('location_label', ''),
                     xui_version=panel_data.get('xui_version', '3.3.1'),
-                    xui_url=panel_data.get('xui_url', ''),
+                    xui_url=xui_url,
                     xui_username=panel_data.get('xui_username', ''),
                     xui_password=panel_data.get('xui_password', ''),
                     xui_api_token=panel_data.get('xui_api_token', ''),
                     inbound_id=panel_data.get('inbound_id', 1),
                     xui_db_path=panel_data.get('xui_db_path', '/etc/x-ui/x-ui.db'),
-                    server_address=panel_data.get('server_address', ''),
-                    server_ip=panel_data.get('server_ip', ''),
+                    server_address=server_address,
+                    server_ip=server_ip,
                     transport=panel_data.get('transport', 'xhttp'),
                     security=panel_data.get('security', 'reality'),
                     tls_sni=panel_data.get('tls_sni', ''),
@@ -376,13 +390,25 @@ class ConfigManager:
         try:
             import json
             import logging
+            from urllib.parse import urlparse
             logger = logging.getLogger(__name__)
             
             panel = self.get_panel(panel_id)
             if not panel:
                 logger.error(f"❌ Панель {panel_id} не найдена")
                 return False
-            
+
+            # Автоматически определяем server_address из xui_url если он не задан вручную.
+            # xui_url всегда содержит хост/IP (например https://185.218.19.28:57833/secret),
+            # поэтому это самый надёжный источник — не зависит от настроек панели.
+            if not panel.server_address and not panel.server_ip and panel.xui_url:
+                parsed = urlparse(panel.xui_url)
+                host = parsed.hostname or ''
+                if host:
+                    panel.server_address = host
+                    panel.server_ip = host
+                    logger.info(f"🌐 server_address определён из xui_url: {host}")
+
             logger.info(f"🔍 Извлечение параметров из панели {panel_id} через API")
             logger.info(f"   Inbound ID: {panel.inbound_id}")
             
@@ -495,8 +521,8 @@ class ConfigManager:
     def _save_config(self):
         """Сохраняет текущую конфигурацию в файл"""
         try:
-            # ВАЖНО: Загружаем текущий config.yaml чтобы сохранить is_local и server_label
-            # is_local и server_label НЕ должны изменяться программно!
+            # ВАЖНО: Загружаем текущий config.yaml чтобы сохранить server_label
+            # server_label НЕ должен изменяться программно!
             existing_config = {}
             if os.path.exists(self.config_path):
                 with open(self.config_path, 'r', encoding='utf-8') as f:
@@ -548,17 +574,24 @@ class ConfigManager:
                 config_dict['common']['server_label'] = existing_server_label
             
             # Добавляем панели
+            existing_panels = existing_config.get('panels', {})
             for panel_id, panel in self.panels.items():
-                # ВАЖНО: Сохраняем is_local из существующего файла, если он там есть
-                # is_local НЕ должен изменяться программно!
-                existing_is_local = panel.is_local
-                if existing_config.get('panels', {}).get(panel_id, {}).get('is_local') is not None:
-                    existing_is_local = existing_config['panels'][panel_id]['is_local']
-                
+                # server_address / server_ip задаются вручную и не должны затираться
+                # при программном сохранении (fetch_and_update_panel_settings не трогает их).
+                existing_panel = existing_panels.get(panel_id, {})
+                server_address = panel.server_address or existing_panel.get('server_address', '') or ''
+                server_ip = panel.server_ip or existing_panel.get('server_ip', '') or ''
+
+                # Обновляем объект в памяти — чтобы make_panel_client читал актуальный адрес
+                if server_address:
+                    panel.server_address = server_address
+                if server_ip:
+                    panel.server_ip = server_ip
+
                 config_dict['panels'][panel_id] = {
                     'alias': panel.alias,
                     'enabled': panel.enabled,
-                    'is_local': existing_is_local,  # Используем значение из файла
+                    'location_label': panel.location_label,
                     'xui_version': panel.xui_version,
                     'xui_url': panel.xui_url,
                     'xui_username': panel.xui_username,
@@ -566,8 +599,8 @@ class ConfigManager:
                     'xui_api_token': panel.xui_api_token,
                     'xui_db_path': panel.xui_db_path,
                     'inbound_id': panel.inbound_id,
-                    'server_address': panel.server_address,
-                    'server_ip': panel.server_ip,
+                    'server_address': server_address,
+                    'server_ip': server_ip,
                     'transport': panel.transport,
                     'security': panel.security,
                     'tls_sni': panel.tls_sni,
@@ -615,7 +648,7 @@ class ConfigManager:
 class UserDatabase:
     """База данных пользователей с поддержкой мультипанелей"""
     
-    def __init__(self, db_path: str = "/app/data/bot_users.db", admin_ids: List[int] = None):
+    def __init__(self, db_path: str = "/app/data/awgxuibot.db", admin_ids: List[int] = None):
         self.db_path = db_path
         self.admin_ids = admin_ids or []
         self._init_db()
@@ -668,6 +701,26 @@ class UserDatabase:
                 )
             """)
             
+            # Новые таблицы с поддержкой panel_id
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS panel_notification_settings (
+                    panel_id TEXT NOT NULL,
+                    setting_name TEXT NOT NULL,
+                    enabled INTEGER DEFAULT 0,
+                    PRIMARY KEY (panel_id, setting_name)
+                )
+            """)
+
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS panel_notification_thresholds (
+                    panel_id TEXT NOT NULL,
+                    threshold_name TEXT NOT NULL,
+                    threshold_value REAL DEFAULT 95.0,
+                    PRIMARY KEY (panel_id, threshold_name)
+                )
+            """)
+
+            # Старые таблицы оставляем для обратной совместимости
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS notification_settings (
                     setting_name TEXT PRIMARY KEY,
@@ -693,6 +746,13 @@ class UserDatabase:
             """)
             
             conn.execute("""
+                CREATE TABLE IF NOT EXISTS pending_access_requests (
+                    user_id INTEGER PRIMARY KEY,
+                    requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            conn.execute("""
                 CREATE TABLE IF NOT EXISTS blocked_users (
                     user_id INTEGER PRIMARY KEY,
                     blocked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -706,6 +766,18 @@ class UserDatabase:
                     first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
+            """)
+
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS panel_outages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    panel_id TEXT NOT NULL,
+                    started_at TIMESTAMP NOT NULL
+                )
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_panel_outages_panel_id
+                ON panel_outages(panel_id)
             """)
             
             # Добавляем главного админа
@@ -910,11 +982,121 @@ class UserDatabase:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute("SELECT threshold_name, threshold_value FROM notification_thresholds")
             return {row[0]: float(row[1]) for row in cursor.fetchall()}
-    
+
+    # ── Per-panel notification methods ──────────────────────────────────────
+
+    def get_panel_notification_setting(self, panel_id: str, setting_name: str) -> bool:
+        """Получить настройку уведомления для конкретной панели"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                "SELECT enabled FROM panel_notification_settings WHERE panel_id=? AND setting_name=?",
+                (panel_id, setting_name)
+            )
+            result = cursor.fetchone()
+            return bool(result[0]) if result else False
+
+    def set_panel_notification_setting(self, panel_id: str, setting_name: str, enabled: bool) -> bool:
+        """Сохранить настройку уведомления для конкретной панели"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute(
+                    "INSERT OR REPLACE INTO panel_notification_settings (panel_id, setting_name, enabled) VALUES (?,?,?)",
+                    (panel_id, setting_name, 1 if enabled else 0)
+                )
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка сохранения panel_notification_setting: {e}")
+            return False
+
+    def get_panel_notification_settings(self, panel_id: str) -> dict:
+        """Получить все настройки уведомлений для панели"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                "SELECT setting_name, enabled FROM panel_notification_settings WHERE panel_id=?",
+                (panel_id,)
+            )
+            rows = {row[0]: bool(row[1]) for row in cursor.fetchall()}
+        # Значения по умолчанию
+        defaults = {'cpu_alert': False, 'ram_alert': False, 'disk_alert': False, 'availability_alert': False}
+        defaults.update(rows)
+        return defaults
+
+    def get_panel_threshold(self, panel_id: str, threshold_name: str, default: float = 95.0) -> float:
+        """Получить порог для конкретной панели"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                "SELECT threshold_value FROM panel_notification_thresholds WHERE panel_id=? AND threshold_name=?",
+                (panel_id, threshold_name)
+            )
+            result = cursor.fetchone()
+            return float(result[0]) if result else default
+
+    def set_panel_threshold(self, panel_id: str, threshold_name: str, value: float) -> bool:
+        """Сохранить порог для конкретной панели"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute(
+                    "INSERT OR REPLACE INTO panel_notification_thresholds (panel_id, threshold_name, threshold_value) VALUES (?,?,?)",
+                    (panel_id, threshold_name, value)
+                )
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка сохранения panel_threshold: {e}")
+            return False
+
+    def get_panel_thresholds(self, panel_id: str) -> dict:
+        """Получить все пороги для панели"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                "SELECT threshold_name, threshold_value FROM panel_notification_thresholds WHERE panel_id=?",
+                (panel_id,)
+            )
+            rows = {row[0]: float(row[1]) for row in cursor.fetchall()}
+        defaults = {'cpu_threshold': 95.0, 'ram_threshold': 95.0, 'disk_threshold': 95.0}
+        defaults.update(rows)
+        return defaults
+
     def was_user_registered(self, user_id: int) -> bool:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute("SELECT 1 FROM user_history WHERE user_id = ?", (user_id,))
             return cursor.fetchone() is not None
+
+    def list_pending_requests(self) -> list:
+        """Вернуть список всех ожидающих запросов [(user_id, requested_at), ...]"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                "SELECT user_id, requested_at FROM pending_access_requests ORDER BY requested_at ASC"
+            )
+            return cursor.fetchall()
+
+    def has_pending_request(self, user_id: int) -> bool:
+        """Проверить есть ли ожидающий запрос на доступ от пользователя"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute("SELECT 1 FROM pending_access_requests WHERE user_id = ?", (user_id,))
+            return cursor.fetchone() is not None
+
+    def add_pending_request(self, user_id: int) -> bool:
+        """Записать запрос на доступ (чтобы не дублировать)"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute(
+                    "INSERT OR IGNORE INTO pending_access_requests (user_id) VALUES (?)",
+                    (user_id,)
+                )
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка сохранения pending-запроса: {e}")
+            return False
+
+    def remove_pending_request(self, user_id: int) -> bool:
+        """Удалить ожидающий запрос (после решения администратора)"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute("DELETE FROM pending_access_requests WHERE user_id = ?", (user_id,))
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка удаления pending-запроса: {e}")
+            return False
 
 
 class Config:

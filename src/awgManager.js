@@ -5,6 +5,7 @@ import path from 'path';
 import { config } from './config.js';
 import { logger } from './logger.js';
 import { detectAwgVersion, validateAwgConfig } from './awg/validator.js';
+import { generate } from './awg/generator.js';
 
 const execAsync = promisify(exec);
 
@@ -203,8 +204,10 @@ export class AWGManager {
     if (isRunning) {
       try {
         const interfaceName = configPath.includes('awg0') ? 'awg0' : 'wg0';
+        // Для AWG v2 (awg0) используем бинарник awg, для WG v1 (wg0) — wg
+        const wgBin = interfaceName === 'awg0' ? 'awg' : 'wg';
         const { stdout: wgShow } = await execAsync(
-          `docker exec ${containerName} wg show ${interfaceName} public-key 2>/dev/null || echo ""`
+          `docker exec ${containerName} ${wgBin} show ${interfaceName} public-key 2>/dev/null || echo ""`
         );
         const actualPublicKey = wgShow.trim();
         
@@ -267,10 +270,11 @@ export class AWGManager {
         continue;
       }
       
-      const match = trimmed.match(/^([^=]+)=(.*)$/);
-      if (match && currentSection) {
-        const key = match[1].trim();
-        const value = match[2].trim();
+      // Используем indexOf чтобы value мог содержать '=' (I-параметры, hex-строки)
+      const eqIdx = trimmed.indexOf('=');
+      if (eqIdx > 0 && currentSection) {
+        const key = trimmed.slice(0, eqIdx).trim();
+        const value = trimmed.slice(eqIdx + 1).trim();
         
         if (currentSection === 'interface') {
           parsedConfig.interface[key] = value;
@@ -445,11 +449,12 @@ export class AWGManager {
       const ipMatches = configContent.matchAll(/AllowedIPs\s*=\s*(\d+\.\d+\.\d+\.\d+)\/32/g);
       const allIPs = Array.from(ipMatches, m => m[1]);
 
-      // Получаем статистику handshake через wg show только если контейнер запущен
+      // Получаем статистику handshake через wg/awg show только если контейнер запущен
+      const wgBin = interfaceName === 'awg0' ? 'awg' : 'wg';
       let wgShow = '';
       if (containerStatus.available) {
         const { stdout } = await execAsync(
-          `docker exec ${containerName} wg show ${interfaceName} 2>/dev/null || echo ""`
+          `docker exec ${containerName} ${wgBin} show ${interfaceName} 2>/dev/null || echo ""`
         );
         wgShow = stdout;
       }
@@ -619,57 +624,74 @@ AllowedIPs = ${ip}/32
   }
 
   /**
-   * Создать клиентский конфиг
-   * Улучшенная версия с полной поддержкой AWG v2
+   * Создать клиентский конфиг.
+   *
+   * Для AWG v2:
+   *   H1-H4, S3/S4     — берём с сервера (ДОЛЖНЫ совпадать на обеих сторонах).
+   *   Jc/Jmin/Jmax/S1/S2 — берём с сервера.
+   *   I1-I5             — генерируем свежие через generator.js (CPS-мимикрия),
+   *                       т.к. в серверном конфиге их обычно нет, и они не
+   *                       должны совпадать — каждый клиент получает свой профиль.
+   *
+   * Для AWG v1: только Jc/Jmin/Jmax/S1/S2/H1-H4.
    */
   createClientConfig(container, privateKey, ip) {
     const params = container.params;
+    // params хранит строки из парсера конфига; проверяем через has()
+    const has = (v) => v !== undefined && v !== null && String(v).trim() !== '';
+
     let configContent = `[Interface]
 Address = ${ip}/32
 DNS = 1.1.1.1, 1.0.0.1
 PrivateKey = ${privateKey}
 `;
 
-    // Junk параметры (обязательны для обфускации)
-    if (params.Jc) configContent += `Jc = ${params.Jc}\n`;
-    if (params.Jmin) configContent += `Jmin = ${params.Jmin}\n`;
-    if (params.Jmax) configContent += `Jmax = ${params.Jmax}\n`;
-    
-    // S параметры (padding)
-    if (params.S1) configContent += `S1 = ${params.S1}\n`;
-    if (params.S2) configContent += `S2 = ${params.S2}\n`;
-    
-    // Версия-специфичные параметры
+    // Junk параметры
+    if (has(params.Jc)) configContent += `Jc = ${params.Jc}\n`;
+    if (has(params.Jmin)) configContent += `Jmin = ${params.Jmin}\n`;
+    if (has(params.Jmax)) configContent += `Jmax = ${params.Jmax}\n`;
+
+    // S параметры
+    if (has(params.S1)) configContent += `S1 = ${params.S1}\n`;
+    if (has(params.S2)) configContent += `S2 = ${params.S2}\n`;
+
     if (container.version === 'v2') {
-      // v2: S3, S4 (дополнительный padding)
-      if (params.S3) configContent += `S3 = ${params.S3}\n`;
-      if (params.S4) configContent += `S4 = ${params.S4}\n`;
-      
-      // v2: H-диапазоны (обязательны для v2)
-      if (params.H1) configContent += `H1 = ${params.H1}\n`;
-      if (params.H2) configContent += `H2 = ${params.H2}\n`;
-      if (params.H3) configContent += `H3 = ${params.H3}\n`;
-      if (params.H4) configContent += `H4 = ${params.H4}\n`;
-      
-      // v2: I параметры (CPS мимикрия DNS)
-      // Дефолтный I1 - имитация DNS-запроса к yandex.ru
-      const defaultI1 = '<b 0x084481800001000300000000077469636b65747306776964676574096b696e6f706f69736b0272750000010001c00c0005000100000039001806776964676574077469636b6574730679616e646578c025c0390005000100000039002b1765787465726e616c2d7469636b6574732d776964676574066166697368610679616e646578036e657400c05d000100010000001c000457fafe25>';
-      
-      // Проверка флага removeI1 (для Мегафона)
-      if (!params.removeI1) {
-        configContent += `I1 = ${params.I1 || defaultI1}\n`;
+      // S3/S4 — с сервера
+      if (has(params.S3)) configContent += `S3 = ${params.S3}\n`;
+      if (has(params.S4)) configContent += `S4 = ${params.S4}\n`;
+
+      // H1-H4 — ОБЯЗАТЕЛЬНО с сервера, клиент и сервер должны совпадать
+      if (has(params.H1)) configContent += `H1 = ${params.H1}\n`;
+      if (has(params.H2)) configContent += `H2 = ${params.H2}\n`;
+      if (has(params.H3)) configContent += `H3 = ${params.H3}\n`;
+      if (has(params.H4)) configContent += `H4 = ${params.H4}\n`;
+
+      // I1-I5 — генерируем свежие (CPS-мимикрия трафика, уникальная на каждый конфиг)
+      // Если на сервере есть I-параметры — используем их, иначе генерируем
+      const hasServerI = has(params.I1) || has(params.I2);
+      if (hasServerI) {
+        // Серверные I-параметры присутствуют — берём как есть
+        if (!params.removeI1 && has(params.I1)) configContent += `I1 = ${params.I1}\n`;
+        if (has(params.I2)) configContent += `I2 = ${params.I2}\n`;
+        if (has(params.I3)) configContent += `I3 = ${params.I3}\n`;
+        if (has(params.I4)) configContent += `I4 = ${params.I4}\n`;
+        if (has(params.I5)) configContent += `I5 = ${params.I5}\n`;
+      } else {
+        // Генерируем свежие I-параметры через полноценный генератор
+        const fresh = generate({ profile: 'random', intensity: 'medium' });
+        if (!params.removeI1) configContent += `I1 = ${fresh.I1}\n`;
+        configContent += `I2 = ${fresh.I2}\n`;
+        configContent += `I3 = ${fresh.I3}\n`;
+        configContent += `I4 = ${fresh.I4}\n`;
+        configContent += `I5 = ${fresh.I5}\n`;
+        logger.debug(`Generated fresh CPS params for v2 client (profile: ${fresh.profile})`);
       }
-      
-      if (params.I2) configContent += `I2 = ${params.I2}\n`;
-      if (params.I3) configContent += `I3 = ${params.I3}\n`;
-      if (params.I4) configContent += `I4 = ${params.I4}\n`;
-      if (params.I5) configContent += `I5 = ${params.I5}\n`;
     } else {
-      // v1: только фиксированные H-значения (не диапазоны)
-      if (params.H1) configContent += `H1 = ${params.H1}\n`;
-      if (params.H2) configContent += `H2 = ${params.H2}\n`;
-      if (params.H3) configContent += `H3 = ${params.H3}\n`;
-      if (params.H4) configContent += `H4 = ${params.H4}\n`;
+      // v1: фиксированные H-значения
+      if (has(params.H1)) configContent += `H1 = ${params.H1}\n`;
+      if (has(params.H2)) configContent += `H2 = ${params.H2}\n`;
+      if (has(params.H3)) configContent += `H3 = ${params.H3}\n`;
+      if (has(params.H4)) configContent += `H4 = ${params.H4}\n`;
     }
 
     configContent += `
@@ -1245,10 +1267,11 @@ PersistentKeepalive = 25
           continue;
         }
         
-        // 3. Проверка состояния WireGuard через wg show
+        // 3. Проверка состояния WireGuard через wg/awg show
+        const wgBin = interfaceName === 'awg0' ? 'awg' : 'wg';
         try {
           const { stdout: wgOutput } = await execAsync(
-            `docker exec ${containerName} wg show ${interfaceName} 2>&1`
+            `docker exec ${containerName} ${wgBin} show ${interfaceName} 2>&1`
           );
           
           // Подсчитываем количество пиров

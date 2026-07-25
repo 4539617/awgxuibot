@@ -65,7 +65,7 @@ common:
   admin_ids:
     - ${env_vars[ADMIN_IDS]}
   server_port: ${env_vars[SERVER_PORT]:-443}
-  server_label: ""
+  server_label: "${env_vars[SERVER_LABEL]:-}"
   api_timeout: ${env_vars[API_TIMEOUT]:-30}
   xhttp_mode: "${env_vars[XHTTP_MODE]:-auto}"
   tls_fingerprint: "${env_vars[TLS_FINGERPRINT]:-edge}"
@@ -75,7 +75,7 @@ common:
   min_days: ${env_vars[MIN_DAYS]:-1}
   default_traffic_gb: ${env_vars[DEFAULT_TRAFFIC_GB]:-100}
   default_days: ${env_vars[DEFAULT_DAYS]:-30}
-  db_path: "${env_vars[DB_PATH]:-/app/data/bot_users.db}"
+  db_path: "${env_vars[DB_PATH]:-/app/data/awgxuibot.db}"
   db_backup_enabled: ${env_vars[DB_BACKUP_ENABLED]:-true}
   db_backup_interval: ${env_vars[DB_BACKUP_INTERVAL]:-24}
   log_level: "${env_vars[LOG_LEVEL]:-INFO}"
@@ -88,12 +88,11 @@ common:
   panel_failure_threshold: 3
   panel_check_timeout: 5
   allow_user_dns_queries: ${env_vars[ALLOW_USER_DNS_QUERIES]:-false}
-default_panel: local_panel
+default_panel: panel0
 panels:
-  local_panel:
+  panel0:
     alias: Локальная
     enabled: true
-    is_local: true
     xui_version: ${env_vars[XUI_VERSION]:-2.8.10}
     xui_url: ${env_vars[XUI_URL]}
     xui_username: ${env_vars[XUI_USERNAME]}

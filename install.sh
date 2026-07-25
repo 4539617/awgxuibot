@@ -11,7 +11,7 @@ NC='\033[0m'
 # Константы
 WORK_DIR="/opt/awgxuibot"
 DEFAULT_REALITY_SNI="www.nvidia.com"
-DEFAULT_REALITY_FINGERPRINT="edge"  # Варианты: edge, chrome, firefox, safari
+DEFAULT_REALITY_FINGERPRINT="firefox"  # Варианты: edge, chrome, firefox, safari
 
 
 echo -e "${BLUE}========================================${NC}"
@@ -351,25 +351,17 @@ check_yq() {
 
 # Получить ID локальной панели из config.yaml
 get_local_panel_id() {
-    if [ ! -f "config.yaml" ]; then
-        echo ""
-        return 1
+    # Локальная панель всегда panel0
+    if [ -f "config.yaml" ] && check_yq &>/dev/null; then
+        local panel_id=$(yq eval '.panels.panel0 | key' config.yaml 2>/dev/null)
+        if [ -z "$panel_id" ] || [ "$panel_id" = "null" ]; then
+            # Панель panel0 не существует в конфиге
+            echo -e "${YELLOW}⚠️  Панель panel0 не найдена в config.yaml${NC}" >&2
+            echo ""
+            return 1
+        fi
     fi
-    
-    check_yq || return 1
-    
-    # Ищем панель с is_local: true
-    local panel_id=$(yq eval '.panels | to_entries | .[] | select(.value.is_local == true) | .key' config.yaml 2>/dev/null | head -1)
-    
-    # ВАЖНО: НЕ используем default_panel как fallback!
-    # Инсталлятор должен работать ТОЛЬКО с локальной панелью
-    if [ -z "$panel_id" ]; then
-        echo -e "${YELLOW}⚠️  Локальная (is_local: true) не найдена в config.yaml${NC}" >&2
-        echo ""
-        return 1
-    fi
-    
-    echo "$panel_id"
+    echo "panel0"
 }
 
 # Оборачивает IP в скобки если это IPv6, чтобы URL был валидным (RFC 3986)
@@ -413,21 +405,20 @@ add_local_panel_to_config() {
     fi
     
     # Генерируем уникальный ID для новой панели
-    local panel_id="local_panel"
+    local panel_id="panel0"
     local counter=1
     
     # Проверяем, существует ли панель с таким ID
     while yq eval ".panels.${panel_id}" config.yaml 2>/dev/null | grep -qv "null"; do
-        panel_id="local_panel${counter}"
+        panel_id="panel${counter}"
         counter=$((counter + 1))
     done
     
     echo -e "${GREEN}✅ Создание новой локальной панели: ${panel_id}${NC}"
     
     # Добавляем новую панель в config.yaml
-    yq eval -i ".panels.${panel_id}.alias = \"Локальная\"" config.yaml
+    yq eval -i ".panels.${panel_id}.alias = \"LocalPanel\"" config.yaml
     yq eval -i ".panels.${panel_id}.enabled = true" config.yaml
-    yq eval -i ".panels.${panel_id}.is_local = true" config.yaml
     yq eval -i ".panels.${panel_id}.xui_version = \"${xui_version}\"" config.yaml
     yq eval -i ".panels.${panel_id}.xui_url = \"${xui_url}\"" config.yaml
     yq eval -i ".panels.${panel_id}.xui_username = \"${xui_username}\"" config.yaml
@@ -442,7 +433,7 @@ add_local_panel_to_config() {
     yq eval -i ".panels.${panel_id}.tls_sni = \"\"" config.yaml
     yq eval -i ".panels.${panel_id}.tls_fingerprint = \"chrome\"" config.yaml
     yq eval -i ".panels.${panel_id}.reality_sni = \"www.nvidia.com\"" config.yaml
-    yq eval -i ".panels.${panel_id}.reality_fingerprint = \"edge\"" config.yaml
+    yq eval -i ".panels.${panel_id}.reality_fingerprint = \"firefox\"" config.yaml
     yq eval -i ".panels.${panel_id}.reality_public_key = \"\"" config.yaml
     yq eval -i ".panels.${panel_id}.reality_private_key = \"\"" config.yaml
     yq eval -i ".panels.${panel_id}.reality_short_id = \"\"" config.yaml
@@ -564,6 +555,11 @@ update_config_value() {
                 "SERVER_PORT")
                     check_yq && yq eval -i ".common.server_port = ${value}" config.yaml
                     echo -e "${GREEN}✅ Обновлено: common.server_port${NC}"
+                    return 0
+                    ;;
+                "SERVER_LABEL")
+                    check_yq && yq eval -i ".common.server_label = \"${value}\"" config.yaml
+                    echo -e "${GREEN}✅ Обновлено: common.server_label${NC}"
                     return 0
                     ;;
                 "API_TIMEOUT")
@@ -765,13 +761,18 @@ generate_reality_keys_via_api() {
 extract_inbound_params() {
     echo -e "${YELLOW}🔍 Извлечение параметров из панели...${NC}"
     
-    # Проверяем is_local для panel1
-    local IS_LOCAL=$(yq eval '.panels.panel1.is_local' config.yaml 2>/dev/null)
-    if [ "$IS_LOCAL" = "false" ]; then
-        echo -e "${BLUE}ℹ️  Панель удаленная (is_local: false)${NC}"
-        echo -e "${BLUE}ℹ️  Параметры будут обновлены ботом через API при подключении${NC}"
-        return 0
+    # Сохраняем существующий server_label перед обновлением параметров
+    if check_yq; then
+        local existing_label=$(yq eval '.common.server_label' config.yaml 2>/dev/null)
+        if [ -n "$existing_label" ] && [ "$existing_label" != "null" ] && [ "$existing_label" != '""' ]; then
+            echo -e "${BLUE}  Сохраняем существующую метку сервера: ${existing_label}${NC}"
+            # Сохраняем в глобальную переменную для последующего восстановления
+            PRESERVED_SERVER_LABEL="$existing_label"
+        fi
     fi
+    
+    # panel0 — локальная, параметры извлекаем из БД
+    # Остальные панели (panel1, panel2...) — удалённые, параметры обновляются через API
     
     # Проверка наличия базы данных
     if [ ! -f "/etc/x-ui/x-ui.db" ]; then
@@ -879,6 +880,12 @@ extract_inbound_params() {
         fi
     fi
     
+    # Восстанавливаем server_label если он был сохранен
+    if [ -n "$PRESERVED_SERVER_LABEL" ]; then
+        update_config_value "SERVER_LABEL" "$PRESERVED_SERVER_LABEL"
+        echo -e "${GREEN}  ✓ Метка сервера восстановлена: ${PRESERVED_SERVER_LABEL}${NC}"
+    fi
+    
     echo -e "${GREEN}✅ Параметры успешно извлечены из панели${NC}"
     return 0
 }
@@ -914,7 +921,7 @@ create_static_params() {
     update_config_value "DEFAULT_DAYS" "30"
     
     # База данных
-    update_config_value "DB_PATH" "/app/data/bot_users.db"
+    update_config_value "DB_PATH" "/app/data/awgxuibot.db"
     update_config_value "DB_BACKUP_ENABLED" "true"
     update_config_value "DB_BACKUP_INTERVAL" "24"
     
@@ -1295,7 +1302,7 @@ install_xuibot() {
     # Создание config.yaml если не существует
     create_config_if_not_exists
     
-    # Проверка и копирование server_label в local_panel.alias
+    # Проверка и копирование server_label в panel0.alias
     echo -e "\n${YELLOW}🔍 Проверка метки сервера...${NC}"
     if check_yq; then
         SERVER_LABEL=$(yq eval '.common.server_label' config.yaml 2>/dev/null)
@@ -1305,10 +1312,10 @@ install_xuibot() {
             echo -e "${GREEN}✅ Найдена метка сервера: ${SERVER_LABEL}${NC}"
             
             # Находим локальную панель
-            local panel_id=$(yq eval '.panels | to_entries | .[] | select(.value.is_local == true) | .key' config.yaml 2>/dev/null | head -1)
+            local panel_id="panel0"
             
             if [ -n "$panel_id" ]; then
-                # Копируем значение в local_panel.alias
+                # Копируем значение в panel0.alias
                 yq eval -i ".panels.${panel_id}.alias = \"${SERVER_LABEL}\"" config.yaml
                 echo -e "${GREEN}✅ Метка сервера скопирована в ${panel_id}.alias${NC}"
             else
@@ -1316,23 +1323,73 @@ install_xuibot() {
             fi
         else
             echo -e "${YELLOW}⚠️  Метка сервера не заполнена${NC}"
-            echo -e "${BLUE}📝 Введите метку сервера для идентификации:${NC}"
-            read -p "Метка сервера: " server_label
+            echo -e "${BLUE}📝 Введите метку VPS для идентификации (до 5 символов латиницей):${NC}"
+            echo -e "${BLUE}Примеры: srv01, vps1, main, node1${NC}"
+            read -p "Метка VPS: " server_label
             
-            if [ -n "$server_label" ]; then
-                # Находим локальную панель
-                local panel_id=$(yq eval '.panels | to_entries | .[] | select(.value.is_local == true) | .key' config.yaml 2>/dev/null | head -1)
-                
-                if [ -n "$panel_id" ]; then
-                    # Записываем только в local_panel.alias
-                    yq eval -i ".panels.${panel_id}.alias = \"${server_label}\"" config.yaml
-                    echo -e "${GREEN}✅ Метка сервера сохранена в ${panel_id}.alias: ${server_label}${NC}"
-                else
-                    echo -e "${YELLOW}⚠️  Локальная панель не найдена${NC}"
-                fi
+            # Валидация: только латиница и цифры, до 5 символов
+            while [[ ! "$server_label" =~ ^[a-zA-Z0-9]{1,5}$ ]]; do
+                echo -e "${RED}❌ Неверный формат! Используйте только латинские буквы и цифры, до 5 символов${NC}"
+                read -p "Введите метку VPS: " server_label
+            done
+            
+            # Преобразуем в верхний регистр
+            server_label="${server_label^^}"
+            
+            # Находим локальную панель
+            local panel_id="panel0"
+            
+            if [ -n "$panel_id" ]; then
+                # Записываем в server_label и panel0.alias
+                yq eval -i ".common.server_label = \"${server_label}\"" config.yaml
+                yq eval -i ".panels.${panel_id}.alias = \"${server_label}\"" config.yaml
+                echo -e "${GREEN}✅ Метка VPS сохранена: ${server_label}${NC}"
+                echo -e "${GREEN}✅ Метка установлена в ${panel_id}.alias${NC}"
             else
-                echo -e "${YELLOW}⚠️  Метка сервера не введена, используется значение по умолчанию${NC}"
+                echo -e "${YELLOW}⚠️  Локальная панель не найдена${NC}"
+                # Все равно сохраняем в server_label
+                yq eval -i ".common.server_label = \"${server_label}\"" config.yaml
+                echo -e "${GREEN}✅ Метка VPS сохранена: ${server_label}${NC}"
             fi
+        fi
+    fi
+    
+    # Проверка и запрос location_label
+    echo -e "\n${YELLOW}🔍 Проверка метки локации...${NC}"
+    if check_yq; then
+        local panel_id_loc=$(get_local_panel_id)
+        LOCATION_LABEL=$(yq eval ".panels.${panel_id_loc}.location_label" config.yaml 2>/dev/null)
+        
+        if [ -n "$LOCATION_LABEL" ] && [ "$LOCATION_LABEL" != "null" ] && [ "$LOCATION_LABEL" != '""' ]; then
+            echo -e "${GREEN}✅ Найдена метка локации: ${LOCATION_LABEL}${NC}"
+        else
+            echo -e "${YELLOW}⚠️  Метка локации не заполнена${NC}"
+            echo -e "${BLUE}📝 Введите метку локации для идентификации сервера (например: Германия, Frankfurt, DE):${NC}"
+            read -p "Метка локации: " location_label
+            yq eval -i ".panels.${panel_id_loc}.location_label = \"${location_label}\"" config.yaml
+            echo -e "${GREEN}✅ Метка локации сохранена: ${location_label}${NC}"
+        fi
+    fi
+    
+    # Проверка и запрос alias панели
+    echo -e "\n${YELLOW}🔍 Проверка псевдонима панели...${NC}"
+    if check_yq; then
+        local panel_id_alias=$(get_local_panel_id)
+        PANEL_ALIAS=$(yq eval ".panels.${panel_id_alias}.alias" config.yaml 2>/dev/null)
+        
+        if [ -z "$PANEL_ALIAS" ] || [ "$PANEL_ALIAS" = "null" ] || [ "$PANEL_ALIAS" = '""' ] || [ "$PANEL_ALIAS" = "LocalPanel" ]; then
+            echo -e "${YELLOW}⚠️  Псевдоним панели не задан (текущее: ${PANEL_ALIAS:-пусто})${NC}"
+            echo -e "${BLUE}📝 Введите псевдоним панели для отображения в боте (Enter — оставить пустым):${NC}"
+            echo -e "${BLUE}Примеры: Основная, Frankfurt, VPS-1${NC}"
+            read -p "Псевдоним панели: " panel_alias
+            yq eval -i ".panels.${panel_id_alias}.alias = \"${panel_alias}\"" config.yaml
+            if [ -n "$panel_alias" ]; then
+                echo -e "${GREEN}✅ Псевдоним панели сохранён: ${panel_alias}${NC}"
+            else
+                echo -e "${GREEN}✅ Псевдоним панели оставлен пустым${NC}"
+            fi
+        else
+            echo -e "${GREEN}✅ Найден псевдоним панели: ${PANEL_ALIAS}${NC}"
         fi
     fi
     
@@ -1690,6 +1747,7 @@ update_xuibot() {
     docker rm xuibot 2>/dev/null || true
     
     # Пересборка образа
+    docker_prune
     echo -e "${YELLOW}🐳 Пересборка образа...${NC}"
     $DOCKER_COMPOSE_CMD -f docker-compose.xuibot.yml build --no-cache
     
@@ -1936,6 +1994,7 @@ update_awgbot() {
     docker rm awgbot 2>/dev/null || true
     
     # Пересборка образа
+    docker_prune
     echo -e "${YELLOW}🐳 Пересборка образа...${NC}"
     $DOCKER_COMPOSE_CMD -f docker-compose.awgbot.yml build --no-cache
     
@@ -2096,6 +2155,15 @@ remove_awg_version() {
     echo -e "${GREEN}✅ AWG $version удален!${NC}"
 }
 
+# Очистка неиспользуемых Docker-ресурсов перед пересборкой
+docker_prune() {
+    echo -e "${YELLOW}🧹 Очистка неиспользуемых Docker-ресурсов...${NC}"
+    docker container prune -f 2>/dev/null | grep -E "deleted|freed|Deleted|Freed" || true
+    docker image prune -f 2>/dev/null | grep -E "deleted|freed|Deleted|Freed|reclaimed" || true
+    docker builder prune -f 2>/dev/null | grep -E "deleted|freed|Deleted|Freed|reclaimed" || true
+    echo -e "${GREEN}✅ Очистка завершена${NC}"
+}
+
 # Функция перезапуска контейнера XUIBOT с rebuild
 rebuild_xuibot() {
     echo -e "\n${BLUE}========================================${NC}"
@@ -2109,6 +2177,7 @@ rebuild_xuibot() {
     echo -e "${YELLOW}🛑 Остановка контейнера xuibot...${NC}"
     $DOCKER_COMPOSE_CMD -f docker-compose.xuibot.yml down 2>/dev/null || true
     
+    docker_prune
     echo -e "${YELLOW}🔨 Пересборка образа xuibot...${NC}"
     $DOCKER_COMPOSE_CMD -f docker-compose.xuibot.yml build --no-cache
     
@@ -2138,6 +2207,7 @@ rebuild_awgbot() {
     echo -e "${YELLOW}🛑 Остановка контейнера awgbot...${NC}"
     $DOCKER_COMPOSE_CMD -f docker-compose.awgbot.yml down 2>/dev/null || true
     
+    docker_prune
     echo -e "${YELLOW}🔨 Пересборка образа awgbot...${NC}"
     $DOCKER_COMPOSE_CMD -f docker-compose.awgbot.yml build --no-cache
     
@@ -2276,11 +2346,15 @@ show_status() {
             echo -e "  Состояние: ${GREEN}Запущена${NC}"
             echo -e "  Всего ключей: ${total_keys}"
             
-            # Получаем данные подключения из local_panel
-            local xui_url=$(grep -A 20 "local_panel:" config.yaml | grep "xui_url:" | head -1 | awk '{print $2}')
-            local xui_username=$(grep -A 20 "local_panel:" config.yaml | grep "xui_username:" | head -1 | awk '{print $2}')
-            local xui_password=$(grep -A 20 "local_panel:" config.yaml | grep "xui_password:" | head -1 | awk '{print $2}')
-            local xui_api_token=$(grep -A 20 "local_panel:" config.yaml | grep "xui_api_token:" | head -1 | awk '{print $2}')
+            # Получаем данные подключения из локальной панели
+            local _lpid=$(get_local_panel_id 2>/dev/null)
+            local xui_url="" xui_username="" xui_password="" xui_api_token=""
+            if [ -n "$_lpid" ] && check_yq &>/dev/null; then
+                xui_url=$(yq eval ".panels.${_lpid}.xui_url" config.yaml 2>/dev/null)
+                xui_username=$(yq eval ".panels.${_lpid}.xui_username" config.yaml 2>/dev/null)
+                xui_password=$(yq eval ".panels.${_lpid}.xui_password" config.yaml 2>/dev/null)
+                xui_api_token=$(yq eval ".panels.${_lpid}.xui_api_token" config.yaml 2>/dev/null)
+            fi
             
             # Выводим данные подключения если они есть
             if [ -n "$xui_url" ]; then
@@ -2357,23 +2431,12 @@ show_status() {
         local db_path=$(get_config_value "DB_PATH")
         
         # Значение по умолчанию для DB_PATH
-        [ -z "$db_path" ] && db_path="/app/data/bot_users.db"
-        
-        # Получаем количество пользователей из базы данных
-        local user_count=0
-        local admin_ids=$(get_config_value "ADMIN_IDS")
-        local main_admin=$(echo "$admin_ids" | cut -d',' -f1)
-        
-        # Проверяем базу данных внутри контейнера
-        if [ -n "$main_admin" ]; then
-            user_count=$(docker exec xuibot sqlite3 "$db_path" "SELECT COUNT(*) FROM allowed_users WHERE user_id != ${main_admin};" 2>/dev/null || echo "0")
-        fi
+        [ -z "$db_path" ] && db_path="/app/data/awgxuibot.db"
         
         if [ "$xui_bot_username" != "Unknown" ]; then
             echo -e "  Ссылка: https://t.me/${xui_bot_username}"
         fi
         echo -e "  XUI Bot: ${GREEN}✅ Запущен${NC}"
-        echo -e "  Пользователей: ${user_count}"
         
         # Проверка автозагрузки
         local xui_restart_policy=$(docker inspect xuibot --format='{{.HostConfig.RestartPolicy.Name}}' 2>/dev/null)
@@ -2796,12 +2859,8 @@ check_and_offer_existing_certs() {
     get_cert_info "$CERT_BACKUP_DIR/fullchain.pem"
     echo -e "${BLUE}════════════════════════════════════════${NC}\n"
     
-    if [ -z "$NONINTERACTIVE" ]; then
-        read -p "Использовать существующие сертификаты? (Enter - Да, 0 - Запросить новый): " use_existing
-    else
-        use_existing=""
-        echo -e "${BLUE}ℹ️  Автоматический режим: используем существующие сертификаты${NC}"
-    fi
+    use_existing="0"
+    echo -e "${YELLOW}⚠ Автоматически: будет запрошен новый SSL сертификат${NC}"
     
     if [[ "$use_existing" == "0" ]]; then
         echo -e "${YELLOW}⚠ Будет запрошен новый SSL сертификат${NC}"
@@ -3158,7 +3217,7 @@ EOF
   "port": 443,
   "protocol": "vless",
   "settings": "{\n  \"clients\": [],\n  \"decryption\": \"none\",\n  \"encryption\": \"none\"\n}",
-  "streamSettings": "{\n  \"network\": \"xhttp\",\n  \"security\": \"reality\",\n  \"externalProxy\": [],\n  \"realitySettings\": {\n    \"show\": false,\n    \"xver\": 0,\n    \"target\": \"www.nvidia.com:443\",\n    \"serverNames\": [\n      \"www.nvidia.com\"\n    ],\n    \"privateKey\": \"REALITY_PRIVATE_KEY_PLACEHOLDER\",\n    \"minClientVer\": \"\",\n    \"maxClientVer\": \"\",\n    \"maxTimediff\": 0,\n    \"shortIds\": [\n      \"REALITY_SHORT_ID_PLACEHOLDER\"\n    ],\n    \"settings\": {\n      \"publicKey\": \"REALITY_PUBLIC_KEY_PLACEHOLDER\",\n      \"fingerprint\": \"edge\",\n      \"serverName\": \"\",\n      \"spiderX\": \"/\"\n    }\n  },\n  \"xhttpSettings\": {\n    \"path\": \"/\",\n    \"host\": \"\",\n    \"headers\": {},\n    \"scMaxBufferedPosts\": 30,\n    \"scMaxEachPostBytes\": \"1000000\",\n    \"scStreamUpServerSecs\": \"20-80\",\n    \"noSSEHeader\": false,\n    \"xPaddingBytes\": \"100-1000\",\n    \"mode\": \"auto\",\n    \"xPaddingObfsMode\": false,\n    \"scMinPostsIntervalMs\": \"30\"\n  }\n}",
+  "streamSettings": "{\n  \"network\": \"xhttp\",\n  \"security\": \"reality\",\n  \"externalProxy\": [],\n  \"realitySettings\": {\n    \"show\": false,\n    \"xver\": 0,\n    \"target\": \"www.nvidia.com:443\",\n    \"serverNames\": [\n      \"www.nvidia.com\"\n    ],\n    \"privateKey\": \"REALITY_PRIVATE_KEY_PLACEHOLDER\",\n    \"minClientVer\": \"\",\n    \"maxClientVer\": \"\",\n    \"maxTimediff\": 0,\n    \"shortIds\": [\n      \"REALITY_SHORT_ID_PLACEHOLDER\"\n    ],\n    \"settings\": {\n      \"publicKey\": \"REALITY_PUBLIC_KEY_PLACEHOLDER\",\n      \"fingerprint\": \"firefox\",\n      \"serverName\": \"\",\n      \"spiderX\": \"/\"\n    }\n  },\n  \"xhttpSettings\": {\n    \"path\": \"/\",\n    \"host\": \"\",\n    \"headers\": {},\n    \"scMaxBufferedPosts\": 30,\n    \"scMaxEachPostBytes\": \"1000000\",\n    \"scStreamUpServerSecs\": \"20-80\",\n    \"noSSEHeader\": false,\n    \"xPaddingBytes\": \"100-1000\",\n    \"mode\": \"auto\",\n    \"xPaddingObfsMode\": false,\n    \"scMinPostsIntervalMs\": \"30\"\n  }\n}",
   "tag": "inbound-443",
   "sniffing": "{\n  \"enabled\": false,\n  \"destOverride\": [\n    \"http\",\n    \"tls\",\n    \"quic\",\n    \"fakedns\"\n  ],\n  \"metadataOnly\": false,\n  \"routeOnly\": false\n}",
   "remark": "VLESS-Reality-xHTTP"
@@ -3201,7 +3260,7 @@ INBOUND_EOF
     "shortIds": ["${REALITY_SHORT_ID}"],
     "settings": {
       "publicKey": "${REALITY_PUBLIC_KEY}",
-      "fingerprint": "edge",
+      "fingerprint": "firefox",
       "serverName": "",
       "spiderX": "/"
     }
@@ -5221,9 +5280,9 @@ install_awg() {
             2) install_awg_version "v2" "51821" ;;
             3)
                 echo -e "\n${YELLOW}Установка AWG v1...${NC}"
-                install_awg_version "v1" "51820"
+                install_awg_version "v1" "51820" "auto"
                 echo -e "\n${YELLOW}Установка AWG v2...${NC}"
-                install_awg_version "v2" "51821"
+                install_awg_version "v2" "51821" "auto"
                 ;;
             4) return 0 ;;
             *) echo -e "${RED}❌ Неверный выбор${NC}"; return 1 ;;
@@ -5235,6 +5294,7 @@ install_awg() {
 install_awg_version() {
     local version=$1
     local default_port=$2
+    local auto_mode=$3  # Новый параметр для автоматического режима
     local container_name="amnezia-awg"
     
     if [ "$version" = "v2" ]; then
@@ -5246,17 +5306,29 @@ install_awg_version() {
     # Проверяем, установлен ли AWG
     if docker ps -a --format '{{.Names}}' | grep -q "^${container_name}$"; then
         echo -e "${YELLOW}⚠️  AWG $version уже установлен!${NC}"
-        read -p "Переустановить? (y/n): " reinstall
-        if [ "$reinstall" != "y" ]; then
-            return 0
+        if [ "$auto_mode" = "auto" ]; then
+            echo -e "${YELLOW}🗑️  Автоматическое удаление старого контейнера...${NC}"
+            docker stop $container_name 2>/dev/null || true
+            docker rm $container_name 2>/dev/null || true
+        else
+            read -p "Переустановить? (y/n): " reinstall
+            if [ "$reinstall" != "y" ]; then
+                return 0
+            fi
+            echo -e "${YELLOW}🗑️  Удаление старого контейнера...${NC}"
+            docker stop $container_name 2>/dev/null || true
+            docker rm $container_name 2>/dev/null || true
         fi
-        echo -e "${YELLOW}🗑️  Удаление старого контейнера...${NC}"
-        docker stop $container_name 2>/dev/null || true
-        docker rm $container_name 2>/dev/null || true
     fi
     
-    read -p "Введите порт для AWG $version (по умолчанию $default_port): " AWG_PORT
-    AWG_PORT=${AWG_PORT:-$default_port}
+    # В автоматическом режиме используем порт по умолчанию без запроса
+    if [ "$auto_mode" = "auto" ]; then
+        AWG_PORT=$default_port
+        echo -e "${BLUE}ℹ️  Используется порт по умолчанию: $AWG_PORT${NC}"
+    else
+        read -p "Введите порт для AWG $version (по умолчанию $default_port): " AWG_PORT
+        AWG_PORT=${AWG_PORT:-$default_port}
+    fi
     
     echo -e "${YELLOW}🔧 Установка AWG $version на порту $AWG_PORT...${NC}\n"
     

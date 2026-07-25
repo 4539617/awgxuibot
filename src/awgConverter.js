@@ -40,10 +40,11 @@ export function parseAwgConfig(content) {
     }
     
     // Parse key-value pairs
-    const match = trimmed.match(/^([^=]+)=(.*)$/);
-    if (match && currentSection) {
-      const key = match[1].trim();
-      const value = match[2].trim();
+    // Используем indexOf чтобы value мог содержать '=' (I-параметры, hex-строки)
+    const eqIdx = trimmed.indexOf('=');
+    if (eqIdx > 0 && currentSection) {
+      const key = trimmed.slice(0, eqIdx).trim();
+      const value = trimmed.slice(eqIdx + 1).trim();
       config[currentSection][key] = value;
     }
   }
@@ -123,7 +124,7 @@ export function generateAwgConfig(config) {
   const interfaceOrder = [
     'Address', 'DNS', 'PrivateKey',
     'Jc', 'Jmin', 'Jmax',
-    'S1', 'S2',
+    'S1', 'S2', 'S3', 'S4',
     'H1', 'H2', 'H3', 'H4',
     'I1', 'I2', 'I3', 'I4', 'I5'
   ];

@@ -5,6 +5,7 @@ Panel Monitor - Автоматический мониторинг и перек�
 
 import asyncio
 import logging
+import sqlite3
 from datetime import datetime
 from typing import Dict, Optional, List
 from dataclasses import dataclass, field
@@ -21,6 +22,8 @@ class PanelState:
     last_check: Optional[datetime] = None
     is_available: bool = True
     last_status_change: Optional[datetime] = None
+    # История обрывов: список (datetime начала обрыва)
+    outage_events: List[datetime] = field(default_factory=list)
 
 
 class PanelMonitor:
@@ -46,6 +49,7 @@ class PanelMonitor:
         self.config_manager = config_manager
         self.bot = bot
         self.admin_ids = admin_ids
+        self.db_path = config_manager.common.db_path
         
         # Параметры мониторинга из конфигурации
         self.enabled = config_manager.common.panel_monitoring_enabled
@@ -56,6 +60,7 @@ class PanelMonitor:
         # Состояние панелей
         self.panel_states: Dict[str, PanelState] = {}
         self._initialize_panel_states()
+        self._load_outages_from_db()
         
         # Контроль выполнения
         self.running = False
@@ -80,6 +85,43 @@ class PanelMonitor:
         for panel_id in panels.keys():
             self.panel_states[panel_id] = PanelState(panel_id=panel_id)
         logger.info(f"📊 Инициализировано состояний панелей: {len(self.panel_states)}")
+
+    def _load_outages_from_db(self):
+        """Загрузка истории обрывов из БД при старте"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                rows = conn.execute(
+                    "SELECT panel_id, started_at FROM panel_outages ORDER BY started_at"
+                ).fetchall()
+            for panel_id, started_at_str in rows:
+                if panel_id not in self.panel_states:
+                    self.panel_states[panel_id] = PanelState(panel_id=panel_id)
+                dt = None
+                for fmt in ('%Y-%m-%dT%H:%M:%S.%f', '%Y-%m-%dT%H:%M:%S',
+                            '%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%d %H:%M:%S'):
+                    try:
+                        dt = datetime.strptime(started_at_str, fmt)
+                        break
+                    except ValueError:
+                        continue
+                if dt is None:
+                    logger.warning(f"⚠️ Не удалось распарсить дату обрыва: {started_at_str!r}")
+                    continue
+                self.panel_states[panel_id].outage_events.append(dt)
+            logger.info(f"📂 Загружено обрывов из БД: {len(rows)}")
+        except Exception as e:
+            logger.warning(f"⚠️ Не удалось загрузить историю обрывов: {e}")
+
+    def _save_outage_to_db(self, panel_id: str, started_at: datetime):
+        """Сохранить обрыв в БД"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute(
+                    "INSERT INTO panel_outages (panel_id, started_at) VALUES (?, ?)",
+                    (panel_id, started_at.isoformat())
+                )
+        except Exception as e:
+            logger.warning(f"⚠️ Не удалось сохранить обрыв в БД: {e}")
     
     async def start_monitoring(self):
         """Запуск фонового мониторинга"""
@@ -204,10 +246,13 @@ class PanelMonitor:
         
         logger.warning(f"⚠️ Панель {panel_id} недоступна ({failures}/{self.failure_threshold})")
         
-        # Обновляем статус
+        # Обновляем статус и записываем начало нового обрыва
         if state.is_available:
             state.is_available = False
-            state.last_status_change = datetime.now()
+            now = datetime.now()
+            state.last_status_change = now
+            state.outage_events.append(now)
+            self._save_outage_to_db(panel_id, now)
         
         # Проверяем достижение порога для failover
         if failures >= self.failure_threshold:
@@ -225,6 +270,10 @@ class PanelMonitor:
         """
         logger.info(f"🔄 Начало процесса failover с панели {failed_panel_id}")
         
+        # Получаем конфигурацию недоступной панели для отображения алиаса
+        failed_panel_config = self.config_manager.get_panel(failed_panel_id)
+        failed_panel_alias = failed_panel_config.alias if failed_panel_config else failed_panel_id
+        
         # Получаем список панелей по приоритету (порядок в config.yaml)
         panels_by_priority = await self._get_panels_by_priority()
         
@@ -238,17 +287,15 @@ class PanelMonitor:
                 logger.debug(f"⏭️ Пропуск панели {panel_id} (отключена или не найдена)")
                 continue
             
-            # Локальные панели используем всегда (работают через БД)
-            is_local = getattr(panel_config, 'is_local', False)
-            
-            if is_local:
+            # panel0 — локальная, всегда доступна для failover (работает через БД)
+            if panel_id == "panel0":
                 logger.debug(f"✅ Локальная панель {panel_id} доступна для failover")
             else:
-                # Для удаленных панелей проверяем версию (нужен API v3+)
+                # Для удалённых панелей проверяем версию (нужен API v3+)
                 is_v3_or_higher = panel_config.is_v3() if hasattr(panel_config, 'is_v3') else False
                 
                 if not is_v3_or_higher:
-                    logger.debug(f"⏭️ Пропуск панели {panel_id} (v2.x, удаленная, нет API)")
+                    logger.debug(f"⏭️ Пропуск панели {panel_id} (v2.x, удалённая, нет API)")
                     continue
             
             # Проверяем доступность
@@ -263,9 +310,8 @@ class PanelMonitor:
                 if success:
                     await self._notify_admins(
                         f"🔄 <b>Автоматическое переключение панели</b>\n\n"
-                        f"❌ Недоступна: <code>{failed_panel_id}</code>\n"
-                        f"✅ Переключено на: <code>{panel_id}</code>\n"
-                        f"📡 Alias: <b>{panel_config.alias}</b>\n\n"
+                        f"❌ Недоступна: <b>{failed_panel_alias}</b> <code>{failed_panel_id}</code>\n"
+                        f"✅ Переключено на: <b>{panel_config.alias}</b> <code>{panel_id}</code>\n\n"
                         f"⏰ Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
                     )
                     return

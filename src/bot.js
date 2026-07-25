@@ -1052,10 +1052,6 @@ export class RouteBot {
         chatId,
         `👤 *Введите имя пира*${ipInfo}\n\n` +
         `Это имя будет добавлено в комментарий на сервере для идентификации.\n\n` +
-        `Примеры:\n` +
-        `• \`John iPhone\`\n` +
-        `• \`Maria Laptop\`\n` +
-        `• \`Office PC\`\n\n` +
         `Или отправьте \`-\` чтобы пропустить`,
         {
           parse_mode: 'Markdown',
@@ -1488,7 +1484,7 @@ export class RouteBot {
         return this.awgManager.serverIP;
       }
       
-      // Fallback: читаем config.yaml и получаем server_ip из local_panel
+      // Fallback: читаем config.yaml и получаем server_ip из panel0
       const configPath = path.join(process.cwd(), 'config.yaml');
       
       if (!fs.existsSync(configPath)) {
@@ -1499,22 +1495,13 @@ export class RouteBot {
       const fileContents = fs.readFileSync(configPath, 'utf8');
       const data = yaml.load(fileContents);
       
-      // Ищем локальную панель
+      // Ищем panel0 (локальная панель)
       if (data && data.panels) {
-        // Сначала пробуем найти local_panel
-        if (data.panels.local_panel && data.panels.local_panel.server_ip) {
-          return data.panels.local_panel.server_ip;
+        if (data.panels.panel0 && data.panels.panel0.server_ip) {
+          return data.panels.panel0.server_ip;
         }
         
-        // Если нет local_panel, ищем любую панель с is_local: true
-        for (const panelId in data.panels) {
-          const panel = data.panels[panelId];
-          if (panel.is_local && panel.server_ip) {
-            return panel.server_ip;
-          }
-        }
-        
-        // Если нет локальной панели, берем server_ip из первой доступной панели
+        // Fallback: первая доступная панель с server_ip
         for (const panelId in data.panels) {
           const panel = data.panels[panelId];
           if (panel.server_ip) {
