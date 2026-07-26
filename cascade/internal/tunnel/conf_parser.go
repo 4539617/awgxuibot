@@ -42,6 +42,7 @@ import (
 
 // ParsedPeer holds data from a single [Peer] section.
 type ParsedPeer struct {
+	Name         string // from "# Name = ..." comment immediately before [Peer]
 	PublicKey    string
 	PresharedKey string
 	Endpoint     string
@@ -81,6 +82,7 @@ func ParseWGConf(content string) (*ParsedConf, error) {
 
 	var section string
 	var cur *ParsedPeer // current [Peer] being parsed
+	var pendingName string // name from "# Name = ..." comment before next [Peer]
 
 	flush := func() {
 		if cur != nil && cur.PublicKey != "" {
@@ -92,7 +94,19 @@ func ParseWGConf(content string) (*ParsedConf, error) {
 	for _, rawLine := range strings.Split(content, "\n") {
 		line := strings.TrimSpace(rawLine)
 
-		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") {
+		if line == "" {
+			continue
+		}
+
+		// Parse "# Name = ..." comment — applied to the next [Peer] section.
+		if strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") {
+			stripped := strings.TrimSpace(line[1:])
+			if strings.HasPrefix(strings.ToLower(stripped), "name") {
+				parts := strings.SplitN(stripped, "=", 2)
+				if len(parts) == 2 {
+					pendingName = strings.TrimSpace(parts[1])
+				}
+			}
 			continue
 		}
 
@@ -100,7 +114,10 @@ func ParseWGConf(content string) (*ParsedConf, error) {
 			next := strings.ToLower(strings.TrimSpace(line[1 : len(line)-1]))
 			if next == "peer" {
 				flush()
-				cur = &ParsedPeer{}
+				cur = &ParsedPeer{Name: pendingName}
+				pendingName = ""
+			} else {
+				pendingName = ""
 			}
 			section = next
 			continue

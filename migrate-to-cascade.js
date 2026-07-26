@@ -198,6 +198,65 @@ async function dockerReadKey(containerName, keyPaths, filename) {
 
 // ── Config reader ─────────────────────────────────────────────────────────────
 
+/**
+ * Читает clientsTable.json из контейнера Amnezia и возвращает Map<publicKey, name>.
+ * Amnezia хранит имена клиентов отдельно от .conf — в clientsTable.json.
+ * Формат: [{ userData: { clientId, userName }, config: "<client .conf>" }, ...]
+ */
+async function readClientNames(containerName, confDir) {
+  try {
+    const raw = await dockerRead(containerName, `${confDir}/clientsTable.json`);
+    const table = JSON.parse(raw);
+    const map = new Map();
+    for (const entry of table) {
+      const name = entry?.userData?.userName || entry?.userData?.clientId || '';
+      if (!name) continue;
+      // Извлекаем PublicKey из клиентского .conf в поле config
+      const conf = entry?.config || '';
+      const m = conf.match(/^\s*PublicKey\s*=\s*(\S+)/m);
+      if (m) map.set(m[1].trim(), name);
+    }
+    return map;
+  } catch {
+    return new Map(); // файл не найден или неверный формат — не критично
+  }
+}
+
+/**
+ * Вставляет "# Name = <имя>" перед каждым [Peer] в серверном .conf,
+ * используя маппинг publicKey → name из clientsTable.json.
+ * Cascade парсит этот комментарий и использует как имя пира.
+ */
+function injectPeerNames(confContent, nameMap) {
+  if (!nameMap || nameMap.size === 0) return confContent;
+
+  const lines  = confContent.split('\n');
+  const result = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    if (/^\[Peer\]/i.test(line.trim())) {
+      // Ищем PublicKey в следующих строках этой [Peer] секции
+      let pubKey = null;
+      for (let j = i + 1; j < lines.length; j++) {
+        const l = lines[j].trim();
+        if (l.startsWith('[')) break; // следующая секция
+        const m = l.match(/^PublicKey\s*=\s*(\S+)/i);
+        if (m) { pubKey = m[1]; break; }
+      }
+      const name = pubKey && nameMap.get(pubKey);
+      if (name) result.push(`# Name = ${name}`);
+    }
+
+    result.push(line);
+    i++;
+  }
+
+  return result.join('\n');
+}
+
 async function readContainerConfig(containerName) {
   const confPaths = [
     '/opt/amnezia/amneziawg',
@@ -208,12 +267,14 @@ async function readContainerConfig(containerName) {
 
   let confContent = null;
   let confPath    = null;
+  let confDir     = null;
 
   for (const dir of confPaths) {
     for (const file of confFiles) {
       try {
         confContent = await dockerRead(containerName, `${dir}/${file}`);
         confPath = `${dir}/${file}`;
+        confDir  = dir;
         break;
       } catch { /* try next */ }
     }
@@ -233,6 +294,13 @@ async function readContainerConfig(containerName) {
   const privateKey   = await dockerReadKey(containerName, keyPaths, 'wireguard_server_private_key.key');
   const publicKey    = await dockerReadKey(containerName, keyPaths, 'wireguard_server_public_key.key');
   const presharedKey = await dockerReadKey(containerName, keyPaths, 'wireguard_psk.key');
+
+  // Читаем имена клиентов из clientsTable.json и вставляем в конфиг
+  const nameMap = await readClientNames(containerName, confDir);
+  if (nameMap.size > 0) {
+    confContent = injectPeerNames(confContent, nameMap);
+    console.log(`   📛 Найдено имён клиентов: ${nameMap.size}`);
+  }
 
   return { confContent, confPath, privateKey, publicKey, presharedKey };
 }

@@ -522,7 +522,11 @@ func (m *Manager) ImportConfAsServer(name, confContent string) (*ImportConfAsSer
 		}
 		// Use the first AllowedIPs entry as the peer address.
 		addr = strings.TrimSpace(strings.SplitN(addr, ",", 2)[0])
-		name := fmt.Sprintf("peer-%d", i+1)
+		// Use name from "# Name = ..." comment in .conf; fall back to "peer-N".
+		name := pp.Name
+		if name == "" {
+			name = fmt.Sprintf("peer-%d", i+1)
+		}
 		_, addErr := iface.AddPeer(peer.PeerInput{
 			Name:         name,
 			PublicKey:    pp.PublicKey,

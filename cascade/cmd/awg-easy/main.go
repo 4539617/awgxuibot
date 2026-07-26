@@ -95,15 +95,17 @@ func main() {
 	// Panic recovery — turns panics into HTTP 500 without crashing the server.
 	app.Use(recover.New())
 
-	// Request logging: log mutations (POST/PATCH/DELETE/PUT) and errors (4xx/5xx).
-	// Successful GET requests (200-399) are never logged — they occur every second
-	// from the frontend setInterval polling and would spam the container log.
+	// Request logging:
+	//   normal mode  — log mutations (POST/PATCH/DELETE/PUT) and errors (4xx/5xx).
+	//                  Successful GET requests are skipped — frontend polls every second.
+	//   DEBUG=true   — log every request including GET polls.
+	debug := cfg.Debug
 	app.Use(func(c *fiber.Ctx) error {
 		start := time.Now()
 		err := c.Next()
 		status := c.Response().StatusCode()
 		method := c.Method()
-		if method != "GET" || status >= 400 {
+		if debug || method != "GET" || status >= 400 {
 			log.Printf("[%s] %s %s → %d (%s)",
 				time.Now().Format("15:04:05"),
 				method, c.Path(), status,
