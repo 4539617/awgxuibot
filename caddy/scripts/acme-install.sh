@@ -61,51 +61,63 @@ else
     echo 'RENEW_DAYS=1' >> "$HOME/.acme.sh/account.conf"
 fi
 
-# Step 1: First issuance via standalone mode.
-# acme.sh temporarily binds port 80 to answer the ACME HTTP-01 challenge.
-# Caddy is not running yet — this is intentional (chicken-and-egg: no cert → can't start Caddy).
-echo "==> Issuing short-lived certificate for $IP (standalone mode)..."
-~/.acme.sh/acme.sh \
-    --issue \
-    --server letsencrypt \
-    -d "$IP" \
-    --standalone \
-    --cert-profile shortlived \
-    --days 1
+# If a valid cert already exists in CERT_DIR — skip issuance and go straight to
+# starting Caddy. This handles re-runs (e.g. pункт 27 called again after a prior
+# successful run, or after the container was stopped).
+CERT_EXISTS=false
+if [ -f "$CERT_DIR/server.crt" ] && [ -f "$CERT_DIR/server.key" ]; then
+    echo "==> Certificate already exists in $CERT_DIR — skipping issuance."
+    CERT_EXISTS=true
+fi
 
-# Step 2: Install cert.
-# reloadcmd = docker restart (NOT caddy reload — admin off disables the admin API).
-echo "==> Installing certificate to $CERT_DIR..."
-~/.acme.sh/acme.sh \
-    --install-cert -d "$IP" --ecc \
-    --key-file       "$CERT_DIR/server.key" \
-    --fullchain-file "$CERT_DIR/server.crt" \
-    --reloadcmd      "docker restart $CADDY_CONTAINER"
+if [ "$CERT_EXISTS" = "false" ]; then
+    # Step 1: First issuance via standalone mode.
+    # acme.sh temporarily binds port 80 to answer the ACME HTTP-01 challenge.
+    # Caddy is not running yet — this is intentional (chicken-and-egg: no cert → can't start Caddy).
+    echo "==> Issuing short-lived certificate for $IP (standalone mode)..."
+    ~/.acme.sh/acme.sh \
+        --issue \
+        --server letsencrypt \
+        -d "$IP" \
+        --standalone \
+        --cert-profile shortlived \
+        --days 1
 
-chmod 600 "$CERT_DIR/server.key"
-chmod 644 "$CERT_DIR/server.crt"
+    # Step 2: Install cert.
+    # reloadcmd = docker restart (NOT caddy reload — admin off disables the admin API).
+    echo "==> Installing certificate to $CERT_DIR..."
+    ~/.acme.sh/acme.sh \
+        --install-cert -d "$IP" --ecc \
+        --key-file       "$CERT_DIR/server.key" \
+        --fullchain-file "$CERT_DIR/server.crt" \
+        --reloadcmd      "docker restart $CADDY_CONTAINER"
 
-# Step 3: Start Caddy.
-# Cert is now available → Caddy can start and will serve /.well-known/acme-challenge/*
-# from /srv/acme (configured in Caddyfile).
+    chmod 600 "$CERT_DIR/server.key"
+    chmod 644 "$CERT_DIR/server.crt"
+fi
+
+# Step 3: (Re)start Caddy — cert is available.
+# --build ensures the image is up to date on re-runs.
 echo "==> Starting Caddy..."
-docker compose -f docker-compose.caddy.yml up -d
+docker compose -f docker-compose.caddy.yml up -d --build
 echo "==> Waiting for Caddy to start..."
 sleep 3
 
-# Step 4: Re-issue via webroot to update Le_Webroot in acme.sh config.
-# After standalone issue, Le_Webroot='no' is saved. If left as-is, future renewals
-# would try standalone again → port 80 conflict with running Caddy → renewal fails.
-# --force re-issues immediately and saves Le_Webroot='/srv/acme' for all future renewals.
-echo "==> Switching to webroot mode for future renewals..."
-~/.acme.sh/acme.sh \
-    --issue \
-    --server letsencrypt \
-    -d "$IP" \
-    --webroot "$ACME_WEBROOT" \
-    --cert-profile shortlived \
-    --days 1 \
-    --force
+if [ "$CERT_EXISTS" = "false" ]; then
+    # Step 4: Re-issue via webroot to update Le_Webroot in acme.sh config.
+    # After standalone issue, Le_Webroot='no' is saved. If left as-is, future renewals
+    # would try standalone again → port 80 conflict with running Caddy → renewal fails.
+    # --force re-issues immediately and saves Le_Webroot='/srv/acme' for all future renewals.
+    echo "==> Switching to webroot mode for future renewals..."
+    ~/.acme.sh/acme.sh \
+        --issue \
+        --server letsencrypt \
+        -d "$IP" \
+        --webroot "$ACME_WEBROOT" \
+        --cert-profile shortlived \
+        --days 1 \
+        --force
+fi
 
 echo ""
 echo "Done. Certificate installed to $CERT_DIR"
