@@ -284,6 +284,8 @@ export class CascadeClient {
     const body = {
       name,
       peerType: 'client',
+      generateKeys:   true,  // Cascade генерирует ключи на сервере (нужно для QR и .conf)
+      autoAllocateIP: true,  // Cascade назначает следующий свободный IP
       ...opts,
     };
     const data = await this.post(`/tunnel-interfaces/${ifaceId}/peers`, body);
