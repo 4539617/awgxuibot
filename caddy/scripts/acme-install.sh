@@ -71,11 +71,13 @@ if [ "$DEST_HAS_CERT" = "true" ]; then
 elif [ "$ACME_HAS_CERT" = "true" ]; then
     # ── Case B: cert in acme.sh but not copied to CERT_DIR ───────────────────
     echo "==> Certificate found in acme.sh store — installing to $CERT_DIR..."
+    # reloadcmd may fail if Caddy container doesn't exist yet — that's OK,
+    # we start it explicitly below. Use "|| true" to prevent set -e from exiting.
     ~/.acme.sh/acme.sh \
         --install-cert -d "$IP" --ecc \
         --key-file       "$CERT_DIR/server.key" \
         --fullchain-file "$CERT_DIR/server.crt" \
-        --reloadcmd      "docker restart $CADDY_CONTAINER"
+        --reloadcmd      "docker restart $CADDY_CONTAINER || true"
     chmod 600 "$CERT_DIR/server.key"
     chmod 644 "$CERT_DIR/server.crt"
 
@@ -91,11 +93,12 @@ else
         --days 1
 
     echo "==> Installing certificate to $CERT_DIR..."
+    # Same: reloadcmd is best-effort here — Caddy starts explicitly below.
     ~/.acme.sh/acme.sh \
         --install-cert -d "$IP" --ecc \
         --key-file       "$CERT_DIR/server.key" \
         --fullchain-file "$CERT_DIR/server.crt" \
-        --reloadcmd      "docker restart $CADDY_CONTAINER"
+        --reloadcmd      "docker restart $CADDY_CONTAINER || true"
     chmod 600 "$CERT_DIR/server.key"
     chmod 644 "$CERT_DIR/server.crt"
 fi
