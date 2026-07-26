@@ -2076,15 +2076,29 @@ install_cascade() {
         docker compose -f docker-compose.cascade.yml down 2>/dev/null || true
     fi
 
-    echo -e "${YELLOW}🚀 Запуск Cascade Web UI...${NC}"
-    if docker compose -f docker-compose.cascade.yml up -d; then
+    echo -e "${YELLOW}🔨 Сборка образа Cascade из исходников...${NC}"
+    if docker compose -f docker-compose.cascade.yml up -d --build; then
         sleep 3
         local status=$(docker ps --filter name="^cascade$" --format "{{.Status}}" 2>/dev/null)
         if [[ "$status" == *"Up"* ]]; then
-            local server_ip=$(curl -4 -s ifconfig.me 2>/dev/null || echo "YOUR_SERVER_IP")
+            local server_ip=$(curl -4 -s --max-time 3 ifconfig.me 2>/dev/null || echo "YOUR_SERVER_IP")
+            local inst_cascade_port=$(docker inspect cascade --format='{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | grep '^PORT=' | cut -d= -f2)
+            [ -z "$inst_cascade_port" ] && inst_cascade_port="51821"
             echo -e "\n${GREEN}✅ Cascade Web UI успешно установлен!${NC}"
             echo -e "${BLUE}========================================${NC}"
-            echo -e "${GREEN}🌐 Веб-интерфейс: ${YELLOW}http://${server_ip}:3000${NC}"
+            # Если уже запущен Caddy — показываем HTTPS URL
+            if docker ps --format '{{.Names}}' | grep -q "^cascade-caddy$"; then
+                local caddy_env_file="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/caddy/.env"
+                local admin_path=""
+                [ -f "$caddy_env_file" ] && admin_path=$(grep '^ADMIN_PATH=' "$caddy_env_file" 2>/dev/null | cut -d= -f2)
+                if [ -n "$admin_path" ] && [ "$admin_path" != "replace-with-random-string" ]; then
+                    echo -e "${GREEN}🌐 Веб-интерфейс: ${YELLOW}https://${server_ip}/${admin_path}/${NC}"
+                else
+                    echo -e "${GREEN}🌐 Веб-интерфейс: ${YELLOW}https://${server_ip}/${NC} ${YELLOW}(задайте ADMIN_PATH в caddy/.env)${NC}"
+                fi
+            else
+                echo -e "${GREEN}🌐 Веб-интерфейс: ${YELLOW}http://${server_ip}:${inst_cascade_port}${NC}"
+            fi
             echo -e "${BLUE}========================================${NC}"
             echo -e "${YELLOW}💡 Для миграции существующих AWG серверов используйте пункт меню 26${NC}"
         else

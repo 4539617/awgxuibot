@@ -1,0 +1,52 @@
+services:
+  cascade:
+    # Pre-built image from GitHub Actions CI (pushed on every merge to master).
+    # To use a locally-built image instead, run ./build.sh and set image: cascade:latest
+    image: ghcr.io/johnnyvbut/cascade:latest
+    container_name: cascade
+    restart: unless-stopped
+
+    # Load deploy config from deploy/.env (setup.sh writes here).
+    # Variables defined here override the defaults in environment: below.
+    env_file:
+      - path: deploy/.env
+        required: false   # OK if file doesn't exist (first run without setup.sh)
+
+    # All runtime config comes from deploy/.env (written by setup.sh / switch-mode.sh).
+    # Do NOT add WG_HOST, PORT, BIND_ADDR, PASSWORD_HASH here — they live in deploy/.env
+    # so that git pull never conflicts with local changes.
+    environment:
+      # Default WireGuard/AWG listen port (UDP) — used when creating interfaces.
+      # Override in deploy/.env if needed.
+      - WG_PORT=51820
+
+      # Debug logging — set to false in production
+      - DEBUG=false
+
+      # ================================================================
+      # NOTE: AWG2 obfuscation parameters (JC, JMIN, JMAX, S1-S4,
+      # H1-H4, I1-I5) are now managed via the Web UI Settings page
+      # and stored in /etc/wireguard/data/settings.json.
+      # ENV vars are no longer used for AWG2 params.
+      # ================================================================
+
+    volumes:
+      - ./data:/etc/wireguard/data
+      # Mount host /etc/hostname read-only so the app can display the real
+      # server hostname (os.Hostname() inside Docker returns a container hash).
+      - /etc/hostname:/host_hostname:ro
+
+    # --network host: container shares host network namespace.
+    # Required for WireGuard/AWG tunnel interfaces and iptables management.
+    # ip_forward and src_valid_mark are enabled automatically by entrypoint.sh.
+    network_mode: host
+
+    cap_add:
+      - NET_ADMIN
+      # SYS_MODULE is only required for kernel module mode (AWG_USERSPACE_IMPL="").
+      # In userspace mode (AWG_USERSPACE_IMPL=amneziawg-go) it can be omitted.
+      # Kept here for compatibility — harmless when kernel module is not used.
+      - SYS_MODULE
+
+    devices:
+      - /dev/net/tun:/dev/net/tun

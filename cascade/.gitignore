@@ -1,0 +1,42 @@
+/config
+/wg0.conf
+/wg0.json
+/src/node_modules
+.DS_Store
+*.swp
+.idea
+
+# Backup files
+*.bak
+*.bak1
+*-bak*.html
+*-bak*.js
+*__.js
+*-old.js
+
+# Claude internal — kept locally, not in public repo
+.claude/
+
+# Debug scripts
+collect-awg-deadlock.sh
+
+# Legacy diagnostic docs (kept locally, not in repo)
+docs/CRITICAL_PASSWORD_BUG_FIXED.md
+docs/MACOS_FIX.md
+docs/PASSWORD_FIX.md
+docs/REAL_CONFIG_ANALYSIS.md
+docs/TRAFFIC_NOT_WORKING_FIX.md
+docs/TRAFFIC_QUICK_FIX.md
+src/www/API_CLIENT_SETUP.md
+src/www/CHANGELOG.md
+src/www/README.md
+src/www/README.ru.md
+src/www/i18n.js.bak
+# Generated at deploy time — do not commit
+deploy/caddy/www/video/*.mp4
+docker-compose.bridge.yml
+
+# Build artifacts — compiled binaries
+/awg-easy
+/cascade
+/wiresteer

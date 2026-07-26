@@ -294,7 +294,9 @@ async function cascadeCreateToken(baseUrl, cookie) {
   });
   const body = await res.json();
   if (!res.ok) throw new Error(`Create token failed: ${body.message || body.error || res.status}`);
-  return body.token || body.id;
+  // API возвращает { token: {id,name,...}, raw_token: "ws_..." }
+  // raw_token — строка с реальным токеном (показывается только один раз)
+  return body.raw_token || body.token?.id;
 }
 
 async function cascadeLogout(baseUrl, cookie) {
@@ -306,8 +308,13 @@ async function cascadeLogout(baseUrl, cookie) {
 }
 
 async function cascadeImportServer(baseUrl, token, name, confContent, opts = {}) {
-  const body = { name, conf: confContent };
-  if (opts.listenPort) body.listenPort = opts.listenPort;
+  // import-conf-server читает ListenPort из секции [Interface] самого .conf.
+  // Если нужно переопределить порт — патчим строку ListenPort в конфиге.
+  let conf = confContent;
+  if (opts.listenPort) {
+    conf = conf.replace(/^ListenPort\s*=\s*\d+/m, `ListenPort = ${opts.listenPort}`);
+  }
+  const body = { name, conf };
 
   const res = await fetch(`${baseUrl}/api/tunnel-interfaces/import-conf-server`, {
     method:  'POST',
@@ -506,7 +513,7 @@ async function main() {
     const peerCount = (confContent.match(/^\[Peer\]/gm) || []).length;
     const portMatch = confContent.match(/ListenPort\s*=\s*(\d+)/);
     const port      = portMatch ? portMatch[1] : 'unknown';
-    const isAWGv2   = /^\s*(Jc|S3|H1\s*=\s*\d+-\d+)/m.test(confContent);
+    const isAWGv2   = /^\s*(Jc|Jmin|Jmax|S1|S2|S3|S4|H1|H2|H3|H4|I1)\s*=/m.test(confContent);
 
     console.log(`📋 Найдено пиров: ${peerCount}`);
     console.log(`🔌 Порт: ${port}`);

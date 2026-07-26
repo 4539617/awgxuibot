@@ -21,8 +21,12 @@
 
 services:
   cascade:
-    # Pre-built image. Для локальной сборки: cd 294/cascade-0.9.2 && ./build.sh
-    image: ghcr.io/johnnyvbut/cascade:latest
+    # Собирается локально из исходников в репо (cascade/).
+    # Для пересборки после правок: docker compose -f docker-compose.cascade.yml up -d --build
+    build:
+      context: ./cascade
+      dockerfile: Dockerfile
+    image: cascade:latest
     container_name: cascade
     restart: unless-stopped
 
