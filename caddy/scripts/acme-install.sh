@@ -5,18 +5,10 @@
 # Usage (run from project root or caddy/ directory):
 #   sudo bash caddy/scripts/acme-install.sh <PUBLIC_IP> <EMAIL>
 #
-# What it does:
-#   1. Installs acme.sh (if not present)
-#   2. Sets RENEW_DAYS=1 so 6-day shortlived certs renew on day 5 (not day 30+)
-#   3. Issues a shortlived cert (6 days) for the IP via HTTP-01 standalone mode
-#      (acme.sh binds a temporary HTTP server on port 80 — no Caddy needed yet)
-#   4. Installs the cert to /etc/ssl/cascade/ with reloadcmd = docker restart cascade-caddy
-#      NOTE: "admin off" in Caddyfile disables the admin API — caddy reload fails,
-#            docker restart is the only way to reload the cert.
-#   5. Starts Caddy (docker compose -f docker-compose.caddy.yml up -d)
-#   6. Re-issues cert via webroot mode to set Le_Webroot='/srv/acme' in acme.sh config.
-#      Without this step, Le_Webroot='no' (standalone) is remembered and renewals
-#      would try to bind port 80 again — conflicting with running Caddy.
+# Idempotent — safe to run multiple times:
+#   - Cert in acme.sh but not in /etc/ssl/cascade/ → installs it, starts Caddy
+#   - Cert already in /etc/ssl/cascade/            → starts Caddy only
+#   - No cert anywhere                             → full issue → install → start
 #
 # Requirements:
 #   - Port 80 must be reachable from the internet during FIRST issuance
@@ -32,28 +24,22 @@ EMAIL="${2:?Usage: $0 <PUBLIC_IP> <EMAIL>}"
 CERT_DIR="/etc/ssl/cascade"
 ACME_WEBROOT="/srv/acme"
 CADDY_CONTAINER="cascade-caddy"
+ACME_CERT_DIR="$HOME/.acme.sh/${IP}_ecc"
 
 echo "==> Creating directories..."
 mkdir -p "$CERT_DIR" "$ACME_WEBROOT"
 chmod 755 "$ACME_WEBROOT"
 chmod 700 "$CERT_DIR"
 
-# Install acme.sh if not already present
+# ── Install acme.sh if not present ───────────────────────────────────────────
 if [ ! -f "$HOME/.acme.sh/acme.sh" ]; then
     echo "==> Installing acme.sh..."
     curl https://get.acme.sh | sh -s email="$EMAIL"
-    # shellcheck disable=SC1090
-    source "$HOME/.acme.sh/acme.sh.env"
-else
-    echo "==> acme.sh already installed, skipping"
-    # shellcheck disable=SC1090
-    source "$HOME/.acme.sh/acme.sh.env" 2>/dev/null || true
 fi
+# shellcheck disable=SC1090
+source "$HOME/.acme.sh/acme.sh.env" 2>/dev/null || export PATH="$HOME/.acme.sh:$PATH"
 
-# Set RENEW_DAYS=1 globally.
-# Default is 30 days, but shortlived certs live only 6 days.
-# With RENEW_DAYS=1: renewal happens when 1 day remains (day 5 of 6) — correct.
-# Without this: acme.sh cron either renews every run or never, depending on version.
+# ── RENEW_DAYS=1 for 6-day shortlived certs ──────────────────────────────────
 echo "==> Setting RENEW_DAYS=1 for shortlived certs..."
 if grep -q "^RENEW_DAYS=" "$HOME/.acme.sh/account.conf" 2>/dev/null; then
     sed -i 's/^RENEW_DAYS=.*/RENEW_DAYS=1/' "$HOME/.acme.sh/account.conf"
@@ -61,19 +47,40 @@ else
     echo 'RENEW_DAYS=1' >> "$HOME/.acme.sh/account.conf"
 fi
 
-# If a valid cert already exists in CERT_DIR — skip issuance and go straight to
-# starting Caddy. This handles re-runs (e.g. pункт 27 called again after a prior
-# successful run, or after the container was stopped).
-CERT_EXISTS=false
-if [ -f "$CERT_DIR/server.crt" ] && [ -f "$CERT_DIR/server.key" ]; then
-    echo "==> Certificate already exists in $CERT_DIR — skipping issuance."
-    CERT_EXISTS=true
+# ── Determine state ───────────────────────────────────────────────────────────
+# Case A: cert already installed in CERT_DIR → just (re)start Caddy
+# Case B: cert in acme.sh store but not in CERT_DIR → install-cert then start
+# Case C: no cert anywhere → full issue → install → start → switch to webroot
+
+ACME_HAS_CERT=false
+if [ -f "$ACME_CERT_DIR/${IP}.cer" ] && [ -f "$ACME_CERT_DIR/${IP}.key" ]; then
+    ACME_HAS_CERT=true
 fi
 
-if [ "$CERT_EXISTS" = "false" ]; then
-    # Step 1: First issuance via standalone mode.
-    # acme.sh temporarily binds port 80 to answer the ACME HTTP-01 challenge.
-    # Caddy is not running yet — this is intentional (chicken-and-egg: no cert → can't start Caddy).
+DEST_HAS_CERT=false
+if [ -f "$CERT_DIR/server.crt" ] && [ -f "$CERT_DIR/server.key" ]; then
+    DEST_HAS_CERT=true
+fi
+
+echo "==> State: acme_has_cert=$ACME_HAS_CERT  dest_has_cert=$DEST_HAS_CERT"
+
+if [ "$DEST_HAS_CERT" = "true" ]; then
+    # ── Case A: cert already installed → just start Caddy ────────────────────
+    echo "==> Certificate already in $CERT_DIR — skipping issuance and install."
+
+elif [ "$ACME_HAS_CERT" = "true" ]; then
+    # ── Case B: cert in acme.sh but not copied to CERT_DIR ───────────────────
+    echo "==> Certificate found in acme.sh store — installing to $CERT_DIR..."
+    ~/.acme.sh/acme.sh \
+        --install-cert -d "$IP" --ecc \
+        --key-file       "$CERT_DIR/server.key" \
+        --fullchain-file "$CERT_DIR/server.crt" \
+        --reloadcmd      "docker restart $CADDY_CONTAINER"
+    chmod 600 "$CERT_DIR/server.key"
+    chmod 644 "$CERT_DIR/server.crt"
+
+else
+    # ── Case C: no cert anywhere → full issue ────────────────────────────────
     echo "==> Issuing short-lived certificate for $IP (standalone mode)..."
     ~/.acme.sh/acme.sh \
         --issue \
@@ -83,31 +90,33 @@ if [ "$CERT_EXISTS" = "false" ]; then
         --cert-profile shortlived \
         --days 1
 
-    # Step 2: Install cert.
-    # reloadcmd = docker restart (NOT caddy reload — admin off disables the admin API).
     echo "==> Installing certificate to $CERT_DIR..."
     ~/.acme.sh/acme.sh \
         --install-cert -d "$IP" --ecc \
         --key-file       "$CERT_DIR/server.key" \
         --fullchain-file "$CERT_DIR/server.crt" \
         --reloadcmd      "docker restart $CADDY_CONTAINER"
-
     chmod 600 "$CERT_DIR/server.key"
     chmod 644 "$CERT_DIR/server.crt"
 fi
 
-# Step 3: (Re)start Caddy — cert is available.
-# --build ensures the image is up to date on re-runs.
+# ── Start Caddy ───────────────────────────────────────────────────────────────
 echo "==> Starting Caddy..."
 docker compose -f docker-compose.caddy.yml up -d --build
 echo "==> Waiting for Caddy to start..."
 sleep 3
 
-if [ "$CERT_EXISTS" = "false" ]; then
-    # Step 4: Re-issue via webroot to update Le_Webroot in acme.sh config.
-    # After standalone issue, Le_Webroot='no' is saved. If left as-is, future renewals
-    # would try standalone again → port 80 conflict with running Caddy → renewal fails.
-    # --force re-issues immediately and saves Le_Webroot='/srv/acme' for all future renewals.
+# Verify Caddy is actually running
+if ! docker ps --format '{{.Names}}' | grep -q "^${CADDY_CONTAINER}$"; then
+    echo "ERROR: Caddy container failed to start. Logs:"
+    docker logs "$CADDY_CONTAINER" 2>&1 | tail -20
+    exit 1
+fi
+
+# ── Switch to webroot for future renewals (Case C only) ──────────────────────
+# After standalone issue Le_Webroot='no' — renewals would try to bind port 80
+# again (conflict with running Caddy). Re-issue via webroot fixes this.
+if [ "$DEST_HAS_CERT" = "false" ] && [ "$ACME_HAS_CERT" = "false" ]; then
     echo "==> Switching to webroot mode for future renewals..."
     ~/.acme.sh/acme.sh \
         --issue \
