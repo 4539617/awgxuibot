@@ -326,6 +326,24 @@ export class AWGManagerCascade {
     return filepath;
   }
 
+  /**
+   * Получить QR-код пира и сохранить SVG-файл рядом с .conf.
+   * Возвращает путь к SVG-файлу или null при ошибке.
+   */
+  async _fetchQrCode(entry, peerId, confFilename) {
+    try {
+      const svg = await entry.client.getPeerQRCode(entry.interfaceId, peerId);
+      const qrFilename = confFilename.replace(/\.conf$/, '_qr.svg');
+      const qrPath = path.join(config.outputDir, qrFilename);
+      fs.writeFileSync(qrPath, svg, 'utf8');
+      logger.info(`[CascadeManager] Saved QR code: ${qrPath}`);
+      return qrPath;
+    } catch (err) {
+      logger.warn(`[CascadeManager] Could not fetch QR code for peer ${peerId}: ${err.message}`);
+      return null;
+    }
+  }
+
   /** Построить имя файла конфига */
   _filename(entry, ip, vpsLabel, suffix = '') {
     const ipPart = ip.replace(/\./g, '_');
@@ -362,6 +380,9 @@ export class AWGManagerCascade {
     const filename = this._filename(entry, ip, vpsLabel);
     const filepath = this._saveConfig(configContent, filename);
 
+    // Получаем QR-код
+    const qrSvgPath = await this._fetchQrCode(entry, peer.id, filename);
+
     return {
       filepath,
       filename,
@@ -371,6 +392,7 @@ export class AWGManagerCascade {
       peerId: peer.id,
       serverLabel: entry.serverLabel,
       healthStatus: { healthy: true },
+      qrSvgPath,
     };
   }
 
@@ -429,6 +451,9 @@ export class AWGManagerCascade {
     const filename = this._filename(entry, ip, vpsLabel, 'RESENT');
     const filepath = this._saveConfig(configContent, filename);
 
+    // Получаем QR-код
+    const qrSvgPath = await this._fetchQrCode(entry, peerId, filename);
+
     return {
       filepath,
       filename,
@@ -436,6 +461,7 @@ export class AWGManagerCascade {
       peerId,
       version: entry.version,
       serverLabel: entry.serverLabel,
+      qrSvgPath,
     };
   }
 

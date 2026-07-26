@@ -1372,7 +1372,12 @@ export class RouteBot {
 
       // Send config file with status info
       await this.bot.sendDocument(chatId, result.filepath);
-      
+
+      // Send QR code if available (Cascade mode)
+      if (result.qrSvgPath) {
+        await this.bot.sendDocument(chatId, result.qrSvgPath, { caption: '📱 QR-код для импорта в AmneziaWG' });
+      }
+
       // Send status message if health check was performed
       if (result.healthStatus) {
         const health = result.healthStatus;
@@ -1443,7 +1448,12 @@ export class RouteBot {
 
       // Send config file with status info
       await this.bot.sendDocument(chatId, result.filepath);
-      
+
+      // Send QR code if available (Cascade mode)
+      if (result.qrSvgPath) {
+        await this.bot.sendDocument(chatId, result.qrSvgPath, { caption: '📱 QR-код для импорта в AmneziaWG' });
+      }
+
       // Send status message if health check was performed
       if (result.healthStatus) {
         const health = result.healthStatus;
@@ -2050,6 +2060,12 @@ export class RouteBot {
       
       // Send config file
       await this.bot.sendDocument(chatId, result.filepath);
+
+      // Send QR code if available (Cascade mode)
+      if (result.qrSvgPath) {
+        await this.bot.sendDocument(chatId, result.qrSvgPath, { caption: '📱 QR-код для импорта в AmneziaWG' });
+      }
+
       logger.info(`Resent config to chat ${chatId}: ${result.filename}`);
       
     } catch (error) {
