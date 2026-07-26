@@ -2653,12 +2653,26 @@ show_status() {
     echo -e "\n${YELLOW}${BOLD}CASCADE WEB UI:${NC}"
 
     if docker ps --format '{{.Names}}' | grep -q "^cascade$"; then
-        local cascade_port=$(docker inspect cascade --format='{{range $p,$c := .HostConfig.PortBindings}}{{$p}}{{end}}' 2>/dev/null | grep -oP '^\d+' | head -1)
-        [ -z "$cascade_port" ] && cascade_port="3000"
+        # network_mode: host не публикует порты через PortBindings — читаем из ENV
+        local cascade_port=$(docker inspect cascade --format='{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | grep '^PORT=' | cut -d= -f2)
+        [ -z "$cascade_port" ] && cascade_port="51821"
         local server_ip_c=$(curl -4 -s --max-time 3 ifconfig.me 2>/dev/null || echo "")
         echo -e "  Cascade: ${GREEN}✅ Запущен${NC}"
         if [ -n "$server_ip_c" ]; then
-            echo -e "  Веб-интерфейс: ${GREEN}http://${server_ip_c}:${cascade_port}${NC}"
+            # Если запущен Caddy — показываем HTTPS URL с hidden path
+            if docker ps --format '{{.Names}}' | grep -q "^cascade-caddy$"; then
+                local caddy_env_file="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/caddy/.env"
+                local admin_path=""
+                [ -f "$caddy_env_file" ] && admin_path=$(grep '^ADMIN_PATH=' "$caddy_env_file" 2>/dev/null | cut -d= -f2)
+                echo -e "  Caddy (HTTPS): ${GREEN}✅ Запущен${NC}"
+                if [ -n "$admin_path" ] && [ "$admin_path" != "replace-with-random-string" ]; then
+                    echo -e "  Веб-интерфейс: ${GREEN}https://${server_ip_c}/${admin_path}/${NC}"
+                else
+                    echo -e "  Веб-интерфейс: ${GREEN}https://${server_ip_c}/${NC} ${YELLOW}(ADMIN_PATH не задан в caddy/.env)${NC}"
+                fi
+            else
+                echo -e "  Веб-интерфейс: ${GREEN}http://${server_ip_c}:${cascade_port}${NC}"
+            fi
         else
             echo -e "  Порт: ${cascade_port}"
         fi
