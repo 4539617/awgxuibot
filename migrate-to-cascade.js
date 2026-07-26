@@ -295,11 +295,20 @@ async function readContainerConfig(containerName) {
   const publicKey    = await dockerReadKey(containerName, keyPaths, 'wireguard_server_public_key.key');
   const presharedKey = await dockerReadKey(containerName, keyPaths, 'wireguard_psk.key');
 
-  // Читаем имена клиентов из clientsTable.json и вставляем в конфиг
-  const nameMap = await readClientNames(containerName, confDir);
-  if (nameMap.size > 0) {
-    confContent = injectPeerNames(confContent, nameMap);
-    console.log(`   📛 Найдено имён клиентов: ${nameMap.size}`);
+  // Имена клиентов берём из комментариев конфига (# Peer: <name> | ...)
+  // или из clientsTable.json если конфиг без комментариев (официальное приложение Amnezia).
+  const peerComments = (confContent.match(/^#\s*Peer:/gim) || []).length;
+  if (peerComments > 0) {
+    console.log(`   📛 Имена клиентов найдены в комментариях конфига: ${peerComments}`);
+  } else {
+    // Fallback: clientsTable.json (официальное приложение Amnezia)
+    const nameMap = await readClientNames(containerName, confDir);
+    if (nameMap.size > 0) {
+      confContent = injectPeerNames(confContent, nameMap);
+      console.log(`   📛 Имена клиентов из clientsTable.json: ${nameMap.size}`);
+    } else {
+      console.log(`   ℹ️  Имена клиентов не найдены — будут использованы peer-1, peer-2, ...`);
+    }
   }
 
   return { confContent, confPath, privateKey, publicKey, presharedKey };

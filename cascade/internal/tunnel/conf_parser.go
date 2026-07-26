@@ -98,13 +98,26 @@ func ParseWGConf(content string) (*ParsedConf, error) {
 			continue
 		}
 
-		// Parse "# Name = ..." comment — applied to the next [Peer] section.
+		// Parse peer name from comments immediately before [Peer].
+		// Supported formats:
+		//   # Name = Вася                          (Cascade native)
+		//   # Peer: Вася | IP: 10.8.1.3 | ...     (AWGBot install.sh format)
 		if strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") {
 			stripped := strings.TrimSpace(line[1:])
+			// "# Name = ..."
 			if strings.HasPrefix(strings.ToLower(stripped), "name") {
 				parts := strings.SplitN(stripped, "=", 2)
 				if len(parts) == 2 {
 					pendingName = strings.TrimSpace(parts[1])
+				}
+			// "# Peer: <name> | ..."
+			} else if strings.HasPrefix(strings.ToLower(stripped), "peer:") {
+				rest := strings.TrimSpace(stripped[5:])
+				// Take everything before the first "|"
+				if idx := strings.Index(rest, "|"); idx >= 0 {
+					pendingName = strings.TrimSpace(rest[:idx])
+				} else {
+					pendingName = strings.TrimSpace(rest)
 				}
 			}
 			continue
