@@ -11,7 +11,9 @@
  *   4. Строит серверный .conf с PrivateKey для Cascade
  *   5. Импортирует через POST /api/tunnel-interfaces/import-conf-server
  *      (все пиры переносятся с теми же ключами — существующие клиенты не требуют переконфигурации)
- *   6. Записывает token в config.yaml если его ещё нет
+ *   6. Загружает клиентские .conf из ./output/ через import-client-configs
+ *      (восстанавливает приватные ключи → включает QR-коды и скачивание конфигов)
+ *   7. Записывает token в config.yaml если его ещё нет
  *
  * Использование:
  *   node migrate-to-cascade.js                          # авточтение из config.yaml
@@ -322,6 +324,67 @@ async function cascadeImportServer(baseUrl, token, name, confContent, opts = {})
   return result;
 }
 
+/**
+ * Загружает клиентские .conf файлы из outputDir в Cascade через import-client-configs.
+ * Это восстанавливает privateKey у пиров, которые были мигрированы без него,
+ * и делает QR-код и скачивание конфига доступными.
+ *
+ * @param {string} baseUrl
+ * @param {string} token
+ * @param {string} ifaceId   - ID интерфейса в Cascade
+ * @param {string} outputDir - папка с клиентскими .conf файлами
+ * @param {string} versionTag - 'v1' | 'v2' — фильтр по имени файла
+ */
+async function cascadeImportClientConfigs(baseUrl, token, ifaceId, outputDir, versionTag) {
+  if (!fs.existsSync(outputDir)) {
+    console.log(`   ℹ️  Папка output не найдена (${outputDir}), пропускаем импорт клиентских ключей`);
+    return;
+  }
+
+  // Ищем .conf файлы соответствующей версии (AWGv1 или AWGv2), исключаем _RESENT
+  const tag = versionTag === 'v2' ? 'AWGv2' : 'AWGv1';
+  const files = fs.readdirSync(outputDir)
+    .filter(f => f.endsWith('.conf') && f.includes(tag) && !f.includes('_RESENT'))
+    .map(f => path.join(outputDir, f));
+
+  if (files.length === 0) {
+    console.log(`   ℹ️  Клиентские конфиги ${tag} в ${outputDir} не найдены`);
+    return;
+  }
+
+  console.log(`   📂 Найдено клиентских конфигов ${tag}: ${files.length}`);
+
+  // Формируем multipart/form-data вручную (Node.js fetch поддерживает FormData)
+  const FormData = (await import('node:buffer')).Blob ? globalThis.FormData : null;
+  // Node 18+ имеет встроенный FormData
+  const form = new globalThis.FormData();
+  for (const f of files) {
+    const content = fs.readFileSync(f);
+    const blob = new Blob([content], { type: 'text/plain' });
+    form.append('configs', blob, path.basename(f));
+  }
+
+  const res = await fetch(
+    `${baseUrl}/api/tunnel-interfaces/${ifaceId}/peers/import-client-configs`,
+    {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: form,
+    }
+  );
+
+  const result = await res.json();
+  if (!res.ok) {
+    console.warn(`   ⚠️  import-client-configs вернул ошибку: ${result.message || result.error}`);
+    return;
+  }
+
+  console.log(`   ✅ Приватные ключи восстановлены: совпало ${result.matched} из ${files.length}`);
+  if (result.unmatched?.length > 0) {
+    console.log(`   ℹ️  Не совпало: ${result.unmatched.join(', ')}`);
+  }
+}
+
 async function cascadeHealth(baseUrl) {
   try {
     const res = await fetch(`${baseUrl}/api/health`, { signal: AbortSignal.timeout(5000) });
@@ -492,6 +555,14 @@ async function main() {
     }
     if (failed > 0) {
       console.warn(`   ⚠️  Не удалось перенести: ${result.peersFailed.join(', ')}`);
+    }
+
+    // Восстанавливаем приватные ключи из output/ → включает QR и скачивание конфига
+    if (ifaceId !== '?') {
+      const outputDir = path.join(process.cwd(), 'output');
+      const versionTag = target.name.includes('2') ? 'v2' : 'v1';
+      console.log(`\n🔑 Восстанавливаем приватные ключи клиентов (QR-коды)...`);
+      await cascadeImportClientConfigs(baseUrl, token, ifaceId, outputDir, versionTag);
     }
 
     migrated++;
