@@ -43,6 +43,12 @@ https://:443 {
     # Caddy uses this cert for all HTTPS connections regardless of SNI.
     tls /certs/server.crt /certs/server.key
 
+    # Disable HTTP/3 (QUIC) — Go's net/http client (used by Cascade remote proxy)
+    # does not support QUIC. When Caddy advertises Alt-Svc: h3, the Go client
+    # attempts a QUIC upgrade and the TLS handshake fails with "tls: internal error".
+    # Browsers fall back to HTTP/1.1 automatically — no user-visible impact.
+    header -Alt-Svc
+
     # ── Security headers (global) ─────────────────────────────────────────────
     header {
         Strict-Transport-Security  "max-age=63072000; includeSubDomains; preload"
