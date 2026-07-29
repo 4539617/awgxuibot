@@ -9648,14 +9648,15 @@
           </div>
           <label class="block text-sm font-medium dark:text-neutral-300 mb-1">Your API token</label>
           <div class="flex gap-2 items-center">
-            <code class="flex-1 px-3 py-2 bg-gray-100 dark:bg-neutral-600 rounded text-xs font-mono break-all dark:text-neutral-200 select-all">{{ newTokenValue }}</code>
+            <code class="flex-1 px-3 py-2 bg-gray-100 dark:bg-neutral-600 rounded text-xs font-mono break-all dark:text-neutral-200 select-all overflow-hidden min-w-0">{{ newTokenValue }}</code>
             <button @click="copyTokenToClipboard()"
-              class="px-3 py-2 text-xs bg-purple-600 hover:bg-purple-700 text-white rounded transition whitespace-nowrap">
+              class="flex-shrink-0 px-3 py-2 text-xs bg-purple-600 hover:bg-purple-700 text-white rounded transition whitespace-nowrap">
               Copy
             </button>
           </div>
           <p class="text-xs text-gray-500 dark:text-neutral-400 mt-2">
-            Usage: <code class="font-mono bg-gray-100 dark:bg-neutral-600 px-1 rounded">Authorization: Bearer {{ newTokenValue }}</code>
+            Usage:
+            <code class="block font-mono bg-gray-100 dark:bg-neutral-600 px-2 py-1 rounded mt-1 break-all select-all">Authorization: Bearer {{ newTokenValue }}</code>
           </p>
         </div>
         <div class="modal-footer">
