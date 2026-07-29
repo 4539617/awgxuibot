@@ -3434,9 +3434,57 @@ new Vue({
       }
     },
 
-    // QR URL for a peer on a remote server
-    remotePeerQrUrl(remoteId, interfaceId, peerId) {
-      return `./api/remotes/${remoteId}/proxy/tunnel-interfaces/${interfaceId}/peers/${peerId}/qrcode.svg`;
+    // Show QR for a remote peer: fetch SVG via authenticated fetch → blob URL
+    // (avoids the <img> browser request bypassing the local session auth in some configs)
+    async remoteShowPeerQr(remoteId, interfaceId, peerId) {
+      try {
+        const segs = window.location.pathname.split('/').filter(Boolean);
+        const apiBase = segs.length > 0
+          ? `${window.location.origin}/${segs[0]}/api`
+          : `${window.location.origin}/api`;
+        const url = `${apiBase}/remotes/${remoteId}/proxy/tunnel-interfaces/${interfaceId}/peers/${peerId}/qrcode.svg`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`QR fetch failed: ${res.status}`);
+        const blob = await res.blob();
+        // Revoke any previously created blob URL to avoid memory leak
+        if (this.qrcode && this.qrcode.startsWith('blob:')) URL.revokeObjectURL(this.qrcode);
+        this.qrcode = URL.createObjectURL(blob);
+      } catch (err) {
+        this.showToast(err.message || 'Failed to load QR code', 'error');
+      }
+    },
+
+    async remoteShowPeerOneTimeLink(remoteId, peer) {
+      try {
+        const res = await this._withRemote(remoteId, () =>
+          this.api.generatePeerOneTimeLink({ interfaceId: peer.interfaceId, peerId: peer.id })
+        );
+        const token = (res.peer || {}).oneTimeLink;
+        if (token) {
+          const url = `${location.protocol}//${location.host}/cnf/${token}`;
+          await navigator.clipboard.writeText(url);
+          this.showToast('One-time link copied to clipboard', 'success');
+        }
+      } catch (err) {
+        this.showToast(err.message || 'Failed to generate one-time link', 'error');
+      }
+    },
+
+    remoteOpenPeerEdit(remoteId, peer) {
+      this.peerEditForm = {
+        _peer: peer,
+        _remoteId: remoteId,
+        name: peer.name || '',
+        persistentKeepalive: peer.persistentKeepalive || 0,
+        endpoint: peer.endpoint || '',
+        allowedIPs: peer.allowedIPs || '',
+        clientAllowedIPs: peer.clientAllowedIPs || '',
+        rateDown: peer.rateDown ? peer.rateDown / 1000 : 0,
+        rateUp:   peer.rateUp   ? peer.rateUp   / 1000 : 0,
+        groupId: peer.groupId || '',
+        expiredAt: peer.expiredAt ? (typeof peer.expiredAt === 'string' ? peer.expiredAt.slice(0, 10) : new Date(peer.expiredAt).toISOString().slice(0, 10)) : '',
+      };
+      this.showPeerEditModal = true;
     },
 
     async remoteEnablePeer(remoteId, peer) {
@@ -5358,6 +5406,7 @@ new Vue({
     async savePeerEdit() {
       const peer = this.peerEditForm._peer;
       if (!peer) return;
+      const remoteId = this.peerEditForm._remoteId || null;
       const isInterconnect = peer.peerType === 'interconnect';
       const updates = {
         name: this.peerEditForm.name,
@@ -5374,17 +5423,26 @@ new Vue({
         updates.expiredAt = this.peerEditForm.expiredAt || '';
       }
       try {
-        await this.api.updateTunnelInterfacePeer({
+        const doSave = () => this.api.updateTunnelInterfacePeer({
           interfaceId: this._peerIfaceId(peer),
           peerId: peer.id,
           ...updates,
         });
+        if (remoteId) {
+          await this._withRemote(remoteId, doSave);
+        } else {
+          await doSave();
+        }
         this.showPeerEditModal = false;
         this.peerEditForm._peer = null;
-        await this._refreshPeersOrAll();
-        if (!isInterconnect) {
-          this.loadClientGroups();
-          this.loadAliases();
+        if (remoteId) {
+          await this.loadRemoteWidgetData(remoteId);
+        } else {
+          await this._refreshPeersOrAll();
+          if (!isInterconnect) {
+            this.loadClientGroups();
+            this.loadAliases();
+          }
         }
         this.showToast(isInterconnect ? 'Peer updated' : 'Client updated', 'success');
       } catch (err) {

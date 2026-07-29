@@ -1268,8 +1268,8 @@
                                   <div style="position:absolute; top:2px; width:10px; height:10px; border-radius:50%; background:#fff; transition:left 0.15s;"
                                     :style="{ left: peer.enabled ? '14px' : '2px' }"></div>
                                 </div>
-                                <!-- QR code -->
-                                <button @click="qrcode = remotePeerQrUrl(w.remoteId, peer.interfaceId, peer.id)"
+                                <!-- QR code — loaded via fetch to pass session auth through proxy -->
+                                <button @click="remoteShowPeerQr(w.remoteId, peer.interfaceId, peer.id)"
                                   title="Show QR"
                                   :style="{ padding:'3px', border:'none', borderRadius:'4px', cursor:'pointer', display:'flex', alignItems:'center', lineHeight:'0',
                                     background: theme==='dark' ? '#525252' : 'rgba(107,114,128,0.1)',
@@ -1286,6 +1286,27 @@
                                     color: theme==='dark' ? '#d4d4d4' : 'inherit' }">
                                   <svg style="width:13px;height:13px;" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                                  </svg>
+                                </button>
+                                <!-- One-time link -->
+                                <button v-if="enableOneTimeLinks"
+                                  @click="remoteShowPeerOneTimeLink(w.remoteId, peer)"
+                                  title="Generate one-time link"
+                                  :style="{ padding:'3px', border:'none', borderRadius:'4px', cursor:'pointer', display:'flex', alignItems:'center', lineHeight:'0',
+                                    background: theme==='dark' ? '#525252' : 'rgba(107,114,128,0.1)',
+                                    color: theme==='dark' ? '#d4d4d4' : 'inherit' }">
+                                  <svg style="width:13px;height:13px;" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
+                                  </svg>
+                                </button>
+                                <!-- Edit -->
+                                <button @click="remoteOpenPeerEdit(w.remoteId, peer)"
+                                  title="Edit"
+                                  :style="{ padding:'3px', border:'none', borderRadius:'4px', cursor:'pointer', display:'flex', alignItems:'center', lineHeight:'0',
+                                    background: theme==='dark' ? '#525252' : 'rgba(107,114,128,0.1)',
+                                    color: theme==='dark' ? '#d4d4d4' : 'inherit' }">
+                                  <svg style="width:13px;height:13px;" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
                                   </svg>
                                 </button>
                                 <!-- Delete -->
@@ -2063,7 +2084,7 @@
         <div v-if="qrcode">
           <div class="bg-black bg-opacity-50 fixed top-0 right-0 left-0 bottom-0 flex items-center justify-center z-20">
             <div class="bg-white rounded-md shadow-lg relative p-8">
-              <button @click="qrcode = null"
+              <button @click="if(qrcode&&qrcode.startsWith('blob:'))URL.revokeObjectURL(qrcode); qrcode = null"
                 class="absolute right-4 top-4 text-gray-600 dark:text-neutral-500 hover:text-gray-800 dark:hover:text-neutral-700">
                 <svg class="w-8" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
                   stroke="currentColor">
