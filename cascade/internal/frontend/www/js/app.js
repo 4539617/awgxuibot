@@ -3353,28 +3353,31 @@ new Vue({
       return `🌐 ${serverName} — ${typeLabel}`;
     },
 
-    // Load (or refresh) interfaces + peers for a remote server into remoteWidgetCache
+    // Load (or refresh) interfaces + peers for a remote server into remoteWidgetCache.
+    // Never clears existing data before the new data arrives — no flash/blank.
+    // loading flag only used for the tiny spinner dot in the header, not to hide content.
     async loadRemoteWidgetData(remoteId) {
       if (!remoteId) return;
+
       if (!this.remoteWidgetCache[remoteId]) {
         this.$set(this.remoteWidgetCache, remoteId, {
           interfaces: [], peers: {}, loading: false, error: null,
         });
       }
       const cache = this.remoteWidgetCache[remoteId];
+
+      // If already in flight — skip, don't queue another
       if (cache.loading) return;
       cache.loading = true;
-      cache.error = null;
+
       try {
-        // GET /api/remotes/:id/proxy/tunnel-interfaces
         const ifacesRes = await this.api.remoteCall({
           remoteId, method: 'get', path: '/tunnel-interfaces',
         });
-        cache.interfaces = ifacesRes.interfaces || [];
+        const newIfaces = ifacesRes.interfaces || [];
 
-        // Load peers for every interface
         const peersMap = {};
-        await Promise.all(cache.interfaces.map(async iface => {
+        await Promise.all(newIfaces.map(async iface => {
           try {
             const res = await this.api.remoteCall({
               remoteId, method: 'get', path: `/tunnel-interfaces/${iface.id}/peers`,
@@ -3384,15 +3387,20 @@ new Vue({
             peersMap[iface.id] = [];
           }
         }));
-        cache.peers = peersMap;
+
+        // Swap data atomically — Vue batches these into one render tick, no blank frame
+        cache.interfaces = newIfaces;
+        cache.peers      = peersMap;
+        cache.error      = null;
       } catch (err) {
+        // On error keep existing data visible, just show error badge
         cache.error = err.message || 'Failed to load remote data';
       } finally {
         cache.loading = false;
       }
     },
 
-    // Refresh all remote widgets currently on the dashboard
+    // Refresh all remote widgets on dashboard (called by poller)
     async refreshRemoteWidgets() {
       const remoteIds = [...new Set(
         this.dashWidgets

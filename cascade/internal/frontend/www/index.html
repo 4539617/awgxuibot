@@ -308,6 +308,10 @@
     0%, 100% { opacity: 1; }
     50% { opacity: 0; }
   }
+  @keyframes remoteWidgetPulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.2; }
+  }
 </style>
 </head>
 
@@ -1149,35 +1153,33 @@
                     <!-- ── remote-interfaces ── -->
                     <template v-else-if="w.type === 'remote-interfaces'">
                       <div style="display:flex; flex-direction:column; height:100%;">
-                        <!-- header with refresh -->
-                        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; flex-shrink:0;">
+                        <!-- sub-header: server name + loading dot + error badge -->
+                        <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px; flex-shrink:0;">
                           <span class="text-xs font-semibold" :style="{ color: theme==='dark'?'#a3a3a3':'#6b7280' }">
                             {{ (remotes.find(r=>r.id===w.remoteId)||{}).name || w.remoteId || '—' }}
                           </span>
-                          <button @click="loadRemoteWidgetData(w.remoteId)"
-                            title="Refresh"
-                            style="background:none; border:none; cursor:pointer; padding:0 2px; font-size:0.75rem; opacity:0.6;"
-                            :style="{ color: theme==='dark'?'#d4d4d4':'#374151' }">↻</button>
+                          <!-- tiny pulsing dot while loading — doesn't hide content -->
+                          <span v-if="remoteWidgetCache[w.remoteId]&&remoteWidgetCache[w.remoteId].loading"
+                            style="width:5px;height:5px;border-radius:50%;background:#6366f1;flex-shrink:0;animation:remoteWidgetPulse 1s infinite;"></span>
+                          <!-- error badge — shown over existing data, doesn't replace it -->
+                          <span v-if="remoteWidgetCache[w.remoteId]&&remoteWidgetCache[w.remoteId].error"
+                            style="font-size:0.6rem;color:#ef4444;opacity:0.8;" :title="remoteWidgetCache[w.remoteId].error">⚠</span>
+                          <!-- first-load placeholder (no data yet) -->
+                          <span v-if="remoteWidgetCache[w.remoteId]&&remoteWidgetCache[w.remoteId].loading&&!remoteWidgetCache[w.remoteId].interfaces.length"
+                            class="text-xs text-gray-400 dark:text-neutral-500">Loading…</span>
                         </div>
-                        <!-- loading / error -->
-                        <div v-if="!remoteWidgetCache[w.remoteId]||remoteWidgetCache[w.remoteId].loading"
-                          class="text-xs text-gray-400 dark:text-neutral-500" style="padding:8px 0;">Loading…</div>
-                        <div v-else-if="remoteWidgetCache[w.remoteId].error"
-                          class="text-xs" style="color:#ef4444; padding:4px 0;">{{ remoteWidgetCache[w.remoteId].error }}</div>
-                        <!-- interface list -->
-                        <div v-else style="flex:1; overflow-y:auto;">
-                          <div v-if="!remoteWidgetCache[w.remoteId].interfaces.length"
+                        <!-- interface list — always visible, never hidden during refresh -->
+                        <div style="flex:1; overflow-y:auto;">
+                          <div v-if="!remoteWidgetCache[w.remoteId]||!remoteWidgetCache[w.remoteId].interfaces.length"
                             class="text-xs text-gray-400 dark:text-neutral-500">No interfaces</div>
-                          <div v-for="iface in remoteWidgetCache[w.remoteId].interfaces" :key="iface.id"
+                          <div v-for="iface in (remoteWidgetCache[w.remoteId]||{}).interfaces||[]" :key="iface.id"
                             style="padding:5px 0; border-bottom:1px solid #f3f4f6;"
                             :style="{ 'border-bottom-color': theme==='dark'?'#525252':'#f3f4f6' }">
                             <div style="display:flex; align-items:center; gap:6px; font-size:0.72rem;">
-                              <!-- status dot -->
                               <span style="width:8px; height:8px; border-radius:50%; flex-shrink:0;"
                                 :style="{ background: iface.enabled ? '#22c55e' : '#ef4444' }"></span>
                               <span style="font-weight:600; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"
                                 :style="{ color: theme==='dark'?'#e5e5e5':'#374151' }">{{ iface.name }}</span>
-                              <!-- protocol badge -->
                               <span style="font-size:0.6rem; font-weight:600; padding:1px 4px; border-radius:3px; flex-shrink:0;"
                                 :style="iface.protocol === 'wireguard'
                                   ? (theme==='dark' ? 'background:rgba(156,163,175,0.15); color:#d1d5db;' : 'background:rgba(107,114,128,0.1); color:#6b7280;')
@@ -1203,6 +1205,12 @@
                             :style="{ color: theme==='dark'?'#a3a3a3':'#6b7280' }">
                             {{ (remotes.find(r=>r.id===w.remoteId)||{}).name || w.remoteId || '—' }}
                           </span>
+                          <!-- loading dot -->
+                          <span v-if="remoteWidgetCache[w.remoteId]&&remoteWidgetCache[w.remoteId].loading"
+                            style="width:5px;height:5px;border-radius:50%;background:#6366f1;flex-shrink:0;animation:remoteWidgetPulse 1s infinite;"></span>
+                          <!-- error badge -->
+                          <span v-if="remoteWidgetCache[w.remoteId]&&remoteWidgetCache[w.remoteId].error"
+                            style="font-size:0.6rem;color:#ef4444;opacity:0.8;flex-shrink:0;" :title="remoteWidgetCache[w.remoteId].error">⚠</span>
                           <!-- interface filter -->
                           <select v-if="remoteWidgetCache[w.remoteId]&&remoteWidgetCache[w.remoteId].interfaces.length"
                             v-model="dashPeersGetState(w.id).iface"
@@ -1211,24 +1219,18 @@
                             <option value="">All</option>
                             <option v-for="iface in (remoteWidgetCache[w.remoteId]||{}).interfaces||[]" :key="iface.id" :value="iface.id">{{ iface.name }}</option>
                           </select>
-                          <button @click="loadRemoteWidgetData(w.remoteId)"
-                            title="Refresh"
-                            style="background:none; border:none; cursor:pointer; padding:0 2px; font-size:0.75rem; opacity:0.6;"
-                            :style="{ color: theme==='dark'?'#d4d4d4':'#374151' }">↻</button>
                         </div>
-                        <!-- loading / error / list -->
+                        <!-- peer list — always visible, never hidden during refresh -->
                         <div style="flex:1; overflow-y:auto; padding:0 12px;">
-                          <div v-if="!remoteWidgetCache[w.remoteId]||remoteWidgetCache[w.remoteId].loading"
+                          <!-- first-load placeholder -->
+                          <div v-if="!remoteWidgetCache[w.remoteId]||(remoteWidgetCache[w.remoteId].loading&&!dashRemotePeers(w.remoteId,'').length)"
                             class="text-xs text-gray-400 dark:text-neutral-500" style="padding:12px 0; text-align:center;">Loading…</div>
-                          <div v-else-if="remoteWidgetCache[w.remoteId].error"
-                            class="text-xs" style="color:#ef4444; padding:8px 0;">{{ remoteWidgetCache[w.remoteId].error }}</div>
                           <template v-else>
                             <div v-if="!dashRemotePeers(w.remoteId, dashPeersGetState(w.id).iface).length"
                               class="text-xs text-gray-400 dark:text-neutral-500" style="padding:12px 0; text-align:center;">No peers</div>
                             <div v-for="peer in dashRemotePeers(w.remoteId, dashPeersGetState(w.id).iface)" :key="peer.id"
                               style="display:flex; align-items:center; gap:6px; padding:5px 0; border-bottom:1px solid #f3f4f6;"
                               :style="{ 'border-bottom-color': theme==='dark'?'#525252':'#f3f4f6' }">
-                              <!-- online dot -->
                               <span style="width:6px; height:6px; border-radius:50%; flex-shrink:0;"
                                 :style="{ background: peer.latestHandshakeAt && (new Date()-new Date(peer.latestHandshakeAt)<600000) ? '#22c55e' : '#9ca3af' }"></span>
                               <div style="flex:1; min-width:0; overflow:hidden;">
