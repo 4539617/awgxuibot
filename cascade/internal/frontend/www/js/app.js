@@ -3486,14 +3486,23 @@ new Vue({
       }
     },
 
-    // Flat peer list for a remote-peers widget
+    // Flat peer list for a remote-peers widget.
+    // Normalises field names: API returns transferRx/transferTx (cumulative bytes),
+    // the template uses totalRx/totalTx — map them here so traffic is always shown.
     dashRemotePeers(remoteId, ifaceFilter) {
       const cache = this.remoteWidgetCache[remoteId];
       if (!cache) return [];
       let all = [];
       for (const [ifaceId, peers] of Object.entries(cache.peers)) {
         const iface = cache.interfaces.find(i => i.id === ifaceId);
-        peers.forEach(p => all.push({ ...p, interfaceId: ifaceId, interfaceName: iface ? iface.name : ifaceId }));
+        peers.forEach(p => all.push({
+          ...p,
+          interfaceId:   ifaceId,
+          interfaceName: iface ? iface.name : ifaceId,
+          // Normalise transfer fields — API may use either naming convention
+          totalRx: p.totalRx ?? p.transferRx ?? 0,
+          totalTx: p.totalTx ?? p.transferTx ?? 0,
+        }));
       }
       if (ifaceFilter) all = all.filter(p => p.interfaceId === ifaceFilter);
       return all.sort((a, b) => (a.name || '').localeCompare(b.name || ''));

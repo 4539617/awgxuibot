@@ -1153,19 +1153,19 @@
                     <!-- ── remote-interfaces ── -->
                     <template v-else-if="w.type === 'remote-interfaces'">
                       <div style="display:flex; flex-direction:column; height:100%;">
-                        <!-- sub-header: server name + loading dot + error badge -->
-                        <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px; flex-shrink:0;">
+                        <!-- sub-header: pulsing dot + server name + error badge -->
+                        <div style="display:flex; align-items:center; gap:5px; margin-bottom:6px; flex-shrink:0;">
+                          <!-- tiny pulsing dot while loading — before the name -->
+                          <span v-if="remoteWidgetCache[w.remoteId]&&remoteWidgetCache[w.remoteId].loading"
+                            style="width:5px;height:5px;border-radius:50%;background:#6366f1;flex-shrink:0;animation:remoteWidgetPulse 1s infinite;"></span>
                           <span class="text-xs font-semibold" :style="{ color: theme==='dark'?'#a3a3a3':'#6b7280' }">
                             {{ (remotes.find(r=>r.id===w.remoteId)||{}).name || w.remoteId || '—' }}
                           </span>
-                          <!-- tiny pulsing dot while loading — doesn't hide content -->
-                          <span v-if="remoteWidgetCache[w.remoteId]&&remoteWidgetCache[w.remoteId].loading"
-                            style="width:5px;height:5px;border-radius:50%;background:#6366f1;flex-shrink:0;animation:remoteWidgetPulse 1s infinite;"></span>
-                          <!-- error badge — shown over existing data, doesn't replace it -->
+                          <!-- error badge -->
                           <span v-if="remoteWidgetCache[w.remoteId]&&remoteWidgetCache[w.remoteId].error"
                             style="font-size:0.6rem;color:#ef4444;opacity:0.8;" :title="remoteWidgetCache[w.remoteId].error">⚠</span>
-                          <!-- first-load placeholder (no data yet) -->
-                          <span v-if="remoteWidgetCache[w.remoteId]&&remoteWidgetCache[w.remoteId].loading&&!remoteWidgetCache[w.remoteId].interfaces.length"
+                          <!-- first-load placeholder -->
+                          <span v-if="!remoteWidgetCache[w.remoteId]||(!remoteWidgetCache[w.remoteId].interfaces.length&&remoteWidgetCache[w.remoteId].loading)"
                             class="text-xs text-gray-400 dark:text-neutral-500">Loading…</span>
                         </div>
                         <!-- interface list — always visible, never hidden during refresh -->
@@ -1199,15 +1199,15 @@
                     <template v-else-if="w.type === 'remote-peers'">
                       <div style="display:flex; flex-direction:column; height:100%; margin:-12px -16px;">
                         <!-- filter bar -->
-                        <div style="padding:6px 12px; border-bottom:1px solid #f3f4f6; flex-shrink:0; display:flex; gap:6px; align-items:center;"
+                        <div style="padding:6px 12px; border-bottom:1px solid #f3f4f6; flex-shrink:0; display:flex; gap:5px; align-items:center;"
                           :style="{ 'border-bottom-color': theme==='dark'?'#525252':'#f3f4f6' }">
+                          <!-- loading dot before server name -->
+                          <span v-if="remoteWidgetCache[w.remoteId]&&remoteWidgetCache[w.remoteId].loading"
+                            style="width:5px;height:5px;border-radius:50%;background:#6366f1;flex-shrink:0;animation:remoteWidgetPulse 1s infinite;"></span>
                           <span class="text-xs font-semibold truncate" style="flex:1;"
                             :style="{ color: theme==='dark'?'#a3a3a3':'#6b7280' }">
                             {{ (remotes.find(r=>r.id===w.remoteId)||{}).name || w.remoteId || '—' }}
                           </span>
-                          <!-- loading dot -->
-                          <span v-if="remoteWidgetCache[w.remoteId]&&remoteWidgetCache[w.remoteId].loading"
-                            style="width:5px;height:5px;border-radius:50%;background:#6366f1;flex-shrink:0;animation:remoteWidgetPulse 1s infinite;"></span>
                           <!-- error badge -->
                           <span v-if="remoteWidgetCache[w.remoteId]&&remoteWidgetCache[w.remoteId].error"
                             style="font-size:0.6rem;color:#ef4444;opacity:0.8;flex-shrink:0;" :title="remoteWidgetCache[w.remoteId].error">⚠</span>
