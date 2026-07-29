@@ -1268,32 +1268,43 @@
                                   <div style="position:absolute; top:2px; width:10px; height:10px; border-radius:50%; background:#fff; transition:left 0.15s;"
                                     :style="{ left: peer.enabled ? '14px' : '2px' }"></div>
                                 </div>
-                                <!-- QR code — loaded via fetch to pass session auth through proxy -->
-                                <button @click="remoteShowPeerQr(w.remoteId, peer.interfaceId, peer.id)"
-                                  title="Show QR"
-                                  :style="{ padding:'3px', border:'none', borderRadius:'4px', cursor:'pointer', display:'flex', alignItems:'center', lineHeight:'0',
-                                    background: theme==='dark' ? '#525252' : 'rgba(107,114,128,0.1)',
+                                <!-- QR code — disabled when no private key (downloadableConfig=false) -->
+                                <button
+                                  :disabled="!peer.downloadableConfig"
+                                  @click="peer.downloadableConfig && remoteShowPeerQr(w.remoteId, peer.interfaceId, peer.id)"
+                                  :title="peer.downloadableConfig ? 'Show QR' : 'No private key'"
+                                  :style="{ padding:'3px', border:'none', borderRadius:'4px', display:'flex', alignItems:'center', lineHeight:'0',
+                                    cursor: peer.downloadableConfig ? 'pointer' : 'default',
+                                    opacity: peer.downloadableConfig ? '1' : '0.3',
+                                    background: peer.downloadableConfig ? (theme==='dark' ? '#525252' : 'rgba(107,114,128,0.1)') : (theme==='dark' ? 'rgba(255,255,255,0.04)' : 'rgba(107,114,128,0.05)'),
                                     color: theme==='dark' ? '#d4d4d4' : 'inherit' }">
                                   <svg style="width:13px;height:13px;" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/>
                                   </svg>
                                 </button>
-                                <!-- Download config -->
-                                <button @click="remoteDownloadPeerConfig(w.remoteId, peer)"
-                                  title="Download config"
-                                  :style="{ padding:'3px', border:'none', borderRadius:'4px', cursor:'pointer', display:'flex', alignItems:'center', lineHeight:'0',
-                                    background: theme==='dark' ? '#525252' : 'rgba(107,114,128,0.1)',
+                                <!-- Download config — disabled when no private key -->
+                                <button
+                                  :disabled="!peer.downloadableConfig"
+                                  @click="peer.downloadableConfig && remoteDownloadPeerConfig(w.remoteId, peer)"
+                                  :title="peer.downloadableConfig ? 'Download config' : 'No private key'"
+                                  :style="{ padding:'3px', border:'none', borderRadius:'4px', display:'flex', alignItems:'center', lineHeight:'0',
+                                    cursor: peer.downloadableConfig ? 'pointer' : 'default',
+                                    opacity: peer.downloadableConfig ? '1' : '0.3',
+                                    background: peer.downloadableConfig ? (theme==='dark' ? '#525252' : 'rgba(107,114,128,0.1)') : (theme==='dark' ? 'rgba(255,255,255,0.04)' : 'rgba(107,114,128,0.05)'),
                                     color: theme==='dark' ? '#d4d4d4' : 'inherit' }">
                                   <svg style="width:13px;height:13px;" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
                                   </svg>
                                 </button>
-                                <!-- One-time link -->
+                                <!-- One-time link — disabled when no private key -->
                                 <button v-if="enableOneTimeLinks"
-                                  @click="remoteShowPeerOneTimeLink(w.remoteId, peer)"
-                                  title="Generate one-time link"
-                                  :style="{ padding:'3px', border:'none', borderRadius:'4px', cursor:'pointer', display:'flex', alignItems:'center', lineHeight:'0',
-                                    background: theme==='dark' ? '#525252' : 'rgba(107,114,128,0.1)',
+                                  :disabled="!peer.downloadableConfig"
+                                  @click="peer.downloadableConfig && remoteShowPeerOneTimeLink(w.remoteId, peer)"
+                                  :title="peer.downloadableConfig ? 'Generate one-time link' : 'No private key'"
+                                  :style="{ padding:'3px', border:'none', borderRadius:'4px', display:'flex', alignItems:'center', lineHeight:'0',
+                                    cursor: peer.downloadableConfig ? 'pointer' : 'default',
+                                    opacity: peer.downloadableConfig ? '1' : '0.3',
+                                    background: peer.downloadableConfig ? (theme==='dark' ? '#525252' : 'rgba(107,114,128,0.1)') : (theme==='dark' ? 'rgba(255,255,255,0.04)' : 'rgba(107,114,128,0.05)'),
                                     color: theme==='dark' ? '#d4d4d4' : 'inherit' }">
                                   <svg style="width:13px;height:13px;" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
