@@ -3388,10 +3388,20 @@ new Vue({
           }
         }));
 
-        // Swap data atomically — Vue batches these into one render tick, no blank frame
+        // Vue cannot detect direct property assignment on a reactive object
+        // when the key already exists — use $set to force reactivity update.
+        // Without this, cache.peers = peersMap silently replaces the reference
+        // but the template computed on dashRemotePeers() sees stale data.
         cache.interfaces = newIfaces;
-        cache.peers      = peersMap;
-        cache.error      = null;
+        // Replace each interface's peer array via $set so Vue triggers re-render
+        for (const [ifaceId, peers] of Object.entries(peersMap)) {
+          this.$set(cache.peers, ifaceId, peers);
+        }
+        // Remove keys for interfaces that no longer exist
+        for (const key of Object.keys(cache.peers)) {
+          if (!(key in peersMap)) this.$delete(cache.peers, key);
+        }
+        cache.error = null;
       } catch (err) {
         // On error keep existing data visible, just show error badge
         cache.error = err.message || 'Failed to load remote data';
