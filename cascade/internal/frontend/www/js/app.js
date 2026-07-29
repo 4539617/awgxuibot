@@ -3359,16 +3359,21 @@ new Vue({
     async loadRemoteWidgetData(remoteId) {
       if (!remoteId) return;
 
+      // Ensure reactive entry exists
       if (!this.remoteWidgetCache[remoteId]) {
         this.$set(this.remoteWidgetCache, remoteId, {
           interfaces: [], peers: {}, loading: false, error: null,
         });
       }
-      const cache = this.remoteWidgetCache[remoteId];
 
       // If already in flight — skip, don't queue another
-      if (cache.loading) return;
-      cache.loading = true;
+      if (this.remoteWidgetCache[remoteId].loading) return;
+
+      // Mark loading — replace entire object so Vue 2 detects all field changes
+      this.$set(this.remoteWidgetCache, remoteId, {
+        ...this.remoteWidgetCache[remoteId],
+        loading: true,
+      });
 
       try {
         const ifacesRes = await this.api.remoteCall({
@@ -3388,25 +3393,20 @@ new Vue({
           }
         }));
 
-        // Vue cannot detect direct property assignment on a reactive object
-        // when the key already exists — use $set to force reactivity update.
-        // Without this, cache.peers = peersMap silently replaces the reference
-        // but the template computed on dashRemotePeers() sees stale data.
-        cache.interfaces = newIfaces;
-        // Replace each interface's peer array via $set so Vue triggers re-render
-        for (const [ifaceId, peers] of Object.entries(peersMap)) {
-          this.$set(cache.peers, ifaceId, peers);
-        }
-        // Remove keys for interfaces that no longer exist
-        for (const key of Object.keys(cache.peers)) {
-          if (!(key in peersMap)) this.$delete(cache.peers, key);
-        }
-        cache.error = null;
+        // Replace entire cache entry atomically — Vue 2 detects all nested changes
+        this.$set(this.remoteWidgetCache, remoteId, {
+          interfaces: newIfaces,
+          peers: peersMap,
+          loading: false,
+          error: null,
+        });
       } catch (err) {
-        // On error keep existing data visible, just show error badge
-        cache.error = err.message || 'Failed to load remote data';
-      } finally {
-        cache.loading = false;
+        // On error keep existing interfaces/peers visible, just update status fields
+        this.$set(this.remoteWidgetCache, remoteId, {
+          ...this.remoteWidgetCache[remoteId],
+          loading: false,
+          error: err.message || 'Failed to load remote data',
+        });
       }
     },
 
