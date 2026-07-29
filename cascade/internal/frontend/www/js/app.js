@@ -165,21 +165,30 @@ new Vue({
     ],
 
     // ── Dashboard ──────────────────────────────────────────────────────────────
-    dashWidgets: [],          // [{id, type, x, y, w, h}]
+    dashWidgets: [],          // [{id, type, x, y, w, h, remoteId?}]
     dashGrid: null,           // GridStack instance
     dashShowAddMenu: false,
     dashSystemInfo: null,
     dashAvailableWidgetTypes: [
-      { type: 'server-info',    label: 'Server Info',     icon: '🖥️' },
-      { type: 'interfaces',     label: 'Interfaces',      icon: '🔌' },
-      { type: 'gateways',       label: 'Gateways',        icon: '📡' },
-      { type: 'peers-summary',  label: 'Peers Summary',   icon: '👥' },
-      { type: 'peers',          label: 'Peers',           icon: '🔗' },
-      { type: 'nat',            label: 'NAT',             icon: '🔀' },
-      { type: 'traffic',        label: 'Traffic',         icon: '📊' },
-      { type: 'monitoring',     label: 'Monitoring',      icon: '📈' },
+      { type: 'server-info',       label: 'Server Info',        icon: '🖥️'  },
+      { type: 'interfaces',        label: 'Interfaces',         icon: '🔌'  },
+      { type: 'gateways',          label: 'Gateways',           icon: '📡'  },
+      { type: 'peers-summary',     label: 'Peers Summary',      icon: '👥'  },
+      { type: 'peers',             label: 'Peers',              icon: '🔗'  },
+      { type: 'nat',               label: 'NAT',                icon: '🔀'  },
+      { type: 'traffic',           label: 'Traffic',            icon: '📊'  },
+      { type: 'monitoring',        label: 'Monitoring',         icon: '📈'  },
+      { type: 'remote-interfaces', label: 'Remote Interfaces',  icon: '🌐'  },
+      { type: 'remote-peers',      label: 'Remote Peers',       icon: '🔗'  },
     ],
     dashPeersState: {},   // per-widget: { [widgetId]: { iface: '', sort: 'name' } }
+
+    // ── Remote widget data cache ───────────────────────────────────────────────
+    // Keyed by remoteId. Each entry: { interfaces: [], peers: {[ifaceId]: []}, loading: false, error: null }
+    remoteWidgetCache: {},
+    // State for "pick remote" modal shown when adding remote-* widgets
+    dashAddRemoteModal:      false,
+    dashAddRemoteWidgetType: '',   // 'remote-interfaces' | 'remote-peers'
 
     // ── Monitoring widget ──────────────────────────────────────────────────────
     metricsSnapshot: null,          // latest GET /api/metrics response
@@ -3137,6 +3146,8 @@ new Vue({
       if (this.natRules.length === 0) this.loadNatRules();
       if (this.dnatRules.length === 0) this.loadDnatRules();
       if (this.aliases.length === 0) this.loadAliases();
+      // Pre-load data for any remote-* widgets saved in the layout
+      this.refreshRemoteWidgets();
       // Restore saved periods and load history for monitoring widgets
       for (const w of this.dashWidgets) {
         if (w.type !== 'monitoring') continue;
@@ -3292,23 +3303,116 @@ new Vue({
     },
 
     dashAddWidget(type) {
+      // remote-* widgets need the user to pick which remote server first
+      if (type === 'remote-interfaces' || type === 'remote-peers') {
+        this.dashAddRemoteWidgetType = type;
+        this.dashAddRemoteModal = true;
+        return;
+      }
+      this._dashAddWidgetWithRemote(type, null);
+    },
+
+    // Called after user picks a remote in the modal (or directly for local widgets)
+    _dashAddWidgetWithRemote(type, remoteId) {
       const id = 'w-' + type + '-' + Date.now();
       const newW = { id, type, x: 0, y: 0, w: 4, h: 4 };
+      if (remoteId) newW.remoteId = remoteId;
       this.dashWidgets.push(newW);
       this.$nextTick(() => {
         if (!this.dashGrid) return;
-        // Vue has rendered the new item; tell GridStack to adopt it
         const el = document.querySelector(`[gs-id="${id}"]`);
         if (el) {
           this.dashGrid.makeWidget(el);
-          // Observe the new widget for resize scaling
           if (this._dashResizeObs) {
             const content = el.querySelector('.grid-stack-item-content');
             if (content) this._dashResizeObs.observe(content);
           }
         }
         if (type === 'server-info') this.loadSystemInfo();
+        // Pre-load remote data immediately so widget isn't empty
+        if (remoteId && (type === 'remote-interfaces' || type === 'remote-peers')) {
+          this.loadRemoteWidgetData(remoteId);
+        }
       });
+      this.api.putDashboardWidgets(this.dashWidgets).catch(console.error);
+    },
+
+    // Confirm remote selection in the modal
+    dashConfirmAddRemoteWidget(remoteId) {
+      if (!remoteId) return;
+      this.dashAddRemoteModal = false;
+      this._dashAddWidgetWithRemote(this.dashAddRemoteWidgetType, remoteId);
+      this.dashAddRemoteWidgetType = '';
+    },
+
+    // Returns the label for a remote widget header (server name + type)
+    dashRemoteWidgetLabel(w) {
+      const remote = this.remotes.find(r => r.id === w.remoteId);
+      const serverName = remote ? remote.name : (w.remoteId || 'Remote');
+      const typeLabel = w.type === 'remote-interfaces' ? 'Interfaces' : 'Peers';
+      return `🌐 ${serverName} — ${typeLabel}`;
+    },
+
+    // Load (or refresh) interfaces + peers for a remote server into remoteWidgetCache
+    async loadRemoteWidgetData(remoteId) {
+      if (!remoteId) return;
+      if (!this.remoteWidgetCache[remoteId]) {
+        this.$set(this.remoteWidgetCache, remoteId, {
+          interfaces: [], peers: {}, loading: false, error: null,
+        });
+      }
+      const cache = this.remoteWidgetCache[remoteId];
+      if (cache.loading) return;
+      cache.loading = true;
+      cache.error = null;
+      try {
+        // GET /api/remotes/:id/proxy/tunnel-interfaces
+        const ifacesRes = await this.api.remoteCall({
+          remoteId, method: 'get', path: '/tunnel-interfaces',
+        });
+        cache.interfaces = ifacesRes.interfaces || [];
+
+        // Load peers for every interface
+        const peersMap = {};
+        await Promise.all(cache.interfaces.map(async iface => {
+          try {
+            const res = await this.api.remoteCall({
+              remoteId, method: 'get', path: `/tunnel-interfaces/${iface.id}/peers`,
+            });
+            peersMap[iface.id] = res.peers || [];
+          } catch (_) {
+            peersMap[iface.id] = [];
+          }
+        }));
+        cache.peers = peersMap;
+      } catch (err) {
+        cache.error = err.message || 'Failed to load remote data';
+      } finally {
+        cache.loading = false;
+      }
+    },
+
+    // Refresh all remote widgets currently on the dashboard
+    async refreshRemoteWidgets() {
+      const remoteIds = [...new Set(
+        this.dashWidgets
+          .filter(w => w.remoteId && (w.type === 'remote-interfaces' || w.type === 'remote-peers'))
+          .map(w => w.remoteId)
+      )];
+      await Promise.all(remoteIds.map(id => this.loadRemoteWidgetData(id)));
+    },
+
+    // Flat peer list for a remote-peers widget
+    dashRemotePeers(remoteId, ifaceFilter) {
+      const cache = this.remoteWidgetCache[remoteId];
+      if (!cache) return [];
+      let all = [];
+      for (const [ifaceId, peers] of Object.entries(cache.peers)) {
+        const iface = cache.interfaces.find(i => i.id === ifaceId);
+        peers.forEach(p => all.push({ ...p, interfaceId: ifaceId, interfaceName: iface ? iface.name : ifaceId }));
+      }
+      if (ifaceFilter) all = all.filter(p => p.interfaceId === ifaceFilter);
+      return all.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     },
 
     dashRemoveWidget(id) {
@@ -5259,6 +5363,8 @@ new Vue({
      */
     async refreshAllPeers({ updateCharts = false } = {}) {
       if (!this.authenticated) return;
+      // Also refresh remote widget data in parallel (fire-and-forget, non-blocking)
+      this.refreshRemoteWidgets().catch(console.error);
       const all = [];
       for (const iface of this.tunnelInterfaces) {
         try {
