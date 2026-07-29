@@ -3410,6 +3410,82 @@ new Vue({
       await Promise.all(remoteIds.map(id => this.loadRemoteWidgetData(id)));
     },
 
+    // ── Remote peer actions ────────────────────────────────────────────────────
+    // Temporarily routes api.call() through the given remoteId proxy,
+    // runs fn(), then restores the previous remoteId.
+    async _withRemote(remoteId, fn) {
+      const prev = this.api.getRemoteId();
+      this.api.setRemote(remoteId);
+      try {
+        return await fn();
+      } finally {
+        if (prev) this.api.setRemote(prev);
+        else this.api.clearRemote();
+      }
+    },
+
+    // QR URL for a peer on a remote server
+    remotePeerQrUrl(remoteId, interfaceId, peerId) {
+      return `./api/remotes/${remoteId}/proxy/tunnel-interfaces/${interfaceId}/peers/${peerId}/qrcode.svg`;
+    },
+
+    async remoteEnablePeer(remoteId, peer) {
+      try {
+        await this._withRemote(remoteId, () =>
+          this.api.enablePeer({ interfaceId: peer.interfaceId, peerId: peer.id })
+        );
+        this.showToast('Peer enabled', 'success');
+        await this.loadRemoteWidgetData(remoteId);
+      } catch (err) {
+        this.showToast(err.message || 'Failed to enable peer', 'error');
+      }
+    },
+
+    async remoteDisablePeer(remoteId, peer) {
+      try {
+        await this._withRemote(remoteId, () =>
+          this.api.disablePeer({ interfaceId: peer.interfaceId, peerId: peer.id })
+        );
+        this.showToast('Peer disabled', 'success');
+        await this.loadRemoteWidgetData(remoteId);
+      } catch (err) {
+        this.showToast(err.message || 'Failed to disable peer', 'error');
+      }
+    },
+
+    async remoteDownloadPeerConfig(remoteId, peer) {
+      try {
+        const config = await this._withRemote(remoteId, () =>
+          this.api.getPeerConfig({ interfaceId: peer.interfaceId, peerId: peer.id })
+        );
+        const blob = new Blob([config], { type: 'text/plain' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${(peer.name || peer.id).replace(/\s+/g, '-')}.conf`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+      } catch (err) {
+        this.showToast(err.message || 'Failed to download config', 'error');
+      }
+    },
+
+    async remoteDeletePeer(remoteId, peer) {
+      const label = peer.peerType === 'interconnect' ? 'peer' : 'client';
+      if (!confirm(`Delete ${label} "${peer.name || peer.id}" on remote server?`)) return;
+      try {
+        await this._withRemote(remoteId, () =>
+          this.api.deleteTunnelInterfacePeer({ interfaceId: peer.interfaceId, peerId: peer.id })
+        );
+        this.showToast('Peer deleted', 'success');
+        await this.loadRemoteWidgetData(remoteId);
+      } catch (err) {
+        this.showToast(err.message || 'Failed to delete peer', 'error');
+      }
+    },
+
     // Flat peer list for a remote-peers widget
     dashRemotePeers(remoteId, ifaceFilter) {
       const cache = this.remoteWidgetCache[remoteId];
