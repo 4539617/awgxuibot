@@ -2,6 +2,47 @@ import fs from 'fs';
 import yaml from 'js-yaml';
 import path from 'path';
 
+// ── Структура по умолчанию для одной записи cascades ──────────────────────────
+const CASCADE_ENTRY_DEFAULTS = {
+  label:    '',
+  url:      '',
+  api_key:  '',
+  username: 'admin',
+  password: '',
+  enabled:  true,
+  version:  '',
+};
+
+/**
+ * Дописывает в data.cascades недостающие поля для каждой записи.
+ * Если секции cascades нет вообще — создаёт пустую.
+ * Возвращает true если файл был изменён и нужно его перезаписать.
+ */
+function normalizeCascadesSection(data) {
+  let changed = false;
+
+  // Если секции нет — создаём пустой объект
+  if (!data.cascades) {
+    data.cascades = {};
+    changed = true;
+    console.log('  ℹ️  Добавлена секция cascades: {} в config.yaml');
+  }
+
+  // Для каждой существующей записи дописываем недостающие поля
+  for (const [key, entry] of Object.entries(data.cascades)) {
+    if (!entry || typeof entry !== 'object') continue;
+    for (const [field, defaultVal] of Object.entries(CASCADE_ENTRY_DEFAULTS)) {
+      if (!(field in entry)) {
+        entry[field] = defaultVal;
+        changed = true;
+        console.log(`  ℹ️  Добавлено поле cascades.${key}.${field}: ${JSON.stringify(defaultVal)}`);
+      }
+    }
+  }
+
+  return changed;
+}
+
 /**
  * Загрузка конфигурации из config.yaml
  */
@@ -21,22 +62,76 @@ function loadConfig() {
     if (!data || !data.common) {
       throw new Error('config.yaml пустой или содержит некорректные данные');
     }
-    
+
+    // ── Self-healing: дописываем недостающие поля cascades ───────────────────
+    // Работает только если в файле нет старой секции `cascade` (обратная совместимость).
+    // Если старый формат — не трогаем, чтобы не сломать.
+    if (!data.cascade) {
+      const needsWrite = normalizeCascadesSection(data);
+      if (needsWrite) {
+        fs.writeFileSync(configPath, yaml.dump(data, { lineWidth: -1, quotingType: '"' }), 'utf8');
+        console.log('  ✅ config.yaml обновлён (добавлены недостающие поля cascades)');
+      }
+    }
+
     console.log('✅ config.yaml успешно загружен');
-    // Парсинг Cascade-серверов из секции `cascade`
+
+    // ── Парсинг Cascade-серверов ──────────────────────────────────────────────
+    // Поддерживаются два формата:
+    //
+    //   Новый (рекомендуемый) — cascade0 / cascade1 / ... / cascadeN:
+    //     cascades:
+    //       cascade0:
+    //         label: "Основной"
+    //         url: "http://localhost:51821"
+    //         api_key: "ws_..."      # токен из Cascade UI (Settings → Tokens)
+    //         # username: "admin"   # альтернатива api_key — логин/пароль
+    //         # password: ""
+    //         # enabled: true       # по умолчанию true; false — пропустить
+    //
+    //   Если api_key (или token) НЕ заполнен — сервер не подключается напрямую,
+    //   его интерфейсы будут видны только если он добавлен как Remote в Cascade UI.
+    //
+    //   Старый формат (обратная совместимость) — секция `cascade`:
+    //     cascade:
+    //       primary:
+    //         url: "..."
+    //         token: "..."
+    //
     const cascadeServers = [];
-    if (data.cascade) {
+
+    // Новый формат: секция `cascades`
+    if (data.cascades && typeof data.cascades === 'object') {
+      for (const [key, srv] of Object.entries(data.cascades)) {
+        if (!srv || !srv.url) continue;
+        if (srv.enabled === false) continue;            // явно отключён
+        const apiKey = srv.api_key || srv.token || null;
+        cascadeServers.push({
+          label:    srv.label    || key,
+          url:      srv.url,
+          token:    apiKey,
+          username: srv.username || 'admin',
+          password: srv.password || '',
+          version:  srv.version  || null,
+          // Если api_key не заполнен — пометим флагом, чтобы не пытаться авторизоваться
+          noAuth:   !apiKey && !srv.password,
+        });
+      }
+    }
+
+    // Старый формат: секция `cascade` (обратная совместимость)
+    if (cascadeServers.length === 0 && data.cascade && typeof data.cascade === 'object') {
       for (const [label, srv] of Object.entries(data.cascade)) {
         if (!srv || !srv.url) continue;
+        const apiKey = srv.api_key || srv.token || null;
         cascadeServers.push({
           label:    srv.label    || label,
           url:      srv.url,
-          token:    srv.token    || null,
+          token:    apiKey,
           username: srv.username || 'admin',
           password: srv.password || '',
-          // version: опционально, принудительно задаёт версию ('v1' или 'v2')
-          // если не задан — определяется автоматически по protocol интерфейса
           version:  srv.version  || null,
+          noAuth:   !apiKey && !srv.password,
         });
       }
     }
@@ -95,5 +190,14 @@ console.log(`  Admin IDs: ${config.adminIds.length > 0 ? config.adminIds.join(',
 console.log(`  Allow User DNS: ${config.allowUserDnsQueries}`);
 console.log(`  Log Level: ${config.logLevel}`);
 console.log(`  Standalone Mode: ${config.standaloneMode}`);
+if (config.cascadeEnabled) {
+  console.log(`  Cascade mode: enabled (${config.cascadeServers.length} server(s))`);
+  config.cascadeServers.forEach((s, i) => {
+    const auth = s.token ? 'api_key' : (s.noAuth ? 'no-auth (remote-only)' : 'password');
+    console.log(`    [cascade${i}] ${s.label}  ${s.url}  auth=${auth}`);
+  });
+} else {
+  console.log('  Cascade mode: disabled (docker exec)');
+}
 
 // Made with Bob

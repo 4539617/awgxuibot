@@ -55,30 +55,60 @@ panels:
 
 # ── Cascade Web UI ────────────────────────────────────────────────────────────
 # Если заполнена хотя бы одна запись — бот использует Cascade API вместо
-# прямых docker exec вызовов. Каждая запись — отдельный Cascade-сервер.
+# прямых docker exec вызовов.
 #
-# Режим аутентификации (выбери один):
-#   a) token    — вставь готовый API-токен из Cascade UI (Settings → Tokens)
-#   b) username + password — бот получит токен автоматически при старте
+# Серверы задаются по аналогии с panels: cascade0, cascade1, ... cascadeN.
 #
-# Пример: один локальный сервер Cascade с AWG v2
+# Поля:
+#   label       — отображаемое имя в дашборде бота
+#   url         — адрес Cascade UI (http://host:port)
+#   api_key     — токен из Cascade UI → Settings → Tokens  (рекомендуется)
+#   username    — логин (альтернатива api_key)
+#   password    — пароль (альтернатива api_key)
+#   enabled     — true/false, по умолчанию true
+#   version     — опционально: принудить к "v1" или "v2"
 #
-# cascade:
-#   primary:
+# Поведение:
+#   - Если api_key (или password) заполнен — бот подключается к этому серверу
+#     напрямую и отображает его интерфейсы + пиры на дашборде.
+#   - Если api_key НЕ заполнен — сервер считается «remote-only»: его интерфейсы
+#     будут видны только если он добавлен как Remote через Cascade UI другого
+#     сервера (autodiscovery через /api/remotes).
+#   - Каждый сервер с api_key также автоматически опрашивает свои Remotes
+#     и добавляет их на дашборд без дополнительной настройки.
+#
+# Пример: один локальный сервер
+#
+# cascades:
+#   cascade0:
+#     label: "Основной VPS"
 #     url: "http://localhost:51821"
-#     token: ""           # вставь токен ИЛИ укажи username/password ниже
+#     api_key: "ws_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+#     enabled: true
+#
+# Пример: два сервера с разными методами авторизации
+#
+# cascades:
+#   cascade0:
+#     label: "VPS-Finland"
+#     url: "http://10.0.0.1:51821"
+#     api_key: "ws_токен-с-первого-сервера"
+#   cascade1:
+#     label: "VPS-Germany"
+#     url: "http://10.0.0.2:51821"
 #     username: "admin"
-#     password: ""
-#     # version: "v2"     # опционально: принудить к v2. Обычно определяется авто.
+#     password: "секретный-пароль"
 #
-# Пример: два сервера (основной + резервный)
+# Пример: второй сервер добавлен через Cascade UI как Remote (api_key не нужен)
 #
-# cascade:
-#   main_server:
+# cascades:
+#   cascade0:
+#     label: "Primary"
 #     url: "http://localhost:51821"
-#     token: "токен-с-основного-сервера"
-#   backup_server:
-#     url: "http://backup.example.com:51821"
-#     token: "токен-с-резервного-сервера"
+#     api_key: "ws_токен"
+#   cascade1:
+#     label: "Remote VPS"
+#     url: "http://remote.example.com:51821"
+#     # api_key не заполнен → remote-only, виден через autodiscovery cascade0
 #
-cascade: {}
+cascades: {}

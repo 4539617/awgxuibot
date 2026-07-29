@@ -70,6 +70,14 @@ export class AWGManagerCascade {
     for (const srv of this.servers) {
       if (!srv.url) continue;
 
+      // Если api_key не задан и пароль не задан — сервер добавлен только как Remote
+      // через Cascade UI, прямое подключение невозможно → пропускаем,
+      // его интерфейсы будут обнаружены через autodiscovery у primary-сервера.
+      if (srv.noAuth) {
+        logger.info(`[CascadeManager] Skipping direct connect to "${srv.label}" (no api_key/password — remote-only mode)`);
+        continue;
+      }
+
       const client = new CascadeClient({
         url:      srv.url,
         token:    srv.token    || null,
@@ -94,82 +102,117 @@ export class AWGManagerCascade {
         continue;
       }
 
-      // Регистрируем каждый интерфейс как версию AWG.
-      //
-      // Порядок определения версии (от высшего приоритета к низшему):
-      //   1. srv.version из config.yaml — принудительно задан администратором
-      //   2. iface.name содержит "v1"/"v2" — например "AWG-v1-migrated"
-      //   3. Порядковый номер интерфейса (wg10=v1, wg11=v2, wg12=v1...)
-      //      — первый незарегистрированный идёт в v1, второй в v2
-      //   4. protocol: wireguard-1.0 → v1, amneziawg-2.0 → v2
-      //      (если оба одного протокола — используем порядок по п.3)
+      // Регистрируем интерфейсы этого сервера
+      this._registerInterfaces(client, ifaces, srv.label, srv.version);
 
-      // Сортируем интерфейсы по имени чтобы порядок был стабильным
-      const sortedIfaces = [...ifaces].sort((a, b) => a.id.localeCompare(b.id));
+      // ── Обнаружение удалённых серверов (Remotes) ──────────────────────────
+      // Запрашиваем список remotes, подключённых через Cascade UI (/api/remotes).
+      // Каждый remote доступен через proxy-эндпоинт primary-сервера:
+      //   /api/remotes/:id/proxy/...
+      try {
+        const remotes = await client.listRemotes();
+        logger.info(`[CascadeManager] Found ${remotes.length} remote(s) on ${srv.label}`);
 
-      for (const iface of sortedIfaces) {
-        // Шаг 1: принудительная версия из конфига
-        if (srv.version) {
-          const key = srv.version;
-          if (!this.versionMap.has(key)) {
-            this.versionMap.set(key, {
-              client,
-              interfaceId:   iface.id,
-              interfaceName: iface.name,
-              serverLabel:   srv.label,
-              version:       key,
-              protocol:      iface.protocol,
-              publicKey:     iface.publicKey,
-              address:       iface.address,
-              listenPort:    iface.listenPort,
-            });
-            logger.info(`[CascadeManager] Registered ${key} → ${iface.name} on ${srv.label} (forced)`);
-          }
-          continue;
-        }
+        for (const remote of remotes) {
+          const remoteLabel = remote.name || remote.id;
+          try {
+            // Получаем прокси-клиент для этого remote
+            const proxyClient = client.createRemoteProxy(remote.id, remoteLabel);
 
-        // Шаг 2: имя интерфейса явно содержит v1/v2
-        let key = null;
-        const nameLower = (iface.name || '').toLowerCase();
-        if (nameLower.includes('v1') || nameLower.includes('-v1') || nameLower.includes('_v1')) {
-          key = 'v1';
-        } else if (nameLower.includes('v2') || nameLower.includes('-v2') || nameLower.includes('_v2')) {
-          key = 'v2';
-        }
+            // Получаем список интерфейсов через proxy
+            const remoteIfaces = await proxyClient.listInterfaces();
+            logger.info(`[CascadeManager] Remote "${remoteLabel}" has ${remoteIfaces.length} interface(s)`);
 
-        // Шаг 3: по протоколу
-        if (!key) {
-          key = iface.protocol === 'wireguard-1.0' ? 'v1' : 'v2';
-        }
-
-        // Если слот занят — ищем свободный
-        if (this.versionMap.has(key)) {
-          const alt = key === 'v1' ? 'v2' : 'v1';
-          if (!this.versionMap.has(alt)) {
-            key = alt;
-          } else {
-            // Оба слота заняты — регистрируем под именем интерфейса
-            key = iface.id;
+            // Регистрируем интерфейсы remote-сервера
+            // Ключи будут вида "remote:<remoteLabel>:v1", "remote:<remoteLabel>:v2" и т.д.
+            this._registerInterfaces(proxyClient, remoteIfaces, remoteLabel, null, `remote:${remoteLabel}:`);
+          } catch (err) {
+            logger.warn(`[CascadeManager] Cannot load interfaces from remote "${remoteLabel}": ${err.message}`);
           }
         }
-
-        this.versionMap.set(key, {
-          client,
-          interfaceId:   iface.id,
-          interfaceName: iface.name,
-          serverLabel:   srv.label,
-          version:       key,
-          protocol:      iface.protocol,
-          publicKey:     iface.publicKey,
-          address:       iface.address,
-          listenPort:    iface.listenPort,
-        });
-        logger.info(`[CascadeManager] Registered ${key} → ${iface.name} (${iface.id}) on ${srv.label}`);
+      } catch (err) {
+        logger.warn(`[CascadeManager] Cannot list remotes on ${srv.label}: ${err.message}`);
       }
     }
 
     this.initialized = true;
     logger.info(`[CascadeManager] Ready. Versions: ${[...this.versionMap.keys()].join(', ') || 'none'}`);
+  }
+
+  /**
+   * Регистрирует интерфейсы в versionMap.
+   * @param {CascadeClient} client       — клиент для работы с этим сервером
+   * @param {Array}         ifaces       — массив интерфейсов
+   * @param {string}        serverLabel  — метка сервера для отображения
+   * @param {string|null}   forcedVersion — принудительная версия (из config.yaml)
+   * @param {string}        keyPrefix    — префикс ключа в versionMap (для remotes)
+   */
+  _registerInterfaces(client, ifaces, serverLabel, forcedVersion = null, keyPrefix = '') {
+    // Сортируем интерфейсы по имени чтобы порядок был стабильным
+    const sortedIfaces = [...ifaces].sort((a, b) => a.id.localeCompare(b.id));
+
+    for (const iface of sortedIfaces) {
+      // Шаг 1: принудительная версия из конфига (только для основного сервера без префикса)
+      if (forcedVersion && !keyPrefix) {
+        const key = forcedVersion;
+        if (!this.versionMap.has(key)) {
+          this.versionMap.set(key, {
+            client,
+            interfaceId:   iface.id,
+            interfaceName: iface.name,
+            serverLabel,
+            version:       key,
+            protocol:      iface.protocol,
+            publicKey:     iface.publicKey,
+            address:       iface.address,
+            listenPort:    iface.listenPort,
+          });
+          logger.info(`[CascadeManager] Registered ${key} → ${iface.name} on ${serverLabel} (forced)`);
+        }
+        continue;
+      }
+
+      // Шаг 2: имя интерфейса явно содержит v1/v2
+      let baseKey = null;
+      const nameLower = (iface.name || '').toLowerCase();
+      if (nameLower.includes('v1') || nameLower.includes('-v1') || nameLower.includes('_v1')) {
+        baseKey = 'v1';
+      } else if (nameLower.includes('v2') || nameLower.includes('-v2') || nameLower.includes('_v2')) {
+        baseKey = 'v2';
+      }
+
+      // Шаг 3: по протоколу
+      if (!baseKey) {
+        baseKey = iface.protocol === 'wireguard-1.0' ? 'v1' : 'v2';
+      }
+
+      let key = `${keyPrefix}${baseKey}`;
+
+      // Если слот занят — ищем свободный
+      if (this.versionMap.has(key)) {
+        const altBase = baseKey === 'v1' ? 'v2' : 'v1';
+        const altKey = `${keyPrefix}${altBase}`;
+        if (!this.versionMap.has(altKey)) {
+          key = altKey;
+        } else {
+          // Оба слота заняты — регистрируем под уникальным ключом
+          key = `${keyPrefix}${iface.id}`;
+        }
+      }
+
+      this.versionMap.set(key, {
+        client,
+        interfaceId:   iface.id,
+        interfaceName: iface.name,
+        serverLabel,
+        version:       key,
+        protocol:      iface.protocol,
+        publicKey:     iface.publicKey,
+        address:       iface.address,
+        listenPort:    iface.listenPort,
+      });
+      logger.info(`[CascadeManager] Registered ${key} → ${iface.name} (${iface.id}) on ${serverLabel}`);
+    }
   }
 
   // ── Compat helpers (обратная совместимость с AWGManager API) ──────────────
@@ -496,12 +539,17 @@ export class AWGManagerCascade {
       } catch (err) {
         logger.warn(`[CascadeManager] getStats failed for ${entry.serverLabel}: ${err.message}`);
         stats.push({
-          name:    entry.interfaceName,
+          name:        entry.interfaceName,
           version,
-          running: false,
-          status:  'unknown',
-          clients: 0,
-          error:   err.message,
+          port:        entry.listenPort,
+          running:     false,
+          restarting:  false,
+          stopped:     true,
+          status:      'unknown',
+          clients:     0,
+          serverLabel: entry.serverLabel,
+          cascadeMode: true,
+          error:       err.message,
         });
       }
     }

@@ -361,6 +361,80 @@ export class CascadeClient {
   }
 
   /**
+   * Создаёт «прокси-клиент» для удалённого сервера.
+   * Все запросы маршрутизируются через primary:
+   *   /api/remotes/:remoteId/proxy/<path>
+   *
+   * @param {string} remoteId  — id из listRemotes()
+   * @param {string} [label]   — человекочитаемый ярлык для логов
+   * @returns {CascadeClient}  — клиент с той же авторизацией, но другим base-path
+   */
+  createRemoteProxy(remoteId, label) {
+    // Создаём новый экземпляр, чей url указывает на proxy-endpoint primary сервера.
+    // Так как /api/remotes/:id/proxy/* уже содержит /api/, нам нужно чуть
+    // переопределить логику запросов — используем тот же token, но другой url-prefix.
+    const proxyBase = `${this.url}/api/remotes/${remoteId}/proxy`;
+    const proxy = new CascadeClient({
+      url:      proxyBase,  // будет использоваться как base, _req добавит /api<path>
+      token:    this.token,
+      username: this.username,
+      password: this.password,
+      label:    label || `remote:${remoteId}`,
+    });
+    // Переопределяем _req так, чтобы path шёл напрямую (без дополнительного /api)
+    proxy._req = async (method, path, body = null, opts = {}) => {
+      await this.ensureToken();   // обновляем токен primary-сервера
+      proxy.token = this.token;   // синхронизируем токен
+
+      const options = {
+        method,
+        headers: { 'Authorization': `Bearer ${this.token}` },
+        timeout: opts.timeout || 15_000,
+      };
+      if (body !== null) {
+        options.body = JSON.stringify(body);
+      }
+
+      try {
+        const { body: resBody } = await rawFetch(`${proxyBase}${path}`, options);
+        return resBody;
+      } catch (err) {
+        if (err.status === 401 && !opts._retried) {
+          logger.warn(`[Cascade:${proxy.label}] Token rejected (401), re-authenticating...`);
+          this.token = null;
+          await this.ensureToken();
+          proxy.token = this.token;
+          return proxy._req(method, path, body, { ...opts, _retried: true });
+        }
+        throw err;
+      }
+    };
+
+    // Переопределяем методы работы с конфигом и QR-кодом (они используют fetch напрямую)
+    proxy.getPeerConfig = async (ifaceId, peerId) => {
+      await this.ensureToken();
+      const res = await fetch(
+        `${proxyBase}/api/tunnel-interfaces/${ifaceId}/peers/${peerId}/config`,
+        { headers: { 'Authorization': `Bearer ${this.token}` } }
+      );
+      if (!res.ok) throw new Error(`getPeerConfig (proxy): HTTP ${res.status}`);
+      return res.text();
+    };
+
+    proxy.getPeerQRCode = async (ifaceId, peerId) => {
+      await this.ensureToken();
+      const res = await fetch(
+        `${proxyBase}/api/tunnel-interfaces/${ifaceId}/peers/${peerId}/qrcode.svg`,
+        { headers: { 'Authorization': `Bearer ${this.token}` } }
+      );
+      if (!res.ok) throw new Error(`getPeerQRCode (proxy): HTTP ${res.status}`);
+      return res.text();
+    };
+
+    return proxy;
+  }
+
+  /**
    * POST /api/remotes
    * Добавить удалённый Cascade-сервер.
    * Режим с токеном: { name, url, token }

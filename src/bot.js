@@ -1540,97 +1540,111 @@ export class RouteBot {
 
       const stats = await this.awgManager.getStats();
 
-      // Создаем карту найденных контейнеров по версиям
-      const statsMap = new Map();
-      stats.forEach(container => {
-        statsMap.set(container.version, container);
-      });
+      // Группируем контейнеры по serverLabel
+      const byServer = new Map();
+      for (const container of stats) {
+        const label = container.serverLabel || config.serverLabel || this.getServerIp();
+        if (!byServer.has(label)) byServer.set(label, []);
+        byServer.get(label).push(container);
+      }
 
-      // Получаем server_label из конфига или используем server_ip
-      const serverLabel = config.serverLabel || this.getServerIp();
-      let statsMessage = `*Сервер:* \`${serverLabel}\`\n\n`;
-      
-      // Показываем статус для обеих версий
-      const versions = ['v1', 'v2'];
-      
-      for (const version of versions) {
-        const container = statsMap.get(version);
-        
-        if (container) {
-          // Получаем клиентов с их статусами
-          let clientsWithStatus = [];
-          let activeClients = 0;
-          
-          if (container.running) {
-            try {
-              clientsWithStatus = await this.awgManager.getClientsWithStatus(
-                container.name,
-                version
-              );
-              activeClients = clientsWithStatus.filter(c => c.active).length;
-              
-              // Получаем имена пиров
-              const peerNames = await this.awgManager.getPeerNames(container.name);
-              
-              // Получаем статистику handshake
-              const clientsStats = await this.getClientsStats(container.name, version);
-              
-              // Обогащаем данные клиентов именами и временем handshake
-              clientsWithStatus = clientsWithStatus.map(client => ({
-                ...client,
-                name: peerNames[client.ip] || null,
-                lastHandshake: clientsStats[client.ip]?.lastHandshake || null
-              }));
-              
-              // Сортируем только по IP (численно)
-              clientsWithStatus.sort((a, b) => {
-                // Сравниваем IP адреса численно
-                const aParts = a.ip.split('.').map(Number);
-                const bParts = b.ip.split('.').map(Number);
-                
-                for (let i = 0; i < 4; i++) {
-                  if (aParts[i] !== bParts[i]) {
-                    return aParts[i] - bParts[i];
+      // Если cascade не включён — показываем как раньше (один сервер)
+      if (!config.cascadeEnabled) {
+        const serverLabel = config.serverLabel || this.getServerIp();
+        byServer.clear();
+        byServer.set(serverLabel, stats);
+      }
+
+      let statsMessage = '';
+
+      for (const [serverLabel, containers] of byServer) {
+        statsMessage += `🖥 *Сервер:* \`${serverLabel}\`\n\n`;
+
+        // Строим карту version → container для этого сервера
+        const statsMap = new Map();
+        containers.forEach(c => statsMap.set(c.version, c));
+
+        // Для cascade-режима показываем все версии этого сервера,
+        // для docker-режима — стандартные v1/v2
+        const versions = config.cascadeEnabled
+          ? containers.map(c => c.version)
+          : ['v1', 'v2'];
+
+        for (const version of versions) {
+          const container = statsMap.get(version);
+
+          if (container) {
+            // Получаем клиентов с их статусами
+            let clientsWithStatus = [];
+            let activeClients = 0;
+
+            if (container.running) {
+              try {
+                clientsWithStatus = await this.awgManager.getClientsWithStatus(
+                  container.name,
+                  version
+                );
+                activeClients = clientsWithStatus.filter(c => c.active).length;
+
+                // Получаем имена пиров
+                const peerNames = await this.awgManager.getPeerNames(container.name);
+
+                // Получаем статистику handshake
+                const clientsStats = await this.getClientsStats(container.name, version);
+
+                // Обогащаем данные клиентов именами и временем handshake
+                clientsWithStatus = clientsWithStatus.map(client => ({
+                  ...client,
+                  name: peerNames[client.ip] || null,
+                  lastHandshake: clientsStats[client.ip]?.lastHandshake || null
+                }));
+
+                // Сортируем по IP (численно)
+                clientsWithStatus.sort((a, b) => {
+                  const aParts = a.ip.split('.').map(Number);
+                  const bParts = b.ip.split('.').map(Number);
+                  for (let i = 0; i < 4; i++) {
+                    if (aParts[i] !== bParts[i]) return aParts[i] - bParts[i];
                   }
-                }
-                return 0;
-              });
-            } catch (error) {
-              logger.warn(`Failed to get clients details for ${container.name}: ${error.message}`);
+                  return 0;
+                });
+              } catch (error) {
+                logger.warn(`Failed to get clients details for ${container.name}: ${error.message}`);
+              }
             }
-          }
-          
-          // Контейнер найден - показываем реальный статус
-          statsMessage += `📋 *AWG ${version.toUpperCase()}*\n`;
-          
-          // Определяем статус контейнера
-          if (container.restarting) {
-            statsMessage += `🔄 Перезапускается...\n`;
-          } else if (container.running) {
-            statsMessage += `✅ Запущен\n`;
-          } else if (container.stopped) {
-            statsMessage += `⚠️ Остановлен\n`;
-          } else {
-            statsMessage += `❓ Неизвестно\n`;
-          }
-          
-          statsMessage += `🔌 Порт: ${container.port}\n`;
-          statsMessage += `👥 Клиентов: ${container.clients}\n`;
-          statsMessage += `👤 Активных: ${activeClients}\n\n`;
-          
-          // Показываем список всех клиентов (формат: IP статус имя)
-          if (container.running && clientsWithStatus.length > 0) {
-            for (const client of clientsWithStatus) {
-              const name = client.name ? ` ${client.name}` : '';
-              const statusIcon = client.active ? '✅' : '❌';
-              statsMessage += `${client.ip} ${statusIcon}${name}\n`;
+
+            // Показываем название интерфейса — используем name (interfaceName) если есть, иначе version
+            const ifaceLabel = container.name || version.toUpperCase();
+            statsMessage += `📋 *${ifaceLabel}*\n`;
+
+            if (container.restarting) {
+              statsMessage += `🔄 Перезапускается...\n`;
+            } else if (container.running) {
+              statsMessage += `✅ Запущен\n`;
+            } else if (container.stopped) {
+              statsMessage += `⚠️ Остановлен\n`;
+            } else {
+              statsMessage += `❓ Неизвестно\n`;
             }
-            statsMessage += '\n';
+
+            statsMessage += `🔌 Порт: ${container.port}\n`;
+            statsMessage += `👥 Клиентов: ${container.clients}\n`;
+            statsMessage += `👤 Активных: ${activeClients}\n\n`;
+
+            // Список пиров
+            if (container.running && clientsWithStatus.length > 0) {
+              for (const client of clientsWithStatus) {
+                const name = client.name ? ` ${client.name}` : '';
+                const statusIcon = client.active ? '✅' : '❌';
+                statsMessage += `${client.ip} ${statusIcon}${name}\n`;
+              }
+              statsMessage += '\n';
+            }
+          } else if (!config.cascadeEnabled) {
+            // docker-режим: показываем "не установлен" для отсутствующих версий
+            statsMessage += `📋 *AWG ${version.toUpperCase()}*\n`;
+            statsMessage += `❌ Не установлен\n\n`;
           }
-        } else {
-          // Контейнер не найден
-          statsMessage += `📋 *AWG ${version.toUpperCase()}*\n`;
-          statsMessage += `❌ Не установлен\n\n`;
         }
       }
 
