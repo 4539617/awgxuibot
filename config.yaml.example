@@ -62,44 +62,53 @@ panels:
 # Поля:
 #   label       — отображаемое имя в дашборде бота
 #   url         — адрес Cascade UI (http://host:port)
-#   api_key     — токен из Cascade UI → Settings → Tokens  (рекомендуется)
-#   username    — логин (альтернатива api_key)
-#   password    — пароль (альтернатива api_key)
+#   api_key     — токен из Cascade UI → Settings → Tokens
+#   username    — логин (если нет api_key)
+#   password    — пароль (если нет api_key)
 #   enabled     — true/false, по умолчанию true
 #   version     — опционально: принудить к "v1" или "v2"
 #
-# Поведение:
-#   - Если api_key (или password) заполнен — бот подключается к этому серверу
-#     напрямую и отображает его интерфейсы + пиры на дашборде.
-#   - Если api_key НЕ заполнен — сервер считается «remote-only»: его интерфейсы
-#     будут видны только если он добавлен как Remote через Cascade UI другого
-#     сервера (autodiscovery через /api/remotes).
-#   - Каждый сервер с api_key также автоматически опрашивает свои Remotes
-#     и добавляет их на дашборд без дополнительной настройки.
+# ── Приоритет авторизации ─────────────────────────────────────────────────────
 #
-# Пример: один локальный сервер
+#   1. api_key заполнен
+#        → прямое подключение по Bearer-токену (рекомендуется)
 #
-# cascades:
-#   cascade0:
-#     label: "Основной VPS"
-#     url: "http://localhost:51821"
-#     api_key: "ws_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-#     enabled: true
+#   2. api_key пуст, password заполнен
+#        → прямое подключение через login + password,
+#          бот автоматически получает токен при старте
 #
-# Пример: два сервера с разными методами авторизации
+#   3. api_key и password оба пусты
+#        → remote-only: бот не подключается напрямую,
+#          интерфейсы сервера будут видны только если он добавлен
+#          как Remote через Cascade UI другого сервера
+#          (autodiscovery через /api/remotes)
+#
+# ── Autodiscovery Remotes ─────────────────────────────────────────────────────
+#   Каждый сервер с авторизацией (вариант 1 или 2) автоматически опрашивает
+#   /api/remotes и подтягивает интерфейсы всех подключённых Remote-серверов
+#   на дашборд без дополнительной настройки в config.yaml.
+#
+# ── Примеры ───────────────────────────────────────────────────────────────────
+#
+# Вариант 1 — api_key (рекомендуется):
 #
 # cascades:
 #   cascade0:
 #     label: "VPS-Finland"
-#     url: "http://10.0.0.1:51821"
-#     api_key: "ws_токен-с-первого-сервера"
-#   cascade1:
+#     url: "http://localhost:51821"
+#     api_key: "ws_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+#     enabled: true
+#
+# Вариант 2 — login + password:
+#
+# cascades:
+#   cascade0:
 #     label: "VPS-Germany"
 #     url: "http://10.0.0.2:51821"
 #     username: "admin"
 #     password: "секретный-пароль"
 #
-# Пример: второй сервер добавлен через Cascade UI как Remote (api_key не нужен)
+# Вариант 3 — remote-only (сервер добавлен через Cascade UI):
 #
 # cascades:
 #   cascade0:
@@ -109,6 +118,8 @@ panels:
 #   cascade1:
 #     label: "Remote VPS"
 #     url: "http://remote.example.com:51821"
-#     # api_key не заполнен → remote-only, виден через autodiscovery cascade0
+#     # api_key и password не заполнены → autodiscovery через cascade0
+#
+# Все три варианта можно комбинировать в одном config.yaml.
 #
 cascades: {}

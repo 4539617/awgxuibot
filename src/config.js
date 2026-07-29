@@ -3,12 +3,17 @@ import yaml from 'js-yaml';
 import path from 'path';
 
 // ── Структура по умолчанию для одной записи cascades ──────────────────────────
+// Порядок приоритетов авторизации:
+//   1. api_key заполнен              → прямое подключение по Bearer-токену
+//   2. api_key пуст, password заполнен → прямое подключение login+password → получаем токен
+//   3. api_key и password пусты       → remote-only: интерфейсы видны только через
+//                                        autodiscovery другого сервера (/api/remotes)
 const CASCADE_ENTRY_DEFAULTS = {
   label:    '',
   url:      '',
-  api_key:  '',
-  username: 'admin',
-  password: '',
+  api_key:  '',      // Bearer-токен из Cascade UI → Settings → Tokens (приоритет 1)
+  username: 'admin', // логин для авторизации через login+password (приоритет 2)
+  password: '',      // пароль для авторизации через login+password (приоритет 2)
   enabled:  true,
   version:  '',
 };
@@ -100,39 +105,55 @@ function loadConfig() {
     //
     const cascadeServers = [];
 
+    /**
+     * Разбирает одну запись сервера и определяет метод авторизации:
+     *   'token'    — есть api_key/token → Bearer
+     *   'password' — есть password (и нет api_key) → login+password → получаем токен
+     *   'none'     — ничего нет → remote-only (через autodiscovery другого сервера)
+     */
+    function parseCascadeEntry(key, srv) {
+      const apiKey   = (srv.api_key || srv.token || '').trim();
+      const password = (srv.password || '').trim();
+      const username = (srv.username || 'admin').trim();
+
+      let authMethod;
+      if (apiKey) {
+        authMethod = 'token';       // приоритет 1: api_key
+      } else if (password) {
+        authMethod = 'password';    // приоритет 2: login + password
+      } else {
+        authMethod = 'none';        // приоритет 3: remote-only
+      }
+
+      return {
+        label:      (srv.label || key).trim() || key,
+        url:        (srv.url   || '').trim(),
+        token:      apiKey    || null,
+        username,
+        password,
+        version:    srv.version || null,
+        authMethod,
+        // noAuth — обратная совместимость с кодом AWGManagerCascade
+        noAuth:     authMethod === 'none',
+      };
+    }
+
     // Новый формат: секция `cascades`
     if (data.cascades && typeof data.cascades === 'object') {
       for (const [key, srv] of Object.entries(data.cascades)) {
-        if (!srv || !srv.url) continue;
+        if (!srv || typeof srv !== 'object') continue;
+        if (!srv.url || !srv.url.trim()) continue;      // url обязателен
         if (srv.enabled === false) continue;            // явно отключён
-        const apiKey = srv.api_key || srv.token || null;
-        cascadeServers.push({
-          label:    srv.label    || key,
-          url:      srv.url,
-          token:    apiKey,
-          username: srv.username || 'admin',
-          password: srv.password || '',
-          version:  srv.version  || null,
-          // Если api_key не заполнен — пометим флагом, чтобы не пытаться авторизоваться
-          noAuth:   !apiKey && !srv.password,
-        });
+        cascadeServers.push(parseCascadeEntry(key, srv));
       }
     }
 
     // Старый формат: секция `cascade` (обратная совместимость)
     if (cascadeServers.length === 0 && data.cascade && typeof data.cascade === 'object') {
       for (const [label, srv] of Object.entries(data.cascade)) {
-        if (!srv || !srv.url) continue;
-        const apiKey = srv.api_key || srv.token || null;
-        cascadeServers.push({
-          label:    srv.label    || label,
-          url:      srv.url,
-          token:    apiKey,
-          username: srv.username || 'admin',
-          password: srv.password || '',
-          version:  srv.version  || null,
-          noAuth:   !apiKey && !srv.password,
-        });
+        if (!srv || typeof srv !== 'object') continue;
+        if (!srv.url || !srv.url.trim()) continue;
+        cascadeServers.push(parseCascadeEntry(label, srv));
       }
     }
 
@@ -193,8 +214,12 @@ console.log(`  Standalone Mode: ${config.standaloneMode}`);
 if (config.cascadeEnabled) {
   console.log(`  Cascade mode: enabled (${config.cascadeServers.length} server(s))`);
   config.cascadeServers.forEach((s, i) => {
-    const auth = s.token ? 'api_key' : (s.noAuth ? 'no-auth (remote-only)' : 'password');
-    console.log(`    [cascade${i}] ${s.label}  ${s.url}  auth=${auth}`);
+    const authDesc = {
+      token:    'api_key (Bearer)',
+      password: 'login+password',
+      none:     'remote-only (autodiscovery)',
+    }[s.authMethod] || s.authMethod;
+    console.log(`    [cascade${i}] "${s.label}"  ${s.url}  auth=${authDesc}`);
   });
 } else {
   console.log('  Cascade mode: disabled (docker exec)');
