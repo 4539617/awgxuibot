@@ -186,6 +186,9 @@ new Vue({
     // ── Remote widget data cache ───────────────────────────────────────────────
     // Keyed by remoteId. Each entry: { interfaces: [], peers: {[ifaceId]: []}, loading: false, error: null }
     remoteWidgetCache: {},
+    // Incremented on every cache update — forces template methods (dashRemotePeers)
+    // to re-evaluate since Vue 2 does not track dependencies inside plain methods.
+    remoteWidgetRevision: 0,
     // State for "pick remote" modal shown when adding remote-* widgets
     dashAddRemoteModal:      false,
     dashAddRemoteWidgetType: '',   // 'remote-interfaces' | 'remote-peers'
@@ -3400,6 +3403,8 @@ new Vue({
           loading: false,
           error: null,
         });
+        // Bump revision so template methods (dashRemotePeers) re-evaluate
+        this.remoteWidgetRevision++;
       } catch (err) {
         // On error keep existing interfaces/peers visible, just update status fields
         this.$set(this.remoteWidgetCache, remoteId, {
@@ -3407,6 +3412,7 @@ new Vue({
           loading: false,
           error: err.message || 'Failed to load remote data',
         });
+        this.remoteWidgetRevision++;
       }
     },
 
