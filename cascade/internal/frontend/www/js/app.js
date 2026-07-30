@@ -281,6 +281,7 @@ new Vue({
     },
     showPeerCreate: false, // manual peer create modal
     showQuickPeerCreate: false, // quick peer create dialog
+    peerCreateRemoteId: null,   // set when quick-create is opened from a remote widget
     loadingInterfaceId: null,
     interfaceCreate: {
       name: '',
@@ -1745,10 +1746,15 @@ new Vue({
         payload.settings = { ...settings };
       }
 
+      const remoteId = this.interfaceEdit._remoteId || null;
       try {
-        const res = await this.api.updateTunnelInterface({ interfaceId: id, ...payload });
-        this._applyInterfaceUpdate(res);
+        const doSave = () => this.api.updateTunnelInterface({ interfaceId: id, ...payload });
+        const res = remoteId
+          ? await this._withRemote(remoteId, doSave)
+          : await doSave();
+        if (!remoteId) this._applyInterfaceUpdate(res);
         this.showInterfaceEdit = false;
+        if (remoteId) await this.loadRemoteWidgetData(remoteId);
         this.showToast(`Interface "${name}" updated successfully`);
       } catch (err) {
         console.error('saveInterfaceEdit failed:', err);
@@ -3491,6 +3497,17 @@ new Vue({
         expiredAt: peer.expiredAt ? (typeof peer.expiredAt === 'string' ? peer.expiredAt.slice(0, 10) : new Date(peer.expiredAt).toISOString().slice(0, 10)) : '',
       };
       this.showPeerEditModal = true;
+    },
+
+    remoteOpenInterfaceEdit(remoteId, iface) {
+      this.openInterfaceEdit(iface);           // fill the form as usual
+      this.interfaceEdit._remoteId = remoteId; // tag so saveInterfaceEdit knows where to send
+    },
+
+    remoteOpenAddPeer(remoteId, iface) {
+      if (iface.disableRoutes) return;
+      this.dashOpenAddPeer(iface);              // fill the quick-create dialog as usual
+      this.peerCreateRemoteId = remoteId;       // tag so createQuickPeer knows where to create
     },
 
     async remoteStartInterface(remoteId, iface) {
@@ -5241,10 +5258,14 @@ new Vue({
           groupId: this.peerCreateGroupId || this.defaultGroupId() || undefined,
         };
 
-        const res = await this.api.createTunnelInterfacePeer({
+        const remoteId = this.peerCreateRemoteId || null;
+        const doCreate = () => this.api.createTunnelInterfacePeer({
           interfaceId: this.activeInterfaceId,
           ...payload,
         });
+        const res = remoteId
+          ? await this._withRemote(remoteId, doCreate)
+          : await doCreate();
 
         const peerId = res.peer && res.peer.id;
         const showQR = this.peerCreateShowQR;
@@ -5252,18 +5273,27 @@ new Vue({
         this.peerCreateName = '';
         this.peerCreateExpiredDate = '';
         this.peerCreateShowQR = false;
+        this.peerCreateRemoteId = null;
         this.inlineGroupShowQuick = false;
         this.inlineGroupInput = '';
 
-        await this.refreshPeers();
-        await this.loadTunnelInterfaces();
-        this.loadClientGroups();
-        this.loadAliases();
-
-        if (showQR && peerId) {
-          this.qrcode = this.peerQrUrl(this.activeInterfaceId, peerId);
+        if (remoteId) {
+          await this.loadRemoteWidgetData(remoteId);
+          if (showQR && peerId) {
+            await this.remoteShowPeerQr(remoteId, this.activeInterfaceId, peerId);
+          } else {
+            this.showToast('Client created!');
+          }
         } else {
-          this.showToast('Client created!');
+          await this.refreshPeers();
+          await this.loadTunnelInterfaces();
+          this.loadClientGroups();
+          this.loadAliases();
+          if (showQR && peerId) {
+            this.qrcode = this.peerQrUrl(this.activeInterfaceId, peerId);
+          } else {
+            this.showToast('Client created!');
+          }
         }
       } catch (err) {
         console.error('Failed to create peer:', err);
