@@ -3493,6 +3493,31 @@ new Vue({
       this.showPeerEditModal = true;
     },
 
+    async remoteStartInterface(remoteId, iface) {
+      try {
+        const res = await this.api.remoteCall({
+          remoteId, method: 'post', path: `/tunnel-interfaces/${iface.id}/start`, body: {},
+        });
+        // Update the interface in the cache so the dot and buttons reflect new state
+        await this.loadRemoteWidgetData(remoteId);
+        this.showToast(`${iface.name} started`, 'success');
+      } catch (err) {
+        this.showToast(err.message || 'Failed to start interface', 'error');
+      }
+    },
+
+    async remoteStopInterface(remoteId, iface) {
+      try {
+        await this.api.remoteCall({
+          remoteId, method: 'post', path: `/tunnel-interfaces/${iface.id}/stop`, body: {},
+        });
+        await this.loadRemoteWidgetData(remoteId);
+        this.showToast(`${iface.name} stopped`, 'success');
+      } catch (err) {
+        this.showToast(err.message || 'Failed to stop interface', 'error');
+      }
+    },
+
     async remoteEnablePeer(remoteId, peer) {
       try {
         await this._withRemote(remoteId, () =>
