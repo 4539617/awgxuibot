@@ -182,6 +182,34 @@ class PanelMonitor:
                     await self._handle_panel_available(current_panel_id)
                 else:
                     await self._handle_panel_unavailable(current_panel_id)
+
+                # Также проверяем все остальные (не текущие) панели для учёта их обрывов
+                for panel_id, state in self.panel_states.items():
+                    if panel_id == current_panel_id:
+                        continue
+                    panel_config = self.config_manager.get_panel(panel_id)
+                    if not panel_config or not getattr(panel_config, 'enabled', True):
+                        continue
+                    try:
+                        available = await self.config_manager.check_panel_status(panel_config)
+                        state.last_check = datetime.now()
+                    except Exception:
+                        available = False
+                    if available:
+                        if not state.is_available:
+                            logger.info(f"✅ Панель {panel_id} восстановлена")
+                            state.is_available = True
+                            state.last_status_change = datetime.now()
+                        state.consecutive_failures = 0
+                    else:
+                        state.consecutive_failures += 1
+                        if state.is_available:
+                            state.is_available = False
+                            now = datetime.now()
+                            state.last_status_change = now
+                            state.outage_events.append(now)
+                            self._save_outage_to_db(panel_id, now)
+                            logger.warning(f"⚠️ Панель {panel_id} (резервная) стала недоступна — обрыв зафиксирован")
                 
             except Exception as e:
                 logger.error(f"❌ Ошибка в цикле мониторинга: {e}", exc_info=True)
@@ -246,10 +274,12 @@ class PanelMonitor:
         
         logger.warning(f"⚠️ Панель {panel_id} недоступна ({failures}/{self.failure_threshold})")
         
-        # Обновляем статус и записываем начало нового обрыва
-        if state.is_available:
-            state.is_available = False
+        # Записываем начало нового обрыва при первом сбое в новой серии (failures == 1).
+        # Условие по is_available недостаточно: после failover is_available остаётся False,
+        # поэтому повторные отключения никогда не фиксировались.
+        if failures == 1:
             now = datetime.now()
+            state.is_available = False
             state.last_status_change = now
             state.outage_events.append(now)
             self._save_outage_to_db(panel_id, now)
