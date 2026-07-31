@@ -3641,89 +3641,117 @@ async def refresh_panels_status(callback_query: types.CallbackQuery, state: FSMC
     await show_panels_list(callback_query, state, is_refresh=True)
 
 
+async def _render_servers_screen(callback_query: types.CallbackQuery, is_refresh: bool = False):
+    """Рендер экрана 'Серверы': кнопки панелей + статистика сбоев."""
+    panel_manager = config.panel_manager
+    panels = panel_manager.get_all_panels()
+    current_panel_id = panel_manager.get_current_panel_id()
+
+    if not panels:
+        await callback_query.answer("❌ Панели не настроены", show_alert=True)
+        return
+
+    # Кнопки панелей: panel0 всегда, сетевые только v3+
+    keyboard_buttons = []
+    for panel_id, panel_config in panels.items():
+        is_local_panel = (panel_id == "panel0")
+        is_v3_or_higher = panel_config.is_v3() if hasattr(panel_config, 'is_v3') else False
+
+        if not is_local_panel and not is_v3_or_higher:
+            logger.debug(f"⏭️ Пропуск панели {panel_id} (v<3, не panel0) — только мониторинг")
+            continue
+
+        alias = getattr(panel_config, 'alias', panel_id)
+        location = getattr(panel_config, 'location_label', '')
+        is_current = panel_id == current_panel_id
+
+        # Индикатор доступности: смотрим в panel_states монитора
+        if _panel_monitor:
+            ps = _panel_monitor.panel_states.get(panel_id)
+            avail_dot = "🟢" if (ps is None or ps.is_available) else "🔴"
+        else:
+            avail_dot = "🟢"
+
+        location_str = f" · {location}" if location else ""
+        status_icon = "✅" if is_current else "⏸️"
+        button_text = f"{status_icon} {avail_dot} {alias}{location_str}"
+
+        keyboard_buttons.append([
+            InlineKeyboardButton(
+                text=button_text,
+                callback_data=f"connect_panel:{panel_id}"
+            )
+        ])
+
+    keyboard_buttons.append([
+        InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_servers"),
+        InlineKeyboardButton(text="◀️ Назад",    callback_data="server_status"),
+    ])
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+
+    # Статистика сбоев
+    stats_lines = []
+    if _panel_monitor:
+        for pid, panel_config in panels.items():
+            alias = getattr(panel_config, 'alias', pid)
+            ps = _panel_monitor.panel_states.get(pid)
+            if ps is None:
+                continue
+            count = len(ps.outage_events)
+            if count == 0:
+                stats_lines.append(f"  🟢 {alias}: сбоев нет")
+            else:
+                first_dt = ps.outage_events[0].strftime('%d.%m %H:%M')
+                last_dt  = ps.outage_events[-1].strftime('%d.%m %H:%M')
+                dot = "🔴" if not ps.is_available else "🟡"
+                stats_lines.append(f"  {dot} {alias}: <b>{count}</b> сбоев  ({first_dt} — {last_dt})")
+
+    if stats_lines:
+        stats_block = "📊 <b>Статистика сбоев:</b>\n" + "\n".join(stats_lines)
+    else:
+        stats_block = "📊 Статистика сбоев пока недоступна"
+
+    text = f"🖥️ <b>Серверы</b>\n\n{stats_block}"
+    try:
+        await callback_query.message.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
+    except Exception:
+        # Сообщение не изменилось — игнорируем
+        pass
+
+    if is_refresh:
+        await callback_query.answer("✅ Обновлено")
+
+
 @dp.callback_query(lambda c: c.data == "select_panel_to_connect")
 async def select_panel_to_connect(callback_query: types.CallbackQuery, state: FSMContext):
     """Выбрать панель для подключения"""
     await callback_query.answer()
-    
+
     user_id = callback_query.from_user.id
     if not is_admin(user_id):
         await callback_query.message.answer("⛔ Доступ запрещен")
         return
-    
+
     try:
-        panel_manager = config.panel_manager
-        panels = panel_manager.get_all_panels()
-        current_panel_id = panel_manager.get_current_panel_id()
-        
-        if not panels:
-            await callback_query.answer("❌ Панели не настроены", show_alert=True)
-            return
-        
-        # Формируем кнопки для выбора панели.
-        # Правило: показываем только если panel_id == "panel0"
-        # ИЛИ (сетевая панель с версией 3+).
-        # Всё остальное (v2.x не-panel0) — только в мониторинге.
-        keyboard_buttons = []
-        for panel_id, panel_config in panels.items():
-            is_local_panel = (panel_id == "panel0")
-            is_v3_or_higher = panel_config.is_v3() if hasattr(panel_config, 'is_v3') else False
-
-            if not is_local_panel and not is_v3_or_higher:
-                logger.debug(f"⏭️ Пропуск панели {panel_id} (v<3, не panel0) — только мониторинг")
-                continue
-
-            logger.debug(f"✅ Панель {panel_id} добавлена в список переключения")
-            
-            alias = getattr(panel_config, 'alias', panel_id)
-            location = getattr(panel_config, 'location_label', '')
-            is_current = panel_id == current_panel_id
-            
-            location_str = f" · {location}" if location else ""
-            button_text = f"{'✅' if is_current else '⏸️'} {alias}{location_str}"
-            
-            keyboard_buttons.append([
-                InlineKeyboardButton(
-                    text=button_text,
-                    callback_data=f"connect_panel:{panel_id}"
-                )
-            ])
-        
-        keyboard_buttons.append([
-            InlineKeyboardButton(text="◀️ Назад", callback_data="server_status")
-        ])
-        
-        keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
-        
-        # Собираем статистику обрывов по панелям из монитора
-        stats_lines = []
-        if _panel_monitor:
-            for pid, panel_config in panels.items():
-                alias = getattr(panel_config, 'alias', pid)
-                state = _panel_monitor.panel_states.get(pid)
-                if state is None:
-                    continue
-                count = len(state.outage_events)
-                if count == 0:
-                    stats_lines.append(f"  {alias}: сбоев нет")
-                else:
-                    first_dt = state.outage_events[0].strftime('%d.%m %H:%M')
-                    last_dt = state.outage_events[-1].strftime('%d.%m %H:%M')
-                    stats_lines.append(f"  {alias}: <b>{count}</b> сбоев  ({first_dt} — {last_dt})")
-
-        if stats_lines:
-            stats_block = "📊 <b>Статистика сбоев:</b>\n" + "\n".join(stats_lines)
-        else:
-            stats_block = "📊 Статистика сбоев пока недоступна"
-
-        await callback_query.message.edit_text(
-            f"🖥️ <b>Серверы</b>\n\n{stats_block}",
-            parse_mode="HTML",
-            reply_markup=keyboard
-        )
-        
+        await _render_servers_screen(callback_query)
     except Exception as e:
         logger.error(f"Ошибка выбора панели: {e}")
+        await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
+
+
+@dp.callback_query(lambda c: c.data == "refresh_servers")
+async def refresh_servers(callback_query: types.CallbackQuery, state: FSMContext):
+    """Обновить экран Серверы"""
+    user_id = callback_query.from_user.id
+    if not is_admin(user_id):
+        await callback_query.answer("⛔ Доступ запрещен", show_alert=True)
+        return
+
+    try:
+        await _render_servers_screen(callback_query, is_refresh=True)
+    except Exception as e:
+        logger.error(f"Ошибка обновления экрана серверов: {e}")
         await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
 
 
