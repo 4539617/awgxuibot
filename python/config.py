@@ -623,10 +623,10 @@ class ConfigManager:
     
     async def check_panel_status(self, panel_config: PanelConfig) -> bool:
         """Проверить доступность панели"""
-        try:
+        async def _do_check():
             login_url = f"{panel_config.xui_url.rstrip('/')}/login"
-            timeout = aiohttp.ClientTimeout(total=5)
-            
+            # connect=4 ограничивает TCP-handshake; total=5 — весь запрос
+            timeout = aiohttp.ClientTimeout(total=5, connect=4)
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.post(
                     login_url,
@@ -634,6 +634,11 @@ class ConfigManager:
                     ssl=False
                 ) as response:
                     return response.status in [200, 401, 403]
+
+        try:
+            # Дополнительный hard-limit через asyncio на случай если aiohttp
+            # не успевает применить свой timeout (drop-пакеты, OS-таймаут TCP)
+            return await asyncio.wait_for(_do_check(), timeout=6)
         except:
             return False
     
