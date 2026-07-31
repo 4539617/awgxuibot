@@ -795,6 +795,57 @@ func (m *Manager) GetPeerRemoteConfig(interfaceID, peerID string) (string, error
 	return p.GenerateRemoteConfig(ifaceData), nil
 }
 
+// GetPeerQRContent is like GetPeerRemoteConfig but returns compact QR-optimised
+// content — no comments, so qr.Encode never fails on size for migrated peers.
+func (m *Manager) GetPeerQRContent(interfaceID, peerID string) (string, error) {
+	t := m.GetInterface(interfaceID)
+	if t == nil {
+		return "", fmt.Errorf("interface %q not found", interfaceID)
+	}
+
+	p := t.GetPeer(peerID)
+	if p == nil {
+		return "", fmt.Errorf("peer %q not found in interface %q", peerID, interfaceID)
+	}
+
+	gs, err := settings.GetSettings()
+	if err != nil {
+		return "", fmt.Errorf("get settings: %w", err)
+	}
+
+	var awg2 *peer.AWG2Settings
+	if t.AWG2 != nil {
+		cp := *t.AWG2
+		awg2 = &cp
+	}
+
+	mtu := gs.MTU
+	if t.MTU > 0 {
+		mtu = t.MTU
+	}
+
+	ifaceData := peer.InterfaceData{
+		ID:                      t.ID,
+		Name:                    t.Name,
+		Protocol:                t.Protocol,
+		PublicKey:               t.PublicKey,
+		Address:                 t.Address,
+		ListenPort:              t.ListenPort,
+		DNS: func() string {
+			if t.DNS != "" {
+				return t.DNS
+			}
+			return gs.DNS
+		}(),
+		DefaultClientAllowedIPs: gs.DefaultClientAllowedIPs,
+		Host:                    t.resolvedHost(settings.GetWGHost(m.WGHost)),
+		Settings:                awg2,
+		MTU:                     mtu,
+	}
+
+	return p.GenerateQRContent(ifaceData), nil
+}
+
 // ── Private helpers ───────────────────────────────────────────────────────────
 
 // nextInterfaceID returns the lowest available wgN ID starting from wg10.

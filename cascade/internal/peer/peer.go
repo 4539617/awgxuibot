@@ -505,11 +505,22 @@ func (p *Peer) ToWgConfig() string {
 
 // GenerateRemoteConfig produces the full client config (when PrivateKey is known)
 // or an instructional template (when peer was added manually without server-side key gen).
+// Used for /config download.
 func (p *Peer) GenerateRemoteConfig(iface InterfaceData) string {
 	if p.PrivateKey != "" {
 		return p.generateCompleteConfig(iface)
 	}
 	return p.generateTemplateConfig(iface)
+}
+
+// GenerateQRContent returns the config text optimised for QR encoding.
+// When the server holds the private key, identical to GenerateRemoteConfig.
+// When it does not, returns a compact comment-free version so qr.Encode succeeds.
+func (p *Peer) GenerateQRContent(iface InterfaceData) string {
+	if p.PrivateKey != "" {
+		return p.generateCompleteConfig(iface)
+	}
+	return p.generateQRConfig(iface)
 }
 
 // generateCompleteConfig produces a minimal ready-to-use config suitable for QR codes.
@@ -592,6 +603,7 @@ func (p *Peer) generateCompleteConfig(iface InterfaceData) string {
 }
 
 // generateTemplateConfig produces an instructional config for manually-configured peers.
+// Used for /config download (verbose, with comments).
 func (p *Peer) generateTemplateConfig(iface InterfaceData) string {
 	proto := "WireGuard 1.0"
 	bin := "wg-quick"
@@ -675,6 +687,75 @@ func (p *Peer) generateTemplateConfig(iface InterfaceData) string {
 	sb.WriteString("# 3. Add your public key to hub peer configuration\n")
 	fmt.Fprintf(&sb, "# 4. Run: %s up wg0\n", bin)
 	sb.WriteString("# ═══════════════════════════════════════════════════════════════\n")
+
+	return sb.String()
+}
+
+// generateQRConfig produces a compact config for QR encoding (no comments).
+// Used when the server does not hold the private key — outputs a partial config
+// with all server-side parameters filled in so the client can scan and complete it.
+func (p *Peer) generateQRConfig(iface InterfaceData) string {
+	var sb strings.Builder
+
+	sb.WriteString("[Interface]\n")
+	sb.WriteString("PrivateKey = YOUR_PRIVATE_KEY\n")
+
+	if p.Address != "" {
+		fmt.Fprintf(&sb, "Address = %s\n", p.Address)
+	} else if p.AllowedIPs != "" {
+		firstCIDR := strings.TrimSpace(strings.Split(p.AllowedIPs, ",")[0])
+		peerIP := strings.SplitN(firstCIDR, "/", 2)[0]
+		mask := "32"
+		if parts := strings.SplitN(firstCIDR, "/", 2); len(parts) == 2 {
+			mask = parts[1]
+		}
+		if peerIP != "" && peerIP != "0.0.0.0" {
+			fmt.Fprintf(&sb, "Address = %s/%s\n", peerIP, mask)
+		}
+	}
+
+	dns := iface.DNS
+	if dns == "" {
+		dns = "1.1.1.1, 8.8.8.8"
+	}
+	fmt.Fprintf(&sb, "DNS = %s\n", dns)
+
+	if iface.MTU > 0 {
+		fmt.Fprintf(&sb, "MTU = %d\n", iface.MTU)
+	}
+
+	if iface.Protocol == "amneziawg-2.0" && iface.Settings != nil {
+		s := iface.Settings
+		fmt.Fprintf(&sb, "Jc = %d\nJmin = %d\nJmax = %d\n", s.Jc, s.Jmin, s.Jmax)
+		fmt.Fprintf(&sb, "S1 = %d\nS2 = %d\nS3 = %d\nS4 = %d\n", s.S1, s.S2, s.S3, s.S4)
+		fmt.Fprintf(&sb, "H1 = %s\nH2 = %s\nH3 = %s\nH4 = %s\n", s.H1, s.H2, s.H3, s.H4)
+		if s.I1 != "" { fmt.Fprintf(&sb, "I1 = %s\n", s.I1) }
+		if s.I2 != "" { fmt.Fprintf(&sb, "I2 = %s\n", s.I2) }
+		if s.I3 != "" { fmt.Fprintf(&sb, "I3 = %s\n", s.I3) }
+		if s.I4 != "" { fmt.Fprintf(&sb, "I4 = %s\n", s.I4) }
+		if s.I5 != "" { fmt.Fprintf(&sb, "I5 = %s\n", s.I5) }
+	}
+
+	sb.WriteString("\n[Peer]\n")
+	fmt.Fprintf(&sb, "PublicKey = %s\n", iface.PublicKey)
+
+	if p.PresharedKey != "" {
+		fmt.Fprintf(&sb, "PresharedKey = %s\n", p.PresharedKey)
+	}
+
+	if iface.Host != "" {
+		fmt.Fprintf(&sb, "Endpoint = %s:%d\n", iface.Host, iface.ListenPort)
+	}
+
+	clientAllowedIPs := p.ClientAllowedIPs
+	if clientAllowedIPs == "" {
+		clientAllowedIPs = iface.DefaultClientAllowedIPs
+	}
+	if clientAllowedIPs == "" {
+		clientAllowedIPs = "0.0.0.0/0, ::/0"
+	}
+	fmt.Fprintf(&sb, "AllowedIPs = %s\n", clientAllowedIPs)
+	fmt.Fprintf(&sb, "PersistentKeepalive = %d\n", p.PersistentKeepalive)
 
 	return sb.String()
 }

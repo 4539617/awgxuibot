@@ -493,17 +493,7 @@ func getPeerConfig(c *fiber.Ctx) error {
 // GET /api/tunnel-interfaces/:id/peers/:peerId/qrcode.svg
 // Returns the peer config as a QR code SVG image.
 func getPeerQRCode(c *fiber.Ctx) error {
-	// Guard: QR is only available when the server holds the private key.
-	p := mgr().GetPeer(c.Params("id"), c.Params("peerId"))
-	if p == nil {
-		return fiber.NewError(fiber.StatusNotFound, "peer not found")
-	}
-	if !p.DownloadableConfig {
-		return fiber.NewError(fiber.StatusUnprocessableEntity,
-			"QR code unavailable: private key not stored on this server")
-	}
-
-	config, err := mgr().GetPeerRemoteConfig(c.Params("id"), c.Params("peerId"))
+	config, err := mgr().GetPeerQRContent(c.Params("id"), c.Params("peerId"))
 	if err != nil {
 		return fiber.NewError(fiber.StatusNotFound, err.Error())
 	}
