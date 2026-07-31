@@ -1199,6 +1199,11 @@
                                   : (theme==='dark' ? 'background:rgba(99,102,241,0.2); color:#a5b4fc;' : 'background:rgba(99,102,241,0.12); color:#6366f1;')">
                                 {{ dashProtoLabel(iface.protocol) }}
                               </span>
+                              <!-- MTU badge -->
+                              <span style="font-size:0.6rem; font-weight:600; padding:1px 4px; border-radius:3px; flex-shrink:0;"
+                                :style="{ background: theme==='dark'?'rgba(75,85,99,0.35)':'rgba(107,114,128,0.08)', color: theme==='dark'?'#d1d5db':'#6b7280' }">
+                                MTU {{ iface.mtu > 0 ? iface.mtu : 'auto' }}
+                              </span>
                               <div style="flex:1;"></div>
                               <!-- controls: Start / Stop / Add peer / Edit -->
                               <div style="display:flex; gap:2px; flex-shrink:0; align-items:center;">
