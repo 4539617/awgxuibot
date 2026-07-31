@@ -3456,7 +3456,16 @@ new Vue({
           : `${window.location.origin}/api`;
         const url = `${apiBase}/remotes/${remoteId}/proxy/tunnel-interfaces/${interfaceId}/peers/${peerId}/qrcode.svg`;
         const res = await fetch(url);
-        if (!res.ok) throw new Error(`QR fetch failed: ${res.status}`);
+        if (!res.ok) {
+          let msg = `QR fetch failed: ${res.status}`;
+          try {
+            const body = await res.text();
+            // Fiber wraps errors as {"error":"..."} or plain text
+            const parsed = JSON.parse(body);
+            if (parsed && parsed.error) msg = parsed.error;
+          } catch (_) {}
+          throw new Error(msg);
+        }
         const blob = await res.blob();
         // Revoke any previously created blob URL to avoid memory leak
         if (this.qrcode && this.qrcode.startsWith('blob:')) URL.revokeObjectURL(this.qrcode);

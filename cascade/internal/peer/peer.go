@@ -684,8 +684,17 @@ func (p *Peer) generateTemplateConfig(iface InterfaceData) string {
 // GenerateQRSVG encodes content as a QR code and returns an SVG string.
 // Uses rsc.io/qr (pure Go) for encoding; renders cells as <rect> elements.
 // The SVG uses a fixed cell size of 5px with 4-cell quiet zone padding.
+// Falls back through lower error-correction levels (Q→M→L) when content
+// is too long for the higher level (AmneziaWG 2.0 configs can be large).
 func GenerateQRSVG(content string) (string, error) {
-	code, err := qr.Encode(content, qr.Q)
+	var code *qr.Code
+	var err error
+	for _, level := range []qr.Level{qr.Q, qr.M, qr.L} {
+		code, err = qr.Encode(content, level)
+		if err == nil {
+			break
+		}
+	}
 	if err != nil {
 		return "", fmt.Errorf("qr encode: %w", err)
 	}
