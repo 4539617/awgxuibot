@@ -146,19 +146,20 @@ new Vue({
     activeInterfaceId: null,  // ID выбранного интерфейса (вкладка)
     hoverPage: null,          // для hover-эффекта в sidebar
     sidebarMenu: [
-      { id: 'dashboard',        label: 'Dashboard' },
-      { id: 'interfaces',       label: 'Interfaces' },
-      { id: 'gateways',         label: 'Gateways' },
-      { id: 'routing',          label: 'Routing' },
-      { id: 'nat',              label: 'NAT' },
-      { id: '_header_firewall', label: 'Firewall', type: 'header' },
-      { id: 'firewall-aliases', label: 'Aliases' },
-      { id: 'firewall',         label: 'Rules' },
-      { id: 'diagnostics',      label: 'Diagnostics' },
-      { id: 'remotes',          label: 'Remotes' },
-      { id: 'settings',         label: 'Settings' },
-      { id: 'administration',   label: 'Administration' },
-      { id: '_header_wizards',  label: 'Wizards', type: 'header' },
+      { id: 'dashboard',         label: 'Dashboard' },
+      { id: 'interfaces',        label: 'Interfaces' },
+      { id: 'remotes',           label: 'Remotes' },
+      { id: 'settings',          label: 'Settings' },
+      { id: '_header_service',   label: 'Service', type: 'header' },
+      { id: 'gateways',          label: 'Gateways',        group: 'service' },
+      { id: 'routing',           label: 'Routing',         group: 'service' },
+      { id: 'nat',               label: 'NAT',             group: 'service' },
+      { id: '_header_firewall',  label: 'Firewall', type: 'header', group: 'service' },
+      { id: 'firewall-aliases',  label: 'Aliases',         group: 'service' },
+      { id: 'firewall',          label: 'Rules',           group: 'service' },
+      { id: 'diagnostics',       label: 'Diagnostics',     group: 'service' },
+      { id: 'administration',    label: 'Administration',  group: 'service' },
+      { id: '_header_wizards',   label: 'Wizards', type: 'header' },
       { id: 'wizard-simple-vpn', label: 'Simple Client VPN' },
       { id: 'wizard-uplink-vpn', label: 'Cascade via WireGuard Uplink' },
       { id: 'wizard-cascade-s2s', label: 'Cascade ↔ Cascade S2S' },
@@ -443,6 +444,7 @@ new Vue({
     speedtestHistory: [],
 
     wizardsExpanded: false,
+    serviceExpanded: false,
 
 
     // ── Wizard: Simple Client VPN ─────────────────────────────────────────────
@@ -1232,6 +1234,8 @@ new Vue({
       }
       this.activePage = pageId;
       if (pageId.startsWith('wizard-')) this.wizardsExpanded = true;
+      const serviceItem = this.sidebarMenu.find(p => p.id === pageId);
+      if (serviceItem && serviceItem.group === 'service') this.serviceExpanded = true;
       // Reset scroll and any GridStack inline styles AFTER Vue updates the DOM.
       this.$nextTick(() => {
         // Reset all inline styles GridStack may have set on the scroll container,
@@ -3354,6 +3358,12 @@ new Vue({
       this.dashAddRemoteWidgetType = '';
     },
 
+    // Returns the label for a local widget header (local server name + type)
+    dashLocalWidgetLabel(w) {
+      const typeLabel = w.type === 'interfaces' ? 'Interfaces' : 'Peers';
+      return this.localServerName ? `🌐 ${this.localServerName} — ${typeLabel}` : typeLabel;
+    },
+
     // Returns the label for a remote widget header (server name + type)
     dashRemoteWidgetLabel(w) {
       const remote = this.remotes.find(r => r.id === w.remoteId);
@@ -3402,10 +3412,20 @@ new Vue({
           }
         }));
 
+        // Load client groups from remote so we can show group names instead of IDs
+        let remoteGroups = [];
+        try {
+          const grpRes = await this.api.remoteCall({
+            remoteId, method: 'get', path: '/aliases/client-groups',
+          });
+          remoteGroups = grpRes.groups || [];
+        } catch (_) { /* non-fatal — group names will just be hidden */ }
+
         // Replace entire cache entry atomically — Vue 2 detects all nested changes
         this.$set(this.remoteWidgetCache, remoteId, {
           interfaces: newIfaces,
           peers: peersMap,
+          groups: remoteGroups,
           loading: false,
           error: null,
         });
@@ -5454,6 +5474,15 @@ new Vue({
     peerGroupName(groupId) {
       if (!groupId) return '';
       const g = this.clientGroups.find(g => g.id === groupId);
+      return g ? g.name : '';
+    },
+
+    // Resolve group name for a peer on a remote server (uses remoteWidgetCache groups)
+    remoteGroupName(remoteId, groupId) {
+      if (!groupId) return '';
+      const cache = this.remoteWidgetCache[remoteId];
+      if (!cache || !cache.groups) return '';
+      const g = cache.groups.find(g => g.id === groupId);
       return g ? g.name : '';
     },
 
