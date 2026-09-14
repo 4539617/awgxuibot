@@ -31,6 +31,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/JohnnyVBut/cascade/internal/aliases"
+	"github.com/JohnnyVBut/cascade/internal/awgparams"
 	"github.com/JohnnyVBut/cascade/internal/peer"
 	"github.com/JohnnyVBut/cascade/internal/tunnel"
 )
@@ -42,8 +43,8 @@ func RegisterOneTimeLink(r fiber.Router) {
 }
 
 // getPeerConfigByToken serves a peer config using a one-time token.
-// Finds the peer whose OneTimeLink matches the token, clears the token,
-// and returns the WireGuard config as a downloadable file.
+// Atomically consumes the token (see ConsumeOneTimeLink) and returns the
+// WireGuard config as a downloadable file.
 func getPeerConfigByToken(c *fiber.Ctx) error {
 	token := c.Params("token")
 	if len(token) != 32 {
@@ -56,23 +57,34 @@ func getPeerConfigByToken(c *fiber.Ctx) error {
 	}
 
 	for _, iface := range m.GetAllInterfaces() {
-		for _, p := range iface.GetAllPeers() {
-			if p.OneTimeLink != token {
-				continue
-			}
-			config, err := m.GetPeerRemoteConfig(iface.ID, p.ID)
-			if err != nil {
-				return fiber.NewError(fiber.StatusInternalServerError, "config generation failed")
-			}
-			// Consume the token only after config is successfully generated.
-			empty := ""
-			if _, err := m.UpdatePeer(iface.ID, p.ID, peer.PeerUpdate{OneTimeLink: &empty}); err != nil {
-				log.Printf("api: cnf: clear token for peer %s: %v", p.ID, err)
-			}
-			c.Set("Content-Type", "text/plain; charset=utf-8")
-			c.Set("Content-Disposition", `attachment; filename="wg.conf"`)
-			return c.SendString(config)
+		// ConsumeOneTimeLink atomically finds-and-clears the token in-memory in
+		// one locked step, so only the first of any concurrent requests for the
+		// same token can ever win here — see its doc comment for why a separate
+		// scan-then-clear (the previous behavior) let a "one-time" link be used
+		// more than once under a race.
+		p := iface.ConsumeOneTimeLink(token)
+		if p == nil {
+			continue
 		}
+		// The token is already burned in-memory at this point even if config
+		// generation fails below — a false-negative (token wasted, needs
+		// reissue) is the safe failure mode for a one-time link, versus a
+		// false-positive (usable twice) if we cleared it only after success.
+		config, err := m.BuildPeerRemoteConfig(iface, p)
+		if err != nil {
+			return fiber.NewError(fiber.StatusInternalServerError, "config generation failed")
+		}
+		// Persist the already-in-memory-cleared token to SQLite. Best effort:
+		// a failure here doesn't reopen the race, since the in-memory state
+		// (checked by every request, including any that raced with this one)
+		// is already cleared regardless of whether the DB write below succeeds.
+		empty := ""
+		if _, err := peer.UpdatePeer(p.ID, peer.PeerUpdate{OneTimeLink: &empty}); err != nil {
+			log.Printf("api: cnf: persist cleared token for peer %s: %v", p.ID, err)
+		}
+		c.Set("Content-Type", "text/plain; charset=utf-8")
+		c.Set("Content-Disposition", `attachment; filename="wg.conf"`)
+		return c.SendString(config)
 	}
 
 	return fiber.NewError(fiber.StatusNotFound, "token not found or already used")
@@ -163,6 +175,17 @@ func createPeer(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid JSON body")
 	}
 
+	// This handler is also how an admin manually pairs with another Cascade
+	// instance for S2S (peerType=interconnect, mode=manual in the UI — no PSK
+	// field exists there, the admin only pastes the remote's public key). Like
+	// importPeerJSON, it's a Cascade-authored peer with a real chance for the
+	// generated PSK to reach the other side (via export-json), unlike
+	// tunnel.ImportConf's third-party .conf import — see PeerInput's
+	// AutoGeneratePSK doc comment and issue #102.
+	if inp.PeerType == "interconnect" {
+		inp.AutoGeneratePSK = true
+	}
+
 	// Apply global defaults from settings when not explicitly set.
 	d := peerDefaults()
 	if inp.ClientAllowedIPs == "" {
@@ -207,6 +230,11 @@ func importPeerJSON(c *fiber.Ctx) error {
 	// The remote side exports its public key + endpoint; we create a peer pointing at it.
 	inp := peer.PeerInput{
 		PeerType: "interconnect",
+		// This is the Cascade↔Cascade S2S flow — opt into AddPeer's PSK
+		// auto-generation when the export didn't already include one (the
+		// first importer in the exchange). See PeerInput.AutoGeneratePSK's
+		// doc comment: must NOT be set for third-party .conf imports.
+		AutoGeneratePSK: true,
 	}
 	if v, ok := body["name"].(string); ok {
 		inp.Name = strings.TrimSpace(v)
@@ -242,7 +270,8 @@ func importPeerJSON(c *fiber.Ctx) error {
 	}
 
 	// PSK is generated automatically in AddPeer when inp.PresharedKey == ""
-	// (interconnect peer without PSK → AddPeer calls peer.GeneratePSK).
+	// and inp.AutoGeneratePSK is true (set above) — interconnect peer without
+	// PSK → AddPeer calls peer.GeneratePSK.
 
 	p, err := mgr().AddPeer(ifaceID, inp)
 	if err != nil {
@@ -279,7 +308,7 @@ func importClientConfigs(c *fiber.Ctx) error {
 	}
 
 	bin := "wg"
-	if t.Protocol == "amneziawg-2.0" {
+	if awgparams.IsAmneziaWG(t.Protocol) {
 		bin = "awg"
 	}
 
@@ -405,6 +434,10 @@ func updatePeer(c *fiber.Ctx) error {
 		n := int(v)
 		upd.PersistentKeepalive = &n
 	}
+	if v, ok := raw["persistentKeepaliveV3"].(string); ok {
+		s := strings.TrimSpace(v)
+		upd.PersistentKeepaliveV3 = &s
+	}
 	if v, ok := raw["enabled"].(bool); ok {
 		upd.Enabled = &v
 	}
@@ -493,7 +526,7 @@ func getPeerConfig(c *fiber.Ctx) error {
 // GET /api/tunnel-interfaces/:id/peers/:peerId/qrcode.svg
 // Returns the peer config as a QR code SVG image.
 func getPeerQRCode(c *fiber.Ctx) error {
-	config, err := mgr().GetPeerQRContent(c.Params("id"), c.Params("peerId"))
+	config, err := mgr().GetPeerRemoteConfig(c.Params("id"), c.Params("peerId"))
 	if err != nil {
 		return fiber.NewError(fiber.StatusNotFound, err.Error())
 	}
@@ -665,7 +698,7 @@ func exportPeerJSON(c *fiber.Ctx) error {
 		"presharedKey":        p.PresharedKey,
 		"endpoint":            endpoint,
 		"persistentKeepalive": p.PersistentKeepalive,
-		"allowedIPs":          p.AllowedIPs,       // this side's tunnel IP /32
-		"clientAllowedIPs":    clientAllowedIPs,   // what remote will route through us
+		"allowedIPs":          p.AllowedIPs,     // this side's tunnel IP /32
+		"clientAllowedIPs":    clientAllowedIPs, // what remote will route through us
 	})
 }

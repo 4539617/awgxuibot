@@ -233,6 +233,31 @@ apply_userspace_mode() {
 }
 
 apply_kernel_mode() {
+  # DKMS needs headers matching the RUNNING kernel to build amneziawg.ko —
+  # without this, the dkms build step silently skips ("kernel headers for
+  # this kernel do not seem to be installed") and modprobe fails afterward.
+  # Step 1 above only installs headers as a side effect of the HWE upgrade
+  # on Ubuntu 22.04 kernels <6; on 24.04 (or any host already on 6.x) that
+  # step is skipped entirely, so headers are otherwise never installed.
+  #
+  # Check the actual build symlink DKMS needs rather than dpkg's package
+  # state — a headers package left in "removed, config remains" (rc) or a
+  # half-installed state would still make `dpkg -l` exit 0, silently
+  # skipping this fix in exactly the case it exists to catch.
+  if [[ ! -e "/lib/modules/$(uname -r)/build" ]]; then
+    info "Installing kernel headers for $(uname -r) (required for DKMS)..."
+    # Try with the current apt cache first; only pay for `apt-get update` if
+    # that fails (e.g. stale lists on a freshly-provisioned VPS).
+    if ! apt-get install -y "linux-headers-$(uname -r)" 2>/dev/null; then
+      apt-get update -qq
+      if ! apt-get install -y "linux-headers-$(uname -r)"; then
+        warn "Exact-version headers unavailable — falling back to linux-headers-generic"
+        apt-get install -y linux-headers-generic || \
+          fail "Could not install kernel headers for $(uname -r) — DKMS build for amneziawg would fail. Install headers manually and re-run setup.sh."
+      fi
+    fi
+  fi
+
   # Remove blacklist (if switching from userspace)
   rm -f /etc/modprobe.d/amneziawg-blacklist.conf
   if lsmod | grep -q amneziawg; then
@@ -659,13 +684,36 @@ if [[ ! -f "$HOME/.acme.sh/acme.sh" ]]; then
   # --force is NOT a valid installer flag (it's for acme.sh --install --force).
   # Cron is already installed above, so no bypass flags are needed.
   if [[ -n "${ACME_EMAIL:-}" ]]; then
-    curl -fsSL https://get.acme.sh | sh -s "email=${ACME_EMAIL}"
+    curl -fsSL https://get.acme.sh | sh -s "email=${ACME_EMAIL}" || true
   else
-    curl -fsSL https://get.acme.sh | sh
+    curl -fsSL https://get.acme.sh | sh || true
   fi
+
+  # get.acme.sh itself just fetches the acme.sh repo from
+  # raw.githubusercontent.com/github.com — on networks where that host is
+  # blocked or unreachable (seen on some VPS providers/regions), the curl
+  # pipe above hangs and fails even though outbound HTTPS otherwise works.
+  # Fall back to a direct git clone of the same upstream repo, which uses a
+  # different endpoint (codeload/git-upload-pack) that's often reachable
+  # even when the raw-content CDN isn't.
+  if [[ ! -f "$HOME/.acme.sh/acme.sh" ]]; then
+    warn "get.acme.sh install failed (raw.githubusercontent.com unreachable?) — falling back to git clone"
+    ACME_TMP_DIR="$(mktemp -d)"
+    if git clone --depth 1 https://github.com/acmesh-official/acme.sh.git "$ACME_TMP_DIR" 2>/dev/null; then
+      if [[ -n "${ACME_EMAIL:-}" ]]; then
+        (cd "$ACME_TMP_DIR" && ./acme.sh --install -m "${ACME_EMAIL}")
+      else
+        (cd "$ACME_TMP_DIR" && ./acme.sh --install)
+      fi
+    else
+      warn "git clone fallback also failed — check network access to github.com"
+    fi
+    rm -rf "$ACME_TMP_DIR"
+  fi
+
   # Verify the binary was actually created — fail loudly if installation silently failed.
   if [[ ! -f "$HOME/.acme.sh/acme.sh" ]]; then
-    fail "acme.sh installation failed — binary not found at ~/.acme.sh/acme.sh"
+    fail "acme.sh installation failed — binary not found at ~/.acme.sh/acme.sh (tried get.acme.sh and git clone fallback)"
   fi
   ok "acme.sh installed"
 else
