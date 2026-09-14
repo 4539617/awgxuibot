@@ -11,7 +11,17 @@ import (
 // and show the update banner before/without login.
 func RegisterVersion(r fiber.Router) {
 	r.Get("/version", getVersion)
+	r.Get("/version/info", getVersionInfo)
 	r.Post("/version/check", forceVersionCheck)
+}
+
+// getVersionInfo returns only the locally-known version and git commit —
+// no GitHub call, no network, instant response. Used by the sidebar.
+func getVersionInfo(c *fiber.Ctx) error {
+	return c.JSON(fiber.Map{
+		"version":   version.Version,
+		"gitCommit": version.GitCommit,
+	})
 }
 
 // forceVersionCheck triggers an immediate GitHub release check, bypassing the 24h cache.

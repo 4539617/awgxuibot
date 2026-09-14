@@ -603,11 +603,11 @@
             </div>
             <!-- Version row -->
             <div style="margin-top: 8px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-              <span v-if="versionInfo"
+              <span v-if="localVersion"
                 class="text-xs font-mono"
                 :style="{ color: theme === 'dark' ? '#737373' : '#9ca3af' }"
-                :title="versionInfo.gitCommit ? 'commit ' + versionInfo.gitCommit : ''">
-                {{ versionInfo.version }}
+                :title="localVersion.gitCommit ? 'commit ' + localVersion.gitCommit : ''">
+                {{ localVersion.version }}
               </span>
               <!-- API Guide link -->
               <a :href="'./docs/api-viewer.html?lang=' + (globalSettings.lang || 'en')"
@@ -1121,7 +1121,7 @@
                               </div>
                               <!-- QR: active for client peers, dimmed/disabled for S2S -->
                               <button
-                                @click="!peer.peerType || peer.peerType !== 'interconnect' ? (qrcode = peerQrUrl(peer.interfaceId, peer.id)) : null"
+                                @click="!peer.peerType || peer.peerType !== 'interconnect' ? (qrLoading = true, qrcode = peerQrUrl(peer.interfaceId, peer.id)) : null"
                                 :title="peer.peerType === 'interconnect' ? 'N/A for S2S' : 'Show QR'"
                                 :style="{ padding:'3px', border:'none', borderRadius:'4px', display:'flex', alignItems:'center', lineHeight:'0',
                                   background: peer.peerType === 'interconnect' ? (theme==='dark' ? 'rgba(255,255,255,0.04)' : 'rgba(107,114,128,0.05)') : (theme==='dark' ? '#525252' : 'rgba(107,114,128,0.1)'),
@@ -2121,7 +2121,7 @@
                         'is-disabled': !client.downloadableConfig
                       }"
                       :title="!client.downloadableConfig ? $t('noPrivKey') : $t('showQR')"
-                      @click="qrcode = `./api/wireguard/client/${client.id}/qrcode.svg`">
+                      @click="qrLoading = true; qrcode = `./api/wireguard/client/${client.id}/qrcode.svg`">
                       <svg class="w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
                         stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -2211,17 +2211,28 @@
         <div v-if="qrcode">
           <div class="bg-black bg-opacity-50 fixed top-0 right-0 left-0 bottom-0 flex items-center justify-center z-20">
             <div class="bg-white rounded-md shadow-lg relative p-8">
-              <button @click="if(qrcode&&qrcode.startsWith('blob:'))URL.revokeObjectURL(qrcode); qrcode = null"
+              <button @click="if(qrcode&&qrcode.startsWith('blob:'))URL.revokeObjectURL(qrcode); qrcode = null; qrLoading = false"
                 class="absolute right-4 top-4 text-gray-600 dark:text-neutral-500 hover:text-gray-800 dark:hover:text-neutral-700">
                 <svg class="w-8" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
                   stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
-              <img :src="qrcode" />
+              <!-- Spinner shown while QR image is loading -->
+              <div v-if="qrLoading" style="width:220px;height:220px;display:flex;align-items:center;justify-content:center;">
+                <svg style="width:48px;height:48px;animation:qr-spin 0.8s linear infinite;" viewBox="0 0 50 50" xmlns="http://www.w3.org/2000/svg">
+                  <circle cx="25" cy="25" r="20" fill="none" stroke="#d1d5db" stroke-width="5"/>
+                  <path d="M25 5 a20 20 0 0 1 20 20" fill="none" stroke="#374151" stroke-width="5" stroke-linecap="round"/>
+                </svg>
+              </div>
+              <img v-show="!qrLoading && qrcode !== 'loading'" :src="qrcode !== 'loading' ? qrcode : ''"
+                style="width:220px;height:220px;display:block;"
+                @load="qrLoading = false"
+                @error="qrLoading = false" />
             </div>
           </div>
         </div>
+        <style>@keyframes qr-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}</style>
 
         <!-- Create Dialog -->
         <div v-if="clientCreate" class="fixed z-10 inset-0 overflow-y-auto">
@@ -2529,7 +2540,7 @@
                             'is-disabled': !peer.downloadableConfig
                           }"
                           :title="!peer.downloadableConfig ? 'No private key' : 'Show QR'"
-                          @click="qrcode = peerQrUrl(peer.interfaceId, peer.id)">
+                          @click="qrLoading = true; qrcode = peerQrUrl(peer.interfaceId, peer.id)">
                           <svg class="w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
                           </svg>
@@ -2937,7 +2948,7 @@
                           'is-disabled': !peer.downloadableConfig
                         }"
                         :title="!peer.downloadableConfig ? 'No private key' : 'Show QR'"
-                        @click="qrcode = peerQrUrl(peer.interfaceId || activeInterfaceId, peer.id)">
+                        @click="qrLoading = true; qrcode = peerQrUrl(peer.interfaceId || activeInterfaceId, peer.id)">
                         <svg class="w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
                         </svg>

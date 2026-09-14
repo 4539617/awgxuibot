@@ -67,6 +67,7 @@ new Vue({
     authenticated: null,
     authenticating: false,
     versionInfo: null,       // populated by loadVersionInfo() — version + update status
+    localVersion: null,      // { version, gitCommit } — loaded once at startup, no GitHub
     updateBannerDismissed: false, // hides update banner until next loadVersionInfo() call
     updateChecking: false,        // spinner state for "Check for updates" button
     username: 'admin',     // login form username field
@@ -125,6 +126,7 @@ new Vue({
     clientEditExpireDate: null,
     clientEditExpireDateId: null,
     qrcode: null,
+    qrLoading: false,
 
     currentRelease: null,
     latestRelease: null,
@@ -1998,6 +2000,7 @@ new Vue({
         }
 
         if (showQR && mode === 'generate' && peerType === 'client' && peerId) {
+          this.qrLoading = true;
           this.qrcode = this.peerQrUrl(interfaceId, peerId);
         } else {
           this.showToast(peerType === 'client' ? 'Client created!' : 'Peer created!');
@@ -3544,6 +3547,8 @@ new Vue({
     // Show QR for a remote peer: fetch SVG via authenticated fetch → blob URL
     // (avoids the <img> browser request bypassing the local session auth in some configs)
     async remoteShowPeerQr(remoteId, interfaceId, peerId) {
+      this.qrcode = 'loading';
+      this.qrLoading = true;
       try {
         const segs = window.location.pathname.split('/').filter(Boolean);
         const apiBase = segs.length > 0
@@ -3565,7 +3570,10 @@ new Vue({
         // Revoke any previously created blob URL to avoid memory leak
         if (this.qrcode && this.qrcode.startsWith('blob:')) URL.revokeObjectURL(this.qrcode);
         this.qrcode = URL.createObjectURL(blob);
+        // qrLoading will be cleared by the img @load / @error handler in the template
       } catch (err) {
+        this.qrcode = null;
+        this.qrLoading = false;
         this.showToast(err.message || 'Failed to load QR code', 'error');
       }
     },
@@ -5420,6 +5428,7 @@ new Vue({
           this.loadClientGroups();
           this.loadAliases();
           if (showQR && peerId) {
+            this.qrLoading = true;
             this.qrcode = this.peerQrUrl(this.activeInterfaceId, peerId);
           } else {
             this.showToast('Client created!');
@@ -7413,10 +7422,11 @@ new Vue({
         this.rememberMeEnabled = rememberMeEnabled;
       });
 
-    // Version info — fetch immediately (unauthenticated endpoint) and refresh
-    // every 24 h so the update badge appears without a page reload.
-    this.loadVersionInfo();
-    setInterval(() => this.loadVersionInfo(), 24 * 60 * 60 * 1000);
+    // Load local version info immediately — instant, no GitHub call.
+    fetch('./api/version/info')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) this.localVersion = d; })
+      .catch(() => {});
 
     setInterval(() => {
       this.refresh({

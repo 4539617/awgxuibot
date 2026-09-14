@@ -64,11 +64,6 @@ func main() {
 		}
 	}
 
-	// Start background update checker — polls GitHub Releases API every 24 h.
-	// Runs in a goroutine; first check happens after a 10 s delay so the
-	// container is fully online before making the outbound request.
-	version.Start()
-
 	// ── Database ──────────────────────────────────────────────────────────────
 	// Must be first: all managers depend on db.DB().
 	if err := db.Init(cfg.DataDir); err != nil {
