@@ -526,6 +526,24 @@ func TestGenerateQRSVG_ProducesSVG(t *testing.T) {
 	}
 }
 
+// BenchmarkGenerateQRSVG measures generation time for a realistic AWG config.
+func BenchmarkGenerateQRSVG(b *testing.B) {
+	// Simulate a real AmneziaWG client config — long enough to stress the QR encoder.
+	content := "[Interface]\nPrivateKey = GHUf/N5ORdfBUAJprb+ThFsRdcMwlgQ+lCB8u1pQKlg=\n" +
+		"Address = 10.8.0.2/32\nDNS = 1.1.1.1\n" +
+		"Jc = 4\nJmin = 40\nJmax = 70\nS1 = 0\nS2 = 0\n" +
+		"H1 = 1234567890\nH2 = 987654321\nH3 = 1122334455\nH4 = 5544332211\n\n" +
+		"[Peer]\nPublicKey = AbCdEfGhIjKlMnOpQrStUvWxYz01234567890abcde=\n" +
+		"PresharedKey = XyZaBcDeFgHiJkLmNoPqRsTuVwXyZaBcDeFgHiJkLm=\n" +
+		"Endpoint = vpn.example.com:51820\nAllowedIPs = 0.0.0.0/0\nPersistentKeepalive = 25\n"
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := GenerateQRSVG(content); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 // ── DB-backed helpers ─────────────────────────────────────────────────────────
 
 // initTestDB creates a fresh temp SQLite database for one test and registers

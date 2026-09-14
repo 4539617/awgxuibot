@@ -2219,20 +2219,16 @@
                 </svg>
               </button>
               <!-- Spinner shown while QR image is loading -->
-              <div v-if="qrLoading" style="width:220px;height:220px;display:flex;align-items:center;justify-content:center;">
-                <svg style="width:48px;height:48px;animation:qr-spin 0.8s linear infinite;" viewBox="0 0 50 50" xmlns="http://www.w3.org/2000/svg">
-                  <circle cx="25" cy="25" r="20" fill="none" stroke="#d1d5db" stroke-width="5"/>
-                  <path d="M25 5 a20 20 0 0 1 20 20" fill="none" stroke="#374151" stroke-width="5" stroke-linecap="round"/>
-                </svg>
+              <div v-if="qrLoading" style="width:400px;height:400px;display:flex;align-items:center;justify-content:center;">
+                <span style="font-size:1rem;color:#6b7280;font-family:sans-serif;">Loading...</span>
               </div>
               <img v-show="!qrLoading && qrcode !== 'loading'" :src="qrcode !== 'loading' ? qrcode : ''"
-                style="width:220px;height:220px;display:block;"
+                style="width:400px;height:400px;display:block;"
                 @load="qrLoading = false"
                 @error="qrLoading = false" />
             </div>
           </div>
         </div>
-        <style>@keyframes qr-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}</style>
 
         <!-- Create Dialog -->
         <div v-if="clientCreate" class="fixed z-10 inset-0 overflow-y-auto">

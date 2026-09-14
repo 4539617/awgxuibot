@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"log"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -837,10 +838,13 @@ func onOffOrDefault(v string) string {
 // ── QR code ───────────────────────────────────────────────────────────────────
 
 // GenerateQRSVG encodes content as a QR code and returns an SVG string.
-// Uses rsc.io/qr (pure Go) for encoding; renders cells as <rect> elements.
-// The SVG uses a fixed cell size of 5px with 4-cell quiet zone padding.
+// Uses rsc.io/qr (pure Go) for encoding; renders runs of black modules
+// per row as single wide <rect> elements (run-length encoding) which
+// reduces the element count ~3-5× compared to per-cell rects.
+// Error-correction level M is used — sufficient for clean-screen scanning
+// and produces a smaller matrix than Q, which is important for long AWG configs.
 func GenerateQRSVG(content string) (string, error) {
-	code, err := qr.Encode(content, qr.Q)
+	code, err := qr.Encode(content, qr.M)
 	if err != nil {
 		return "", fmt.Errorf("qr encode: %w", err)
 	}
@@ -851,26 +855,69 @@ func GenerateQRSVG(content string) (string, error) {
 	size := code.Size
 	total := (size + padding*2) * cellSize
 
+	// Pre-allocate generously to avoid repeated growth.
 	var sb strings.Builder
-	fmt.Fprintf(&sb, `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %d %d" width="%d" height="%d">`,
-		total, total, total, total)
-	// White background (quiet zone).
-	fmt.Fprintf(&sb, `<rect width="%d" height="%d" fill="white"/>`, total, total)
+	sb.Grow(512 + size*size*12)
 
-	// Render each black module as a filled rectangle.
+	sb.WriteString(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 `)
+	appendInt(&sb, total)
+	sb.WriteByte(' ')
+	appendInt(&sb, total)
+	sb.WriteString(`">`)
+
+	// White background covers the quiet zone.
+	sb.WriteString(`<rect width="`)
+	appendInt(&sb, total)
+	sb.WriteString(`" height="`)
+	appendInt(&sb, total)
+	sb.WriteString(`" fill="white"/>`)
+
+	// Render each row using run-length encoding: consecutive black modules
+	// in the same row become a single wide rect instead of N individual ones.
+	buf := make([]byte, 0, 32)
 	for y := 0; y < size; y++ {
-		for x := 0; x < size; x++ {
-			if code.Black(x, y) {
-				px := (x + padding) * cellSize
-				py := (y + padding) * cellSize
-				fmt.Fprintf(&sb, `<rect x="%d" y="%d" width="%d" height="%d" fill="black"/>`,
-					px, py, cellSize, cellSize)
+		py := (y + padding) * cellSize
+		x := 0
+		for x < size {
+			if !code.Black(x, y) {
+				x++
+				continue
 			}
+			// start of a run — extend as far as possible
+			runStart := x
+			for x < size && code.Black(x, y) {
+				x++
+			}
+			runLen := x - runStart
+			px := (runStart + padding) * cellSize
+			w := runLen * cellSize
+
+			sb.WriteString(`<rect x="`)
+			buf = strconv.AppendInt(buf[:0], int64(px), 10)
+			sb.Write(buf)
+			sb.WriteString(`" y="`)
+			buf = strconv.AppendInt(buf[:0], int64(py), 10)
+			sb.Write(buf)
+			sb.WriteString(`" width="`)
+			buf = strconv.AppendInt(buf[:0], int64(w), 10)
+			sb.Write(buf)
+			sb.WriteString(`" height="`)
+			buf = strconv.AppendInt(buf[:0], int64(cellSize), 10)
+			sb.Write(buf)
+			sb.WriteString(`" fill="black"/>`)
 		}
 	}
 
 	sb.WriteString(`</svg>`)
 	return sb.String(), nil
+}
+
+// appendInt writes a base-10 integer directly into a strings.Builder
+// without allocating a temporary string.
+func appendInt(sb *strings.Builder, v int) {
+	var buf [20]byte
+	b := strconv.AppendInt(buf[:0], int64(v), 10)
+	sb.Write(b)
 }
 
 // ── Private: DB helpers ───────────────────────────────────────────────────────
