@@ -211,6 +211,7 @@
     background: rgba(255,255,255,0.72);
     backdrop-filter: blur(12px);
     border-right: 1px solid rgba(0,0,0,0.08);
+    transition: width 0.25s ease;
   }
   .app-main {
     min-height: 0; /* allows overflow-y:auto to work correctly inside a flex row container */
@@ -227,6 +228,48 @@
   .dark .app-main {
     background: rgba(15,23,42,0.78);
     /* no backdrop-filter — same reason as light mode */
+  }
+
+  /* ── Sidebar collapse toggle button ── */
+  .sidebar-toggle-btn {
+    position: absolute;
+    top: 50%;
+    right: -14px;
+    transform: translateY(-50%);
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 1px solid rgba(0,0,0,0.12);
+    background: #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+    transition: background 0.15s, border-color 0.15s;
+    flex-shrink: 0;
+  }
+  .dark .sidebar-toggle-btn {
+    background: #1e293b;
+    border-color: rgba(255,255,255,0.15);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+  }
+  .sidebar-toggle-btn:hover {
+    background: #f3f4f6;
+  }
+  .dark .sidebar-toggle-btn:hover {
+    background: #334155;
+  }
+  /* Hide nav content (labels, items) when collapsed — fade out */
+  .app-nav .nav-content {
+    opacity: 1;
+    transition: opacity 0.15s ease;
+    overflow: hidden;
+  }
+  .app-nav.nav-collapsed .nav-content {
+    opacity: 0;
+    pointer-events: none;
   }
 
   /* ── Light mode: subtle glass panels ── */
@@ -394,8 +437,19 @@
       <div v-else-if="authenticated === true" class="flex h-screen" style="overflow:hidden;">
 
         <!-- ==================== Sidebar ==================== -->
-        <nav class="w-64 flex-shrink-0 overflow-y-auto flex flex-col"
-             class="app-nav" style="min-height: 100vh;">
+        <nav :class="['flex-shrink-0', 'flex', 'flex-col', 'app-nav', sidebarCollapsed ? 'nav-collapsed' : '']"
+             :style="{ width: sidebarCollapsed ? '0px' : '256px', minHeight: '100vh', position: 'relative', overflow: 'visible' }">
+          <!-- Toggle button — always visible, protrudes from the right edge -->
+          <button @click="toggleSidebar"
+            class="sidebar-toggle-btn"
+            :title="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"
+                 :style="{ transform: sidebarCollapsed ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.25s' }">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/>
+            </svg>
+          </button>
+          <!-- All nav content wrapped so it fades when collapsed; inner scroll here -->
+          <div class="nav-content" style="min-width:256px; flex:1; display:flex; flex-direction:column; overflow-y:auto; overflow-x:hidden;">
           <!-- Logo -->
           <div style="padding: 20px 16px 14px;">
             <img :src="theme === 'dark' ? 'img/logo-dark.svg' : 'img/logo.svg'" style="width:216px; height:auto; display:block;" alt="Cascade" />
@@ -645,6 +699,7 @@
               </span>
             </div>
           </div>
+          </div><!-- /nav-content -->
         </nav>
 
         <!-- ==================== Content Area ==================== -->

@@ -147,6 +147,7 @@ new Vue({
     activePage: 'dashboard', // 'dashboard' | 'interfaces' | 'gateways' | 'routing' | 'firewall' | 'settings' | 'administration'
     activeInterfaceId: null,  // ID выбранного интерфейса (вкладка)
     hoverPage: null,          // для hover-эффекта в sidebar
+    sidebarCollapsed: localStorage.getItem('sidebarCollapsed') === 'true',
     sidebarMenu: [
       { id: 'dashboard',         label: 'Dashboard' },
       { id: 'interfaces',        label: 'Interfaces' },
@@ -1207,6 +1208,10 @@ new Vue({
       } else {
         this.showToast('Failed to load your file!', 'error');
       }
+    },
+    toggleSidebar() {
+      this.sidebarCollapsed = !this.sidebarCollapsed;
+      localStorage.setItem('sidebarCollapsed', this.sidebarCollapsed);
     },
     toggleTheme() {
       const themes = ['light', 'dark', 'auto'];
