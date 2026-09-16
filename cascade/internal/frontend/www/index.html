@@ -232,10 +232,9 @@
 
   /* ── Sidebar collapse toggle button ── */
   .sidebar-toggle-btn {
-    position: absolute;
-    top: 50%;
-    right: -14px;
-    transform: translateY(-50%);
+    position: fixed;
+    top: 50vh;
+    transform: translateY(-50%) translateX(-50%);
     width: 28px;
     height: 28px;
     border-radius: 50%;
@@ -245,9 +244,9 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 10;
+    z-index: 200;
     box-shadow: 0 1px 4px rgba(0,0,0,0.15);
-    transition: background 0.15s, border-color 0.15s;
+    transition: background 0.15s, border-color 0.15s, left 0.25s ease;
     flex-shrink: 0;
   }
   .dark .sidebar-toggle-btn {
@@ -260,6 +259,17 @@
   }
   .dark .sidebar-toggle-btn:hover {
     background: #334155;
+  }
+  /* Mobile: bigger touch target */
+  @media (max-width: 768px) {
+    .sidebar-toggle-btn {
+      width: 40px;
+      height: 40px;
+    }
+    .sidebar-toggle-btn svg {
+      width: 18px;
+      height: 18px;
+    }
   }
   /* Hide nav content (labels, items) when collapsed — fade out */
   .app-nav .nav-content {
@@ -439,9 +449,10 @@
         <!-- ==================== Sidebar ==================== -->
         <nav :class="['flex-shrink-0', 'flex', 'flex-col', 'app-nav', sidebarCollapsed ? 'nav-collapsed' : '']"
              :style="{ width: sidebarCollapsed ? '0px' : '256px', minHeight: '100vh', position: 'relative', overflow: 'visible' }">
-          <!-- Toggle button — always visible, protrudes from the right edge -->
+          <!-- Toggle button — fixed to viewport centre vertically, pinned to sidebar right edge -->
           <button @click="toggleSidebar"
             class="sidebar-toggle-btn"
+            :style="{ left: sidebarCollapsed ? '0px' : '256px' }"
             :title="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'">
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"
                  :style="{ transform: sidebarCollapsed ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.25s' }">
