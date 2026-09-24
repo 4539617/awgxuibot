@@ -14,11 +14,6 @@ DEFAULT_REALITY_SNI="www.nvidia.com"
 DEFAULT_REALITY_FINGERPRINT="firefox"  # Варианты: edge, chrome, firefox, safari
 
 
-echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}   awgbot + xuibot Installer${NC}"
-echo -e "${BLUE}   AWG + XUI Management${NC}"
-echo -e "${BLUE}========================================${NC}\n"
-
 # Проверка прав root
 if [ "$EUID" -ne 0 ]; then
     echo -e "${RED}❌ Запустите с правами root (sudo ./install.sh)${NC}"
@@ -6051,54 +6046,196 @@ stop_awg_v2() {
 }
 
 
+# Вспомогательная функция: выполнить с синхронизацией репозитория
+run_with_sync() {
+    sync_repository
+    if [ $? -ne 0 ]; then
+        read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " _sync_choice
+        if [[ "$_sync_choice" == "0" ]]; then
+            echo -e "${YELLOW}Операция отменена${NC}"
+            return 1
+        fi
+    fi
+    return 0
+}
+
+# ── Подменю: 3X-UI ──────────────────────────────────────────
+menu_3xui() {
+    while true; do
+        echo -e "\n${BLUE}========================================${NC}"
+        echo -e "${BLUE}   3X-UI${NC}"
+        echo -e "${BLUE}========================================${NC}"
+        echo -e "${GREEN}1)${NC} Установка 3x-ui Panel v2.9.4"
+        echo -e "${GREEN}2)${NC} Установка 3x-ui Panel v3.x.x"
+        echo -e "${GREEN}3)${NC} Удаление 3x-ui Panel"
+        echo -e "${GREEN}0)${NC} Назад"
+        echo -e "${BLUE}========================================${NC}"
+        read -p "Введите номер: " sub
+        case $sub in
+            1) run_with_sync && { NONINTERACTIVE=1; install_3xui_v294; unset NONINTERACTIVE; } ;;
+            2) run_with_sync && install_3xui_v3 ;;
+            3) run_with_sync && remove_3xui ;;
+            0) return ;;
+            *) echo -e "${RED}❌ Неверный выбор${NC}" ;;
+        esac
+        echo -e "\n${YELLOW}Нажмите Enter для продолжения...${NC}"; read
+    done
+}
+
+# ── Подменю: CASCADE WEB UI ──────────────────────────────────
+menu_cascade() {
+    while true; do
+        echo -e "\n${BLUE}========================================${NC}"
+        echo -e "${BLUE}   CASCADE WEB UI${NC}"
+        echo -e "${BLUE}========================================${NC}"
+        echo -e "${GREEN}1)${NC} Установка Cascade Web UI"
+        echo -e "${GREEN}2)${NC} Логи Cascade"
+        echo -e "${GREEN}3)${NC} Пересборка Cascade"
+        echo -e "${GREEN}4)${NC} Удаление Cascade"
+        echo -e "${GREEN}5)${NC} Миграция AWG → Cascade"
+        echo -e "${GREEN}6)${NC} Установка Caddy (HTTPS для Cascade)"
+        echo -e "${GREEN}7)${NC} Удаление Caddy"
+        echo -e "${GREEN}0)${NC} Назад"
+        echo -e "${BLUE}========================================${NC}"
+        read -p "Введите номер: " sub
+        case $sub in
+            1) run_with_sync && install_cascade ;;
+            2) show_cascade_logs ;;
+            3) run_with_sync && update_cascade ;;
+            4) remove_cascade ;;
+            5) migrate_to_cascade_menu ;;
+            6) run_with_sync && install_caddy ;;
+            7) remove_caddy ;;
+            0) return ;;
+            *) echo -e "${RED}❌ Неверный выбор${NC}" ;;
+        esac
+        echo -e "\n${YELLOW}Нажмите Enter для продолжения...${NC}"; read
+    done
+}
+
+# ── Подменю: AWG ─────────────────────────────────────────────
+menu_awg() {
+    while true; do
+        echo -e "\n${BLUE}========================================${NC}"
+        echo -e "${BLUE}   AWG${NC}"
+        echo -e "${BLUE}========================================${NC}"
+        echo -e "${GREEN}1)${NC} Установка AWG"
+        echo -e "${GREEN}2)${NC} Удаление AWG"
+        echo -e "${GREEN}3)${NC} Сформировать конфигурацию AWG v1"
+        echo -e "${GREEN}4)${NC} Сформировать конфигурацию AWG v2"
+        echo -e "${GREEN}5)${NC} Запустить AWG v1"
+        echo -e "${GREEN}6)${NC} Запустить AWG v2"
+        echo -e "${GREEN}7)${NC} Остановить AWG v1"
+        echo -e "${GREEN}8)${NC} Остановить AWG v2"
+        echo -e "${GREEN}0)${NC} Назад"
+        echo -e "${BLUE}========================================${NC}"
+        read -p "Введите номер: " sub
+        case $sub in
+            1) run_with_sync && install_awg ;;
+            2) run_with_sync && remove_awg ;;
+            3) run_with_sync && generate_awg_config "v1" ;;
+            4) run_with_sync && generate_awg_config "v2" ;;
+            5) run_with_sync && start_awg_v1 ;;
+            6) run_with_sync && start_awg_v2 ;;
+            7) run_with_sync && stop_awg_v1 ;;
+            8) run_with_sync && stop_awg_v2 ;;
+            0) return ;;
+            *) echo -e "${RED}❌ Неверный выбор${NC}" ;;
+        esac
+        echo -e "\n${YELLOW}Нажмите Enter для продолжения...${NC}"; read
+    done
+}
+
+# ── Подменю: XUIBOT ──────────────────────────────────────────
+menu_xuibot() {
+    while true; do
+        echo -e "\n${BLUE}========================================${NC}"
+        echo -e "${BLUE}   XUIBOT${NC}"
+        echo -e "${BLUE}========================================${NC}"
+        echo -e "${GREEN}1)${NC} Установка XUIBOT"
+        echo -e "${GREEN}2)${NC} Логи XUIBOT"
+        echo -e "${GREEN}3)${NC} Пересборка XUIBOT"
+        echo -e "${GREEN}4)${NC} Удаление XUIBOT"
+        echo -e "${GREEN}0)${NC} Назад"
+        echo -e "${BLUE}========================================${NC}"
+        read -p "Введите номер: " sub
+        case $sub in
+            1) run_with_sync && install_xuibot ;;
+            2) run_with_sync && show_xuibot_logs ;;
+            3) run_with_sync && update_xuibot ;;
+            4) run_with_sync && remove_xuibot ;;
+            0) return ;;
+            *) echo -e "${RED}❌ Неверный выбор${NC}" ;;
+        esac
+        echo -e "\n${YELLOW}Нажмите Enter для продолжения...${NC}"; read
+    done
+}
+
+# ── Подменю: AWGBOT ──────────────────────────────────────────
+menu_awgbot() {
+    while true; do
+        echo -e "\n${BLUE}========================================${NC}"
+        echo -e "${BLUE}   AWGBOT${NC}"
+        echo -e "${BLUE}========================================${NC}"
+        echo -e "${GREEN}1)${NC} Установка AWGBOT"
+        echo -e "${GREEN}2)${NC} Логи AWGBOT"
+        echo -e "${GREEN}3)${NC} Пересборка AWGBOT"
+        echo -e "${GREEN}4)${NC} Удаление AWGBOT"
+        echo -e "${GREEN}0)${NC} Назад"
+        echo -e "${BLUE}========================================${NC}"
+        read -p "Введите номер: " sub
+        case $sub in
+            1) run_with_sync && install_awgbot ;;
+            2) run_with_sync && show_awgbot_logs ;;
+            3) run_with_sync && update_awgbot ;;
+            4) run_with_sync && remove_awgbot ;;
+            0) return ;;
+            *) echo -e "${RED}❌ Неверный выбор${NC}" ;;
+        esac
+        echo -e "\n${YELLOW}Нажмите Enter для продолжения...${NC}"; read
+    done
+}
+
+# ── Подменю: Обслуживание ─────────────────────────────────────
+menu_maintenance() {
+    while true; do
+        echo -e "\n${BLUE}========================================${NC}"
+        echo -e "${BLUE}   Обслуживание${NC}"
+        echo -e "${BLUE}========================================${NC}"
+        echo -e "${GREEN}1)${NC} Анализ диска и памяти"
+        echo -e "${RED}2)${NC} Удалить ВСЁ (AWG + Боты + 3x-ui + Cascade)"
+        echo -e "${GREEN}0)${NC} Назад"
+        echo -e "${BLUE}========================================${NC}"
+        read -p "Введите номер: " sub
+        case $sub in
+            1)
+                if [ -f "disk_analyzer.sh" ]; then
+                    bash disk_analyzer.sh
+                else
+                    echo -e "${RED}❌ Файл disk_analyzer.sh не найден!${NC}"
+                fi
+                ;;
+            2) run_with_sync && remove_all ;;
+            0) return ;;
+            *) echo -e "${RED}❌ Неверный выбор${NC}" ;;
+        esac
+        echo -e "\n${YELLOW}Нажмите Enter для продолжения...${NC}"; read
+    done
+}
+
 # Главное меню
 show_menu() {
     echo -e "\n${BLUE}========================================${NC}"
-    echo -e "${BLUE}   Выберите действие:${NC}"
+    echo -e "${BLUE}   AWGXUI install:${NC}"
     echo -e "${BLUE}========================================${NC}"
     echo -e "${GREEN}1)${NC} Показать статус системы"
-    echo -e "${BLUE}---${NC}"
-    echo -e "${YELLOW}3X-UI:${NC}"
-    echo -e "${GREEN}2)${NC} Установка 3x-ui Panel v2.9.4"
-    echo -e "${GREEN}3)${NC} Установка 3x-ui Panel v3.x.x"
-    echo -e "${GREEN}4)${NC} Удаление 3x-ui Panel"
-    echo -e "${BLUE}---${NC}"
-    echo -e "${YELLOW}AWG:${NC}"
-    echo -e "${GREEN}5)${NC} Установка AWG"
-    echo -e "${GREEN}6)${NC} Удаление AWG"
-    echo -e "${GREEN}7)${NC} Сформировать конфигурацию AWG v1"
-    echo -e "${GREEN}8)${NC} Сформировать конфигурацию AWG v2"
-    echo -e "${GREEN}9)${NC} Запустить AWG v1"
-    echo -e "${GREEN}10)${NC} Запустить AWG v2"
-    echo -e "${GREEN}11)${NC} Остановить AWG v1"
-    echo -e "${GREEN}12)${NC} Остановить AWG v2"
-    echo -e "${BLUE}---${NC}"
-    echo -e "${YELLOW}XUIBOT:${NC}"
-    echo -e "${GREEN}13)${NC} Установка XUIBOT"
-    echo -e "${GREEN}14)${NC} Логи XUIBOT"
-    echo -e "${GREEN}15)${NC} Пересборка XUIBOT"
-    echo -e "${GREEN}16)${NC} Удаление XUIBOT"
-    echo -e "${BLUE}---${NC}"
-    echo -e "${YELLOW}AWGBOT:${NC}"
-    echo -e "${GREEN}17)${NC} Установка AWGBOT"
-    echo -e "${GREEN}18)${NC} Логи AWGBOT"
-    echo -e "${GREEN}19)${NC} Пересборка AWGBOT"
-    echo -e "${GREEN}20)${NC} Удаление AWGBOT"
-    echo -e "${BLUE}---${NC}"
-    echo -e "${YELLOW}Системные утилиты:${NC}"
-    echo -e "${GREEN}21)${NC} Анализ диска и памяти"
-    echo -e "${BLUE}---${NC}"
-    echo -e "${YELLOW}CASCADE WEB UI:${NC}"
-    echo -e "${GREEN}22)${NC} Установка Cascade Web UI"
-    echo -e "${GREEN}23)${NC} Логи Cascade"
-    echo -e "${GREEN}24)${NC} Пересборка Cascade"
-    echo -e "${GREEN}25)${NC} Удаление Cascade"
-    echo -e "${GREEN}26)${NC} Миграция AWG → Cascade"
-    echo -e "${GREEN}27)${NC} Установка Caddy (HTTPS для Cascade)"
-    echo -e "${GREEN}28)${NC} Удаление Caddy"
-    echo -e "${BLUE}---${NC}"
-    echo -e "${RED}99)${NC} Удалить ВСЁ (AWG + Боты + 3x-ui + Cascade)"
-    echo -e "${GREEN}0)${NC} Выход"
+    echo -e "${GREEN}2)${NC} 3X-UI"
+    echo -e "${GREEN}3)${NC} CASCADE WEB UI"
+    echo -e "${GREEN}4)${NC} AWG"
+    echo -e "${GREEN}5)${NC} XUIBOT"
+    echo -e "${GREEN}6)${NC} AWGBOT"
+    echo -e "${GREEN}7)${NC} Обслуживание"
+    echo -e "${GREEN}8)${NC} Выход"
     echo -e "${BLUE}========================================${NC}"
 }
 
@@ -6110,319 +6247,28 @@ create_directories
 while true; do
     show_menu
     read -p "Введите номер: " choice
-    
+
     case $choice in
         1)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            show_status
+            run_with_sync && show_status
+            echo -e "\n${YELLOW}Нажмите Enter для продолжения...${NC}"; read
             ;;
-        2)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            NONINTERACTIVE=1; install_3xui_v294; unset NONINTERACTIVE
-            ;;
-        3)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            install_3xui_v3
-            ;;
-        4)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            remove_3xui
-            ;;
-        5)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            install_awg
-            ;;
-        6)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            remove_awg
-            ;;
-        7)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            generate_awg_config "v1"
-            ;;
+        2) menu_3xui ;;
+        3) menu_cascade ;;
+        4) menu_awg ;;
+        5) menu_xuibot ;;
+        6) menu_awgbot ;;
+        7) menu_maintenance ;;
         8)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            generate_awg_config "v2"
-            ;;
-        9)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            start_awg_v1
-            ;;
-        10)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            start_awg_v2
-            ;;
-        11)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            stop_awg_v1
-            ;;
-        12)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            stop_awg_v2
-            ;;
-        13)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            install_xuibot
-            ;;
-        14)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            show_xuibot_logs
-            ;;
-        15)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            update_xuibot
-            ;;
-        16)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            remove_xuibot
-            ;;
-        17)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            install_awgbot
-            ;;
-        18)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            show_awgbot_logs
-            ;;
-        19)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            update_awgbot
-            ;;
-        20)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            remove_awgbot
-            ;;
-        21)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            if [ -f "disk_analyzer.sh" ]; then
-                bash disk_analyzer.sh
-            else
-                echo -e "${RED}❌ Файл disk_analyzer.sh не найден!${NC}"
-            fi
-            ;;
-        22)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            install_cascade
-            ;;
-        23)
-            show_cascade_logs
-            ;;
-        24)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            update_cascade
-            ;;
-        25)
-            remove_cascade
-            ;;
-        26)
-            migrate_to_cascade_menu
-            ;;
-        27)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            install_caddy
-            ;;
-        28)
-            remove_caddy
-            ;;
-        99)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            remove_all
-            ;;
-        0)
-            echo -e "\n${YELLOW}Переустановка скрипта:${NC}"
-            echo -e "${GREEN}git clone https://github.com/4539617/awgxuibot.git /opt/awgxuibot${NC}"
-            echo -e "${GREEN}cd /opt/awgxuibot${NC}"
-            echo -e "${GREEN}bash install.sh${NC}"
             echo -e "\n${BLUE}========================================${NC}"
             echo -e "${GREEN}👋 До свидания!${NC}"
             echo -e "${BLUE}========================================${NC}"
-            cd ..
             exit 0
             ;;
         *)
             echo -e "${RED}❌ Неверный выбор. Попробуйте снова.${NC}"
             ;;
     esac
-    
-    if [ -z "$NONINTERACTIVE" ]; then
-        echo -e "\n${YELLOW}Нажмите Enter для продолжения...${NC}"
-        read
-    fi
 done
 
 # ============================================
