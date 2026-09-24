@@ -15,7 +15,9 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -25,68 +27,43 @@ import (
 	"github.com/JohnnyVBut/cascade/internal/remotes"
 )
 
-// proxyClient is a shared HTTP client for proxy requests.
-// HTTP/2 is explicitly disabled: concurrent requests through a shared HTTP/2
-// ClientConn trigger a panic in Go's hpack encoder (id <= evictCount race),
-// crashing the process and clearing in-memory sessions. HTTP/1.1 uses a
-// separate connection per request, avoiding the shared mutable state.
-// Timeout is 5 s to prevent goroutine pile-up when the remote is unreachable.
-// proxyTLSConfig returns a TLS config that restricts ALPN to HTTP/1.1 only.
-// This prevents Go's TLS client from advertising "h2" in the ClientHello,
-// which causes some Caddy/nginx deployments to respond with TLS alert 80
-// (internal error) when they do not support HTTP/2 on that vhost.
-// TLSNextProto (empty map) already prevents HTTP/2 after the handshake, but
-// does not suppress the ALPN advertisement — NextProtos does.
-func proxyTLSConfig(skipVerify bool) *tls.Config {
-	return &tls.Config{
-		InsecureSkipVerify: skipVerify,      //nolint:gosec
+// newProxyClient builds an HTTP client for proxying requests to a remote server.
+//
+// Two problems are addressed:
+//
+//  1. HTTP/2 panic: concurrent requests through a shared HTTP/2 ClientConn
+//     trigger a data race in Go's hpack encoder. TLSNextProto (empty map)
+//     disables the post-handshake HTTP/2 upgrade.
+//
+//  2. SNI + ALPN mismatch: Go's TLS stack always sends the URL hostname as
+//     the TLS ServerName (SNI). When the remote URL contains a bare IP address
+//     (e.g. https://1.2.3.4/path), Go sends that IP as SNI. Some Caddy/nginx
+//     deployments reject an IP in the SNI field with TLS alert 80
+//     (internal_error). Fix: set ServerName="" when the host is an IP, which
+//     suppresses SNI entirely — matching what `openssl s_client -noservername`
+//     does. Additionally restrict ALPN to "http/1.1" to avoid h2 negotiation
+//     errors on servers that don't support HTTP/2 on that vhost.
+func newProxyClient(remoteURL string, skipVerify bool, timeout time.Duration) *http.Client {
+	tlsCfg := &tls.Config{
+		InsecureSkipVerify: skipVerify,       //nolint:gosec
 		NextProtos:         []string{"http/1.1"},
 	}
-}
 
-var proxyClient = &http.Client{
-	Timeout: 5 * time.Second,
-	Transport: &http.Transport{
-		// Disable HTTP/2 upgrade — forces HTTP/1.1 for all proxy connections.
-		TLSNextProto: make(map[string]func(string, *tls.Conn) http.RoundTripper),
-		// SSRF guard: re-check the resolved IP at dial time so a proxied request
-		// cannot reach an internal address via DNS rebinding.
-		DialContext:     remoteclient.SafeDialContext,
-		TLSClientConfig: proxyTLSConfig(false),
-	},
-	// Redirects are allowed: SafeDialContext (via Dialer.Control) re-checks the
-	// resolved IP on every new connection, including redirect destinations, so an
-	// internal address in a Location header is still blocked.
-}
+	// Suppress SNI when the host is a bare IP address.
+	if u, err := url.Parse(remoteURL); err == nil {
+		if net.ParseIP(u.Hostname()) != nil {
+			tlsCfg.ServerName = " " // non-empty sentinel → Go skips auto-SNI from the request host
+		}
+	}
 
-var proxyClientInsecure = &http.Client{
-	Timeout: 5 * time.Second,
-	Transport: &http.Transport{
-		TLSNextProto:    make(map[string]func(string, *tls.Conn) http.RoundTripper),
-		DialContext:     remoteclient.SafeDialContext,
-		TLSClientConfig: proxyTLSConfig(true),
-	},
-}
-
-// speedtestProxyClient is used for /speedtest/client proxy calls which can take
-// up to 30 s (test duration) + overhead. The standard 5 s proxyClient would
-// cancel the request before the iperf3 run completes.
-var speedtestProxyClient = &http.Client{
-	Timeout: 120 * time.Second,
-	Transport: &http.Transport{
-		TLSNextProto:    make(map[string]func(string, *tls.Conn) http.RoundTripper),
-		DialContext:     remoteclient.SafeDialContext,
-		TLSClientConfig: proxyTLSConfig(false),
-	},
-}
-
-var speedtestProxyClientInsecure = &http.Client{
-	Timeout: 120 * time.Second,
-	Transport: &http.Transport{
-		TLSNextProto:    make(map[string]func(string, *tls.Conn) http.RoundTripper),
-		DialContext:     remoteclient.SafeDialContext,
-		TLSClientConfig: proxyTLSConfig(true),
-	},
+	return &http.Client{
+		Timeout: timeout,
+		Transport: &http.Transport{
+			TLSNextProto:    make(map[string]func(string, *tls.Conn) http.RoundTripper),
+			DialContext:     remoteclient.SafeDialContext,
+			TLSClientConfig: tlsCfg,
+		},
+	}
 }
 
 // RegisterRemotes registers all /api/remotes/* routes.

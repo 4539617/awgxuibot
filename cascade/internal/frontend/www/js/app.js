@@ -2952,7 +2952,7 @@ new Vue({
         const res = await this.api.call({ method: 'GET', path: '/nat/dnat' });
         this.dnatRules = res.rules || [];
       } catch (e) {
-        this.showToast('error', e.message || 'Failed to load port forwarding rules');
+        this.showToast(e.message || 'Failed to load port forwarding rules', 'error');
       } finally {
         this.dnatLoading = false;
       }
@@ -3016,15 +3016,15 @@ new Vue({
       try {
         if (this.dnatEditMode) {
           await this.api.call({ method: 'PATCH', path: `/nat/dnat/${this.dnatForm.id}`, body });
-          this.showToast('success', 'Rule updated');
+          this.showToast('Rule updated', 'success');
         } else {
           await this.api.call({ method: 'POST', path: '/nat/dnat', body });
-          this.showToast('success', 'Rule created');
+          this.showToast('Rule created', 'success');
         }
         this.showDnatModal = false;
         await this.loadDnatRules();
       } catch (e) {
-        this.showToast('error', e.message || 'Failed to save rule');
+        this.showToast(e.message || 'Failed to save rule', 'error');
       }
     },
 
@@ -3033,7 +3033,7 @@ new Vue({
         await this.api.call({ method: 'PATCH', path: `/nat/dnat/${rule.id}`, body: { enabled: !rule.enabled } });
         await this.loadDnatRules();
       } catch (e) {
-        this.showToast('error', e.message || 'Failed to toggle rule');
+        this.showToast(e.message || 'Failed to toggle rule', 'error');
       }
     },
 
@@ -3041,10 +3041,10 @@ new Vue({
       if (!confirm(`Delete "${rule.name}"?`)) return;
       try {
         await this.api.call({ method: 'DELETE', path: `/nat/dnat/${rule.id}` });
-        this.showToast('success', 'Rule deleted');
+        this.showToast('Rule deleted', 'success');
         await this.loadDnatRules();
       } catch (e) {
-        this.showToast('error', e.message || 'Failed to delete rule');
+        this.showToast(e.message || 'Failed to delete rule', 'error');
       }
     },
 
@@ -3231,6 +3231,7 @@ new Vue({
     // ── Dashboard ──────────────────────────────────────────────────────────────
 
     async loadDashboard() {
+      if (!this.authenticated) return;
       try {
         const res = await this.api.getDashboardWidgets();
         const saved = res.widgets || [];
