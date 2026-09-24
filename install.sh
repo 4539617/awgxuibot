@@ -2652,13 +2652,13 @@ show_status() {
                 xui_api_token=$(yq eval ".panels.${_lpid}.xui_api_token" config.yaml 2>/dev/null)
             fi
             
-            # Выводим данные подключения если они есть
-            if [ -n "$xui_url" ]; then
+            # Выводим данные подключения если они есть (и не null)
+            if [ -n "$xui_url" ] && [ "$xui_url" != "null" ]; then
                 echo -e "\n  ${BOLD}Данные подключения:${NC}"
                 echo -e "  • URL: ${xui_url}"
-                [ -n "$xui_username" ] && echo -e "  • Username: ${xui_username}"
-                [ -n "$xui_password" ] && echo -e "  • Password: ${xui_password}"
-                [ -n "$xui_api_token" ] && echo -e "  • API Token: ${xui_api_token}"
+                [ -n "$xui_username" ] && [ "$xui_username" != "null" ] && echo -e "  • Username: ${xui_username}"
+                [ -n "$xui_password" ] && [ "$xui_password" != "null" ] && echo -e "  • Password: ${xui_password}"
+                [ -n "$xui_api_token" ] && [ "$xui_api_token" != "null" ] && echo -e "  • API Token: ${xui_api_token}"
             fi
         else
             echo -e "  ${GREEN}✅ Установлена${NC}"
@@ -2812,19 +2812,6 @@ show_status() {
     else
         echo -e "  Cascade: ${RED}❌ Не установлен${NC}"
         echo -e "  ${BLUE}Установите через пункт меню 22${NC}"
-    fi
-
-    # ============================================
-    # SYSTEM AUTOSTART
-    # ============================================
-    echo -e "\n${YELLOW}${BOLD}SYSTEM AUTOSTART:${NC}"
-
-    # Проверка Docker в автозагрузке
-    if systemctl is-enabled docker &>/dev/null; then
-        echo -e "  Docker: ${GREEN}✅ Включен в автозагрузку${NC}"
-    else
-        echo -e "  Docker: ${RED}❌ Не включен в автозагрузку${NC}"
-        echo -e "  ${YELLOW}Для включения выполните: systemctl enable docker${NC}"
     fi
 
     echo -e "\n${BLUE}========================================${NC}"
