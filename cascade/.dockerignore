@@ -1,1 +1,31 @@
+# --- node / frontend tooling (not needed in Docker build context) ---
 /src/node_modules
+node_modules
+
+# --- git & IDE ---
+.git
+.gitignore
+.editorconfig
+.github
+
+# --- docs & non-build assets ---
+docs
+plans
+assets
+deploy
+scripts
+sysctl.d
+*.md
+LICENSE
+
+# --- local dev overrides ---
+docker-compose.override.yml
+docker-compose.isolated.yml
+
+# --- misc ---
+*.sh
+diagnose.sh
+generate-password.sh
+build.sh
+How_to_generate_an_bcrypt_hash.md
+wireguard_chain_mtu_guide.md

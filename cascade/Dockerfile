@@ -6,14 +6,17 @@ FROM golang:1.23-alpine AS builder
 
 WORKDIR /app
 
-# Copy source first (go mod tidy needs imports to resolve indirect deps).
-COPY go.mod ./
+# ── Dependency layer (cached as long as go.mod/go.sum don't change) ──────────
+# Copy only the module files first so Docker can cache this layer separately.
+# go mod download fetches all deps declared in go.sum without modifying files.
+# This layer is reused on every rebuild that doesn't touch go.mod/go.sum,
+# which is the common case when only source code changes (e.g. UI edits).
+COPY go.mod go.sum ./
+RUN go mod download
+
+# ── Source layer (invalidated only when source changes) ───────────────────────
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
-
-# Resolve full dependency graph, update go.mod with indirect deps, generate go.sum.
-# Cached unless go.mod or source changes.
-RUN go mod tidy
 
 # Version metadata injected at build time so the binary knows its own version.
 # ARG VERSION defaults to "dev" for local builds without explicit --build-arg.
