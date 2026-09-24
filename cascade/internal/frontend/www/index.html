@@ -10139,19 +10139,19 @@
 
         <!-- Step 2: TOTP code (shown when totpRequired = true) -->
         <div v-if="totpRequired"
-          class="shadow rounded-md bg-white dark:bg-neutral-700 mx-auto w-64 p-5 overflow-hidden mt-10">
-          <div class="h-20 w-20 mb-10 mt-5 mx-auto rounded-full bg-red-800 dark:bg-red-800 relative overflow-hidden flex items-center justify-center">
+          class="shadow rounded-md bg-black mx-auto w-64 p-5 overflow-hidden mt-10">
+          <div class="h-20 w-20 mb-10 mt-5 mx-auto rounded-full bg-red-800 relative overflow-hidden flex items-center justify-center">
             <svg class="w-10 h-10 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
             </svg>
           </div>
-          <p class="text-sm text-center text-gray-600 dark:text-neutral-300 mb-4">
+          <p class="text-sm text-center text-white mb-4">
             Enter the 6-digit code from your authenticator app
           </p>
           <input type="text" inputmode="numeric" maxlength="6" placeholder="000000"
             v-model="totpCode"
             @keyup.enter="loginStep2"
-            class="px-3 py-2 text-sm dark:bg-neutral-700 text-gray-700 dark:text-gray-300 mb-5 border-2 border-gray-100 dark:border-neutral-800 rounded-lg w-full text-center tracking-widest font-mono text-lg focus:border-red-800 dark:focus:border-red-800 outline-none" />
+            class="px-3 py-2 text-sm bg-black text-white mb-5 border-2 border-neutral-700 rounded-lg w-full text-center tracking-widest font-mono text-lg focus:border-red-800 outline-none" />
           <button v-if="authenticating"
             class="bg-red-800 w-full rounded shadow py-2 text-sm text-white cursor-not-allowed mb-2">
             <svg class="w-5 animate-spin mx-auto" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
