@@ -2133,6 +2133,7 @@ update_cascade() {
 
     echo -e "${YELLOW}🔄 Пересборка и перезапуск Cascade...${NC}"
     docker compose -f docker-compose.cascade.yml down 2>/dev/null || true
+    docker_prune
     docker compose -f docker-compose.cascade.yml up -d --build
 
     sleep 3
