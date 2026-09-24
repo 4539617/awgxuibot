@@ -431,10 +431,16 @@ class API {
   }
 
   async exportTunnelInterface({ interfaceId, includePeers }) {
+    const segs = window.location.pathname.split('/').filter(Boolean);
+    const apiBase = segs.length > 0
+      ? `${window.location.origin}/${segs[0]}/api`
+      : `${window.location.origin}/api`;
     const peers = includePeers ? '1' : '0';
-    const res = await fetch(`./api/tunnel-interfaces/${interfaceId}/export?peers=${peers}`, {
-      headers: { Authorization: `Bearer ${this.token}` },
-    });
+    const path = `/tunnel-interfaces/${interfaceId}/export?peers=${peers}`;
+    const effectivePath = (this._remoteId && !path.startsWith('/remotes'))
+      ? `/remotes/${this._remoteId}/proxy${path}`
+      : path;
+    const res = await fetch(`${apiBase}${effectivePath}`);
     if (!res.ok) throw new Error(await res.text());
     return res.blob();
   }
@@ -610,11 +616,18 @@ class API {
    * @param {{ interfaceId: string, files: File[] }}
    */
   async importClientConfigs({ interfaceId, files }) {
+    const segs = window.location.pathname.split('/').filter(Boolean);
+    const apiBase = segs.length > 0
+      ? `${window.location.origin}/${segs[0]}/api`
+      : `${window.location.origin}/api`;
+    const path = `/tunnel-interfaces/${interfaceId}/peers/import-client-configs`;
+    const effectivePath = (this._remoteId && !path.startsWith('/remotes'))
+      ? `/remotes/${this._remoteId}/proxy${path}`
+      : path;
     const form = new FormData();
     for (const f of files) form.append('configs', f);
-    const res = await fetch(`./api/tunnel-interfaces/${interfaceId}/peers/import-client-configs`, {
+    const res = await fetch(`${apiBase}${effectivePath}`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${this.token}` },
       body: form,
     });
     if (!res.ok) {
