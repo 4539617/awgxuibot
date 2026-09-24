@@ -6247,6 +6247,10 @@ while true; do
         6) menu_awgbot ;;
         7) menu_maintenance ;;
         8)
+            echo -e "\n${YELLOW}Переустановка скрипта:${NC}"
+            echo -e "  git clone https://github.com/4539617/awgxuibot.git /opt/awgxuibot"
+            echo -e "  cd /opt/awgxuibot"
+            echo -e "  bash install.sh"
             echo -e "\n${BLUE}========================================${NC}"
             echo -e "${GREEN}👋 До свидания!${NC}"
             echo -e "${BLUE}========================================${NC}"
