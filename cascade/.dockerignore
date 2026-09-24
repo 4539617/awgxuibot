@@ -24,8 +24,6 @@ docker-compose.isolated.yml
 
 # --- misc ---
 *.sh
-diagnose.sh
-generate-password.sh
-build.sh
+!entrypoint.sh
 How_to_generate_an_bcrypt_hash.md
 wireguard_chain_mtu_guide.md
