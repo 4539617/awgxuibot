@@ -66,6 +66,22 @@ func newProxyClient(remoteURL string, skipVerify bool, timeout time.Duration) *h
 	}
 }
 
+// Package-level shared HTTP clients for proxying.
+//
+// proxyClient / proxyClientInsecure — standard 5 s timeout for all proxy calls.
+// speedtestProxyClient / speedtestProxyClientInsecure — 120 s timeout for
+// /speedtest/client calls (iperf3 can take up to 30 s + overhead).
+//
+// These are initialised with an empty remoteURL so SNI suppression (IP-host
+// detection inside newProxyClient) is skipped; SNI behaviour is the same as
+// before for the shared clients.
+var (
+	proxyClient                  = newProxyClient("", false, 5*time.Second)
+	proxyClientInsecure          = newProxyClient("", true, 5*time.Second)
+	speedtestProxyClient         = newProxyClient("", false, 120*time.Second)
+	speedtestProxyClientInsecure = newProxyClient("", true, 120*time.Second)
+)
+
 // RegisterRemotes registers all /api/remotes/* routes.
 func RegisterRemotes(api fiber.Router) {
 	g := api.Group("/remotes")
