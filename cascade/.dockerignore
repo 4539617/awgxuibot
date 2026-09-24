@@ -18,12 +18,12 @@ sysctl.d
 *.md
 LICENSE
 
-# --- local dev overrides ---
+# --- local dev overrides / compose files (not needed in build context) ---
+docker-compose.yml
 docker-compose.override.yml
+docker-compose.override.yml.example
 docker-compose.isolated.yml
 
-# --- misc ---
+# --- shell scripts (except entrypoint which is COPYed into the image) ---
 *.sh
 !entrypoint.sh
-How_to_generate_an_bcrypt_hash.md
-wireguard_chain_mtu_guide.md
