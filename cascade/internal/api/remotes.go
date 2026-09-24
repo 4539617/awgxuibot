@@ -31,6 +31,19 @@ import (
 // crashing the process and clearing in-memory sessions. HTTP/1.1 uses a
 // separate connection per request, avoiding the shared mutable state.
 // Timeout is 5 s to prevent goroutine pile-up when the remote is unreachable.
+// proxyTLSConfig returns a TLS config that restricts ALPN to HTTP/1.1 only.
+// This prevents Go's TLS client from advertising "h2" in the ClientHello,
+// which causes some Caddy/nginx deployments to respond with TLS alert 80
+// (internal error) when they do not support HTTP/2 on that vhost.
+// TLSNextProto (empty map) already prevents HTTP/2 after the handshake, but
+// does not suppress the ALPN advertisement — NextProtos does.
+func proxyTLSConfig(skipVerify bool) *tls.Config {
+	return &tls.Config{
+		InsecureSkipVerify: skipVerify,      //nolint:gosec
+		NextProtos:         []string{"http/1.1"},
+	}
+}
+
 var proxyClient = &http.Client{
 	Timeout: 5 * time.Second,
 	Transport: &http.Transport{
@@ -38,7 +51,8 @@ var proxyClient = &http.Client{
 		TLSNextProto: make(map[string]func(string, *tls.Conn) http.RoundTripper),
 		// SSRF guard: re-check the resolved IP at dial time so a proxied request
 		// cannot reach an internal address via DNS rebinding.
-		DialContext: remoteclient.SafeDialContext,
+		DialContext:     remoteclient.SafeDialContext,
+		TLSClientConfig: proxyTLSConfig(false),
 	},
 	// Redirects are allowed: SafeDialContext (via Dialer.Control) re-checks the
 	// resolved IP on every new connection, including redirect destinations, so an
@@ -50,7 +64,7 @@ var proxyClientInsecure = &http.Client{
 	Transport: &http.Transport{
 		TLSNextProto:    make(map[string]func(string, *tls.Conn) http.RoundTripper),
 		DialContext:     remoteclient.SafeDialContext,
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec
+		TLSClientConfig: proxyTLSConfig(true),
 	},
 }
 
@@ -60,8 +74,9 @@ var proxyClientInsecure = &http.Client{
 var speedtestProxyClient = &http.Client{
 	Timeout: 120 * time.Second,
 	Transport: &http.Transport{
-		TLSNextProto: make(map[string]func(string, *tls.Conn) http.RoundTripper),
-		DialContext:  remoteclient.SafeDialContext,
+		TLSNextProto:    make(map[string]func(string, *tls.Conn) http.RoundTripper),
+		DialContext:     remoteclient.SafeDialContext,
+		TLSClientConfig: proxyTLSConfig(false),
 	},
 }
 
@@ -70,7 +85,7 @@ var speedtestProxyClientInsecure = &http.Client{
 	Transport: &http.Transport{
 		TLSNextProto:    make(map[string]func(string, *tls.Conn) http.RoundTripper),
 		DialContext:     remoteclient.SafeDialContext,
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec
+		TLSClientConfig: proxyTLSConfig(true),
 	},
 }
 

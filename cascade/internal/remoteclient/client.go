@@ -28,10 +28,22 @@ var ErrTOTPRequired = errors.New("totp_required")
 // Its transport uses SafeDialContext so every connection to a remote re-checks
 // the resolved IP at dial time — protecting Ping/ObtainToken against SSRF via
 // DNS rebinding (see ssrf.go).
+// remoteTLSConfig returns a TLS config that restricts ALPN to HTTP/1.1 only.
+// Advertising "h2" in the ClientHello causes some Caddy/nginx deployments to
+// respond with TLS alert 80 (internal error) when HTTP/2 is not available on
+// that vhost — matching the same fix applied to the proxy clients in api/remotes.go.
+func remoteTLSConfig(skipVerify bool) *tls.Config {
+	return &tls.Config{
+		InsecureSkipVerify: skipVerify, //nolint:gosec
+		NextProtos:         []string{"http/1.1"},
+	}
+}
+
 var httpClient = &http.Client{
 	Timeout: 15 * time.Second,
 	Transport: &http.Transport{
-		DialContext: SafeDialContext,
+		DialContext:     SafeDialContext,
+		TLSClientConfig: remoteTLSConfig(false),
 	},
 	// Never follow redirects from a remote server. A redirect to an internal
 	// address would bypass the SSRF guard on the original request.
@@ -50,7 +62,7 @@ func clientFor(skipTLS bool) *http.Client {
 		Timeout: 15 * time.Second,
 		Transport: &http.Transport{
 			DialContext:     SafeDialContext,
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec
+			TLSClientConfig: remoteTLSConfig(true),
 		},
 		CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
