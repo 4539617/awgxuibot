@@ -10085,10 +10085,10 @@
 
         <!-- Step 1: username + password -->
         <form v-if="!totpRequired" @submit="login"
-          class="shadow rounded-md bg-white dark:bg-neutral-900 mx-auto w-64 p-5 overflow-hidden mt-10">
+          class="shadow rounded-md bg-black mx-auto w-64 p-5 overflow-hidden mt-10">
           <!-- Avatar -->
-          <div class="h-20 w-20 mb-10 mt-5 mx-auto rounded-full bg-red-800 dark:bg-red-800 relative overflow-hidden">
-            <svg class="w-10 h-10 m-5 text-white dark:text-white" xmlns="http://www.w3.org/2000/svg"
+          <div class="h-20 w-20 mb-10 mt-5 mx-auto rounded-full bg-red-800 relative overflow-hidden">
+            <svg class="w-10 h-10 m-5 text-white" xmlns="http://www.w3.org/2000/svg"
               viewBox="0 0 20 20" fill="currentColor">
               <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd" />
             </svg>
@@ -10096,10 +10096,10 @@
 
           <!-- Username field -->
           <input type="text" name="username" placeholder="Username" v-model="username" autocomplete="username"
-            class="px-3 py-2 text-sm dark:bg-neutral-800 text-gray-500 dark:text-white mb-3 border-2 border-gray-100 dark:border-neutral-700 rounded-lg w-full focus:border-red-800 dark:focus:border-red-800 dark:placeholder:text-neutral-400 outline-none" />
+            class="px-3 py-2 text-sm bg-black text-white mb-3 border-2 border-neutral-700 rounded-lg w-full focus:border-red-800 placeholder:text-neutral-400 outline-none" />
 
           <input type="password" name="password" :placeholder="$t('password')" v-model="password" autocomplete="current-password"
-            class="px-3 py-2 text-sm dark:bg-neutral-800 text-gray-500 dark:text-white mb-5 border-2 border-gray-100 dark:border-neutral-700 rounded-lg w-full focus:border-red-800 dark:focus:border-red-800 dark:placeholder:text-neutral-400 outline-none" />
+            class="px-3 py-2 text-sm bg-black text-white mb-5 border-2 border-neutral-700 rounded-lg w-full focus:border-red-800 placeholder:text-neutral-400 outline-none" />
 
           <!-- Remember me -->
           <label v-if="rememberMeEnabled"
