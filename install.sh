@@ -6082,9 +6082,6 @@ menu_cascade() {
         echo -e "${GREEN}2)${NC} Логи Cascade"
         echo -e "${GREEN}3)${NC} Пересборка Cascade"
         echo -e "${GREEN}4)${NC} Удаление Cascade"
-        echo -e "${GREEN}5)${NC} Миграция AWG → Cascade"
-        echo -e "${GREEN}6)${NC} Установка Caddy (HTTPS для Cascade)"
-        echo -e "${GREEN}7)${NC} Удаление Caddy"
         echo -e "${GREEN}0)${NC} Назад"
         echo -e "${BLUE}========================================${NC}"
         read -p "Введите номер: " sub
@@ -6093,9 +6090,6 @@ menu_cascade() {
             2) show_cascade_logs ;;
             3) run_with_sync && update_cascade ;;
             4) remove_cascade ;;
-            5) migrate_to_cascade_menu ;;
-            6) run_with_sync && install_caddy ;;
-            7) remove_caddy ;;
             0) return ;;
             *) echo -e "${RED}❌ Неверный выбор${NC}" ;;
         esac
