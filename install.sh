@@ -4380,14 +4380,9 @@ install_3xui_v294() {
     echo -e "${BLUE}========================================${NC}\n"
     
     # Проверка установлена ли уже панель
-    if systemctl is-active --quiet x-ui; then
+    if [ -f /etc/systemd/system/x-ui.service ]; then
         echo -e "${YELLOW}⚠ 3x-ui панель уже установлена${NC}"
-        if [ -z "$NONINTERACTIVE" ]; then
-            read -p "Переустановить? (нажмите Enter для подтверждения или 0 для отмены): " reinstall
-        else
-            reinstall=""
-            echo -e "${BLUE}ℹ️  Автоматический режим: продолжаем переустановку${NC}"
-        fi
+        read -p "Нажмите Enter для переустановки или 0 для выхода в меню: " reinstall
         if [[ "$reinstall" == "0" ]]; then
             echo -e "${YELLOW}Отменено${NC}"
             return
@@ -4634,14 +4629,9 @@ install_3xui_v3() {
     echo -e "${BLUE}========================================${NC}\n"
     
     # Проверка установленной панели
-    if systemctl is-active --quiet x-ui; then
+    if [ -f /etc/systemd/system/x-ui.service ]; then
         echo -e "${YELLOW}⚠ 3x-ui панель уже установлена${NC}"
-        if [ -z "$NONINTERACTIVE" ]; then
-            read -p "Переустановить? (нажмите Enter для продолжения или 0 для отмены): " reinstall
-        else
-            reinstall=""
-            echo -e "${BLUE}ℹ️  Автоматический режим: продолжаем переустановку${NC}"
-        fi
+        read -p "Нажмите Enter для переустановки или 0 для выхода в меню: " reinstall
         if [[ "$reinstall" == "0" ]]; then
             echo -e "${YELLOW}Отменено${NC}"
             return
@@ -6062,7 +6052,7 @@ menu_3xui() {
         echo -e "${BLUE}========================================${NC}"
         read -p "Введите номер: " sub
         case $sub in
-            1) run_with_sync && { NONINTERACTIVE=1; install_3xui_v294; unset NONINTERACTIVE; } ;;
+            1) run_with_sync && install_3xui_v294 ;;
             2) run_with_sync && install_3xui_v3 ;;
             3) run_with_sync && remove_3xui ;;
             0) return ;;
