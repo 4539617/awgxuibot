@@ -182,6 +182,7 @@ func main() {
 	api.RegisterSpeedtest(apiGroup)
 	api.RegisterDiagnostics(apiGroup)
 	api.RegisterMetrics(apiGroup)
+	api.RegisterKeenetic(apiGroup)
 
 	// Legacy shims that require auth (old wireguard/client list → empty array).
 	api.RegisterCompatAuth(apiGroup)

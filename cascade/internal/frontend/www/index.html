@@ -10076,6 +10076,71 @@
 
         </div><!-- /activePage === 'wizard-cascade-s2s' -->
 
+        <!-- ============================================================== -->
+        <!-- Keenetic Page                                                   -->
+        <!-- ============================================================== -->
+        <div v-if="activePage === 'keenetic'" key="page-keenetic" style="display:flex; flex-direction:column; gap:16px; padding-bottom:40px;">
+
+          <!-- Header -->
+          <h2 class="text-lg font-semibold dark:text-neutral-100">Keenetic</h2>
+          <p class="text-sm" :style="{ color: theme==='dark'?'#a3a3a3':'#6b7280' }">
+            Generate a Windows <code>.bat</code> file with <code>route add</code> commands for Keenetic routers.
+            Enter one domain per line.
+          </p>
+
+          <!-- Form card -->
+          <div class="rounded-lg" style="padding:20px 24px; max-width:560px;"
+            :style="{ background: theme==='dark'?'#262626':'#f9fafb', border: '1px solid ' + (theme==='dark'?'#404040':'#e5e7eb') }">
+
+            <!-- Textarea -->
+            <div style="margin-bottom:16px;">
+              <label style="display:block; font-size:0.8rem; font-weight:500; margin-bottom:6px;"
+                :style="{ color: theme==='dark'?'#a3a3a3':'#6b7280' }">Domains (one per line)</label>
+              <textarea v-model="keeneticDomains"
+                :disabled="keeneticLoading"
+                placeholder="example.com&#10;google.com&#10;github.com"
+                rows="8"
+                style="width:100%; padding:8px 10px; font-size:0.875rem; border:1px solid; border-radius:6px; resize:vertical; box-sizing:border-box; font-family:monospace;"
+                :style="{ background: theme==='dark'?'#1a1a1a':'#fff', color: theme==='dark'?'#f5f5f5':'#111827', borderColor: theme==='dark'?'#525252':'#d1d5db', opacity: keeneticLoading ? 0.6 : 1 }">
+              </textarea>
+            </div>
+
+            <!-- Generate button -->
+            <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+              <button
+                @click.prevent="keeneticGenerate"
+                @keydown.enter.prevent
+                :disabled="keeneticLoading || !keeneticDomains.trim()"
+                style="padding:8px 20px; border:none; border-radius:6px; font-size:0.875rem; font-weight:500; cursor:pointer; display:inline-flex; align-items:center; gap:8px;"
+                :style="{ background: keeneticLoading || !keeneticDomains.trim() ? '#6b7280' : '#2563eb', color:'#fff', cursor: keeneticLoading || !keeneticDomains.trim() ? 'not-allowed' : 'pointer', opacity: keeneticLoading || !keeneticDomains.trim() ? 0.7 : 1 }">
+                <!-- Spinner -->
+                <span v-if="keeneticLoading"
+                  style="display:inline-block; width:14px; height:14px; border:2px solid rgba(255,255,255,0.3); border-top-color:#fff; border-radius:50%; animation:splash-spin 0.7s linear infinite; flex-shrink:0;">
+                </span>
+                {{ keeneticLoading ? 'Resolving…' : 'Generate .bat' }}
+              </button>
+
+              <!-- Result row: filename + download button -->
+              <template v-if="keeneticBlobUrl && !keeneticLoading">
+                <span class="text-sm font-mono" :style="{ color: theme==='dark'?'#a3a3a3':'#6b7280' }">
+                  {{ keeneticFilename }}
+                </span>
+                <button
+                  @click.prevent="keeneticDownload"
+                  @keydown.enter.prevent
+                  style="padding:8px 16px; border:none; border-radius:6px; font-size:0.875rem; font-weight:500; cursor:pointer; background:#16a34a; color:#fff; display:inline-flex; align-items:center; gap:6px;">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/>
+                  </svg>
+                  Download
+                </button>
+              </template>
+            </div>
+
+          </div>
+
+        </div><!-- /activePage === 'keenetic' -->
+
         </main><!-- /Content Area -->
       </div><!-- /authenticated === true && !showFirstRunSetup (flex h-screen) -->
 

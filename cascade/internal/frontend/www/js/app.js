@@ -165,6 +165,7 @@ new Vue({
       { id: 'wizard-simple-vpn', label: 'Simple Client VPN' },
       { id: 'wizard-uplink-vpn', label: 'Cascade via WireGuard Uplink' },
       { id: 'wizard-cascade-s2s', label: 'Cascade ↔ Cascade S2S' },
+      { id: 'keenetic',          label: 'Keenetic' },
     ],
 
     // ── Dashboard ──────────────────────────────────────────────────────────────
@@ -964,6 +965,12 @@ new Vue({
       {code:'YE',name:'Yemen'},{code:'ZA',name:'South Africa'},{code:'ZM',name:'Zambia'},
       {code:'ZW',name:'Zimbabwe'},
     ],
+
+    // ── Keenetic .bat generator ────────────────────────────────────────────────
+    keeneticDomains: '',        // textarea: one domain per line
+    keeneticLoading: false,     // spinner while resolving
+    keeneticFilename: '',       // filename returned from server
+    keeneticBlobUrl: '',        // object URL for download
 
   },
   methods: {
@@ -7367,6 +7374,63 @@ new Vue({
 
       w.applying = false;
       w.done = true;
+    },
+
+    // ── Keenetic .bat generator ─────────────────────────────────────────────
+
+    async keeneticGenerate() {
+      const domains = this.keeneticDomains
+        .split('\n')
+        .map(d => d.trim())
+        .filter(d => d.length > 0);
+
+      if (domains.length === 0) return;
+
+      // Release previous blob URL if any.
+      if (this.keeneticBlobUrl) {
+        URL.revokeObjectURL(this.keeneticBlobUrl);
+        this.keeneticBlobUrl = '';
+        this.keeneticFilename = '';
+      }
+
+      this.keeneticLoading = true;
+      try {
+        const segs = window.location.pathname.split('/').filter(Boolean);
+        const apiBase = segs.length > 0
+          ? `${window.location.origin}/${segs[0]}/api`
+          : `${window.location.origin}/api`;
+
+        const res = await fetch(`${apiBase}/keenetic/generate-bat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ domains }),
+        });
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || err.message || res.statusText);
+        }
+
+        // Extract filename from Content-Disposition.
+        const cd = res.headers.get('Content-Disposition') || '';
+        const match = cd.match(/filename[^;=\n]*=(['"]?)([^'"\n]+)\1/);
+        this.keeneticFilename = match ? match[2] : 'keenetic.bat';
+
+        const blob = await res.blob();
+        this.keeneticBlobUrl = URL.createObjectURL(blob);
+      } catch (e) {
+        this.showToast(e.message || 'Failed to generate file', 'error');
+      } finally {
+        this.keeneticLoading = false;
+      }
+    },
+
+    keeneticDownload() {
+      if (!this.keeneticBlobUrl) return;
+      const a = document.createElement('a');
+      a.href = this.keeneticBlobUrl;
+      a.download = this.keeneticFilename || 'keenetic.bat';
+      a.click();
     },
 
   },
