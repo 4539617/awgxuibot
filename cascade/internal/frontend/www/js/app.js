@@ -149,8 +149,8 @@ new Vue({
     hoverPage: null,          // для hover-эффекта в sidebar
     sidebarCollapsed: localStorage.getItem('sidebarCollapsed') === 'true',
     sidebarMenu: [
-      { id: 'dashboard',         label: 'Dashboard' },
       { id: 'interfaces',        label: 'Interfaces' },
+      { id: 'dashboard',         label: 'Dashboard' },
       { id: 'settings',          label: 'Settings' },
       { id: '_header_service',   label: 'Service', type: 'header' },
       { id: 'remotes',           label: 'Remotes',         group: 'service' },
