@@ -124,7 +124,7 @@ func RegisterSettings(api fiber.Router) {
 			}
 			if !ip.Equal(network.IP) {
 				return fiber.NewError(fiber.StatusBadRequest,
-					"subnetPool: host bits are set — use a network address (e.g. 192.168.0.0/16)")
+					"subnetPool: host bits are set — use a network address (e.g. 10.8.0.0/16)")
 			}
 		}
 		// Validation is intentionally duplicated here (and in isValidSettingValue):

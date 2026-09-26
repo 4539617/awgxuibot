@@ -48,43 +48,43 @@ func findFreeUDPPort(t *testing.T) int {
 
 func TestNextSubnet_EmptyPool(t *testing.T) {
 	m := newTestManager()
-	got, err := m.nextSubnet("192.168.0.0/16")
+	got, err := m.nextSubnet("10.8.0.0/16")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got != "192.168.0.1/24" {
-		t.Errorf("got %q, want %q", got, "192.168.0.1/24")
+	if got != "10.8.0.1/24" {
+		t.Errorf("got %q, want %q", got, "10.8.0.1/24")
 	}
 }
 
 func TestNextSubnet_FirstAvailable(t *testing.T) {
-	// Occupy the first /24 (192.168.0.x).
-	m := newTestManager("192.168.0.1/24")
-	got, err := m.nextSubnet("192.168.0.0/16")
+	// Occupy the first /24 (10.8.0.x).
+	m := newTestManager("10.8.0.1/24")
+	got, err := m.nextSubnet("10.8.0.0/16")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got != "192.168.1.1/24" {
-		t.Errorf("got %q, want %q", got, "192.168.1.1/24")
+	if got != "10.8.1.1/24" {
+		t.Errorf("got %q, want %q", got, "10.8.1.1/24")
 	}
 }
 
 func TestNextSubnet_SkipsUsed(t *testing.T) {
-	// Occupy 192.168.0.x and 192.168.1.x; next should be 192.168.2.1/24.
-	m := newTestManager("192.168.0.5/24", "192.168.1.1/24")
-	got, err := m.nextSubnet("192.168.0.0/16")
+	// Occupy 10.8.0.x and 10.8.1.x; next should be 10.8.2.1/24.
+	m := newTestManager("10.8.0.5/24", "10.8.1.1/24")
+	got, err := m.nextSubnet("10.8.0.0/16")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got != "192.168.2.1/24" {
-		t.Errorf("got %q, want %q", got, "192.168.2.1/24")
+	if got != "10.8.2.1/24" {
+		t.Errorf("got %q, want %q", got, "10.8.2.1/24")
 	}
 }
 
 func TestNextSubnet_PoolTooSmall(t *testing.T) {
 	// A /25 pool is smaller than /24, so an error is expected.
 	m := newTestManager()
-	_, err := m.nextSubnet("192.168.0.0/25")
+	_, err := m.nextSubnet("10.8.0.0/25")
 	if err == nil {
 		t.Fatal("expected error for /25 pool (smaller than /24), got nil")
 	}

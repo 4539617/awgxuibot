@@ -417,8 +417,8 @@ func TestGetSettings_SubnetPoolDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetSettings: %v", err)
 	}
-	if s.SubnetPool != "192.168.0.0/16" {
-		t.Errorf("SubnetPool default = %q, want '192.168.0.0/16'", s.SubnetPool)
+	if s.SubnetPool != "10.8.0.0/16" {
+		t.Errorf("SubnetPool default = %q, want '10.8.0.0/16'", s.SubnetPool)
 	}
 }
 
@@ -451,7 +451,7 @@ func TestUpdateSettings_SubnetPool_InvalidIgnored(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpdateSettings: %v", err)
 	}
-	if s.SubnetPool != "192.168.0.0/16" {
+	if s.SubnetPool != "10.8.0.0/16" {
 		t.Errorf("SubnetPool should stay default on invalid value, got %q", s.SubnetPool)
 	}
 }
@@ -596,12 +596,12 @@ func TestParsePortPool_WhitespaceOnlySegment(t *testing.T) {
 
 func TestUpdateSettings_SubnetPool_HostBitsSet(t *testing.T) {
 	initTestDB(t)
-	// "192.168.1.5/16" has host bits set — must be rejected (FINDING-3).
-	s, err := UpdateSettings(map[string]any{"subnetPool": "192.168.1.5/16"})
+	// "10.8.1.5/16" has host bits set — must be rejected (FINDING-3).
+	s, err := UpdateSettings(map[string]any{"subnetPool": "10.8.1.5/16"})
 	if err != nil {
 		t.Fatalf("UpdateSettings: %v", err)
 	}
-	if s.SubnetPool != "192.168.0.0/16" {
+	if s.SubnetPool != "10.8.0.0/16" {
 		t.Errorf("SubnetPool with host bits should be rejected, got %q", s.SubnetPool)
 	}
 }

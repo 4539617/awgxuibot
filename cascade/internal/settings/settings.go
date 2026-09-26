@@ -153,7 +153,7 @@ var defaults = GlobalSettings{
 	PublicIPMode:               "auto",
 	ChartType:                  2, // area by default
 	Lang:                       "en",
-	SubnetPool:                 "192.168.0.0/16",
+	SubnetPool:                 "10.8.0.0/16",
 	PortPool:                   "51831-65535",
 	DefaultFwPolicy:            "accept",
 }
