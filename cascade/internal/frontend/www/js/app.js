@@ -2327,7 +2327,7 @@ new Vue({
       this.kernelRoutes = [];
       this.firewallRules = [];
       this.aliases = [];
-      this.switchPage('dashboard');
+      this.switchPage('interfaces');
       try {
         await Promise.all([this.loadTunnelInterfaces(), this.loadSettings()]);
       } catch (err) {
@@ -2349,7 +2349,7 @@ new Vue({
       this.kernelRoutes = [];
       this.firewallRules = [];
       this.aliases = [];
-      this.switchPage('dashboard');
+      this.switchPage('interfaces');
       // Must reload interfaces explicitly: refreshAllPeers() iterates
       // tunnelInterfaces, so it returns nothing until they are populated.
       this.loadTunnelInterfaces();
