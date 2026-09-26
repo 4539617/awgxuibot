@@ -48,11 +48,24 @@ services:
       - ./cascade-data:/etc/wireguard/data
       # Реальное имя хоста для отображения в UI
       - /etc/hostname:/host_hostname:ro
+      # TLS-сертификаты (только если используется HTTPS-режим).
+      # Раскомментировать и указать реальный путь на хосте:
+      # - /root/cert/nicegoods.shop:/certs:ro
 
     environment:
       # ── Порт Web UI (TCP) ──────────────────────────────────────────────────
       # По умолчанию 51821. Cascade слушает на этом порту.
       - PORT=51821
+
+      # ── TLS (опционально) ──────────────────────────────────────────────────
+      # Если указаны оба пути — Cascade запустится в режиме HTTPS на PORT.
+      # Если оставить пустыми — старый режим HTTP (без сертификатов).
+      # Пример для домена с acme.sh/certbot:
+      #   TLS_CERT=/certs/fullchain.pem
+      #   TLS_KEY=/certs/privkey.pem
+      # Не забудьте добавить volume с сертификатами (см. раздел volumes ниже).
+      - TLS_CERT=
+      - TLS_KEY=
 
       # ── Bcrypt-хэш пароля администратора ───────────────────────────────────
       # Сгенерировать: htpasswd -bnBC 10 "" "yourpassword" | tr -d ':\n'

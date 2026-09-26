@@ -43,6 +43,8 @@ type Config struct {
 	Host         string // --host / WG_HOST      (required)
 	PasswordHash string // --password-hash / PASSWORD_HASH
 	Debug        bool   // --debug / DEBUG
+	TLSCert      string // --tls-cert / TLS_CERT (path to fullchain.pem; enables HTTPS)
+	TLSKey       string // --tls-key  / TLS_KEY  (path to privkey.pem)
 }
 
 func main() {
@@ -317,13 +319,26 @@ func main() {
 	// cfg.BindHost="" → ":port" → listens on all interfaces (0.0.0.0).
 	// cfg.BindHost="127.0.0.1" → "127.0.0.1:port" → localhost only (behind reverse proxy).
 	addr := fmt.Sprintf("%s:%d", cfg.BindHost, cfg.Port)
-	log.Printf("Cascade | host=%s | listen=%s (tcp) | wg-port=%d (udp) | data=%s",
-		cfg.Host, addr, cfg.WGPort, cfg.DataDir)
+
+	tlsEnabled := cfg.TLSCert != "" && cfg.TLSKey != ""
+	if tlsEnabled {
+		log.Printf("Cascade | host=%s | listen=%s (https) | wg-port=%d (udp) | data=%s",
+			cfg.Host, addr, cfg.WGPort, cfg.DataDir)
+	} else {
+		log.Printf("Cascade | host=%s | listen=%s (http) | wg-port=%d (udp) | data=%s",
+			cfg.Host, addr, cfg.WGPort, cfg.DataDir)
+	}
 
 	// Run in a goroutine so the signal wait below is not blocked.
 	go func() {
-		if err := app.Listen(addr); err != nil {
-			log.Fatalf("server: %v", err)
+		if tlsEnabled {
+			if err := app.ListenTLS(addr, cfg.TLSCert, cfg.TLSKey); err != nil {
+				log.Fatalf("server: %v", err)
+			}
+		} else {
+			if err := app.Listen(addr); err != nil {
+				log.Fatalf("server: %v", err)
+			}
 		}
 	}()
 
@@ -380,6 +395,14 @@ func parseConfig() Config {
 	flag.BoolVar(&cfg.Debug, "debug",
 		envBool("DEBUG", false),
 		"Enable debug request logging")
+
+	flag.StringVar(&cfg.TLSCert, "tls-cert",
+		envStr("TLS_CERT", ""),
+		"Path to TLS certificate file (fullchain.pem); if set together with --tls-key, enables HTTPS")
+
+	flag.StringVar(&cfg.TLSKey, "tls-key",
+		envStr("TLS_KEY", ""),
+		"Path to TLS private key file (privkey.pem)")
 
 	flag.Parse()
 
