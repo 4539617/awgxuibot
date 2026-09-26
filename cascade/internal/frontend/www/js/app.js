@@ -144,7 +144,7 @@ new Vue({
     enableExpireTime: false,
 
     // Sidebar navigation
-    activePage: 'dashboard', // 'dashboard' | 'interfaces' | 'gateways' | 'routing' | 'firewall' | 'settings' | 'administration'
+    activePage: 'interfaces', // 'dashboard' | 'interfaces' | 'gateways' | 'routing' | 'firewall' | 'settings' | 'administration'
     activeInterfaceId: null,  // ID выбранного интерфейса (вкладка)
     hoverPage: null,          // для hover-эффекта в sidebar
     sidebarCollapsed: localStorage.getItem('sidebarCollapsed') === 'true',
