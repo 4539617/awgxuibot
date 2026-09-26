@@ -368,7 +368,7 @@ new Vue({
       dns: '1.1.1.1, 8.8.8.8',
       defaultPersistentKeepalive: 25,
       defaultClientAllowedIPs: '0.0.0.0/0, ::/0',
-      subnetPool:       '192.168.0.0/16',
+      subnetPool:       '10.8.0.0/16',
       portPool:         '51831-65535',
       defaultFwPolicy:  'accept',
       gatewayWindowSeconds:     30,
@@ -6397,9 +6397,31 @@ new Vue({
 
     copyTokenToClipboard() {
       if (!this.newTokenValue) return;
-      navigator.clipboard.writeText(this.newTokenValue)
-        .then(() => this.showToast('Token copied to clipboard'))
-        .catch(() => this.showToast('Failed to copy — select and copy manually', 'error'));
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(this.newTokenValue)
+          .then(() => this.showToast('Token copied to clipboard'))
+          .catch(() => this._copyFallback(this.newTokenValue));
+      } else {
+        this._copyFallback(this.newTokenValue);
+      }
+    },
+
+    _copyFallback(text) {
+      const el = document.createElement('textarea');
+      el.value = text;
+      el.style.position = 'fixed';
+      el.style.opacity = '0';
+      document.body.appendChild(el);
+      el.focus();
+      el.select();
+      try {
+        const ok = document.execCommand('copy');
+        this.showToast(ok ? 'Token copied to clipboard' : 'Failed to copy — select and copy manually', ok ? 'success' : 'error');
+      } catch {
+        this.showToast('Failed to copy — select and copy manually', 'error');
+      } finally {
+        document.body.removeChild(el);
+      }
     },
 
     // ========================================================================
