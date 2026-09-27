@@ -215,7 +215,7 @@ new Vue({
     // ── Diagnostics page ──────────────────────────────────────────────────────
     diagWidgets: [],
     diagGrid: null,
-    diagActiveTab: 'graphs', // 'graphs' | 'utilities'
+    diagActiveTab: 'utilities', // 'graphs' | 'utilities'
 
     // ── Ping utility ──────────────────────────────────────────────────────────
     pingHost: '',
