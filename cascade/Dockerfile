@@ -68,6 +68,7 @@ HEALTHCHECK --interval=1m --timeout=5s --retries=3 \
 #   installs the real modinfo at the same /sbin/modinfo path, replacing
 #   the BusyBox applet.
 # NOTE: no node, no libstdc++, no libgcc — Go binary is static
+# docker-cli + git are needed for the UI "Deploy" button (POST /api/system/deploy).
 RUN apk add --no-cache \
     dumb-init \
     iptables \
@@ -81,7 +82,9 @@ RUN apk add --no-cache \
     traceroute \
     tcpdump \
     coreutils \
-    kmod
+    kmod \
+    docker-cli \
+    git
 
 # Use iptables-legacy as default iptables.
 # Alpine не имеет update-alternatives (это команда dpkg/Debian).

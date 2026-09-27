@@ -70,6 +70,7 @@ new Vue({
     localVersion: null,      // { version, gitCommit } — loaded once at startup, no GitHub
     updateBannerDismissed: false, // hides update banner until next loadVersionInfo() call
     updateChecking: false,        // spinner state for "Check for updates" button
+    deploying: false,             // spinner state for Deploy button
     username: 'admin',     // login form username field
     password: null,
     requiresPassword: null,
@@ -1154,6 +1155,32 @@ new Vue({
         .catch((err) => {
           this.showToast(err.message || err.toString(), 'error');
         });
+    },
+    async deployUpdate() {
+      if (this.deploying) return;
+      this.deploying = true;
+      try {
+        const segs = window.location.pathname.split('/').filter(Boolean);
+        const apiBase = segs.length > 0
+          ? `${window.location.origin}/${segs[0]}/api`
+          : `${window.location.origin}/api`;
+        const res = await fetch(`${apiBase}/system/deploy`, { method: 'POST' });
+        const json = await res.json().catch(() => ({}));
+        if (res.ok) {
+          this.showToast(json.message || 'Deploy started. Container will restart shortly.', 'success', 8000);
+        } else {
+          this.showToast(json.message || json.error || 'Deploy failed', 'error');
+          this.deploying = false;
+        }
+        // If deploy succeeds the container restarts; keep spinner until page reloads.
+        // After 60 s (build timeout) reset the button as a fallback.
+        if (res.ok) {
+          setTimeout(() => { this.deploying = false; }, 60000);
+        }
+      } catch (err) {
+        this.showToast(err.message || 'Deploy request failed', 'error');
+        this.deploying = false;
+      }
     },
     createClient() {
       const name = this.clientCreateName;

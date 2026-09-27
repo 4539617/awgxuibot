@@ -14,6 +14,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -41,6 +42,79 @@ func RegisterSystem(api fiber.Router) {
 	g.Get("/backups", systemListBackups)
 	g.Post("/restore/preview", systemRestorePreview)
 	g.Post("/restore", systemRestore)
+	g.Post("/deploy", systemDeploy)
+}
+
+// systemDeploy runs git pull + docker compose up -d --build in a background goroutine
+// and returns immediately so the UI stays responsive.
+//
+// POST /api/system/deploy
+// Optional JSON body: { "composeFile": "docker-compose.cascade.yml" }
+// The composeFile path is resolved relative to the repo root (one directory above
+// the cascade/ sub-directory found by walking up from the executable's working dir).
+func systemDeploy(c *fiber.Ctx) error {
+	var body struct {
+		ComposeFile string `json:"composeFile"`
+		RepoDir     string `json:"repoDir"`
+	}
+	_ = c.BodyParser(&body)
+	if body.ComposeFile == "" {
+		body.ComposeFile = "docker-compose.cascade.yml"
+	}
+
+	// repoDir is the project root where git and docker-compose files live.
+	// Inside the container the host project directory is mounted at /repo
+	// (see docker-compose.cascade.yml volumes section).
+	// The caller may override this via JSON body for non-standard setups.
+	repoRoot := body.RepoDir
+	if repoRoot == "" {
+		// Prefer the well-known mount point /repo (set up in docker-compose.cascade.yml).
+		if _, err := os.Stat("/repo/.git"); err == nil {
+			repoRoot = "/repo"
+		} else {
+			// Fallback: use cwd (useful when running outside Docker for development).
+			if wd, err := os.Getwd(); err == nil {
+				repoRoot = wd
+			} else {
+				repoRoot = "/app"
+			}
+		}
+	}
+
+	composeFile := body.ComposeFile
+
+	go func() {
+		logPrefix := "system/deploy"
+
+		// Step 1: git pull
+		log.Printf("%s: running git pull in %s", logPrefix, repoRoot)
+		gitCmd := exec.Command("git", "-C", repoRoot, "pull")
+		gitCmd.Stdout = os.Stdout
+		gitCmd.Stderr = os.Stderr
+		if err := gitCmd.Run(); err != nil {
+			log.Printf("%s: git pull failed: %v", logPrefix, err)
+			// Continue anyway — user may want only the container restart.
+		} else {
+			log.Printf("%s: git pull succeeded", logPrefix)
+		}
+
+		// Step 2: docker compose up -d --build
+		log.Printf("%s: running docker compose -f %s up -d --build", logPrefix, composeFile)
+		dcCmd := exec.Command("docker", "compose", "-f", composeFile, "up", "-d", "--build")
+		dcCmd.Dir = repoRoot
+		dcCmd.Stdout = os.Stdout
+		dcCmd.Stderr = os.Stderr
+		if err := dcCmd.Run(); err != nil {
+			log.Printf("%s: docker compose up failed: %v", logPrefix, err)
+		} else {
+			log.Printf("%s: docker compose up succeeded", logPrefix)
+		}
+		// The container will be replaced; this goroutine will be killed by the runtime.
+	}()
+
+	return c.JSON(fiber.Map{
+		"message": "Deploy started: git pull + docker compose up -d --build. Container will restart shortly.",
+	})
 }
 
 // encryptedFileMagic marks a Cascade-encrypted backup: "CASC".
