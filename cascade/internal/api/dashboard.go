@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -173,6 +174,15 @@ type SystemInfo struct {
 	MemUsed   int64   `json:"memUsed"`  // kB
 	MemPct    int     `json:"memPct"`   // 0-100
 
+	// CPU usage sampled over ~200 ms from /proc/stat (0-100).
+	CpuPct int `json:"cpuPct"`
+
+	// Disk usage for the root filesystem (bytes).
+	DiskTotal int64 `json:"diskTotal"`
+	DiskFree  int64 `json:"diskFree"`
+	DiskUsed  int64 `json:"diskUsed"`
+	DiskPct   int   `json:"diskPct"` // 0-100
+
 	// AWG CLI/kernel-module version diagnostics (kernel mode only — always
 	// empty/false in userspace mode, where there's no separate kernel
 	// module to compare against). Best-effort: "" means undetectable, not
@@ -235,6 +245,21 @@ func getSystemInfo(c *fiber.Ctx) error {
 		}
 	}
 
+	// CPU usage: read /proc/stat twice with a 200 ms gap and compute delta.
+	info.CpuPct = readCPUPercent()
+
+	// Disk usage for root filesystem via syscall.Statfs.
+	var fs syscall.Statfs_t
+	if err := syscall.Statfs("/", &fs); err == nil {
+		bsize := int64(fs.Bsize)
+		info.DiskTotal = int64(fs.Blocks) * bsize
+		info.DiskFree = int64(fs.Bavail) * bsize
+		info.DiskUsed = info.DiskTotal - int64(fs.Bfree)*bsize
+		if info.DiskTotal > 0 {
+			info.DiskPct = int(math.Round(float64(info.DiskUsed) / float64(info.DiskTotal) * 100))
+		}
+	}
+
 	if !awgparams.IsUserspaceMode() {
 		vr := awgparams.CheckKernelCLIVersionMismatch()
 		info.AWGCliVersion = vr.CLIVersion
@@ -257,4 +282,42 @@ func formatUptime(secs int64) string {
 		return fmt.Sprintf("%dh %dm", hours, mins)
 	}
 	return fmt.Sprintf("%dm", mins)
+}
+
+// readCPUPercent returns the overall CPU usage percentage by sampling
+// /proc/stat twice with a 200 ms interval and computing the delta.
+// Returns 0 if /proc/stat is unavailable.
+func readCPUPercent() int {
+	sample := func() (idle, total uint64) {
+		data, err := os.ReadFile("/proc/stat")
+		if err != nil {
+			return 0, 0
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			if !strings.HasPrefix(line, "cpu ") {
+				continue
+			}
+			fields := strings.Fields(line)[1:] // skip "cpu" label
+			for _, f := range fields {
+				v, _ := strconv.ParseUint(f, 10, 64)
+				total += v
+			}
+			if len(fields) >= 4 {
+				idle, _ = strconv.ParseUint(fields[3], 10, 64)
+			}
+			return idle, total
+		}
+		return 0, 0
+	}
+
+	idle1, total1 := sample()
+	time.Sleep(200 * time.Millisecond)
+	idle2, total2 := sample()
+
+	dtotal := total2 - total1
+	if dtotal == 0 {
+		return 0
+	}
+	didle := idle2 - idle1
+	return int(math.Round(float64(dtotal-didle) / float64(dtotal) * 100))
 }

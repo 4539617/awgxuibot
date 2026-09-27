@@ -841,6 +841,24 @@
                             <div :style="{ width: dashSystemInfo.memPct + '%', background: dashSystemInfo.memPct > 85 ? '#ef4444' : dashSystemInfo.memPct > 65 ? '#eab308' : '#22c55e', height: '100%', borderRadius: '3px', transition: 'width 0.4s' }"></div>
                           </div>
                         </div>
+                        <div style="margin-top:4px;">
+                          <div class="flex items-center justify-between text-sm mb-1">
+                            <span class="text-gray-500 dark:text-neutral-400">CPU</span>
+                            <span class="dark:text-neutral-200">{{ dashSystemInfo.cpuPct }}%</span>
+                          </div>
+                          <div style="height:6px; background:#e5e7eb; border-radius:3px; overflow:hidden;">
+                            <div :style="{ width: dashSystemInfo.cpuPct + '%', background: dashSystemInfo.cpuPct > 85 ? '#ef4444' : dashSystemInfo.cpuPct > 65 ? '#eab308' : '#22c55e', height: '100%', borderRadius: '3px', transition: 'width 0.4s' }"></div>
+                          </div>
+                        </div>
+                        <div v-if="dashSystemInfo.diskTotal > 0" style="margin-top:4px;">
+                          <div class="flex items-center justify-between text-sm mb-1">
+                            <span class="text-gray-500 dark:text-neutral-400">Disk</span>
+                            <span class="dark:text-neutral-200">{{ dashFmtBytes(dashSystemInfo.diskUsed) }} / {{ dashFmtBytes(dashSystemInfo.diskTotal) }} ({{ dashSystemInfo.diskPct }}%)</span>
+                          </div>
+                          <div style="height:6px; background:#e5e7eb; border-radius:3px; overflow:hidden;">
+                            <div :style="{ width: dashSystemInfo.diskPct + '%', background: dashSystemInfo.diskPct > 85 ? '#ef4444' : dashSystemInfo.diskPct > 65 ? '#eab308' : '#22c55e', height: '100%', borderRadius: '3px', transition: 'width 0.4s' }"></div>
+                          </div>
+                        </div>
                       </div>
                       <div v-else class="text-sm text-gray-400 dark:text-neutral-500">Loading…</div>
                     </template>
