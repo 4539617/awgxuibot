@@ -569,8 +569,8 @@
                 <!-- Service header — collapsible -->
                 <button v-if="page.id === '_header_service'"
                   @click="serviceExpanded = !serviceExpanded"
-                  class="w-full text-left text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-neutral-500 cursor-pointer"
-                  style="padding: 12px 12px 4px; margin-top: 4px; background: none; border: none; display: flex; align-items: center; justify-content: space-between;">
+                  class="w-full text-left text-sm text-gray-600 dark:text-neutral-400 cursor-pointer"
+                  style="padding: 10px 12px; margin-top: 4px; margin-bottom: 2px; background: none; border: none; display: flex; align-items: center; justify-content: space-between;">
                   <span>{{ page.label }}</span>
                   <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"
                        :style="{ transform: serviceExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }">
@@ -580,8 +580,8 @@
                 <!-- Wizards header — collapsible -->
                 <button v-else-if="page.id === '_header_wizards'"
                   @click="wizardsExpanded = !wizardsExpanded"
-                  class="w-full text-left text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-neutral-500 cursor-pointer"
-                  style="padding: 12px 12px 4px; margin-top: 4px; background: none; border: none; display: flex; align-items: center; justify-content: space-between;">
+                  class="w-full text-left text-sm text-gray-600 dark:text-neutral-400 cursor-pointer"
+                  style="padding: 10px 12px; margin-top: 4px; margin-bottom: 2px; background: none; border: none; display: flex; align-items: center; justify-content: space-between;">
                   <span>{{ page.label }}</span>
                   <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"
                        :style="{ transform: wizardsExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }">
@@ -608,8 +608,8 @@
                 @mouseenter="hoverPage = page.id"
                 @mouseleave="hoverPage = null"
                 :class="activePage === page.id ? 'bg-gray-200 dark:bg-neutral-600 text-gray-900 dark:text-white font-semibold' : 'text-gray-600 dark:text-neutral-400'"
-                :style="Object.assign({ display: wizardsExpanded ? 'block' : 'none', marginBottom: '2px', padding: '10px 12px' }, hoverPage === page.id && activePage !== page.id ? { backgroundColor: 'rgba(0,0,0,0.05)' } : {})"
-                class="w-full text-left text-sm cursor-pointer rounded transition">
+                :style="Object.assign({ display: wizardsExpanded ? 'block' : 'none', marginBottom: '2px', padding: '6px 12px 6px 20px' }, hoverPage === page.id && activePage !== page.id ? { backgroundColor: 'rgba(0,0,0,0.05)' } : {})"
+                class="w-full text-left text-xs cursor-pointer rounded transition">
                 {{ page.label }}
               </button>
               <!-- Service items — hidden unless service expanded -->
@@ -618,8 +618,8 @@
                 @mouseenter="hoverPage = page.id"
                 @mouseleave="hoverPage = null"
                 :class="activePage === page.id ? 'bg-gray-200 dark:bg-neutral-600 text-gray-900 dark:text-white font-semibold' : 'text-gray-600 dark:text-neutral-400'"
-                :style="Object.assign({ display: serviceExpanded ? 'block' : 'none', marginBottom: '2px', padding: '10px 12px' }, hoverPage === page.id && activePage !== page.id ? { backgroundColor: 'rgba(0,0,0,0.05)' } : {})"
-                class="w-full text-left text-sm cursor-pointer rounded transition">
+                :style="Object.assign({ display: serviceExpanded ? 'block' : 'none', marginBottom: '2px', padding: '6px 12px 6px 20px' }, hoverPage === page.id && activePage !== page.id ? { backgroundColor: 'rgba(0,0,0,0.05)' } : {})"
+                class="w-full text-left text-xs cursor-pointer rounded transition">
                 {{ page.label }}
               </button>
               <!-- Regular menu item -->
