@@ -152,6 +152,7 @@ new Vue({
       { id: 'interfaces',        label: 'Interfaces' },
       { id: 'dashboard',         label: 'Dashboard' },
       { id: 'settings',          label: 'Settings' },
+      { id: 'keenetic',          label: 'Keenetic' },
       { id: '_header_service',   label: 'Service', type: 'header' },
       { id: 'remotes',           label: 'Remotes',         group: 'service' },
       { id: 'gateways',          label: 'Gateways',        group: 'service' },
@@ -165,7 +166,6 @@ new Vue({
       { id: 'wizard-simple-vpn', label: 'Simple Client VPN' },
       { id: 'wizard-uplink-vpn', label: 'Cascade via WireGuard Uplink' },
       { id: 'wizard-cascade-s2s', label: 'Cascade ↔ Cascade S2S' },
-      { id: 'keenetic',          label: 'Keenetic' },
     ],
 
     // ── Dashboard ──────────────────────────────────────────────────────────────
