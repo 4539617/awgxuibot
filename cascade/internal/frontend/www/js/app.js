@@ -251,6 +251,7 @@ new Vue({
     selectedInterface: null,
     selectedInterfacePeers: [],
     allPeers: [],            // dashboard: flat list of peers from all interfaces
+    peersLoading: false,     // true while peers are being fetched after a tab switch
     showInterfaceCreate: false,
     createMode: 'quick',        // 'quick' | 'manual' — controls which form is shown in the create modal
     importConfForm: { name: '', conf: '', fileName: '' },
@@ -5774,6 +5775,8 @@ new Vue({
         this.selectedInterfacePeers = peers;
       } catch (err) {
         console.error('refreshPeers failed:', err);
+      } finally {
+        this.peersLoading = false;
       }
     },
 
@@ -5785,6 +5788,7 @@ new Vue({
       if (!this.authenticated) return;
       // Also refresh remote widget data in parallel (fire-and-forget, non-blocking)
       this.refreshRemoteWidgets().catch(console.error);
+      try {
       const all = [];
       for (const iface of this.tunnelInterfaces) {
         try {
@@ -5841,6 +5845,9 @@ new Vue({
         }
       }
       this.allPeers = all;
+      } finally {
+        this.peersLoading = false;
+      }
     },
 
     async backupInterface() {
@@ -7669,10 +7676,14 @@ new Vue({
     activeInterfaceId(newId) {
       if (newId) {
         this.selectedInterface = this.currentInterface;
+        this.selectedInterfacePeers = [];
+        this.peersLoading = true;
         this.refreshPeers({ updateCharts: false });
       } else {
         this.selectedInterface = null;
         this.selectedInterfacePeers = [];
+        this.allPeers = [];
+        this.peersLoading = true;
         // Switch to dashboard — immediately load all peers
         this.refreshAllPeers({ updateCharts: false });
       }

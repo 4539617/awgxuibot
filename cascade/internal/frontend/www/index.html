@@ -2470,6 +2470,15 @@
               class="text-center text-gray-500 dark:text-neutral-400" style="padding: 60px 0;">
               <p class="text-lg">No interfaces yet. Click <strong>+</strong> to create one.</p>
             </div>
+            <!-- Loading spinner while fetching all peers -->
+            <div v-else-if="peersLoading"
+              class="text-center text-gray-400 dark:text-neutral-500" style="padding: 60px 0;">
+              <svg class="animate-spin inline-block w-8 h-8 mb-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+              </svg>
+              <p class="text-sm">Loading clients…</p>
+            </div>
             <!-- Interfaces exist: show all peers from all interfaces -->
             <div v-else>
               <div v-if="allPeers.length === 0"
@@ -2849,7 +2858,17 @@
                 </div>
               </div>
 
-              <div v-if="selectedInterfacePeers.length === 0" class="text-center text-gray-500 dark:text-neutral-400" style="padding: 40px 0;">
+              <!-- Loading spinner while fetching peers for this interface -->
+              <div v-if="peersLoading"
+                class="text-center text-gray-400 dark:text-neutral-500" style="padding: 60px 0;">
+                <svg class="animate-spin inline-block w-8 h-8 mb-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                </svg>
+                <p class="text-sm">Loading clients…</p>
+              </div>
+
+              <div v-if="!peersLoading && selectedInterfacePeers.length === 0" class="text-center text-gray-500 dark:text-neutral-400" style="padding: 40px 0;">
                 <p>No {{ currentInterface && currentInterface.disableRoutes ? 'peers' : 'clients' }} yet. Click <strong>New</strong> to create one.</p>
               </div>
 
