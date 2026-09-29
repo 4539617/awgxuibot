@@ -197,13 +197,13 @@
 
   /* ── Page background — light mode: soft tint of logo palette ── */
   html, body {
-    background: linear-gradient(135deg, #f0fdf4 0%, #f8fafc 55%, #eff6ff 100%) !important;
+    background: linear-gradient(135deg, #1a0000 0%, #3d0000 50%, #000000 100%) !important;
     background-attachment: fixed !important;
     min-height: 100vh;
   }
   /* ── Page background — dark mode: deep logo-gradient ── */
   html.dark, html.dark body {
-    background: linear-gradient(135deg, #14532d 0%, #0f172a 50%, #1e3a8a 100%) !important;
+    background: linear-gradient(135deg, #000000 0%, #3d0000 50%, #1a0000 100%) !important;
     background-attachment: fixed !important;
   }
 
@@ -10192,9 +10192,6 @@
       </div><!-- /authenticated === true && !showFirstRunSetup (flex h-screen) -->
 
       <div v-if="authenticated === false">
-        <div class="text-center" style="margin-top:80px; margin-bottom:12px;">
-          <img :src="theme === 'dark' ? 'img/logo-dark.svg' : 'img/logo.svg'" style="width:220px; height:auto; display:inline-block;" alt="Cascade" />
-        </div>
 
         <!-- Step 1: username + password -->
         <form v-if="!totpRequired" @submit="login"
