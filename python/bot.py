@@ -490,6 +490,9 @@ async def cmd_start(message: Message, state: FSMContext):
                 ],
                 [
                     InlineKeyboardButton(text="🔑 Мои ключи", callback_data="cmd_myclients")
+                ],
+                [
+                    InlineKeyboardButton(text="📱 Скачать приложение", callback_data="app_download"),
                 ]
             ])
 
@@ -3005,6 +3008,9 @@ async def _show_main_menu(callback_query: types.CallbackQuery, state: FSMContext
             ],
             [
                 InlineKeyboardButton(text="🔑 Мои ключи", callback_data="cmd_myclients")
+            ],
+            [
+                InlineKeyboardButton(text="📱 Скачать приложение", callback_data="app_download"),
             ]
         ])
         panels_block = _build_panels_block()
@@ -4062,7 +4068,7 @@ async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContex
 @dp.callback_query(lambda c: c.data == "app_download")
 async def show_download_menu(callback_query: types.CallbackQuery):
     """Меню выбора платформы для скачивания приложения."""
-    if not is_admin(callback_query.from_user.id):
+    if not is_allowed(callback_query.from_user.id):
         return
     await callback_query.answer()
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -4081,7 +4087,7 @@ async def show_download_menu(callback_query: types.CallbackQuery):
 
 @dp.callback_query(lambda c: c.data == "app_android")
 async def show_download_android(callback_query: types.CallbackQuery):
-    if not is_admin(callback_query.from_user.id):
+    if not is_allowed(callback_query.from_user.id):
         return
     await callback_query.answer()
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -4100,7 +4106,7 @@ async def show_download_android(callback_query: types.CallbackQuery):
 
 @dp.callback_query(lambda c: c.data == "app_ios")
 async def show_download_ios(callback_query: types.CallbackQuery):
-    if not is_admin(callback_query.from_user.id):
+    if not is_allowed(callback_query.from_user.id):
         return
     await callback_query.answer()
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -4119,7 +4125,7 @@ async def show_download_ios(callback_query: types.CallbackQuery):
 
 @dp.callback_query(lambda c: c.data == "app_windows")
 async def show_download_windows(callback_query: types.CallbackQuery):
-    if not is_admin(callback_query.from_user.id):
+    if not is_allowed(callback_query.from_user.id):
         return
     await callback_query.answer()
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -4139,7 +4145,7 @@ async def show_download_windows(callback_query: types.CallbackQuery):
 
 @dp.callback_query(lambda c: c.data == "app_apk")
 async def show_download_apk(callback_query: types.CallbackQuery):
-    if not is_admin(callback_query.from_user.id):
+    if not is_allowed(callback_query.from_user.id):
         return
     await callback_query.answer()
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
