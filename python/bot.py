@@ -464,6 +464,9 @@ async def cmd_start(message: Message, state: FSMContext):
                     InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_main_menu"),
                 ],
                 [
+                    InlineKeyboardButton(text="📱 Скачать приложение", callback_data="app_download"),
+                ],
+                [
                     InlineKeyboardButton(text="⚙️ Администрирование", callback_data="server_status"),
                 ]
             ])
@@ -2979,6 +2982,9 @@ async def _show_main_menu(callback_query: types.CallbackQuery, state: FSMContext
                 InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_main_menu"),
             ],
             [
+                InlineKeyboardButton(text="📱 Скачать приложение", callback_data="app_download"),
+            ],
+            [
                 InlineKeyboardButton(text="⚙️ Администрирование", callback_data="server_status"),
             ]
         ])
@@ -4051,6 +4057,102 @@ async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContex
             ])
         )
 
+
+
+@dp.callback_query(lambda c: c.data == "app_download")
+async def show_download_menu(callback_query: types.CallbackQuery):
+    """Меню выбора платформы для скачивания приложения."""
+    if not is_admin(callback_query.from_user.id):
+        return
+    await callback_query.answer()
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🤖 Android", callback_data="app_android")],
+        [InlineKeyboardButton(text="🍎 Apple iOS", callback_data="app_ios")],
+        [InlineKeyboardButton(text="🖥 Windows", callback_data="app_windows")],
+        [InlineKeyboardButton(text="📦 APK", callback_data="app_apk")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")],
+    ])
+    await callback_query.message.edit_text(
+        "📱 <b>Скачать приложение</b>\n\nВыберите платформу:",
+        parse_mode="HTML",
+        reply_markup=keyboard
+    )
+
+
+@dp.callback_query(lambda c: c.data == "app_android")
+async def show_download_android(callback_query: types.CallbackQuery):
+    if not is_admin(callback_query.from_user.id):
+        return
+    await callback_query.answer()
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="INCY", url="https://play.google.com/store/apps/details?id=llc.itdev.incyV2RAYTun")],
+        [InlineKeyboardButton(text="HAPP", url="https://play.google.com/store/apps/details?id=com.happproxy")],
+        [InlineKeyboardButton(text="HIDDIFY", url="https://play.google.com/store/apps/details?id=app.hiddify.com")],
+        [InlineKeyboardButton(text="AMNEZIA", url="https://play.google.com/store/apps/details?id=org.amnezia.vpn&utm_source=amnezia.org&utm_campaign=organic&utm_medium=referral")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="app_download")],
+    ])
+    await callback_query.message.edit_text(
+        "🤖 <b>Android — выберите приложение:</b>",
+        parse_mode="HTML",
+        reply_markup=keyboard
+    )
+
+
+@dp.callback_query(lambda c: c.data == "app_ios")
+async def show_download_ios(callback_query: types.CallbackQuery):
+    if not is_admin(callback_query.from_user.id):
+        return
+    await callback_query.answer()
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="INCY", url="https://apps.apple.com/ru/app/incy/id6756943388")],
+        [InlineKeyboardButton(text="HAPP", url="https://apps.apple.com/us/app/happ-proxy-utility/id6504287215")],
+        [InlineKeyboardButton(text="HIDDIFY", url="https://apps.apple.com/us/app/hiddify-proxy-vpn/id6596777532")],
+        [InlineKeyboardButton(text="AMNEZIA", url="https://apps.apple.com/us/app/amneziavpn/id1600529900")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="app_download")],
+    ])
+    await callback_query.message.edit_text(
+        "🍎 <b>Apple iOS — выберите приложение:</b>",
+        parse_mode="HTML",
+        reply_markup=keyboard
+    )
+
+
+@dp.callback_query(lambda c: c.data == "app_windows")
+async def show_download_windows(callback_query: types.CallbackQuery):
+    if not is_admin(callback_query.from_user.id):
+        return
+    await callback_query.answer()
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="INCY", url="https://github.com/INCY-DEV/incy-platforms/releases/latest/download/incy-windows-setup.exe")],
+        [InlineKeyboardButton(text="V2RAYTun", url="https://storage.v2raytun.com/v2RayTun_Setup.exe")],
+        [InlineKeyboardButton(text="HAPP", url="https://github.com/Happ-proxy/happ-desktop/releases/latest/download/setup-Happ.x64.exe")],
+        [InlineKeyboardButton(text="HIDDIFY", url="https://github.com/hiddify/hiddify-app/releases/download/v4.1.1/Hiddify-Windows-Setup-x64.exe")],
+        [InlineKeyboardButton(text="AMNEZIA", url="https://github.com/amnezia-vpn/amnezia-client/releases/download/5.0.3.0/AmneziaVPN_5.0.3.0_windows_x64.exe")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="app_download")],
+    ])
+    await callback_query.message.edit_text(
+        "🖥 <b>Windows — выберите приложение:</b>",
+        parse_mode="HTML",
+        reply_markup=keyboard
+    )
+
+
+@dp.callback_query(lambda c: c.data == "app_apk")
+async def show_download_apk(callback_query: types.CallbackQuery):
+    if not is_admin(callback_query.from_user.id):
+        return
+    await callback_query.answer()
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="INCY", url="https://github.com/INCY-DEV/incy-platforms/releases/latest/download/Incy.apk")],
+        [InlineKeyboardButton(text="HAPP", url="https://github.com/Happ-proxy/happ-android/releases/latest/download/Happ.apk")],
+        [InlineKeyboardButton(text="AMNEZIA", url="https://github.com/amnezia-vpn/amnezia-client/releases/download/5.0.3.0/AmneziaVPN_5.0.3.0_android11+_arm64-v8a.apk")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="app_download")],
+    ])
+    await callback_query.message.edit_text(
+        "📦 <b>APK — выберите приложение:</b>",
+        parse_mode="HTML",
+        reply_markup=keyboard
+    )
 
 
 async def main():
