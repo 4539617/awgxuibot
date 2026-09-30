@@ -4091,7 +4091,8 @@ async def show_download_android(callback_query: types.CallbackQuery):
         return
     await callback_query.answer()
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="INCY", url="https://play.google.com/store/apps/details?id=llc.itdev.incyV2RAYTun")],
+        [InlineKeyboardButton(text="INCY", url="https://play.google.com/store/apps/details?id=llc.itdev.incy")],
+        [InlineKeyboardButton(text="V2RAYTun", url="https://play.google.com/store/apps/details?id=com.v2raytun.android")],
         [InlineKeyboardButton(text="HAPP", url="https://play.google.com/store/apps/details?id=com.happproxy")],
         [InlineKeyboardButton(text="HIDDIFY", url="https://play.google.com/store/apps/details?id=app.hiddify.com")],
         [InlineKeyboardButton(text="AMNEZIA", url="https://play.google.com/store/apps/details?id=org.amnezia.vpn&utm_source=amnezia.org&utm_campaign=organic&utm_medium=referral")],
