@@ -252,6 +252,27 @@ export class RouteBot {
           await this.generateAwgConfigByNumber(chatId, version, ipNumber, config.serverLabel, null);
         }
       }
+      // Download app callbacks
+      else if (data.startsWith('app_')) {
+        await this.bot.answerCallbackQuery(query.id);
+
+        if (!this.isAdmin(userId)) {
+          logger.warn(`Unauthorized app callback from user ${userId}`);
+          return;
+        }
+
+        if (data === 'app_download') {
+          await this.showDownloadMenu(chatId);
+        } else if (data === 'app_android') {
+          await this.showDownloadSubMenu(chatId, 'android');
+        } else if (data === 'app_ios') {
+          await this.showDownloadSubMenu(chatId, 'ios');
+        } else if (data === 'app_windows') {
+          await this.showDownloadSubMenu(chatId, 'windows');
+        } else if (data === 'app_apk') {
+          await this.showDownloadSubMenu(chatId, 'apk');
+        }
+      }
     });
 
     // Handle document uploads (.bat and .conf files)
@@ -1656,6 +1677,87 @@ export class RouteBot {
     }
   }
 
+  async showDownloadMenu(chatId) {
+    try {
+      const keyboard = {
+        inline_keyboard: [
+          [{ text: '🤖 Android', callback_data: 'app_android' }],
+          [{ text: '🍎 Apple iOS', callback_data: 'app_ios' }],
+          [{ text: '🖥 Windows', callback_data: 'app_windows' }],
+          [{ text: '📦 APK', callback_data: 'app_apk' }],
+          [{ text: '🔙 Назад', callback_data: 'main_menu' }]
+        ]
+      };
+      await this.sendNewMessage(
+        chatId,
+        '📱 *Скачать приложение*\n\nВыберите платформу:',
+        { parse_mode: 'Markdown', reply_markup: keyboard }
+      );
+    } catch (error) {
+      logger.error(`Error showing download menu for chat ${chatId}:`, error);
+      this.bot.sendMessage(chatId, `❌ Ошибка: ${error.message}`);
+    }
+  }
+
+  async showDownloadSubMenu(chatId, platform) {
+    const menus = {
+      android: {
+        title: '🤖 *Android — выберите приложение:*',
+        buttons: [
+          [{ text: 'INCY', url: 'https://play.google.com/store/apps/details?id=llc.itdev.incyV2RAYTun' }],
+          [{ text: 'HAPP', url: 'https://play.google.com/store/apps/details?id=com.happproxy' }],
+          [{ text: 'HIDDIFY', url: 'https://play.google.com/store/apps/details?id=app.hiddify.com' }],
+          [{ text: 'AMNEZIA', url: 'https://play.google.com/store/apps/details?id=org.amnezia.vpn&utm_source=amnezia.org&utm_campaign=organic&utm_medium=referral' }],
+          [{ text: '🔙 Назад', callback_data: 'app_download' }]
+        ]
+      },
+      ios: {
+        title: '🍎 *Apple iOS — выберите приложение:*',
+        buttons: [
+          [{ text: 'INCY', url: 'https://apps.apple.com/ru/app/incy/id6756943388' }],
+          [{ text: 'HAPP', url: 'https://apps.apple.com/us/app/happ-proxy-utility/id6504287215' }],
+          [{ text: 'HIDDIFY', url: 'https://apps.apple.com/us/app/hiddify-proxy-vpn/id6596777532' }],
+          [{ text: 'AMNEZIA', url: 'https://apps.apple.com/us/app/amneziavpn/id1600529900' }],
+          [{ text: '🔙 Назад', callback_data: 'app_download' }]
+        ]
+      },
+      windows: {
+        title: '🖥 *Windows — выберите приложение:*',
+        buttons: [
+          [{ text: 'INCY', url: 'https://github.com/INCY-DEV/incy-platforms/releases/latest/download/incy-windows-setup.exe' }],
+          [{ text: 'V2RAYTun', url: 'https://storage.v2raytun.com/v2RayTun_Setup.exe' }],
+          [{ text: 'HAPP', url: 'https://github.com/Happ-proxy/happ-desktop/releases/latest/download/setup-Happ.x64.exe' }],
+          [{ text: 'HIDDIFY', url: 'https://github.com/hiddify/hiddify-app/releases/download/v4.1.1/Hiddify-Windows-Setup-x64.exe' }],
+          [{ text: 'AMNEZIA', url: 'https://github.com/amnezia-vpn/amnezia-client/releases/download/5.0.3.0/AmneziaVPN_5.0.3.0_windows_x64.exe' }],
+          [{ text: '🔙 Назад', callback_data: 'app_download' }]
+        ]
+      },
+      apk: {
+        title: '📦 *APK — выберите приложение:*',
+        buttons: [
+          [{ text: 'INCY', url: 'https://github.com/INCY-DEV/incy-platforms/releases/latest/download/Incy.apk' }],
+          [{ text: 'HAPP', url: 'https://github.com/Happ-proxy/happ-android/releases/latest/download/Happ.apk' }],
+          [{ text: 'AMNEZIA', url: 'https://github.com/amnezia-vpn/amnezia-client/releases/download/5.0.3.0/AmneziaVPN_5.0.3.0_android11+_arm64-v8a.apk' }],
+          [{ text: '🔙 Назад', callback_data: 'app_download' }]
+        ]
+      }
+    };
+
+    const menu = menus[platform];
+    if (!menu) return;
+
+    try {
+      await this.sendNewMessage(
+        chatId,
+        menu.title,
+        { parse_mode: 'Markdown', reply_markup: { inline_keyboard: menu.buttons } }
+      );
+    } catch (error) {
+      logger.error(`Error showing download sub-menu (${platform}) for chat ${chatId}:`, error);
+      this.bot.sendMessage(chatId, `❌ Ошибка: ${error.message}`);
+    }
+  }
+
   async showMainMenu(chatId) {
     try {
       logger.info(`Showing main menu for chat ${chatId}`);
@@ -1678,6 +1780,9 @@ export class RouteBot {
           [
             { text: 'AWG V1', callback_data: 'awg_select_v1' },
             { text: 'AWG V2', callback_data: 'awg_select_v2' }
+          ],
+          [
+            { text: '📱 Скачать приложение', callback_data: 'app_download' }
           ],
           [
             { text: '🔄 Обновить', callback_data: 'refresh_main_menu' }
