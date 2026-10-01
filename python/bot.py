@@ -2282,6 +2282,9 @@ async def show_server_status(callback_query: types.CallbackQuery, state: FSMCont
                 InlineKeyboardButton(text="🖥️ Серверы", callback_data="select_panel_to_connect")
             ],
             [
+                InlineKeyboardButton(text="📱 Настройка приложений", callback_data="app_settings")
+            ],
+            [
                 InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")
             ]
         ])
@@ -4065,101 +4068,208 @@ async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContex
 
 
 
+# ---------------------------------------------------------------------------
+# Конфигурация приложений (apps.yaml) — загружается при старте и при импорте
+# ---------------------------------------------------------------------------
+import yaml as _yaml
+import os as _os
+
+_APPS_YAML_PATH = _os.path.join(_os.path.dirname(__file__), "apps.yaml")
+
+def _load_apps_config() -> list:
+    """Загружает список платформ из apps.yaml. Возвращает пустой список при ошибке."""
+    try:
+        with open(_APPS_YAML_PATH, "r", encoding="utf-8") as f:
+            data = _yaml.safe_load(f)
+        return data.get("platforms", []) if data else []
+    except Exception as e:
+        logger.error(f"Ошибка загрузки apps.yaml: {e}")
+        return []
+
+def _save_apps_config(raw_bytes: bytes) -> list:
+    """Валидирует и сохраняет новый apps.yaml. Возвращает список платформ."""
+    data = _yaml.safe_load(raw_bytes)
+    if not isinstance(data, dict) or "platforms" not in data:
+        raise ValueError("Неверный формат файла: отсутствует ключ 'platforms'")
+    platforms = data["platforms"]
+    if not isinstance(platforms, list) or len(platforms) == 0:
+        raise ValueError("Список платформ пуст")
+    for p in platforms:
+        if "name" not in p or "apps" not in p:
+            raise ValueError(f"Платформа без поля 'name' или 'apps': {p}")
+        for app in p["apps"]:
+            if "name" not in app or "url" not in app:
+                raise ValueError(f"Приложение без поля 'name' или 'url': {app}")
+    with open(_APPS_YAML_PATH, "wb") as f:
+        f.write(raw_bytes)
+    return platforms
+
+# Живой кэш платформ — обновляется при импорте
+_apps_platforms: list = _load_apps_config()
+
+
+# FSM-состояние ожидания файла импорта
+class AppsImportState(StatesGroup):
+    waiting_for_file = State()
+
+
+# ---------------------------------------------------------------------------
+# Меню "Скачать приложение" — динамически из _apps_platforms
+# ---------------------------------------------------------------------------
+
 @dp.callback_query(lambda c: c.data == "app_download")
 async def show_download_menu(callback_query: types.CallbackQuery):
     """Меню выбора платформы для скачивания приложения."""
     if not is_allowed(callback_query.from_user.id):
         return
     await callback_query.answer()
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🤖 Android", callback_data="app_android")],
-        [InlineKeyboardButton(text="🍎 Apple iOS", callback_data="app_ios")],
-        [InlineKeyboardButton(text="🖥 Windows", callback_data="app_windows")],
-        [InlineKeyboardButton(text="📦 APK", callback_data="app_apk")],
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")],
-    ])
+    rows = [
+        [InlineKeyboardButton(text=p["name"], callback_data=p.get("callback", f"app_platform_{i}"))]
+        for i, p in enumerate(_apps_platforms)
+    ]
+    rows.append([InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")])
     await callback_query.message.edit_text(
         "📱 <b>Скачать приложение</b>\n\nВыберите платформу:",
         parse_mode="HTML",
-        reply_markup=keyboard
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows)
     )
 
 
-@dp.callback_query(lambda c: c.data == "app_android")
-async def show_download_android(callback_query: types.CallbackQuery):
+@dp.callback_query(lambda c: c.data and (
+    c.data.startswith("app_platform_") or c.data in [
+        p.get("callback") for p in _apps_platforms if p.get("callback")
+    ]
+))
+async def show_download_platform(callback_query: types.CallbackQuery):
+    """Показывает список приложений выбранной платформы."""
     if not is_allowed(callback_query.from_user.id):
         return
     await callback_query.answer()
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="INCY", url="https://play.google.com/store/apps/details?id=llc.itdev.incy")],
-        [InlineKeyboardButton(text="V2RAYTun", url="https://play.google.com/store/apps/details?id=com.v2raytun.android")],
-        [InlineKeyboardButton(text="HAPP", url="https://play.google.com/store/apps/details?id=com.happproxy")],
-        [InlineKeyboardButton(text="HIDDIFY", url="https://play.google.com/store/apps/details?id=app.hiddify.com")],
-        [InlineKeyboardButton(text="AMNEZIA", url="https://play.google.com/store/apps/details?id=org.amnezia.vpn&utm_source=amnezia.org&utm_campaign=organic&utm_medium=referral")],
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="app_download")],
-    ])
+
+    data = callback_query.data
+    platform = None
+
+    # Ищем по callback или по индексу
+    for i, p in enumerate(_apps_platforms):
+        if p.get("callback") == data or f"app_platform_{i}" == data:
+            platform = p
+            break
+
+    if not platform:
+        await callback_query.answer("❌ Платформа не найдена", show_alert=True)
+        return
+
+    rows = [
+        [InlineKeyboardButton(text=app["name"], url=app["url"])]
+        for app in platform["apps"]
+    ]
+    rows.append([InlineKeyboardButton(text="🔙 Назад", callback_data="app_download")])
     await callback_query.message.edit_text(
-        "🤖 <b>Android — выберите приложение:</b>",
+        f"{platform['name']} — <b>выберите приложение:</b>",
         parse_mode="HTML",
-        reply_markup=keyboard
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows)
     )
 
 
-@dp.callback_query(lambda c: c.data == "app_ios")
-async def show_download_ios(callback_query: types.CallbackQuery):
-    if not is_allowed(callback_query.from_user.id):
+# ---------------------------------------------------------------------------
+# Настройка приложений (только для администратора)
+# ---------------------------------------------------------------------------
+
+@dp.callback_query(lambda c: c.data == "app_settings")
+async def show_app_settings(callback_query: types.CallbackQuery, state: FSMContext):
+    """Меню настройки приложений."""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
         return
     await callback_query.answer()
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="INCY", url="https://apps.apple.com/ru/app/incy/id6756943388")],
-        [InlineKeyboardButton(text="HAPP", url="https://apps.apple.com/us/app/happ-proxy-utility/id6504287215")],
-        [InlineKeyboardButton(text="HIDDIFY", url="https://apps.apple.com/us/app/hiddify-proxy-vpn/id6596777532")],
-        [InlineKeyboardButton(text="AMNEZIA", url="https://apps.apple.com/us/app/amneziavpn/id1600529900")],
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="app_download")],
-    ])
-    await callback_query.message.edit_text(
-        "🍎 <b>Apple iOS — выберите приложение:</b>",
-        parse_mode="HTML",
-        reply_markup=keyboard
+    platforms_info = "\n".join(
+        f"  • {p['name']}: {len(p.get('apps', []))} прил."
+        for p in _apps_platforms
     )
+    text = (
+        "⚙️ <b>Настройка приложений</b>\n\n"
+        f"Текущие платформы:\n{platforms_info}\n\n"
+        "Экспорт — скачать текущий <code>apps.yaml</code>.\n"
+        "Импорт — отправить изменённый файл для обновления кнопок."
+    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📤 Экспорт apps.yaml", callback_data="export_apps_config")],
+        [InlineKeyboardButton(text="📥 Импорт apps.yaml", callback_data="import_apps_config")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="server_status")],
+    ])
+    await callback_query.message.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
 
 
-@dp.callback_query(lambda c: c.data == "app_windows")
-async def show_download_windows(callback_query: types.CallbackQuery):
-    if not is_allowed(callback_query.from_user.id):
+@dp.callback_query(lambda c: c.data == "export_apps_config")
+async def export_apps_config(callback_query: types.CallbackQuery):
+    """Отправляет текущий apps.yaml администратору."""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
+        return
+    await callback_query.answer("⏳ Формирую файл...")
+    try:
+        with open(_APPS_YAML_PATH, "rb") as f:
+            data = f.read()
+        await callback_query.message.answer_document(
+            document=types.BufferedInputFile(data, filename="apps.yaml"),
+            caption=(
+                "📤 <b>Текущий apps.yaml</b>\n\n"
+                "Отредактируйте файл и импортируйте обратно через\n"
+                "<i>Администрирование → Настройка приложений → Импорт</i>"
+            ),
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        logger.error(f"Ошибка экспорта apps.yaml: {e}")
+        await callback_query.message.answer(f"❌ Ошибка: {e}")
+
+
+@dp.callback_query(lambda c: c.data == "import_apps_config")
+async def start_import_apps_config(callback_query: types.CallbackQuery, state: FSMContext):
+    """Просит администратора отправить файл apps.yaml."""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
         return
     await callback_query.answer()
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="INCY", url="https://github.com/INCY-DEV/incy-platforms/releases/latest/download/incy-windows-setup.exe")],
-        [InlineKeyboardButton(text="V2RAYTun", url="https://storage.v2raytun.com/v2RayTun_Setup.exe")],
-        [InlineKeyboardButton(text="HAPP", url="https://github.com/Happ-proxy/happ-desktop/releases/latest/download/setup-Happ.x64.exe")],
-        [InlineKeyboardButton(text="HIDDIFY", url="https://github.com/hiddify/hiddify-app/releases/download/v4.1.1/Hiddify-Windows-Setup-x64.exe")],
-        [InlineKeyboardButton(text="AMNEZIA", url="https://github.com/amnezia-vpn/amnezia-client/releases/download/5.0.3.0/AmneziaVPN_5.0.3.0_windows_x64.exe")],
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="app_download")],
-    ])
-    await callback_query.message.edit_text(
-        "🖥 <b>Windows — выберите приложение:</b>",
-        parse_mode="HTML",
-        reply_markup=keyboard
+    await state.set_state(AppsImportState.waiting_for_file)
+    await callback_query.message.answer(
+        "📥 <b>Импорт apps.yaml</b>\n\n"
+        "Отправьте файл <code>apps.yaml</code> в этот чат.\n"
+        "Для отмены нажмите /start",
+        parse_mode="HTML"
     )
 
 
-@dp.callback_query(lambda c: c.data == "app_apk")
-async def show_download_apk(callback_query: types.CallbackQuery):
-    if not is_allowed(callback_query.from_user.id):
+@dp.message(AppsImportState.waiting_for_file)
+async def process_apps_import(message: Message, state: FSMContext):
+    """Принимает файл apps.yaml и обновляет кнопки."""
+    global _apps_platforms
+    if not is_admin(message.from_user.id):
         return
-    await callback_query.answer()
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="INCY", url="https://github.com/INCY-DEV/incy-platforms/releases/latest/download/Incy.apk")],
-        [InlineKeyboardButton(text="HAPP", url="https://github.com/Happ-proxy/happ-android/releases/latest/download/Happ.apk")],
-        [InlineKeyboardButton(text="AMNEZIA", url="https://github.com/amnezia-vpn/amnezia-client/releases/download/5.0.3.0/AmneziaVPN_5.0.3.0_android11+_arm64-v8a.apk")],
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="app_download")],
-    ])
-    await callback_query.message.edit_text(
-        "📦 <b>APK — выберите приложение:</b>",
-        parse_mode="HTML",
-        reply_markup=keyboard
-    )
+    if not message.document:
+        await message.answer("❌ Нужно отправить файл. Для отмены нажмите /start")
+        return
+    if not message.document.file_name.endswith(".yaml"):
+        await message.answer("❌ Файл должен быть .yaml. Для отмены нажмите /start")
+        return
+    try:
+        file = await bot.get_file(message.document.file_id)
+        buf = BytesIO()
+        await bot.download_file(file.file_path, buf)
+        raw = buf.getvalue()
+        _apps_platforms = _save_apps_config(raw)
+        await state.clear()
+        platforms_info = "\n".join(
+            f"  • {p['name']}: {len(p.get('apps', []))} прил."
+            for p in _apps_platforms
+        )
+        await message.answer(
+            f"✅ <b>apps.yaml успешно импортирован!</b>\n\nПлатформы:\n{platforms_info}",
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        logger.error(f"Ошибка импорта apps.yaml: {e}")
+        await message.answer(f"❌ Ошибка при импорте: {e}\n\nФайл не сохранён.")
 
 
 async def main():

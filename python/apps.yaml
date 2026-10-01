@@ -1,0 +1,55 @@
+# Настройка кнопок меню "Скачать приложение"
+# Каждая платформа — список приложений с названием и ссылкой.
+# Можно добавлять, удалять и переименовывать платформы и приложения.
+# После изменения импортируйте файл через бота: Администрирование → Настройка приложений → Импорт.
+
+platforms:
+  - name: "🤖 Android"
+    callback: "app_android"
+    apps:
+      - name: "INCY"
+        url: "https://play.google.com/store/apps/details?id=llc.itdev.incy"
+      - name: "V2RAYTun"
+        url: "https://play.google.com/store/apps/details?id=com.v2raytun.android"
+      - name: "HAPP"
+        url: "https://play.google.com/store/apps/details?id=com.happproxy"
+      - name: "HIDDIFY"
+        url: "https://play.google.com/store/apps/details?id=app.hiddify.com"
+      - name: "AMNEZIA"
+        url: "https://play.google.com/store/apps/details?id=org.amnezia.vpn&utm_source=amnezia.org&utm_campaign=organic&utm_medium=referral"
+
+  - name: "🍎 Apple iOS"
+    callback: "app_ios"
+    apps:
+      - name: "INCY"
+        url: "https://apps.apple.com/ru/app/incy/id6756943388"
+      - name: "HAPP"
+        url: "https://apps.apple.com/us/app/happ-proxy-utility/id6504287215"
+      - name: "HIDDIFY"
+        url: "https://apps.apple.com/us/app/hiddify-proxy-vpn/id6596777532"
+      - name: "AMNEZIA"
+        url: "https://apps.apple.com/us/app/amneziavpn/id1600529900"
+
+  - name: "🖥 Windows"
+    callback: "app_windows"
+    apps:
+      - name: "INCY"
+        url: "https://github.com/INCY-DEV/incy-platforms/releases/latest/download/incy-windows-setup.exe"
+      - name: "V2RAYTun"
+        url: "https://storage.v2raytun.com/v2RayTun_Setup.exe"
+      - name: "HAPP"
+        url: "https://github.com/Happ-proxy/happ-desktop/releases/latest/download/setup-Happ.x64.exe"
+      - name: "HIDDIFY"
+        url: "https://github.com/hiddify/hiddify-app/releases/download/v4.1.1/Hiddify-Windows-Setup-x64.exe"
+      - name: "AMNEZIA"
+        url: "https://github.com/amnezia-vpn/amnezia-client/releases/download/5.0.3.0/AmneziaVPN_5.0.3.0_windows_x64.exe"
+
+  - name: "📦 APK"
+    callback: "app_apk"
+    apps:
+      - name: "INCY"
+        url: "https://github.com/INCY-DEV/incy-platforms/releases/latest/download/Incy.apk"
+      - name: "HAPP"
+        url: "https://github.com/Happ-proxy/happ-android/releases/latest/download/Happ.apk"
+      - name: "AMNEZIA"
+        url: "https://github.com/amnezia-vpn/amnezia-client/releases/download/5.0.3.0/AmneziaVPN_5.0.3.0_android11+_arm64-v8a.apk"
