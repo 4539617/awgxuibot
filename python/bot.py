@@ -4233,12 +4233,29 @@ async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContex
 import yaml as _yaml
 import os as _os
 
-_APPS_YAML_PATH = _os.path.join(_os.path.dirname(__file__), "apps.yaml")
+# apps.yaml хранится в /app/data/ — постоянный volume, не перезаписывается при пересборке образа.
+# При первом запуске (файл в data/ отсутствует) копируем дефолтный файл из python/.
+_APPS_YAML_PATH = "/app/data/apps.yaml"
+_APPS_YAML_DEFAULT = _os.path.join(_os.path.dirname(__file__), "apps.yaml")
+
+def _ensure_apps_yaml():
+    """Копирует дефолтный apps.yaml в /app/data/ если там его ещё нет."""
+    if not _os.path.exists(_APPS_YAML_PATH) and _os.path.exists(_APPS_YAML_DEFAULT):
+        try:
+            import shutil as _shutil
+            _os.makedirs(_os.path.dirname(_APPS_YAML_PATH), exist_ok=True)
+            _shutil.copy2(_APPS_YAML_DEFAULT, _APPS_YAML_PATH)
+            logger.info(f"📋 apps.yaml скопирован в {_APPS_YAML_PATH}")
+        except Exception as e:
+            logger.warning(f"Не удалось скопировать apps.yaml в data/: {e}")
+
+_ensure_apps_yaml()
 
 def _load_apps_config() -> list:
     """Загружает список платформ из apps.yaml. Возвращает пустой список при ошибке."""
     try:
-        with open(_APPS_YAML_PATH, "r", encoding="utf-8") as f:
+        path = _APPS_YAML_PATH if _os.path.exists(_APPS_YAML_PATH) else _APPS_YAML_DEFAULT
+        with open(path, "r", encoding="utf-8") as f:
             data = _yaml.safe_load(f)
         return data.get("platforms", []) if data else []
     except Exception as e:
@@ -4259,6 +4276,7 @@ def _save_apps_config(raw_bytes: bytes) -> list:
         for app in p["apps"]:
             if "name" not in app or "url" not in app:
                 raise ValueError(f"Приложение без поля 'name' или 'url': {app}")
+    _os.makedirs(_os.path.dirname(_APPS_YAML_PATH), exist_ok=True)
     with open(_APPS_YAML_PATH, "wb") as f:
         f.write(raw_bytes)
     return platforms

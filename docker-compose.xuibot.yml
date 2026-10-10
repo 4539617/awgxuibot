@@ -8,7 +8,6 @@ services:
     restart: always
     volumes:
       - ./config.yaml:/app/config.yaml:rw  # Конфигурация (read-write для переключения панелей)
-      - ./python/apps.yaml:/app/python/apps.yaml:rw  # Настройка кнопок приложений (read-write для импорта)
       - ./logs:/app/logs
-      - ./data:/app/data
+      - ./data:/app/data  # apps.yaml хранится здесь — не перезаписывается при пересборке
       - /etc/x-ui:/etc/x-ui:rw  # Доступ к базе данных X-UI
