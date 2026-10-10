@@ -2125,7 +2125,13 @@ async def process_threshold_value(message: types.Message, state: FSMContext):
 @dp.message()
 async def handle_unknown(message: Message, state: FSMContext):
     user_id = message.from_user.id
-    
+
+    # Пропускаем, если пользователь находится в FSM-состоянии ожидания ввода
+    # (например, ожидание файла apps.yaml при импорте настроек приложений)
+    current_state = await state.get_state()
+    if current_state is not None:
+        return
+
     if is_blocked_by_admin(user_id):
         await message.answer("⛔ Вы заблокированы администратором. Обратитесь к администратору.")
         return
