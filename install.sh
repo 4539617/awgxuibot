@@ -1750,6 +1750,9 @@ update_xuibot() {
     echo -e "${YELLOW}🚀 Запуск обновленного контейнера...${NC}"
     $DOCKER_COMPOSE_CMD -f docker-compose.xuibot.yml up -d
     
+    # Удаляем dangling-образы, которые появились в результате пересборки
+    docker_prune_after_build
+    
     echo -e "\n${YELLOW}⏳ Ожидание запуска контейнера...${NC}"
     sleep 8
     
@@ -1997,6 +2000,9 @@ update_awgbot() {
     echo -e "${YELLOW}🚀 Запуск пересобранного контейнера...${NC}"
     $DOCKER_COMPOSE_CMD -f docker-compose.awgbot.yml up -d
     
+    # Удаляем dangling-образы, которые появились в результате пересборки
+    docker_prune_after_build
+    
     sleep 5
     echo -e "\n${GREEN}✅ AWG Бот пересобран!${NC}"
     echo -e "${GREEN}📊 Статус:${NC}"
@@ -2135,6 +2141,8 @@ update_cascade() {
     docker compose -f docker-compose.cascade.yml down 2>/dev/null || true
     docker_prune
     docker compose -f docker-compose.cascade.yml up -d --build
+    # Удаляем dangling-образы, которые появились в результате пересборки
+    docker_prune_after_build
 
     sleep 3
     local status=$(docker ps --filter name="^cascade$" --format "{{.Status}}" 2>/dev/null)
@@ -2463,6 +2471,13 @@ docker_prune() {
     echo -e "${GREEN}✅ Очистка завершена${NC}"
 }
 
+# Очистка dangling-образов ПОСЛЕ пересборки (они появляются именно после build)
+docker_prune_after_build() {
+    echo -e "${YELLOW}🧹 Очистка старых dangling-образов после пересборки...${NC}"
+    docker image prune -f 2>/dev/null | grep -E "Total reclaimed space" || true
+    echo -e "${GREEN}✅ Очистка завершена${NC}"
+}
+
 # Функция перезапуска контейнера XUIBOT с rebuild
 rebuild_xuibot() {
     echo -e "\n${BLUE}========================================${NC}"
@@ -2482,6 +2497,9 @@ rebuild_xuibot() {
     
     echo -e "${YELLOW}🚀 Запуск контейнера xuibot...${NC}"
     $DOCKER_COMPOSE_CMD -f docker-compose.xuibot.yml up -d
+    
+    # Удаляем dangling-образы, которые появились в результате пересборки
+    docker_prune_after_build
     
     echo -e "\n${YELLOW}⏳ Ожидание запуска контейнера...${NC}"
     sleep 8
@@ -2512,6 +2530,9 @@ rebuild_awgbot() {
     
     echo -e "${YELLOW}🚀 Запуск контейнера awgbot...${NC}"
     $DOCKER_COMPOSE_CMD -f docker-compose.awgbot.yml up -d
+    
+    # Удаляем dangling-образы, которые появились в результате пересборки
+    docker_prune_after_build
     
     sleep 5
     echo -e "\n${GREEN}✅ AWG Бот пересобран!${NC}"
