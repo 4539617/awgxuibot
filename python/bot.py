@@ -224,6 +224,136 @@ async def send_panel_select(chat_id: int, header: str, back_callback: str, key_t
 
 
 
+# ─── Шаг 1: Создать ключ → выбор типа срока ───────────────────────────────
+@dp.callback_query(lambda c: c.data == "create_key")
+async def on_create_key(callback_query: types.CallbackQuery):
+    """Подменю: Бессрочный ключ / Временный ключ"""
+    if not is_allowed(callback_query.from_user.id):
+        await callback_query.answer("⛔ Доступ запрещен", show_alert=True)
+        return
+    await callback_query.answer()
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="♾ Бессрочный ключ", callback_data="key_duration_new"),
+            InlineKeyboardButton(text="⏱ Временный ключ",  callback_data="key_duration_temp"),
+        ],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")],
+    ])
+    await bot.send_message(
+        callback_query.message.chat.id,
+        "🔑 <b>Создать ключ</b>\n\nВыберите тип ключа:",
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+
+
+# ─── Шаг 2: выбор протокола ────────────────────────────────────────────────
+@dp.callback_query(lambda c: c.data in ("key_duration_new", "key_duration_temp"))
+async def on_key_duration(callback_query: types.CallbackQuery):
+    """Подменю: VLESS ключ / AWG 3.0 ключ (неактивен)"""
+    if not is_allowed(callback_query.from_user.id):
+        await callback_query.answer("⛔ Доступ запрещен", show_alert=True)
+        return
+    await callback_query.answer()
+    duration_type = callback_query.data  # key_duration_new | key_duration_temp
+    label = "♾ Бессрочный" if duration_type == "key_duration_new" else "⏱ Временный"
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(
+                text="🌐 VLESS ключ",
+                callback_data=f"key_proto_vless:{duration_type}",
+            ),
+            InlineKeyboardButton(
+                text="🔒 AWG 3.0 ключ",
+                callback_data="key_proto_awg_soon",
+            ),
+        ],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="create_key")],
+    ])
+    await bot.send_message(
+        callback_query.message.chat.id,
+        f"🔑 <b>Создать ключ</b> · {label}\n\nВыберите протокол:",
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+
+
+# ─── AWG 3.0 — ещё не готов ────────────────────────────────────────────────
+@dp.callback_query(lambda c: c.data == "key_proto_awg_soon")
+async def on_key_proto_awg_soon(callback_query: types.CallbackQuery):
+    await callback_query.answer("🔒 AWG 3.0 ключ — в разработке, скоро будет доступен", show_alert=True)
+
+
+# ─── Шаг 3: VLESS → существующий flow выбора сервера ──────────────────────
+@dp.callback_query(lambda c: c.data and c.data.startswith("key_proto_vless:"))
+async def on_key_proto_vless(callback_query: types.CallbackQuery, state: FSMContext):
+    """Перенаправляет в flow создания ключа (бессрочный или временный)"""
+    if not is_allowed(callback_query.from_user.id):
+        await callback_query.answer("⛔ Доступ запрещен", show_alert=True)
+        return
+    await callback_query.answer()
+    duration_type = callback_query.data.split(":", 1)[1]  # key_duration_new | key_duration_temp
+
+    chat_id = callback_query.message.chat.id
+    available = get_available_panels()
+    online_available = [(pid, pcfg) for pid, pcfg in available if get_panel_online_status(pid)]
+
+    if duration_type == "key_duration_new":
+        # ── Бессрочный ключ ──
+        if len(online_available) == 0:
+            await bot.send_message(
+                chat_id,
+                "🔴 <b>Все серверы сейчас недоступны.</b>\n\nПопробуйте позже.",
+                parse_mode="HTML",
+            )
+            await state.clear()
+            return
+        if len(online_available) == 1:
+            panel_id, panel_cfg = online_available[0]
+            await state.update_data(selected_panel_id=panel_id)
+            await state.set_state(NewClientState.waiting_for_comment)
+            location = getattr(panel_cfg, 'location_label', '')
+            loc_str = f" [{location}]" if location else ""
+            await bot.send_message(
+                chat_id,
+                f"📝 Введите комментарий к новому бессрочному ключу\n"
+                f"📡 Панель: <b>{panel_cfg.alias}{loc_str}</b>",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+                ]),
+            )
+            return
+        await send_panel_select(
+            chat_id,
+            "🔑 <b>Создание бессрочного ключа</b>\n\nВыберите сервер:",
+            "create_key", "new",
+        )
+    else:
+        # ── Временный ключ ──
+        if len(online_available) == 0:
+            await bot.send_message(
+                chat_id,
+                "🔴 <b>Все серверы сейчас недоступны.</b>\n\nПопробуйте позже.",
+                parse_mode="HTML",
+            )
+            await state.clear()
+            return
+        if len(online_available) == 1:
+            panel_id, panel_cfg = online_available[0]
+            await state.update_data(selected_panel_id=panel_id)
+            await state.set_state(TempKeyState.waiting_for_duration)
+            await _send_duration_select(chat_id, panel_cfg.alias)
+            return
+        await send_panel_select(
+            chat_id,
+            "⏰ <b>Создание временного ключа</b>\n\nВыберите сервер:",
+            "create_key", "temp",
+        )
+
+
+
+
 
 async def _send_duration_select(chat_id: int, panel_alias: str):
     """Отправляет экран выбора срока временного ключа"""
@@ -428,11 +558,10 @@ async def cmd_start(message: Message, state: FSMContext):
             # Показываем меню пользователя с кнопками
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
                 [
-                    InlineKeyboardButton(text="➕ Создать ключ", callback_data="cmd_new"),
-                    InlineKeyboardButton(text="⏱ Временный ключ", callback_data="cmd_tempkey")
+                    InlineKeyboardButton(text="🔑 Создать ключ", callback_data="create_key"),
                 ],
                 [
-                    InlineKeyboardButton(text="🔑 Мои ключи", callback_data="cmd_myclients")
+                    InlineKeyboardButton(text="🗝 Мои ключи", callback_data="cmd_myclients")
                 ]
             ])
 
@@ -457,14 +586,11 @@ async def cmd_start(message: Message, state: FSMContext):
         if is_admin(user_id):
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
                 [
-                    InlineKeyboardButton(text="➕ Создать ключ", callback_data="cmd_new"),
-                    InlineKeyboardButton(text="⏱ Временный ключ", callback_data="cmd_tempkey")
-                ],
-                [
-                    InlineKeyboardButton(text="🔑 Мои ключи", callback_data="cmd_myclients"),
+                    InlineKeyboardButton(text="🔑 Создать ключ", callback_data="create_key"),
                     InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_main_menu"),
                 ],
                 [
+                    InlineKeyboardButton(text="🗝 Мои ключи", callback_data="cmd_myclients"),
                     InlineKeyboardButton(text="📱 Скачать приложение", callback_data="app_download"),
                 ],
                 [
@@ -486,13 +612,10 @@ async def cmd_start(message: Message, state: FSMContext):
 
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
                 [
-                    InlineKeyboardButton(text="➕ Создать ключ", callback_data="cmd_new"),
-                    InlineKeyboardButton(text="⏱ Временный ключ", callback_data="cmd_tempkey")
+                    InlineKeyboardButton(text="🔑 Создать ключ", callback_data="create_key"),
                 ],
                 [
-                    InlineKeyboardButton(text="🔑 Мои ключи", callback_data="cmd_myclients")
-                ],
-                [
+                    InlineKeyboardButton(text="🗝 Мои ключи", callback_data="cmd_myclients"),
                     InlineKeyboardButton(text="📱 Скачать приложение", callback_data="app_download"),
                 ]
             ])
@@ -3020,14 +3143,11 @@ async def _show_main_menu(callback_query: types.CallbackQuery, state: FSMContext
     if is_admin(user_id):
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [
-                InlineKeyboardButton(text="➕ Создать ключ", callback_data="cmd_new"),
-                InlineKeyboardButton(text="⏱ Временный ключ", callback_data="cmd_tempkey")
-            ],
-            [
-                InlineKeyboardButton(text="🔑 Мои ключи", callback_data="cmd_myclients"),
+                InlineKeyboardButton(text="🔑 Создать ключ", callback_data="create_key"),
                 InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_main_menu"),
             ],
             [
+                InlineKeyboardButton(text="🗝 Мои ключи", callback_data="cmd_myclients"),
                 InlineKeyboardButton(text="📱 Скачать приложение", callback_data="app_download"),
             ],
             [
@@ -3046,13 +3166,10 @@ async def _show_main_menu(callback_query: types.CallbackQuery, state: FSMContext
 
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [
-                InlineKeyboardButton(text="➕ Создать ключ", callback_data="cmd_new"),
-                InlineKeyboardButton(text="⏱ Временный ключ", callback_data="cmd_tempkey")
+                InlineKeyboardButton(text="🔑 Создать ключ", callback_data="create_key"),
             ],
             [
-                InlineKeyboardButton(text="🔑 Мои ключи", callback_data="cmd_myclients")
-            ],
-            [
+                InlineKeyboardButton(text="🗝 Мои ключи", callback_data="cmd_myclients"),
                 InlineKeyboardButton(text="📱 Скачать приложение", callback_data="app_download"),
             ]
         ])
