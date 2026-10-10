@@ -2122,15 +2122,48 @@ async def process_threshold_value(message: types.Message, state: FSMContext):
         await message.answer("❌ Неверный формат. Введите число от 1 до 99")
 
 
+# FSM-состояние ожидания файла импорта apps.yaml
+# ВАЖНО: класс и хендлер должны быть зарегистрированы ДО catch-all @dp.message(),
+# иначе aiogram 3.x перехватит сообщение раньше FSM-фильтра.
+class AppsImportState(StatesGroup):
+    waiting_for_file = State()
+
+
+@dp.message(AppsImportState.waiting_for_file)
+async def process_apps_import(message: Message, state: FSMContext):
+    """Принимает файл apps.yaml и обновляет кнопки."""
+    global _apps_platforms
+    if not is_admin(message.from_user.id):
+        return
+    if not message.document:
+        await message.answer("❌ Нужно отправить файл. Для отмены нажмите /start")
+        return
+    if not message.document.file_name.endswith(".yaml"):
+        await message.answer("❌ Файл должен быть .yaml. Для отмены нажмите /start")
+        return
+    try:
+        file = await bot.get_file(message.document.file_id)
+        buf = BytesIO()
+        await bot.download_file(file.file_path, buf)
+        raw = buf.getvalue()
+        _apps_platforms = _save_apps_config(raw)
+        await state.clear()
+        platforms_info = "\n".join(
+            f"  • {p['name']}: {len(p.get('apps', []))} прил."
+            for p in _apps_platforms
+        )
+        await message.answer(
+            f"✅ <b>apps.yaml успешно импортирован!</b>\n\nПлатформы:\n{platforms_info}",
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        logger.error(f"Ошибка импорта apps.yaml: {e}")
+        await message.answer(f"❌ Ошибка при импорте: {e}\n\nФайл не сохранён.")
+
+
 @dp.message()
 async def handle_unknown(message: Message, state: FSMContext):
     user_id = message.from_user.id
-
-    # Пропускаем, если пользователь находится в FSM-состоянии ожидания ввода
-    # (например, ожидание файла apps.yaml при импорте настроек приложений)
-    current_state = await state.get_state()
-    if current_state is not None:
-        return
 
     if is_blocked_by_admin(user_id):
         await message.answer("⛔ Вы заблокированы администратором. Обратитесь к администратору.")
@@ -4114,11 +4147,6 @@ def _save_apps_config(raw_bytes: bytes) -> list:
 _apps_platforms: list = _load_apps_config()
 
 
-# FSM-состояние ожидания файла импорта
-class AppsImportState(StatesGroup):
-    waiting_for_file = State()
-
-
 # ---------------------------------------------------------------------------
 # Меню "Скачать приложение" — динамически из _apps_platforms
 # ---------------------------------------------------------------------------
@@ -4244,38 +4272,6 @@ async def start_import_apps_config(callback_query: types.CallbackQuery, state: F
         "Для отмены нажмите /start",
         parse_mode="HTML"
     )
-
-
-@dp.message(AppsImportState.waiting_for_file)
-async def process_apps_import(message: Message, state: FSMContext):
-    """Принимает файл apps.yaml и обновляет кнопки."""
-    global _apps_platforms
-    if not is_admin(message.from_user.id):
-        return
-    if not message.document:
-        await message.answer("❌ Нужно отправить файл. Для отмены нажмите /start")
-        return
-    if not message.document.file_name.endswith(".yaml"):
-        await message.answer("❌ Файл должен быть .yaml. Для отмены нажмите /start")
-        return
-    try:
-        file = await bot.get_file(message.document.file_id)
-        buf = BytesIO()
-        await bot.download_file(file.file_path, buf)
-        raw = buf.getvalue()
-        _apps_platforms = _save_apps_config(raw)
-        await state.clear()
-        platforms_info = "\n".join(
-            f"  • {p['name']}: {len(p.get('apps', []))} прил."
-            for p in _apps_platforms
-        )
-        await message.answer(
-            f"✅ <b>apps.yaml успешно импортирован!</b>\n\nПлатформы:\n{platforms_info}",
-            parse_mode="HTML"
-        )
-    except Exception as e:
-        logger.error(f"Ошибка импорта apps.yaml: {e}")
-        await message.answer(f"❌ Ошибка при импорте: {e}\n\nФайл не сохранён.")
 
 
 async def main():
