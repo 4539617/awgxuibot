@@ -156,13 +156,14 @@ def _build_panels_block_admin() -> str:
         transport = (getattr(p, 'transport', '') or '—').upper()
         security = (getattr(p, 'security', '') or '—').upper()
         url = getattr(p, 'xui_url', '') or ''
+        panel_id_str = (
+            f"<a href=\"{url}\">{panel_id}</a>" if url else f"<code>{panel_id}</code>"
+        )
         line = (
             f"{panel_icon} <b>{p.alias}</b>  <code>v{p.xui_version}</code>{location_str}\n"
-            f"   {online_icon}  |  🆔 <code>{panel_id}</code>\n"
+            f"   {online_icon}  |  🆔 {panel_id_str}\n"
             f"   🔌 <code>{transport}</code> · <code>{security}</code>"
         )
-        if url:
-            line += f"\n   <a href=\"{url}\">{url}</a>"
         lines.append(line)
     return "\n".join(lines) + "\n\n"
 
@@ -3639,12 +3640,14 @@ async def show_panels_list(callback_query: types.CallbackQuery, state: FSMContex
 
             transport = (getattr(panel_config, 'transport', '') or '—').upper()
             security = (getattr(panel_config, 'security', '') or '—').upper()
+            url = panel_config.xui_url or ''
+            panel_id_str = (
+                f"<a href=\"{url}\">{panel_id}</a>" if url else f"<code>{panel_id}</code>"
+            )
 
             text += f"{panel_icon} <b>{alias}</b>  <code>v{version}</code>{location_str}\n"
-            text += f"   {online_icon}  |  🆔 <code>{panel_id}</code>\n"
+            text += f"   {online_icon}  |  🆔 {panel_id_str}\n"
             text += f"   🔌 <code>{transport}</code> · <code>{security}</code>\n"
-            if panel_config.xui_url:
-                text += f"   <code>{panel_config.xui_url}</code>\n"
             text += "\n"
         
         # Кнопки управления
