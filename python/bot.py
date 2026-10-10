@@ -16,6 +16,7 @@ import sqlite3
 from config import config
 from utils import XUIClient, generate_vless_link, get_client_link, setup_logging
 from panel_monitor import PanelMonitor
+from cascade_client import CascadeClient, CascadeAPIError, AWGXUIBOT_IFACE_NAME, AWGXUIBOT_PROTOCOL
 
 try:
     from remote_monitor import RemoteMonitor
@@ -257,16 +258,25 @@ async def on_key_duration(callback_query: types.CallbackQuery):
     await callback_query.answer()
     duration_type = callback_query.data  # key_duration_new | key_duration_temp
     label = "♾ Бессрочный" if duration_type == "key_duration_new" else "⏱ Временный"
+    # Показываем AWG как активный только если настроены Cascade-серверы
+    cascade_servers = config.get_cascade_servers()
+    if cascade_servers:
+        awg_btn = InlineKeyboardButton(
+            text="🔒 AWG 3.0 ключ",
+            callback_data=f"key_proto_awg:{duration_type}",
+        )
+    else:
+        awg_btn = InlineKeyboardButton(
+            text="🔒 AWG 3.0 ключ",
+            callback_data="key_proto_awg_no_cascade",
+        )
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(
                 text="🌐 VLESS ключ",
                 callback_data=f"key_proto_vless:{duration_type}",
             ),
-            InlineKeyboardButton(
-                text="🔒 AWG 3.0 ключ",
-                callback_data="key_proto_awg_soon",
-            ),
+            awg_btn,
         ],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="create_key")],
     ])
@@ -278,10 +288,270 @@ async def on_key_duration(callback_query: types.CallbackQuery):
     )
 
 
-# ─── AWG 3.0 — ещё не готов ────────────────────────────────────────────────
-@dp.callback_query(lambda c: c.data == "key_proto_awg_soon")
-async def on_key_proto_awg_soon(callback_query: types.CallbackQuery):
-    await callback_query.answer("🔒 AWG 3.0 ключ — в разработке, скоро будет доступен", show_alert=True)
+# ─── AWG 3.0 — нет Cascade серверов ───────────────────────────────────────
+@dp.callback_query(lambda c: c.data == "key_proto_awg_no_cascade")
+async def on_key_proto_awg_no_cascade(callback_query: types.CallbackQuery):
+    await callback_query.answer(
+        "🔒 AWG 3.0 ключ недоступен: не настроены Cascade-серверы в config.yaml",
+        show_alert=True,
+    )
+
+
+# ─── AWG 3.0 — выбор Cascade-сервера ──────────────────────────────────────
+@dp.callback_query(lambda c: c.data and c.data.startswith("key_proto_awg:"))
+async def on_key_proto_awg(callback_query: types.CallbackQuery, state: FSMContext):
+    """Шаг 1 AWG: показываем список Cascade-серверов для выбора"""
+    if not is_allowed(callback_query.from_user.id):
+        await callback_query.answer("⛔ Доступ запрещен", show_alert=True)
+        return
+    await callback_query.answer()
+    duration_type = callback_query.data.split(":", 1)[1]  # key_duration_new | key_duration_temp
+
+    cascade_servers = config.get_cascade_servers()
+    if not cascade_servers:
+        await bot.send_message(
+            callback_query.message.chat.id,
+            "❌ <b>Cascade-серверы не настроены.</b>\n\nДобавьте раздел <code>cascades:</code> в config.yaml.",
+            parse_mode="HTML",
+        )
+        return
+
+    await state.update_data(awg_duration_type=duration_type)
+    await state.set_state(AwgKeyState.waiting_for_cascade_server)
+
+    label = "♾ Бессрочный" if duration_type == "key_duration_new" else "⏱ Временный"
+    buttons = []
+    for srv in cascade_servers:
+        buttons.append([
+            InlineKeyboardButton(
+                text=f"🖥 {srv.label}",
+                callback_data=f"awg_sel_cascade:{srv.cascade_id}",
+            )
+        ])
+    buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data=f"key_duration_{duration_type.split('_')[-1]}")])
+    await bot.send_message(
+        callback_query.message.chat.id,
+        f"🔒 <b>AWG 3.0 ключ</b> · {label}\n\nВыберите сервер:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+        parse_mode="HTML",
+    )
+
+
+@dp.callback_query(lambda c: c.data and c.data.startswith("awg_sel_cascade:"))
+async def on_awg_select_cascade(callback_query: types.CallbackQuery, state: FSMContext):
+    """Шаг 2 AWG: проверяем Cascade, получаем/создаём интерфейс, создаём пира"""
+    if not is_allowed(callback_query.from_user.id):
+        await callback_query.answer("⛔ Доступ запрещен", show_alert=True)
+        return
+
+    cascade_id = callback_query.data.split(":", 1)[1]
+    srv_list = config.get_cascade_servers()
+    srv = next((s for s in srv_list if s.cascade_id == cascade_id), None)
+    if not srv:
+        await callback_query.answer("❌ Сервер не найден", show_alert=True)
+        return
+
+    await callback_query.answer()
+    chat_id = callback_query.message.chat.id
+    status_msg = await bot.send_message(chat_id, f"⏳ Подключаюсь к <b>{srv.label}</b>...", parse_mode="HTML")
+
+    async with CascadeClient(
+        url=srv.url,
+        api_key=srv.api_key,
+        username=srv.username,
+        password=srv.password,
+        label=srv.label,
+    ) as client:
+        # ── Проверка доступности Cascade ──────────────────────────────────
+        try:
+            await client.health()
+        except CascadeAPIError as e:
+            await status_msg.edit_text(
+                f"❌ <b>Не удалось подключиться к серверу {srv.label}</b>\n\n"
+                f"Cascade недоступен для этого сервера.\n"
+                f"<i>{e}</i>",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+                ]),
+            )
+            await state.clear()
+            return
+
+        # ── Получаем/создаём интерфейс AWGXUIBOT ──────────────────────────
+        await status_msg.edit_text(
+            f"⏳ Настраиваю интерфейс <b>{AWGXUIBOT_IFACE_NAME}</b> "
+            f"(<code>{AWGXUIBOT_PROTOCOL}</code>)...",
+            parse_mode="HTML",
+        )
+        try:
+            iface = await client.get_or_create_awgxuibot_interface()
+        except CascadeAPIError as e:
+            await status_msg.edit_text(
+                f"❌ <b>Ошибка создания интерфейса {AWGXUIBOT_IFACE_NAME}</b>\n\n<i>{e}</i>",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+                ]),
+            )
+            await state.clear()
+            return
+
+        iface_id = iface.get("id")
+        if not iface_id:
+            await status_msg.edit_text(
+                "❌ Не удалось получить ID интерфейса.",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+                ]),
+            )
+            await state.clear()
+            return
+
+        # ── Создаём пира ──────────────────────────────────────────────────
+        username = callback_query.from_user.username
+        if not username:
+            username = (callback_query.from_user.first_name or "user").lower().replace(" ", "_")
+
+        import random, string as _string
+        suffix = "".join(random.choices(_string.ascii_lowercase + _string.digits, k=6))
+        peer_name = f"{username}_{suffix}"
+
+        await status_msg.edit_text(f"⏳ Создаю ключ <b>{peer_name}</b>...", parse_mode="HTML")
+        try:
+            peer = await client.create_peer(iface_id, peer_name)
+        except CascadeAPIError as e:
+            await status_msg.edit_text(
+                f"❌ <b>Ошибка создания ключа</b>\n\n<i>{e}</i>",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+                ]),
+            )
+            await state.clear()
+            return
+
+        peer_id = peer.get("id")
+        if not peer_id:
+            await status_msg.edit_text(
+                "❌ Не удалось получить ID пира.",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+                ]),
+            )
+            await state.clear()
+            return
+
+        # ── Получаем конфиг ────────────────────────────────────────────────
+        try:
+            peer_conf = await client.get_peer_config(iface_id, peer_id)
+        except CascadeAPIError as e:
+            peer_conf = None
+            logger.warning(f"Не удалось получить конфиг пира: {e}")
+
+    # Все данные пира закодированы в callback_data — FSM state не нужен
+    data = await state.get_data()
+    duration_type = data.get("awg_duration_type", "key_duration_new")
+    dur_label = "♾ Бессрочный" if duration_type == "key_duration_new" else "⏱ Временный"
+
+    await bot.delete_message(chat_id, status_msg.message_id)
+    await state.clear()
+
+    cb_qr = f"awg_showqr:{cascade_id}:{iface_id}:{peer_id}"
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📱 Показать QR / Ключ", callback_data=cb_qr)],
+        [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")],
+    ])
+    await bot.send_message(
+        chat_id,
+        f"🔒 <b>AWG 3.0 ключ создан</b> · {dur_label}\n\n"
+        f"🖥 Сервер: <b>{srv.label}</b>\n"
+        f"👤 Имя: <code>{peer_name}</code>",
+        parse_mode="HTML",
+        reply_markup=keyboard,
+    )
+
+
+@dp.callback_query(lambda c: c.data and c.data.startswith("awg_showqr:"))
+async def on_awg_show_qr(callback_query: types.CallbackQuery):
+    """Показать QR-код и конфиг AWG 3.0 пира"""
+    parts = callback_query.data.split(":", 3)
+    # awg_showqr:{cascade_id}:{iface_id}:{peer_id}
+    if len(parts) != 4:
+        await callback_query.answer("❌ Неверный формат", show_alert=True)
+        return
+
+    _, cascade_id, iface_id, peer_id = parts
+
+    srv_list = config.get_cascade_servers()
+    srv = next((s for s in srv_list if s.cascade_id == cascade_id), None)
+    if not srv:
+        await callback_query.answer("❌ Сервер не найден", show_alert=True)
+        return
+
+    await callback_query.answer()
+    chat_id = callback_query.message.chat.id
+
+    async with CascadeClient(
+        url=srv.url,
+        api_key=srv.api_key,
+        username=srv.username,
+        password=srv.password,
+        label=srv.label,
+    ) as client:
+        try:
+            peer_conf = await client.get_peer_config(iface_id, peer_id)
+        except CascadeAPIError as e:
+            await callback_query.message.answer(
+                f"❌ <b>Ошибка получения конфига</b>\n<i>{e}</i>",
+                parse_mode="HTML",
+            )
+            return
+
+        try:
+            qr_svg = await client.get_peer_qrcode_svg(iface_id, peer_id)
+        except CascadeAPIError as e:
+            qr_svg = None
+            logger.warning(f"Не удалось получить QR SVG: {e}")
+
+    # Генерируем PNG QR из конфига .conf (надёжнее, чем парсить SVG)
+    try:
+        import qrcode as _qrcode
+        qr = _qrcode.QRCode(box_size=5, border=2)
+        qr.add_data(peer_conf)
+        qr.make()
+        qr_img = qr.make_image(fill_color="black", back_color="white")
+        buf = BytesIO()
+        qr_img.save(buf, format="PNG")
+        buf.seek(0)
+        qr_bytes = buf.getvalue()
+    except Exception as e:
+        logger.error(f"Ошибка генерации QR PNG: {e}")
+        qr_bytes = None
+
+    caption = (
+        f"🔒 <b>AWG 3.0 ключ</b>\n\n"
+        f"🖥 Сервер: <b>{srv.label}</b>\n\n"
+        f"📄 <b>Конфиг:</b>\n"
+        f"<code>{peer_conf}</code>"
+    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")],
+    ])
+
+    if qr_bytes:
+        await callback_query.message.answer_photo(
+            photo=types.BufferedInputFile(qr_bytes, filename="awg.png"),
+            caption=caption,
+            parse_mode="HTML",
+            reply_markup=keyboard,
+        )
+    else:
+        await callback_query.message.answer(
+            caption,
+            parse_mode="HTML",
+            reply_markup=keyboard,
+        )
 
 
 # ─── Шаг 3: VLESS → существующий flow выбора сервера ──────────────────────
@@ -458,6 +728,10 @@ class TempKeyState(StatesGroup):
     waiting_for_panel = State()
     waiting_for_duration = State()
     waiting_for_comment = State()
+
+
+class AwgKeyState(StatesGroup):
+    waiting_for_cascade_server = State()
 
 
 class AddUserState(StatesGroup):

@@ -94,6 +94,27 @@ class PanelConfig:
         return self.tls_fingerprint if self.security == "tls" else self.reality_fingerprint
 
 
+@dataclass
+class CascadeServerConfig:
+    """Конфигурация одного Cascade-сервера"""
+    cascade_id: str
+    label: str
+    url: str
+    api_key: str = ""
+    username: str = "admin"
+    password: str = ""
+    enabled: bool = True
+    version: str = ""
+
+    @property
+    def auth_method(self) -> str:
+        if self.api_key:
+            return "token"
+        if self.password:
+            return "password"
+        return "none"
+
+
 class ConfigManager:
     """Менеджер конфигурации из config.yaml"""
     
@@ -102,6 +123,7 @@ class ConfigManager:
         self.common: Optional[CommonConfig] = None
         self.panels: Dict[str, PanelConfig] = {}
         self.default_panel_id: Optional[str] = None
+        self.cascade_servers: List[CascadeServerConfig] = []
         self._load_config()
     
     def _load_config(self):
@@ -248,9 +270,32 @@ class ConfigManager:
             
             # Загружаем панель по умолчанию
             self.default_panel_id = data.get('default_panel')
+
+            # Загружаем Cascade-серверы
+            self.cascade_servers = []
+            cascades_data = data.get('cascades', {}) or {}
+            for cid, srv in cascades_data.items():
+                if not srv or not isinstance(srv, dict):
+                    continue
+                url = (srv.get('url') or '').strip()
+                if not url:
+                    continue
+                if srv.get('enabled') is False:
+                    continue
+                self.cascade_servers.append(CascadeServerConfig(
+                    cascade_id=cid,
+                    label=(srv.get('label') or cid).strip(),
+                    url=url,
+                    api_key=(srv.get('api_key') or srv.get('token') or '').strip(),
+                    username=(srv.get('username') or 'admin').strip(),
+                    password=(srv.get('password') or '').strip(),
+                    enabled=srv.get('enabled', True),
+                    version=srv.get('version') or '',
+                ))
             
             logger.info(f"✅ Загружено панелей: {len(self.panels)}")
             logger.info(f"✅ Панель по умолчанию: {self.default_panel_id}")
+            logger.info(f"✅ Загружено Cascade-серверов: {len(self.cascade_servers)}")
             
         except yaml.YAMLError as e:
             logger.error(f"❌ Ошибка парсинга YAML: {e}")
@@ -308,6 +353,10 @@ class ConfigManager:
     def get_all_panels(self) -> Dict[str, PanelConfig]:
         """Получить все панели"""
         return self.panels
+
+    def get_cascade_servers(self) -> List[CascadeServerConfig]:
+        """Получить список настроенных Cascade-серверов"""
+        return self.cascade_servers
     
     def get_current_panel_id(self) -> Optional[str]:
         """Получить ID текущей активной панели"""
@@ -1274,6 +1323,10 @@ class Config:
     def get_all_panels(self) -> Dict[str, PanelConfig]:
         """Получить все панели"""
         return self.config_manager.get_all_panels()
+
+    def get_cascade_servers(self) -> List[CascadeServerConfig]:
+        """Получить список Cascade-серверов"""
+        return self.config_manager.get_cascade_servers()
     
     def switch_panel(self, panel_id: str) -> bool:
         """Переключить текущую панель"""
