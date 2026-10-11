@@ -510,29 +510,34 @@ async def on_awg_show_qr(callback_query: types.CallbackQuery):
 
         await callback_query.answer()
 
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")],
-        ])
-
-        # QR-фото с коротким caption
-        await callback_query.message.answer_photo(
-            photo=types.BufferedInputFile(buf.getvalue(), filename="awg.png"),
-            caption=(
-                f"🔒 <b>AWG 3.0 ключ</b>\n"
-                f"🖥 <b>Сервер:</b> {srv.label}\n\n"
-                f"⬇️ Скачайте файл ниже и импортируйте в <b>AmneziaWG</b>"
-            ),
-            parse_mode="HTML",
-        )
-
-        # .conf как скачиваемый файл
         conf_bytes = peer_conf.encode("utf-8")
         conf_filename = f"awg_{peer_id}.conf"
-        await callback_query.message.answer_document(
-            document=types.BufferedInputFile(conf_bytes, filename=conf_filename),
-            caption=f"📄 <code>{conf_filename}</code>",
+
+        # Медиагруппа: QR-фото + .conf файл — один блок в чате
+        media = [
+            types.InputMediaPhoto(
+                media=types.BufferedInputFile(buf.getvalue(), filename="awg.png"),
+                caption=(
+                    f"🔒 <b>AWG 3.0 ключ</b>\n"
+                    f"🖥 <b>Сервер:</b> {srv.label}"
+                ),
+                parse_mode="HTML",
+            ),
+            types.InputMediaDocument(
+                media=types.BufferedInputFile(conf_bytes, filename=conf_filename),
+                caption=f"📄 <code>{conf_filename}</code>",
+                parse_mode="HTML",
+            ),
+        ]
+        await callback_query.message.answer_media_group(media=media)
+
+        # Кнопки навигации отдельным сообщением (media_group не поддерживает reply_markup)
+        await callback_query.message.answer(
+            "⬇️ Импортируйте файл в приложение поддерживающее <b>AWG</b>",
             parse_mode="HTML",
-            reply_markup=keyboard,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")],
+            ]),
         )
 
     except CascadeAPIError as e:
