@@ -474,12 +474,11 @@ async def on_awg_select_cascade(callback_query: types.CallbackQuery, state: FSMC
 
 @dp.callback_query(lambda c: c.data and c.data.startswith("awg_showqr:"))
 async def on_awg_show_qr(callback_query: types.CallbackQuery):
-    """Показать QR-код и конфиг AWG 3.0 пира"""
+    """Показать QR-код и конфиг AWG 3.0 пира — по аналогии с VLESS show_qr_code"""
     # awg_showqr:{cascade_id}:{iface_id}:{peer_id}
-    # peer_id может содержать дефисы но не двоеточия — split(":", 3) безопасен
     parts = callback_query.data.split(":", 3)
     if len(parts) != 4:
-        await callback_query.answer("❌ Неверный формат callback_data", show_alert=True)
+        await callback_query.answer("❌ Неверный формат", show_alert=True)
         return
 
     _, cascade_id, iface_id, peer_id = parts
@@ -490,9 +489,6 @@ async def on_awg_show_qr(callback_query: types.CallbackQuery):
         await callback_query.answer("❌ Сервер не найден в конфигурации", show_alert=True)
         return
 
-    await callback_query.answer()
-    chat_id = callback_query.message.chat.id
-
     try:
         async with CascadeClient(
             url=srv.url,
@@ -501,67 +497,68 @@ async def on_awg_show_qr(callback_query: types.CallbackQuery):
             password=srv.password,
             label=srv.label,
         ) as client:
-            try:
-                peer_conf = await client.get_peer_config(iface_id, peer_id)
-            except CascadeAPIError as e:
-                logger.error(f"[awg_showqr] get_peer_config failed: {e}")
-                await callback_query.message.answer(
-                    f"❌ <b>Ошибка получения конфига</b>\n<i>{e}</i>",
-                    parse_mode="HTML",
-                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                        [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")]
-                    ]),
-                )
-                return
+            peer_conf = await client.get_peer_config(iface_id, peer_id)
 
-        # Генерируем PNG QR из текста .conf
-        try:
-            qr = qrcode.QRCode(box_size=5, border=2)
-            qr.add_data(peer_conf)
-            qr.make()
-            qr_img = qr.make_image(fill_color="black", back_color="white")
-            buf = BytesIO()
-            qr_img.save(buf, format="PNG")
-            buf.seek(0)
-            qr_bytes = buf.getvalue()
-        except Exception as e:
-            logger.error(f"[awg_showqr] QR generation failed: {e}")
-            qr_bytes = None
+        # Генерируем QR из текста .conf
+        qr = qrcode.QRCode(box_size=5, border=2)
+        qr.add_data(peer_conf)
+        qr.make()
+        qr_img = qr.make_image(fill_color="black", back_color="white")
+        buf = BytesIO()
+        qr_img.save(buf, format="PNG")
+        buf.seek(0)
 
-        # Telegram лимитирует caption фото до 1024 символов.
-        # Если конфиг длиннее — отправляем конфиг отдельным сообщением.
-        conf_caption = (
-            f"🔒 <b>AWG 3.0 ключ</b>\n\n"
-            f"🖥 Сервер: <b>{srv.label}</b>"
-        )
-        conf_text = f"📄 <b>Конфиг:</b>\n<code>{peer_conf}</code>"
+        await callback_query.answer()
+
+        # .conf содержит AWG-параметры вида Jc = 4, S1 = 128 — экранируем < > для HTML
+        import html as _html
+        safe_conf = _html.escape(peer_conf)
 
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Мои ключи", callback_data="cmd_myclients")],
             [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")],
         ])
 
-        if qr_bytes:
-            await callback_query.message.answer_photo(
-                photo=types.BufferedInputFile(qr_bytes, filename="awg.png"),
-                caption=conf_caption,
-                parse_mode="HTML",
-            )
-        # Конфиг всегда отдельным сообщением — так он кликабелен и не режется
-        await callback_query.message.answer(
-            conf_text,
-            parse_mode="HTML",
-            reply_markup=keyboard,
+        # Caption Telegram ≤ 1024 символов.
+        # Если конфиг влезает — всё в одном сообщении (как VLESS).
+        # Если нет — QR с коротким caption, конфиг отдельно.
+        caption_full = (
+            f"📱 <b>{peer_id}</b>\n\n"
+            f"🔒 <b>AWG 3.0 конфиг:</b>\n"
+            f"<code>{safe_conf}</code>\n\n"
+            f"🖥 <b>Сервер:</b> {srv.label}"
+        )
+        caption_short = (
+            f"📱 <b>{peer_id}</b>\n"
+            f"🖥 <b>Сервер:</b> {srv.label}"
         )
 
+        if len(caption_full) <= 1024:
+            await callback_query.message.answer_photo(
+                photo=types.BufferedInputFile(buf.getvalue(), filename="awg.png"),
+                caption=caption_full,
+                parse_mode="HTML",
+                reply_markup=keyboard,
+            )
+        else:
+            # QR отдельно, затем конфиг текстом (как копируемая строка)
+            await callback_query.message.answer_photo(
+                photo=types.BufferedInputFile(buf.getvalue(), filename="awg.png"),
+                caption=caption_short,
+                parse_mode="HTML",
+            )
+            await callback_query.message.answer(
+                f"🔒 <b>AWG 3.0 конфиг:</b>\n<code>{safe_conf}</code>",
+                parse_mode="HTML",
+                reply_markup=keyboard,
+            )
+
+    except CascadeAPIError as e:
+        logger.error(f"[awg_showqr] cascade error: {e}")
+        await callback_query.answer(f"❌ Ошибка Cascade: {e}", show_alert=True)
     except Exception as e:
         logger.error(f"[awg_showqr] unexpected error: {e}", exc_info=True)
-        await callback_query.message.answer(
-            f"❌ <b>Ошибка при показе ключа</b>\n<code>{e}</code>",
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")]
-            ]),
-        )
+        await callback_query.answer(f"❌ Ошибка: {e}", show_alert=True)
 
 
 # ─── Шаг 3: VLESS → существующий flow выбора сервера ──────────────────────
