@@ -1042,8 +1042,8 @@ install_bot() {
     
     # Остановка старых контейнеров
     echo -e "\n${YELLOW}🛑 Остановка старых контейнеров...${NC}"
-    docker stop xuibot 2>/dev/null || true
-    docker rm xuibot 2>/dev/null || true
+    docker stop xuibot > /dev/null 2>&1 || true
+    docker rm xuibot > /dev/null 2>&1 || true
     
     # Проверка docker-compose.xuibot.yml
     echo -e "\n${YELLOW}🔍 Проверка конфигурации...${NC}"
@@ -1577,10 +1577,10 @@ install_xuibot() {
     
     # Остановка старых контейнеров
     echo -e "\n${YELLOW}🛑 Остановка старых контейнеров...${NC}"
-    docker stop xuibot 2>/dev/null || true
-    docker rm xuibot 2>/dev/null || true
-    docker stop netcrazybot 2>/dev/null || true
-    docker rm netcrazybot 2>/dev/null || true
+    docker stop xuibot > /dev/null 2>&1 || true
+    docker rm xuibot > /dev/null 2>&1 || true
+    docker stop netcrazybot > /dev/null 2>&1 || true
+    docker rm netcrazybot > /dev/null 2>&1 || true
     
     # Запуск только XUI бота
     echo -e "\n${YELLOW}🐳 Сборка и запуск XUI бота...${NC}"
@@ -1738,8 +1738,8 @@ update_xuibot() {
     
     # Остановка контейнера
     echo -e "${YELLOW}🛑 Остановка контейнера...${NC}"
-    docker stop xuibot 2>/dev/null || true
-    docker rm xuibot 2>/dev/null || true
+    docker stop xuibot > /dev/null 2>&1 || true
+    docker rm xuibot > /dev/null 2>&1 || true
     
     # Удаляем старый тегированный образ, чтобы сборка не тянула его слои
     echo -e "${YELLOW}🗑️  Удаление старого образа xuibot...${NC}"
@@ -1788,8 +1788,8 @@ remove_xuibot() {
     
     # Остановка и удаление контейнера
     echo -e "${YELLOW}🛑 Остановка контейнера...${NC}"
-    docker stop xuibot 2>/dev/null || true
-    docker rm xuibot 2>/dev/null || true
+    docker stop xuibot > /dev/null 2>&1 || true
+    docker rm xuibot > /dev/null 2>&1 || true
     
     # Удаление образа
     echo -e "${YELLOW}🗑️  Удаление образа...${NC}"
@@ -1992,8 +1992,8 @@ update_awgbot() {
     
     # Остановка контейнера
     echo -e "\n${YELLOW}🛑 Остановка контейнера...${NC}"
-    docker stop awgbot 2>/dev/null || true
-    docker rm awgbot 2>/dev/null || true
+    docker stop awgbot > /dev/null 2>&1 || true
+    docker rm awgbot > /dev/null 2>&1 || true
     
     # Удаляем старый тегированный образ, чтобы сборка не тянула его слои
     echo -e "${YELLOW}🗑️  Удаление старого образа awgbot...${NC}"
@@ -2040,8 +2040,8 @@ remove_awgbot() {
     
     # Остановка и удаление контейнера
     echo -e "${YELLOW}🛑 Остановка контейнера...${NC}"
-    docker stop awgbot 2>/dev/null || true
-    docker rm awgbot 2>/dev/null || true
+    docker stop awgbot > /dev/null 2>&1 || true
+    docker rm awgbot > /dev/null 2>&1 || true
     
     # Удаление образа
     echo -e "${YELLOW}🗑️  Удаление образа...${NC}"
@@ -2889,8 +2889,8 @@ remove_all() {
 
     # Остановка всех контейнеров (включая Cascade)
     echo -e "${YELLOW}🛑 Остановка контейнеров...${NC}"
-    docker stop awgbot xuibot amnezia-awg amnezia-awg2 cascade 2>/dev/null || true
-    docker rm awgbot xuibot amnezia-awg amnezia-awg2 cascade 2>/dev/null || true
+    docker stop awgbot xuibot amnezia-awg amnezia-awg2 cascade > /dev/null 2>&1 || true
+    docker rm awgbot xuibot amnezia-awg amnezia-awg2 cascade > /dev/null 2>&1 || true
     docker rmi cascade 2>/dev/null || true
     
     # Удаление образов
