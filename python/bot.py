@@ -513,23 +513,21 @@ async def on_awg_show_qr(callback_query: types.CallbackQuery):
         conf_bytes = peer_conf.encode("utf-8")
         conf_filename = f"awg_{peer_id}.conf"
 
-        # Медиагруппа: QR-фото + .conf файл — один блок в чате
-        media = [
-            types.InputMediaPhoto(
-                media=types.BufferedInputFile(buf.getvalue(), filename="awg.png"),
-                caption=(
-                    f"🔒 <b>AWG 3.0 ключ</b>\n"
-                    f"🖥 <b>Сервер:</b> {srv.label}"
-                ),
-                parse_mode="HTML",
+        # Telegram не позволяет смешивать Photo и Document в одной media group —
+        # отправляем QR-фото и .conf-файл двумя отдельными сообщениями.
+        await callback_query.message.answer_photo(
+            photo=types.BufferedInputFile(buf.getvalue(), filename="awg.png"),
+            caption=(
+                f"🔒 <b>AWG 3.0 ключ</b>\n"
+                f"🖥 <b>Сервер:</b> {srv.label}"
             ),
-            types.InputMediaDocument(
-                media=types.BufferedInputFile(conf_bytes, filename=conf_filename),
-                caption=f"📄 <code>{conf_filename}</code>",
-                parse_mode="HTML",
-            ),
-        ]
-        await callback_query.message.answer_media_group(media=media)
+            parse_mode="HTML",
+        )
+        await callback_query.message.answer_document(
+            document=types.BufferedInputFile(conf_bytes, filename=conf_filename),
+            caption=f"📄 <code>{conf_filename}</code>",
+            parse_mode="HTML",
+        )
 
         # Кнопки навигации отдельным сообщением (media_group не поддерживает reply_markup)
         await callback_query.message.answer(
