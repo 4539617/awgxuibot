@@ -475,10 +475,11 @@ async def on_awg_select_cascade(callback_query: types.CallbackQuery, state: FSMC
 @dp.callback_query(lambda c: c.data and c.data.startswith("awg_showqr:"))
 async def on_awg_show_qr(callback_query: types.CallbackQuery):
     """Показать QR-код и конфиг AWG 3.0 пира"""
-    parts = callback_query.data.split(":", 3)
     # awg_showqr:{cascade_id}:{iface_id}:{peer_id}
+    # peer_id может содержать дефисы но не двоеточия — split(":", 3) безопасен
+    parts = callback_query.data.split(":", 3)
     if len(parts) != 4:
-        await callback_query.answer("❌ Неверный формат", show_alert=True)
+        await callback_query.answer("❌ Неверный формат callback_data", show_alert=True)
         return
 
     _, cascade_id, iface_id, peer_id = parts
@@ -486,71 +487,80 @@ async def on_awg_show_qr(callback_query: types.CallbackQuery):
     srv_list = config.get_cascade_servers()
     srv = next((s for s in srv_list if s.cascade_id == cascade_id), None)
     if not srv:
-        await callback_query.answer("❌ Сервер не найден", show_alert=True)
+        await callback_query.answer("❌ Сервер не найден в конфигурации", show_alert=True)
         return
 
     await callback_query.answer()
     chat_id = callback_query.message.chat.id
 
-    async with CascadeClient(
-        url=srv.url,
-        api_key=srv.api_key,
-        username=srv.username,
-        password=srv.password,
-        label=srv.label,
-    ) as client:
+    try:
+        async with CascadeClient(
+            url=srv.url,
+            api_key=srv.api_key,
+            username=srv.username,
+            password=srv.password,
+            label=srv.label,
+        ) as client:
+            try:
+                peer_conf = await client.get_peer_config(iface_id, peer_id)
+            except CascadeAPIError as e:
+                logger.error(f"[awg_showqr] get_peer_config failed: {e}")
+                await callback_query.message.answer(
+                    f"❌ <b>Ошибка получения конфига</b>\n<i>{e}</i>",
+                    parse_mode="HTML",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")]
+                    ]),
+                )
+                return
+
+        # Генерируем PNG QR из текста .conf
         try:
-            peer_conf = await client.get_peer_config(iface_id, peer_id)
-        except CascadeAPIError as e:
-            await callback_query.message.answer(
-                f"❌ <b>Ошибка получения конфига</b>\n<i>{e}</i>",
+            qr = qrcode.QRCode(box_size=5, border=2)
+            qr.add_data(peer_conf)
+            qr.make()
+            qr_img = qr.make_image(fill_color="black", back_color="white")
+            buf = BytesIO()
+            qr_img.save(buf, format="PNG")
+            buf.seek(0)
+            qr_bytes = buf.getvalue()
+        except Exception as e:
+            logger.error(f"[awg_showqr] QR generation failed: {e}")
+            qr_bytes = None
+
+        # Telegram лимитирует caption фото до 1024 символов.
+        # Если конфиг длиннее — отправляем конфиг отдельным сообщением.
+        conf_caption = (
+            f"🔒 <b>AWG 3.0 ключ</b>\n\n"
+            f"🖥 Сервер: <b>{srv.label}</b>"
+        )
+        conf_text = f"📄 <b>Конфиг:</b>\n<code>{peer_conf}</code>"
+
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")],
+        ])
+
+        if qr_bytes:
+            await callback_query.message.answer_photo(
+                photo=types.BufferedInputFile(qr_bytes, filename="awg.png"),
+                caption=conf_caption,
                 parse_mode="HTML",
             )
-            return
-
-        try:
-            qr_svg = await client.get_peer_qrcode_svg(iface_id, peer_id)
-        except CascadeAPIError as e:
-            qr_svg = None
-            logger.warning(f"Не удалось получить QR SVG: {e}")
-
-    # Генерируем PNG QR из конфига .conf (надёжнее, чем парсить SVG)
-    try:
-        import qrcode as _qrcode
-        qr = _qrcode.QRCode(box_size=5, border=2)
-        qr.add_data(peer_conf)
-        qr.make()
-        qr_img = qr.make_image(fill_color="black", back_color="white")
-        buf = BytesIO()
-        qr_img.save(buf, format="PNG")
-        buf.seek(0)
-        qr_bytes = buf.getvalue()
-    except Exception as e:
-        logger.error(f"Ошибка генерации QR PNG: {e}")
-        qr_bytes = None
-
-    caption = (
-        f"🔒 <b>AWG 3.0 ключ</b>\n\n"
-        f"🖥 Сервер: <b>{srv.label}</b>\n\n"
-        f"📄 <b>Конфиг:</b>\n"
-        f"<code>{peer_conf}</code>"
-    )
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")],
-    ])
-
-    if qr_bytes:
-        await callback_query.message.answer_photo(
-            photo=types.BufferedInputFile(qr_bytes, filename="awg.png"),
-            caption=caption,
+        # Конфиг всегда отдельным сообщением — так он кликабелен и не режется
+        await callback_query.message.answer(
+            conf_text,
             parse_mode="HTML",
             reply_markup=keyboard,
         )
-    else:
+
+    except Exception as e:
+        logger.error(f"[awg_showqr] unexpected error: {e}", exc_info=True)
         await callback_query.message.answer(
-            caption,
+            f"❌ <b>Ошибка при показе ключа</b>\n<code>{e}</code>",
             parse_mode="HTML",
-            reply_markup=keyboard,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")]
+            ]),
         )
 
 
