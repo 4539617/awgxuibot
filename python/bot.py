@@ -728,27 +728,16 @@ async def on_awg_show_qr(callback_query: types.CallbackQuery):
         # отправляем QR-фото и .conf-файл двумя отдельными сообщениями.
         await callback_query.message.answer_photo(
             photo=types.BufferedInputFile(buf.getvalue(), filename="awg.png"),
-            caption=(
-                f"🔒 <b>AWG 3.0 ключ</b>\n"
-                f"🖥 <b>Сервер:</b> {srv.label}\n"
-                f"👤 <b>Имя:</b> <code>{peer_name}</code>\n"
-                f"📅 <b>Срок:</b> {key_type_line}"
-            ),
-            parse_mode="HTML",
         )
         await callback_query.message.answer_document(
             document=types.BufferedInputFile(conf_bytes, filename=conf_filename),
             caption=(
-                f"📄 <code>{conf_filename}</code>\n"
-                f"👤 <b>Клиент:</b> <code>{peer_name}</code>\n"
-                f"📅 <b>Срок:</b> {key_type_line}"
+                f"🔒 <b>AWG 3.0 ключ</b>\n"
+                f"🖥 <b>Сервер:</b> {srv.label}\n"
+                f"👤 <b>Имя:</b> <code>{peer_name}</code>\n"
+                f"📅 <b>Срок:</b> {key_type_line}\n\n"
+                f"⬇️ Импортируйте файл в приложение поддерживающее <b>AWG</b>"
             ),
-            parse_mode="HTML",
-        )
-
-        # Кнопки навигации отдельным сообщением (media_group не поддерживает reply_markup)
-        await callback_query.message.answer(
-            "⬇️ Импортируйте файл в приложение поддерживающее <b>AWG</b>",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")],
