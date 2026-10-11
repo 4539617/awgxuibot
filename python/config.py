@@ -699,6 +699,12 @@ class ConfigManager:
                     'reality_short_id': panel.reality_short_id
                 }
             
+            # Сохраняем секцию cascades: из существующего файла без изменений
+            # (бот никогда не редактирует cascades: программно — только читает)
+            existing_cascades = existing_config.get('cascades')
+            if existing_cascades is not None:
+                config_dict['cascades'] = existing_cascades
+
             # Сохраняем в файл
             with open(self.config_path, 'w', encoding='utf-8') as f:
                 yaml.dump(config_dict, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
