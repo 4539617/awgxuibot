@@ -59,6 +59,43 @@ _panel_monitor = None
 _remote_monitor = None  # RemoteMonitor — мониторинг удалённых панелей
 
 
+# ─── SQLite-хранилище имён AWG-пиров (только peer_name для отображения) ──────
+# Срок действия хранится в самом Cascade (поле expiredAt) — бот его не дублирует.
+
+import os as _os
+_AWG_PEERS_DB = _os.path.join(_os.path.dirname(__file__), "..", "settings.db")
+
+
+def _awg_db_ensure():
+    """Создаёт таблицу awg_peers если её нет."""
+    with sqlite3.connect(_AWG_PEERS_DB) as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS awg_peers (
+                peer_id    TEXT PRIMARY KEY,
+                peer_name  TEXT NOT NULL
+            )
+        """)
+
+
+def _awg_peer_save(peer_id: str, peer_name: str):
+    _awg_db_ensure()
+    with sqlite3.connect(_AWG_PEERS_DB) as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO awg_peers (peer_id, peer_name) VALUES (?,?)",
+            (peer_id, peer_name),
+        )
+
+
+def _awg_peer_get_name(peer_id: str) -> str | None:
+    """Возвращает peer_name по peer_id или None если не найден."""
+    _awg_db_ensure()
+    with sqlite3.connect(_AWG_PEERS_DB) as conn:
+        row = conn.execute(
+            "SELECT peer_name FROM awg_peers WHERE peer_id=?", (peer_id,)
+        ).fetchone()
+    return row[0] if row else None
+
+
 def get_panel_online_status(panel_id: str) -> bool:
     """Возвращает последний известный статус панели из монитора.
     True = онлайн (или монитор ещё не запущен — не блокируем).
@@ -339,7 +376,10 @@ async def on_key_proto_awg(callback_query: types.CallbackQuery, state: FSMContex
 
 @dp.callback_query(lambda c: c.data and c.data.startswith("awg_sel_cascade:"))
 async def on_awg_select_cascade(callback_query: types.CallbackQuery, state: FSMContext):
-    """Шаг 2 AWG: проверяем Cascade, получаем/создаём интерфейс, создаём пира"""
+    """Шаг 2 AWG: проверяем Cascade, получаем/создаём интерфейс.
+    Для бессрочного ключа — сразу создаём пира.
+    Для временного — сохраняем iface_id в state и переходим к выбору срока.
+    """
     if not is_allowed(callback_query.from_user.id):
         await callback_query.answer("⛔ Доступ запрещен", show_alert=True)
         return
@@ -408,7 +448,30 @@ async def on_awg_select_cascade(callback_query: types.CallbackQuery, state: FSMC
             await state.clear()
             return
 
-        # ── Создаём пира ──────────────────────────────────────────────────
+        # ── Для временного ключа — сохраняем контекст и показываем выбор срока ─
+        data = await state.get_data()
+        duration_type = data.get("awg_duration_type", "key_duration_new")
+        if duration_type == "key_duration_temp":
+            await bot.delete_message(chat_id, status_msg.message_id)
+            await state.update_data(awg_iface_id=iface_id, awg_cascade_id=cascade_id)
+            await state.set_state(AwgKeyState.waiting_for_duration)
+            buttons = [
+                [InlineKeyboardButton(text="🕐 1 час",   callback_data="awg_dur:1h")],
+                [InlineKeyboardButton(text="📅 1 день",  callback_data="awg_dur:1d")],
+                [InlineKeyboardButton(text="📅 3 дня",   callback_data="awg_dur:3d")],
+                [InlineKeyboardButton(text="📅 7 дней",  callback_data="awg_dur:7d")],
+                [InlineKeyboardButton(text="📅 30 дней", callback_data="awg_dur:30d")],
+                [InlineKeyboardButton(text="🔙 Назад",   callback_data="back_to_start")],
+            ]
+            await bot.send_message(
+                chat_id,
+                f"⏰ <b>Временный AWG ключ</b>\n🖥 Сервер: <b>{srv.label}</b>\n\nВыберите срок действия:",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+                parse_mode="HTML",
+            )
+            return
+
+        # ── Бессрочный: сразу создаём пира ────────────────────────────────
         username = callback_query.from_user.username
         if not username:
             username = (callback_query.from_user.first_name or "user").lower().replace(" ", "_")
@@ -442,17 +505,8 @@ async def on_awg_select_cascade(callback_query: types.CallbackQuery, state: FSMC
             await state.clear()
             return
 
-        # ── Получаем конфиг ────────────────────────────────────────────────
-        try:
-            peer_conf = await client.get_peer_config(iface_id, peer_id)
-        except CascadeAPIError as e:
-            peer_conf = None
-            logger.warning(f"Не удалось получить конфиг пира: {e}")
-
-    # Все данные пира закодированы в callback_data — FSM state не нужен
-    data = await state.get_data()
-    duration_type = data.get("awg_duration_type", "key_duration_new")
-    dur_label = "♾ Бессрочный" if duration_type == "key_duration_new" else "⏱ Временный"
+    # Сохраняем имя пира в БД для отображения
+    _awg_peer_save(peer_id, peer_name)
 
     await bot.delete_message(chat_id, status_msg.message_id)
     await state.clear()
@@ -464,9 +518,124 @@ async def on_awg_select_cascade(callback_query: types.CallbackQuery, state: FSMC
     ])
     await bot.send_message(
         chat_id,
-        f"🔒 <b>AWG 3.0 ключ создан</b> · {dur_label}\n\n"
+        f"🔒 <b>AWG 3.0 ключ создан</b> · ♾ Бессрочный\n\n"
         f"🖥 Сервер: <b>{srv.label}</b>\n"
-        f"👤 Имя: <code>{peer_name}</code>",
+        f"👤 Имя: <code>{peer_name}</code>\n"
+        f"📅 Срок: ♾ Бессрочный",
+        parse_mode="HTML",
+        reply_markup=keyboard,
+    )
+
+
+# ─── AWG 3.0 — выбор срока для временного ключа ───────────────────────────
+@dp.callback_query(AwgKeyState.waiting_for_duration, lambda c: c.data and c.data.startswith("awg_dur:"))
+async def on_awg_select_duration(callback_query: types.CallbackQuery, state: FSMContext):
+    """Шаг 3 AWG (временный): выбор срока → создаём пира → сохраняем в БД."""
+    if not is_allowed(callback_query.from_user.id):
+        await callback_query.answer("⛔ Доступ запрещен", show_alert=True)
+        return
+
+    dur_code = callback_query.data.split(":", 1)[1]  # 1h | 1d | 3d | 7d | 30d
+    duration_map = {
+        "1h":  (1/24,  "1 час"),
+        "1d":  (1,     "1 день"),
+        "3d":  (3,     "3 дня"),
+        "7d":  (7,     "7 дней"),
+        "30d": (30,    "30 дней"),
+    }
+    if dur_code not in duration_map:
+        await callback_query.answer("❌ Неизвестный срок", show_alert=True)
+        return
+
+    days, duration_text = duration_map[dur_code]
+
+    data = await state.get_data()
+    cascade_id = data.get("awg_cascade_id")
+    iface_id   = data.get("awg_iface_id")
+
+    if not cascade_id or not iface_id:
+        await callback_query.answer("❌ Потеряны данные сессии", show_alert=True)
+        await state.clear()
+        return
+
+    srv_list = config.get_cascade_servers()
+    srv = next((s for s in srv_list if s.cascade_id == cascade_id), None)
+    if not srv:
+        await callback_query.answer("❌ Сервер не найден", show_alert=True)
+        await state.clear()
+        return
+
+    await callback_query.answer()
+    chat_id = callback_query.message.chat.id
+
+    username = callback_query.from_user.username
+    if not username:
+        username = (callback_query.from_user.first_name or "user").lower().replace(" ", "_")
+
+    import random, string as _string
+    suffix = "".join(random.choices(_string.ascii_lowercase + _string.digits, k=6))
+    peer_name = f"{username}_{suffix}"
+
+    status_msg = await bot.send_message(
+        chat_id,
+        f"⏳ Создаю временный ключ <b>{peer_name}</b> на {duration_text}...",
+        parse_mode="HTML",
+    )
+
+    # Вычисляем дату истечения и передаём прямо в Cascade
+    expires_dt = datetime.utcnow() + timedelta(days=days)
+    expired_at_str = expires_dt.strftime("%Y-%m-%dT%H:%M:%SZ")  # RFC3339 UTC
+
+    try:
+        async with CascadeClient(
+            url=srv.url,
+            api_key=srv.api_key,
+            username=srv.username,
+            password=srv.password,
+            label=srv.label,
+        ) as client:
+            peer = await client.create_peer(iface_id, peer_name, expired_at=expired_at_str)
+    except CascadeAPIError as e:
+        await status_msg.edit_text(
+            f"❌ <b>Ошибка создания ключа</b>\n\n<i>{e}</i>",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+            ]),
+        )
+        await state.clear()
+        return
+
+    peer_id = peer.get("id")
+    if not peer_id:
+        await status_msg.edit_text(
+            "❌ Не удалось получить ID пира.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+            ]),
+        )
+        await state.clear()
+        return
+
+    # Сохраняем имя пира в БД; срок живёт в Cascade
+    _awg_peer_save(peer_id, peer_name)
+
+    await bot.delete_message(chat_id, status_msg.message_id)
+    await state.clear()
+
+    expiry_str = expires_dt.strftime("%Y-%m-%d %H:%M UTC")
+
+    cb_qr = f"awg_showqr:{cascade_id}:{iface_id}:{peer_id}"
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📱 Показать QR / Ключ", callback_data=cb_qr)],
+        [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")],
+    ])
+    await bot.send_message(
+        chat_id,
+        f"⏰ <b>Временный AWG ключ создан</b> · {duration_text}\n\n"
+        f"🖥 Сервер: <b>{srv.label}</b>\n"
+        f"👤 Имя: <code>{peer_name}</code>\n"
+        f"📅 Истекает: {expiry_str}",
         parse_mode="HTML",
         reply_markup=keyboard,
     )
@@ -483,6 +652,9 @@ async def on_awg_show_qr(callback_query: types.CallbackQuery):
 
     _, cascade_id, iface_id, peer_id = parts
 
+    # Имя пира — из локальной БД (fallback: peer_id)
+    peer_name = _awg_peer_get_name(peer_id) or peer_id
+
     srv_list = config.get_cascade_servers()
     srv = next((s for s in srv_list if s.cascade_id == cascade_id), None)
     if not srv:
@@ -497,7 +669,24 @@ async def on_awg_show_qr(callback_query: types.CallbackQuery):
             password=srv.password,
             label=srv.label,
         ) as client:
-            peer_conf = await client.get_peer_config(iface_id, peer_id)
+            # Получаем конфиг и метаданные пира параллельно
+            peer_conf, peer_info = await asyncio.gather(
+                client.get_peer_config(iface_id, peer_id),
+                client.get_peer(iface_id, peer_id),
+            )
+
+        # ── Срок действия из Cascade ──────────────────────────────────────
+        expired_at_raw = peer_info.get("expiredAt", "") if isinstance(peer_info, dict) else ""
+        if expired_at_raw:
+            try:
+                from datetime import timezone
+                expiry_dt = datetime.fromisoformat(expired_at_raw.replace("Z", "+00:00"))
+                expiry_str = expiry_dt.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+                key_type_line = f"⏰ Временный · до {expiry_str}"
+            except Exception:
+                key_type_line = f"⏰ Временный · {expired_at_raw}"
+        else:
+            key_type_line = "♾ Бессрочный"
 
         # Генерируем QR из текста .conf
         qr = qrcode.QRCode(box_size=5, border=2)
@@ -519,13 +708,19 @@ async def on_awg_show_qr(callback_query: types.CallbackQuery):
             photo=types.BufferedInputFile(buf.getvalue(), filename="awg.png"),
             caption=(
                 f"🔒 <b>AWG 3.0 ключ</b>\n"
-                f"🖥 <b>Сервер:</b> {srv.label}"
+                f"🖥 <b>Сервер:</b> {srv.label}\n"
+                f"👤 <b>Имя:</b> <code>{peer_name}</code>\n"
+                f"📅 <b>Срок:</b> {key_type_line}"
             ),
             parse_mode="HTML",
         )
         await callback_query.message.answer_document(
             document=types.BufferedInputFile(conf_bytes, filename=conf_filename),
-            caption=f"📄 <code>{conf_filename}</code>",
+            caption=(
+                f"📄 <code>{conf_filename}</code>\n"
+                f"👤 <b>Клиент:</b> <code>{peer_name}</code>\n"
+                f"📅 <b>Срок:</b> {key_type_line}"
+            ),
             parse_mode="HTML",
         )
 
@@ -724,6 +919,7 @@ class TempKeyState(StatesGroup):
 
 class AwgKeyState(StatesGroup):
     waiting_for_cascade_server = State()
+    waiting_for_duration = State()
 
 
 class AddUserState(StatesGroup):

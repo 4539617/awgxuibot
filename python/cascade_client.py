@@ -212,16 +212,30 @@ class CascadeClient:
         data = await self._req("GET", f"/tunnel-interfaces/{iface_id}/peers")
         return data.get("peers", []) if isinstance(data, dict) else []
 
-    async def create_peer(self, iface_id: str, name: str) -> Dict:
-        """POST /api/tunnel-interfaces/:id/peers"""
+    async def create_peer(self, iface_id: str, name: str, expired_at: str = "") -> Dict:
+        """POST /api/tunnel-interfaces/:id/peers
+        
+        expired_at: RFC3339 string (e.g. "2025-08-01T00:00:00Z") or "YYYY-MM-DD", "" = no expiry.
+        """
         body = {
             "name": name,
             "peerType": "client",
             "generateKeys": True,
             "autoAllocateIP": True,
         }
+        if expired_at:
+            body["expiredAt"] = expired_at
         data = await self._req("POST", f"/tunnel-interfaces/{iface_id}/peers", body)
         return data.get("peer", data) if isinstance(data, dict) else data
+
+    async def get_peer(self, iface_id: str, peer_id: str) -> Dict:
+        """GET /api/tunnel-interfaces/:id/peers/:peerId → peer dict with expiredAt etc."""
+        data = await self._req("GET", f"/tunnel-interfaces/{iface_id}/peers/{peer_id}")
+        return data.get("peer", data) if isinstance(data, dict) else data
+
+    async def delete_peer(self, iface_id: str, peer_id: str) -> None:
+        """DELETE /api/tunnel-interfaces/:id/peers/:peerId"""
+        await self._req("DELETE", f"/tunnel-interfaces/{iface_id}/peers/{peer_id}")
 
     async def get_peer_config(self, iface_id: str, peer_id: str) -> str:
         """GET /api/tunnel-interfaces/:id/peers/:pid/config → plain text WireGuard .conf"""
