@@ -1741,6 +1741,10 @@ update_xuibot() {
     docker stop xuibot 2>/dev/null || true
     docker rm xuibot 2>/dev/null || true
     
+    # Удаляем старый тегированный образ, чтобы сборка не тянула его слои
+    echo -e "${YELLOW}🗑️  Удаление старого образа xuibot...${NC}"
+    docker rmi awgxuibot-xuibot 2>/dev/null || true
+    
     # Пересборка образа
     docker_prune
     echo -e "${YELLOW}🐳 Пересборка образа...${NC}"
@@ -1991,6 +1995,10 @@ update_awgbot() {
     docker stop awgbot 2>/dev/null || true
     docker rm awgbot 2>/dev/null || true
     
+    # Удаляем старый тегированный образ, чтобы сборка не тянула его слои
+    echo -e "${YELLOW}🗑️  Удаление старого образа awgbot...${NC}"
+    docker rmi awgxuibot-awgbot 2>/dev/null || true
+    
     # Пересборка образа
     docker_prune
     echo -e "${YELLOW}🐳 Пересборка образа...${NC}"
@@ -2139,6 +2147,11 @@ update_cascade() {
 
     echo -e "${YELLOW}🔄 Пересборка и перезапуск Cascade...${NC}"
     docker compose -f docker-compose.cascade.yml down 2>/dev/null || true
+    
+    # Удаляем старый тегированный образ, чтобы сборка не тянула его слои
+    echo -e "${YELLOW}🗑️  Удаление старого образа cascade...${NC}"
+    docker rmi cascade:latest 2>/dev/null || true
+    
     docker_prune
     docker compose -f docker-compose.cascade.yml up -d --build
     # Удаляем dangling-образы, которые появились в результате пересборки
@@ -2491,6 +2504,10 @@ rebuild_xuibot() {
     echo -e "${YELLOW}🛑 Остановка контейнера xuibot...${NC}"
     $DOCKER_COMPOSE_CMD -f docker-compose.xuibot.yml down 2>/dev/null || true
     
+    # Удаляем старый тегированный образ, чтобы сборка не тянула его слои
+    echo -e "${YELLOW}🗑️  Удаление старого образа xuibot...${NC}"
+    docker rmi awgxuibot-xuibot 2>/dev/null || true
+    
     docker_prune
     echo -e "${YELLOW}🔨 Пересборка образа xuibot...${NC}"
     $DOCKER_COMPOSE_CMD -f docker-compose.xuibot.yml build --no-cache
@@ -2523,6 +2540,10 @@ rebuild_awgbot() {
     
     echo -e "${YELLOW}🛑 Остановка контейнера awgbot...${NC}"
     $DOCKER_COMPOSE_CMD -f docker-compose.awgbot.yml down 2>/dev/null || true
+    
+    # Удаляем старый тегированный образ, чтобы сборка не тянула его слои
+    echo -e "${YELLOW}🗑️  Удаление старого образа awgbot...${NC}"
+    docker rmi awgxuibot-awgbot 2>/dev/null || true
     
     docker_prune
     echo -e "${YELLOW}🔨 Пересборка образа awgbot...${NC}"
