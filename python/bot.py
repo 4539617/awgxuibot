@@ -510,48 +510,30 @@ async def on_awg_show_qr(callback_query: types.CallbackQuery):
 
         await callback_query.answer()
 
-        # .conf содержит AWG-параметры вида Jc = 4, S1 = 128 — экранируем < > для HTML
-        import html as _html
-        safe_conf = _html.escape(peer_conf)
-
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 Мои ключи", callback_data="cmd_myclients")],
             [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")],
         ])
 
-        # Caption Telegram ≤ 1024 символов.
-        # Если конфиг влезает — всё в одном сообщении (как VLESS).
-        # Если нет — QR с коротким caption, конфиг отдельно.
-        caption_full = (
-            f"📱 <b>{peer_id}</b>\n\n"
-            f"🔒 <b>AWG 3.0 конфиг:</b>\n"
-            f"<code>{safe_conf}</code>\n\n"
-            f"🖥 <b>Сервер:</b> {srv.label}"
-        )
-        caption_short = (
-            f"📱 <b>{peer_id}</b>\n"
-            f"🖥 <b>Сервер:</b> {srv.label}"
+        # QR-фото с коротким caption
+        await callback_query.message.answer_photo(
+            photo=types.BufferedInputFile(buf.getvalue(), filename="awg.png"),
+            caption=(
+                f"🔒 <b>AWG 3.0 ключ</b>\n"
+                f"🖥 <b>Сервер:</b> {srv.label}\n\n"
+                f"⬇️ Скачайте файл ниже и импортируйте в <b>AmneziaWG</b>"
+            ),
+            parse_mode="HTML",
         )
 
-        if len(caption_full) <= 1024:
-            await callback_query.message.answer_photo(
-                photo=types.BufferedInputFile(buf.getvalue(), filename="awg.png"),
-                caption=caption_full,
-                parse_mode="HTML",
-                reply_markup=keyboard,
-            )
-        else:
-            # QR отдельно, затем конфиг текстом (как копируемая строка)
-            await callback_query.message.answer_photo(
-                photo=types.BufferedInputFile(buf.getvalue(), filename="awg.png"),
-                caption=caption_short,
-                parse_mode="HTML",
-            )
-            await callback_query.message.answer(
-                f"🔒 <b>AWG 3.0 конфиг:</b>\n<code>{safe_conf}</code>",
-                parse_mode="HTML",
-                reply_markup=keyboard,
-            )
+        # .conf как скачиваемый файл
+        conf_bytes = peer_conf.encode("utf-8")
+        conf_filename = f"awg_{peer_id}.conf"
+        await callback_query.message.answer_document(
+            document=types.BufferedInputFile(conf_bytes, filename=conf_filename),
+            caption=f"📄 <code>{conf_filename}</code>",
+            parse_mode="HTML",
+            reply_markup=keyboard,
+        )
 
     except CascadeAPIError as e:
         logger.error(f"[awg_showqr] cascade error: {e}")
