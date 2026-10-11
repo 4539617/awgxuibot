@@ -262,6 +262,28 @@ async def send_panel_select(chat_id: int, header: str, back_callback: str, key_t
 
 
 
+# ─── FSM-состояния ────────────────────────────────────────────────────────
+class NewClientState(StatesGroup):
+    waiting_for_panel = State()
+    waiting_for_comment = State()
+
+
+class TempKeyState(StatesGroup):
+    waiting_for_panel = State()
+    waiting_for_duration = State()
+    waiting_for_comment = State()
+
+
+class AwgKeyState(StatesGroup):
+    waiting_for_cascade_server = State()
+    waiting_for_duration = State()
+
+
+class AddUserState(StatesGroup):
+    waiting_for_user_id = State()
+    waiting_for_username = State()
+
+
 # ─── Шаг 1: Создать ключ → выбор типа срока ───────────────────────────────
 @dp.callback_query(lambda c: c.data == "create_key")
 async def on_create_key(callback_query: types.CallbackQuery):
@@ -904,27 +926,6 @@ async def on_select_panel_temp(callback_query: types.CallbackQuery, state: FSMCo
     await state.update_data(selected_panel_id=panel_id)
     await state.set_state(TempKeyState.waiting_for_duration)
     await _send_duration_select(callback_query.message.chat.id, panel_cfg.alias)
-
-
-class NewClientState(StatesGroup):
-    waiting_for_panel = State()
-    waiting_for_comment = State()
-
-
-class TempKeyState(StatesGroup):
-    waiting_for_panel = State()
-    waiting_for_duration = State()
-    waiting_for_comment = State()
-
-
-class AwgKeyState(StatesGroup):
-    waiting_for_cascade_server = State()
-    waiting_for_duration = State()
-
-
-class AddUserState(StatesGroup):
-    waiting_for_user_id = State()
-    waiting_for_username = State()
 
 
 # Антифлуд защита
