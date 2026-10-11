@@ -124,6 +124,7 @@ class ConfigManager:
         self.panels: Dict[str, PanelConfig] = {}
         self.default_panel_id: Optional[str] = None
         self.cascade_servers: List[CascadeServerConfig] = []
+        self.cascade_stubs: List[str] = []
         self._load_config()
     
     def _load_config(self):
@@ -166,6 +167,27 @@ class ConfigManager:
             if not data:
                 logger.error("❌ config.yaml пустой")
                 raise ValueError("config.yaml пустой или содержит некорректные данные")
+
+            # ── Self-healing: добавляем секцию cascades: если её нет ────────────
+            if 'cascades' not in data:
+                logger.info("ℹ️  Секция cascades: не найдена в config.yaml — добавляем заглушку")
+                stub = (
+                    "\n# ── Cascade Web UI ──────────────────────────────────────────────────────────\n"
+                    "# Заполните url и api_key чтобы включить создание AWG 3.0 ключей.\n"
+                    "# api_key: Cascade UI → Settings → Tokens → Create token (ws_...)\n"
+                    "cascades:\n"
+                    "  cascade0:\n"
+                    "    label: Master\n"
+                    "    url: \"\"\n"
+                    "    api_key: \"\"\n"
+                    "    enabled: false\n"
+                )
+                with open(self.config_path, 'a', encoding='utf-8') as f:
+                    f.write(stub)
+                logger.info("✅ Заглушка cascades: добавлена в конец config.yaml")
+                data['cascades'] = {
+                    'cascade0': {'label': 'Master', 'url': '', 'api_key': '', 'enabled': False}
+                }
             
             # Вспомогательная функция для безопасного преобразования в int
             def safe_int(value, default):
@@ -273,23 +295,35 @@ class ConfigManager:
 
             # Загружаем Cascade-серверы
             self.cascade_servers = []
+            # Незаполненные записи — чтобы бот мог предупредить администратора
+            self.cascade_stubs: List[str] = []
             cascades_data = data.get('cascades', {}) or {}
             for cid, srv in cascades_data.items():
                 if not srv or not isinstance(srv, dict):
                     continue
                 url = (srv.get('url') or '').strip()
-                if not url:
+                api_key = (srv.get('api_key') or srv.get('token') or '').strip()
+                password = (srv.get('password') or '').strip()
+                enabled = srv.get('enabled', True)
+
+                # Запись-заглушка: url пустой ИЛИ явно enabled: false
+                if not url or enabled is False:
+                    label = (srv.get('label') or cid).strip()
+                    self.cascade_stubs.append(label or cid)
+                    logger.info(
+                        f"ℹ️  Cascade {cid!r} ({label!r}): не настроен "
+                        f"(url={'пустой' if not url else url!r}, enabled={enabled})"
+                    )
                     continue
-                if srv.get('enabled') is False:
-                    continue
+
                 self.cascade_servers.append(CascadeServerConfig(
                     cascade_id=cid,
                     label=(srv.get('label') or cid).strip(),
                     url=url,
-                    api_key=(srv.get('api_key') or srv.get('token') or '').strip(),
+                    api_key=api_key,
                     username=(srv.get('username') or 'admin').strip(),
-                    password=(srv.get('password') or '').strip(),
-                    enabled=srv.get('enabled', True),
+                    password=password,
+                    enabled=enabled,
                     version=srv.get('version') or '',
                 ))
             
@@ -355,9 +389,13 @@ class ConfigManager:
         return self.panels
 
     def get_cascade_servers(self) -> List[CascadeServerConfig]:
-        """Получить список настроенных Cascade-серверов"""
+        """Получить список настроенных (заполненных) Cascade-серверов"""
         return self.cascade_servers
-    
+
+    def get_cascade_stubs(self) -> List[str]:
+        """Получить метки незаполненных Cascade-записей (url пустой или enabled: false)"""
+        return self.cascade_stubs
+
     def get_current_panel_id(self) -> Optional[str]:
         """Получить ID текущей активной панели"""
         return self.default_panel_id
@@ -1327,7 +1365,11 @@ class Config:
     def get_cascade_servers(self) -> List[CascadeServerConfig]:
         """Получить список Cascade-серверов"""
         return self.config_manager.get_cascade_servers()
-    
+
+    def get_cascade_stubs(self) -> List[str]:
+        """Получить метки незаполненных Cascade-записей"""
+        return self.config_manager.get_cascade_stubs()
+
     def switch_panel(self, panel_id: str) -> bool:
         """Переключить текущую панель"""
         return self.config_manager.switch_default_panel(panel_id)

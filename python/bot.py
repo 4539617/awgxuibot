@@ -4693,6 +4693,19 @@ async def main():
     # Версия определяется в install.sh и читается из .env
     logger.info(f"📋 Версия панели: {config.xui.version}")
 
+    # ── Проверка конфигурации Cascade ────────────────────────────────────────
+    cascade_servers = config.get_cascade_servers()
+    cascade_stubs   = config.get_cascade_stubs()
+    if cascade_servers:
+        logger.info(f"✅ Cascade: настроено серверов: {len(cascade_servers)}")
+    elif cascade_stubs:
+        logger.warning(
+            f"⚠️  Cascade: секция cascades: присутствует, но не заполнена "
+            f"({', '.join(cascade_stubs)}). AWG 3.0 ключи недоступны."
+        )
+    else:
+        logger.info("ℹ️  Cascade: не настроен (AWG 3.0 ключи недоступны)")
+
     if await xui_client.login():
         logger.info("✅ Подключение к X-UI установлено")
         
@@ -4711,6 +4724,23 @@ async def main():
         except Exception as e:
             logger.error(f"❌ Ошибка обновления параметров панели при запуске: {e}")
         
+        # ── Уведомление администратору о состоянии Cascade ───────────────────
+        if cascade_stubs and not cascade_servers:
+            admin_id = config.users_db.get_main_admin()
+            if admin_id:
+                try:
+                    stubs_str = ", ".join(f"<b>{s}</b>" for s in cascade_stubs)
+                    await bot.send_message(
+                        admin_id,
+                        f"⚠️ <b>AWG 3.0 ключи недоступны</b>\n\n"
+                        f"Секция <code>cascades:</code> в config.yaml присутствует, "
+                        f"но не заполнена ({stubs_str}).\n\n"
+                        f"Заполните <code>url</code> и <code>api_key</code> и перезапустите бот.",
+                        parse_mode="HTML",
+                    )
+                except Exception as _e:
+                    logger.warning(f"Не удалось отправить уведомление о Cascade: {_e}")
+
         # Инициализация и запуск мониторинга панелей и системы
         panel_monitor   = None
         system_monitor  = None
