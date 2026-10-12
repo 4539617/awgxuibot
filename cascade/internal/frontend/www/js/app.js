@@ -390,8 +390,8 @@ new Vue({
       // UI preferences
       lang: 'en',
       // Splash / page gradient colours
-      splashColor1: '#1a0000',
-      splashColor2: '#000000',
+      splashColor1: '#0f172a',
+      splashColor2: '#1e3a5f',
       // Custom logo: base64 data URL, or '' to use built-in icon
       splashLogo: '',
       // Runtime-only (returned by GET, not sent in PUT)
@@ -5970,8 +5970,8 @@ new Vue({
 
     applyGradientColors(c1, c2) {
       const root = document.documentElement;
-      root.style.setProperty('--grad-c1', c1 || '#1a0000');
-      root.style.setProperty('--grad-c2', c2 || '#000000');
+      root.style.setProperty('--grad-c1', c1 || '#0f172a');
+      root.style.setProperty('--grad-c2', c2 || '#1e3a5f');
     },
 
     handleLogoUpload(event) {

@@ -168,8 +168,8 @@
 
   /* ── Gradient palette (overridden at runtime by JS when settings load) ── */
   :root {
-    --grad-c1: #1a0000;
-    --grad-c2: #000000;
+    --grad-c1: #0f172a;
+    --grad-c2: #1e3a5f;
   }
 
   /* ── Splash screen ── */
@@ -4339,6 +4339,7 @@
                     </button>
 
                     <p class="text-xs text-gray-400 dark:text-neutral-500">PNG, JPG, SVG, WebP — max 2 MB. Shown on splash screen, login page and sidebar.</p>
+                    <p class="text-xs text-gray-400 dark:text-neutral-500">Recommended size: <strong>256&times;256 px</strong> (square, transparent background).</p>
                   </div>
                 </div>
               </div>
@@ -4369,6 +4370,17 @@
                   <div>
                     <label class="block text-sm font-medium dark:text-neutral-300 mb-2">Preview</label>
                     <div :style="'width:120px; height:36px; border-radius:6px; border:1px solid #d1d5db; background:linear-gradient(135deg,' + globalSettings.splashColor1 + ' 0%,' + globalSettings.splashColor2 + ' 100%);'"></div>
+                  </div>
+                  <!-- Reset to default -->
+                  <div style="display:flex; align-items:flex-end;">
+                    <button @click="globalSettings.splashColor1='#0f172a'; globalSettings.splashColor2='#1e3a5f';"
+                      class="px-3 py-2 text-sm font-medium rounded border border-gray-300 dark:border-neutral-500 bg-white dark:bg-neutral-600 dark:text-neutral-200 hover:bg-gray-50 dark:hover:bg-neutral-500 transition"
+                      style="display:inline-flex; align-items:center; gap:6px;">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582M20 20v-5h-.581M5.635 15A9 9 0 1018.364 8.636"/>
+                      </svg>
+                      Reset
+                    </button>
                   </div>
                 </div>
                 <p class="text-xs text-gray-400 dark:text-neutral-500 mt-2">Updates live as you change colors. Save to persist.</p>
