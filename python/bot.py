@@ -2805,7 +2805,7 @@ async def show_server_status(callback_query: types.CallbackQuery, state: FSMCont
                 InlineKeyboardButton(text="👥 Пользователи", callback_data="show_users")
             ],
             [
-                InlineKeyboardButton(text="🖥️ Серверы", callback_data="select_panel_to_connect")
+                InlineKeyboardButton(text="🖥️ Сервер", callback_data="select_panel_to_connect")
             ],
             [
                 InlineKeyboardButton(text="📱 Настройка приложений", callback_data="app_settings")
@@ -4134,7 +4134,7 @@ async def show_panels_list(callback_query: types.CallbackQuery, state: FSMContex
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [
                 InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_panels"),
-                InlineKeyboardButton(text="🖥️ Серверы", callback_data="select_panel_to_connect")
+                InlineKeyboardButton(text="🖥️ Сервер", callback_data="select_panel_to_connect")
             ],
             [
                 InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_server_status")
@@ -4313,7 +4313,7 @@ async def _render_servers_screen(callback_query: types.CallbackQuery, is_refresh
     else:
         stats_block = "📊 Статистика сбоев пока недоступна"
 
-    text = f"🖥️ <b>Серверы</b>\n\n{panel_block}{metrics_block}\n\n{stats_block}"
+    text = f"🖥️ <b>Сервер</b>\n\n{panel_block}{metrics_block}\n\n{stats_block}"
     try:
         await callback_query.message.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
     except Exception:
