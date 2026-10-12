@@ -870,13 +870,19 @@ class UserDatabase:
                 CREATE TABLE IF NOT EXISTS panel_outages (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     panel_id TEXT NOT NULL,
-                    started_at TIMESTAMP NOT NULL
+                    started_at TIMESTAMP NOT NULL,
+                    ended_at TIMESTAMP
                 )
             """)
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_panel_outages_panel_id
                 ON panel_outages(panel_id)
             """)
+            # Миграция: добавить ended_at если таблица уже существует без неё
+            try:
+                conn.execute("ALTER TABLE panel_outages ADD COLUMN ended_at TIMESTAMP")
+            except Exception:
+                pass  # колонка уже есть
             
             # Добавляем главного админа
             main_admin = self.get_main_admin()

@@ -4181,155 +4181,168 @@ async def refresh_panels_status(callback_query: types.CallbackQuery, state: FSMC
 
 def _build_stability_chart(panel_states: dict, panels: dict) -> bytes:
     """
-    Строит PNG столбчатый график количества сбоев по дням за последние 7 дней.
-    Каждый сервер — своя линия столбцов своего цвета.
-    Ось X — даты (dd.mm), ось Y — количество сбоев.
-    Возвращает PNG как bytes.
+    GitHub-style heatmap стабильности серверов.
+    Для каждой панели — своя сетка: ось X = недели (16 нед), ось Y = дни недели (Пн–Вс).
+    Цвет ячейки — градиент по кол-ву сбоев в этот день (серый→красный).
+    Показывает период, подписи месяцев, легенду градиента.
     """
     import io
     import datetime as dt_mod
     from PIL import Image, ImageDraw, ImageFont
 
-    now = datetime.now()
-    DAYS = 7
+    now        = datetime.now()
+    WEEKS      = 16
+    TOTAL_DAYS = WEEKS * 7   # 112 дней
 
-    # Даты: от 6 дней назад до сегодня включительно
-    day_dates = [(now - dt_mod.timedelta(days=i)).date() for i in range(DAYS - 1, -1, -1)]
+    # Начало: отматываем назад до ближайшего понедельника, затем WEEKS недель
+    today      = now.date()
+    # начало текущей недели (пн)
+    week_start = today - dt_mod.timedelta(days=today.weekday())
+    # начало периода = WEEKS недель назад
+    period_start_date = week_start - dt_mod.timedelta(weeks=WEEKS - 1)
+    period_end_date   = week_start + dt_mod.timedelta(days=6)
 
     panel_ids = list(panels.keys())
     if not panel_ids:
         raise ValueError("Нет панелей")
+    aliases = {pid: getattr(panels[pid], 'alias', pid) or pid for pid in panel_ids}
 
-    aliases = {pid: getattr(panels[pid], 'alias', pid) for pid in panel_ids}
-
-    # Подсчёт сбоев по дням для каждой панели
-    # outages_by_day[pid][day_index] = count
-    outages_by_day = {}
+    # outages_per_day[pid][date] = count
+    outages_per_day: dict = {}
     for pid in panel_ids:
-        counts = [0] * DAYS
+        day_counts: dict = {}
         ps = panel_states.get(pid)
         if ps:
             for ev in ps.outage_events:
-                ev_date = ev.date()
-                if ev_date in day_dates:
-                    idx = day_dates.index(ev_date)
-                    counts[idx] += 1
-        outages_by_day[pid] = counts
+                d = ev.date()
+                if period_start_date <= d <= period_end_date:
+                    day_counts[d] = day_counts.get(d, 0) + 1
+        outages_per_day[pid] = day_counts
 
-    max_count = max(
-        (max(outages_by_day[pid]) for pid in panel_ids),
-        default=1
-    ) or 1
+    # Максимум сбоев за день по всем панелям (для нормализации градиента)
+    all_counts = [c for pid in panel_ids for c in outages_per_day[pid].values()]
+    max_count  = max(all_counts) if all_counts else 1
 
-    # Цвета для серверов
-    PALETTE = [
-        (99,  179, 237),   # голубой
-        (252, 129,  74),   # оранжевый
-        (72,  199, 142),   # зелёный
-        (246, 173,  85),   # жёлтый
-        (159, 122, 234),   # фиолетовый
-    ]
+    # ── Константы размеров ────────────────────────────────────────────────────
+    CELL       = 13   # размер квадратика
+    GAP        = 3    # зазор между квадратиками
+    STEP       = CELL + GAP
+    DAY_LABELS_W = 28  # ширина подписей дней недели (Пн/Ср/Пт)
+    LEFT_PAD   = 10
+    RIGHT_PAD  = 16
+    TOP_PAD    = 36   # заголовок + месяцы
+    BLOCK_GAP  = 28   # вертикальный отступ между панелями
+    ALIAS_H    = 20   # высота строки с именем панели
+    GRID_H     = 7 * STEP - GAP
+    BLOCK_H    = ALIAS_H + TOP_PAD + GRID_H  # высота одного блока (панель)
+    LEGEND_H   = 28
+    BOTTOM_PAD = 8
 
-    # Размеры холста
-    LEFT_PAD   = 52
-    RIGHT_PAD  = 24
-    TOP_PAD    = 44
-    BOTTOM_PAD = 48
-    BAR_AREA_W = 520
-    CHART_H    = 260
+    n_panels = len(panel_ids)
+    grid_w   = WEEKS * STEP - GAP
+    img_w    = LEFT_PAD + DAY_LABELS_W + grid_w + RIGHT_PAD
+    img_h    = (BLOCK_H + BLOCK_GAP) * n_panels - BLOCK_GAP + LEGEND_H + BOTTOM_PAD + 10
 
-    img_w = LEFT_PAD + BAR_AREA_W + RIGHT_PAD
-    img_h = TOP_PAD + CHART_H + BOTTOM_PAD
+    BG        = (13,  17,  23)
+    SURFACE   = (22,  27,  34)
+    TEXT_COL  = (201, 209, 217)
+    MUTED_COL = (110, 118, 129)
+    EMPTY     = (33,  38,  45)    # ячейка без данных / 0 сбоев
 
-    BG        = (24, 24, 36)
-    GRID_COL  = (50, 50, 68)
-    TEXT_COL  = (200, 200, 220)
-    MUTED_COL = (120, 120, 145)
+    def _outage_color(count: int, mx: int) -> tuple:
+        """Градиент: 0 → серый, 1 → светло-красный, max → ярко-красный."""
+        if count == 0:
+            return EMPTY
+        t = min(count / mx, 1.0) if mx > 0 else 1.0
+        # светло-красный (255,160,160) → насыщенный (220,38,38)
+        r = int(255 - t * (255 - 220))
+        g = int(160 - t * 160)
+        b = int(160 - t * 160)
+        return (r, g, b)
 
-    img = Image.new("RGB", (img_w, img_h), color=BG)
+    img  = Image.new("RGB", (img_w, img_h), color=BG)
     draw = ImageDraw.Draw(img)
 
-    # Шрифты
+    # ── Шрифты ───────────────────────────────────────────────────────────────
     try:
-        font_title  = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 14)
-        font_label  = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 11)
-        font_small  = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 10)
+        font_bold  = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 12)
+        font_label = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 11)
+        font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 10)
     except Exception:
-        font_title = font_label = font_small = ImageFont.load_default()
+        font_bold = font_label = font_small = ImageFont.load_default()
 
-    # Заголовок
-    draw.text((LEFT_PAD, 12), "Сбои по дням · последние 7 дней", font=font_title, fill=TEXT_COL)
+    # Подписи дней недели (только Пн, Ср, Пт)
+    DAY_NAMES = ['Пн', '', 'Ср', '', 'Пт', '', '']
 
-    # Область графика
-    chart_x0 = LEFT_PAD
-    chart_y0 = TOP_PAD
-    chart_x1 = LEFT_PAD + BAR_AREA_W
-    chart_y1 = TOP_PAD + CHART_H
+    for panel_idx, pid in enumerate(panel_ids):
+        alias      = aliases[pid]
+        day_counts = outages_per_day[pid]
 
-    # Горизонтальные линии сетки (0, 25%, 50%, 75%, 100% от max_count)
-    y_ticks = 5
-    for i in range(y_ticks + 1):
-        val = round(max_count * i / y_ticks)
-        y = chart_y1 - int(CHART_H * i / y_ticks)
-        draw.line([(chart_x0, y), (chart_x1, y)], fill=GRID_COL, width=1)
-        label = str(val)
-        draw.text((chart_x0 - 8, y - 6), label, font=font_small, fill=MUTED_COL, anchor="rm" if hasattr(draw, 'textbbox') else None)
+        block_top = panel_idx * (BLOCK_H + BLOCK_GAP)
 
-    # Столбцы
-    group_w  = BAR_AREA_W / DAYS
-    bar_w    = max(6, int(group_w / (len(panel_ids) + 1)))
-    bar_gap  = max(2, int(bar_w * 0.25))
+        # Имя панели
+        draw.text((LEFT_PAD, block_top + 4), alias, font=font_bold, fill=TEXT_COL)
 
-    total_bars_w = len(panel_ids) * bar_w + (len(panel_ids) - 1) * bar_gap
+        # Период под именем
+        pf = period_start_date.strftime('%d.%m.%Y')
+        pt = period_end_date.strftime('%d.%m.%Y')
+        draw.text((LEFT_PAD, block_top + 18), f"{pf} — {pt}", font=font_small, fill=MUTED_COL)
 
-    for day_i, day_date in enumerate(day_dates):
-        group_center_x = chart_x0 + int(group_w * day_i + group_w / 2)
-        start_x = group_center_x - total_bars_w // 2
+        grid_top = block_top + ALIAS_H + TOP_PAD
 
-        for pid_i, pid in enumerate(panel_ids):
-            count = outages_by_day[pid][day_i]
-            color = PALETTE[pid_i % len(PALETTE)]
+        # ── Подписи месяцев ───────────────────────────────────────────────────
+        last_month = None
+        for w in range(WEEKS):
+            week_date = period_start_date + dt_mod.timedelta(weeks=w)
+            if week_date.month != last_month:
+                last_month = week_date.month
+                mx = LEFT_PAD + DAY_LABELS_W + w * STEP
+                month_label = week_date.strftime('%b')
+                draw.text((mx, block_top + ALIAS_H + 4), month_label,
+                          font=font_small, fill=MUTED_COL)
 
-            bar_x0 = start_x + pid_i * (bar_w + bar_gap)
-            bar_x1 = bar_x0 + bar_w
+        # ── Подписи дней недели ───────────────────────────────────────────────
+        for dow, name in enumerate(DAY_NAMES):
+            if not name:
+                continue
+            dy = grid_top + dow * STEP + (CELL // 2)
+            draw.text((LEFT_PAD + DAY_LABELS_W - 4, dy), name,
+                      font=font_small, fill=MUTED_COL,
+                      anchor="rm" if hasattr(draw, 'textbbox') else None)
 
-            if count > 0:
-                bar_h = max(4, int(CHART_H * count / max_count))
-                bar_y0 = chart_y1 - bar_h
-                bar_y1 = chart_y1
-                draw.rounded_rectangle([bar_x0, bar_y0, bar_x1, bar_y1], radius=3, fill=color)
-                # Значение над столбцом
-                if bar_h > 14:
-                    draw.text(
-                        (bar_x0 + bar_w // 2, bar_y0 - 2),
-                        str(count), font=font_small, fill=color,
-                        anchor="mb" if hasattr(draw, 'textbbox') else None
-                    )
-            else:
-                # Тонкая базовая линия если сбоев нет
-                draw.line([(bar_x0, chart_y1), (bar_x1, chart_y1)], fill=color, width=2)
+        # ── Ячейки ────────────────────────────────────────────────────────────
+        for w in range(WEEKS):
+            for dow in range(7):
+                d = period_start_date + dt_mod.timedelta(weeks=w, days=dow)
+                cx = LEFT_PAD + DAY_LABELS_W + w * STEP
+                cy = grid_top + dow * STEP
+                if d > today:
+                    # будущие дни — не рисуем
+                    continue
+                count = day_counts.get(d, 0)
+                color = _outage_color(count, max_count)
+                draw.rounded_rectangle(
+                    [cx, cy, cx + CELL - 1, cy + CELL - 1],
+                    radius=2, fill=color
+                )
+                # Число сбоев внутри ячейки (если > 0 и ячейка достаточно крупная)
+                if count > 0 and CELL >= 13:
+                    draw.text((cx + CELL // 2, cy + CELL // 2), str(count),
+                              font=font_small, fill=(255, 255, 255),
+                              anchor="mm" if hasattr(draw, 'textbbox') else None)
 
-        # Метка даты под группой
-        date_label = day_date.strftime('%d.%m')
-        draw.text(
-            (group_center_x, chart_y1 + 6),
-            date_label, font=font_small, fill=MUTED_COL,
-            anchor="mt" if hasattr(draw, 'textbbox') else None
-        )
-
-    # Ось Y подпись
-    draw.text((4, chart_y0 + CHART_H // 2), "сбоев", font=font_small, fill=MUTED_COL)
-
-    # Легенда внизу
-    legend_x = LEFT_PAD
-    legend_y = chart_y1 + 24
-    for pid_i, pid in enumerate(panel_ids):
-        color = PALETTE[pid_i % len(PALETTE)]
-        draw.rounded_rectangle(
-            [legend_x, legend_y + 1, legend_x + 12, legend_y + 11], radius=2, fill=color
-        )
-        draw.text((legend_x + 16, legend_y), aliases[pid], font=font_small, fill=TEXT_COL)
-        legend_x += 16 + len(aliases[pid]) * 7 + 16
+    # ── Легенда градиента (общая, внизу) ─────────────────────────────────────
+    leg_y  = (BLOCK_H + BLOCK_GAP) * n_panels - BLOCK_GAP + GRID_H // 2 + 6
+    leg_x  = LEFT_PAD + DAY_LABELS_W
+    draw.text((leg_x, leg_y + 1), "Меньше", font=font_small, fill=MUTED_COL)
+    leg_x += 52
+    steps  = [0, 1, 2, 3, 4]
+    for s in steps:
+        c = _outage_color(s, 4)
+        draw.rounded_rectangle([leg_x, leg_y, leg_x + CELL - 1, leg_y + CELL - 1],
+                                radius=2, fill=c)
+        leg_x += STEP
+    draw.text((leg_x + 2, leg_y + 1), "Больше", font=font_small, fill=MUTED_COL)
 
     buf = io.BytesIO()
     img.save(buf, format="PNG")
@@ -4541,7 +4554,7 @@ async def show_stability_chart(callback_query: types.CallbackQuery, state: FSMCo
         await bot.send_photo(
             callback_query.message.chat.id,
             photo=types.BufferedInputFile(png_bytes, filename="stability.png"),
-            caption="📊 <b>График стабильности серверов</b>\nПоследние 7 дней · каждая ячейка = 6 часов",
+            caption="🗓 <b>Тепловая карта стабильности</b>\nКаждая ячейка = 1 день  ·  тёмно-красный = много сбоев  ·  серый = норма",
             parse_mode="HTML",
             reply_markup=keyboard
         )

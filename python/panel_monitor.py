@@ -123,6 +123,19 @@ class PanelMonitor:
                 )
         except Exception as e:
             logger.warning(f"⚠️ Не удалось сохранить обрыв в БД: {e}")
+
+    def _close_outage_in_db(self, panel_id: str, ended_at: datetime):
+        """Закрыть последний открытый обрыв панели (записать ended_at)"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute(
+                    """UPDATE panel_outages SET ended_at = ?
+                       WHERE panel_id = ? AND ended_at IS NULL
+                       ORDER BY id DESC LIMIT 1""",
+                    (ended_at.isoformat(), panel_id)
+                )
+        except Exception as e:
+            logger.warning(f"⚠️ Не удалось закрыть обрыв в БД: {e}")
     
     async def start_monitoring(self):
         """Запуск фонового мониторинга"""
@@ -198,9 +211,11 @@ class PanelMonitor:
                         available = False
                     if available:
                         if not state.is_available:
+                            now = datetime.now()
                             logger.info(f"✅ Панель {panel_id} восстановлена")
                             state.is_available = True
-                            state.last_status_change = datetime.now()
+                            state.last_status_change = now
+                            self._close_outage_in_db(panel_id, now)
                         state.consecutive_failures = 0
                     else:
                         state.consecutive_failures += 1
@@ -254,9 +269,11 @@ class PanelMonitor:
         
         # Логируем только изменения статуса
         if not state.is_available:
+            now = datetime.now()
             logger.info(f"✅ Панель {panel_id} восстановлена")
             state.is_available = True
-            state.last_status_change = datetime.now()
+            state.last_status_change = now
+            self._close_outage_in_db(panel_id, now)
         
         # Детальное логирование только для отладки
         if state.consecutive_successes <= 3:
