@@ -2248,7 +2248,7 @@ async def back_to_allclients(callback_query: types.CallbackQuery, is_refresh: bo
             # Добавляем кнопки "Обновить" и "Назад"
             buttons = [
                 [InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_allclients")],
-                [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+                [InlineKeyboardButton(text="🔙 Назад", callback_data="select_panel_to_connect")]
             ]
             keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
             
@@ -2361,7 +2361,7 @@ async def back_to_allclients(callback_query: types.CallbackQuery, is_refresh: bo
         # Добавляем кнопки "Обновить" и "Назад"
         buttons.append([
             InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_allclients"),
-            InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_server_status")
+            InlineKeyboardButton(text="🔙 Назад", callback_data="select_panel_to_connect")
         ])
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
