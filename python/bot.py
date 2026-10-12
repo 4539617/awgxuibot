@@ -2808,7 +2808,7 @@ async def show_server_status(callback_query: types.CallbackQuery, state: FSMCont
                 InlineKeyboardButton(text="🖥️ Сервер", callback_data="select_panel_to_connect")
             ],
             [
-                InlineKeyboardButton(text="📱 Настройка приложений", callback_data="app_settings")
+                InlineKeyboardButton(text="📱 Приложения", callback_data="app_settings")
             ],
             [
                 InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")
