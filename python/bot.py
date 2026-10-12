@@ -4221,7 +4221,7 @@ async def _render_servers_screen(callback_query: types.CallbackQuery, is_refresh
         ])
 
     keyboard_buttons.append([
-        InlineKeyboardButton(text="📋 Все ключи", callback_data="cmd_allclients"),
+        InlineKeyboardButton(text="📋 Все ключи сервера", callback_data="cmd_allclients"),
     ])
     keyboard_buttons.append([
         InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_servers"),
