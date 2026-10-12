@@ -4181,26 +4181,21 @@ async def refresh_panels_status(callback_query: types.CallbackQuery, state: FSMC
 
 def _build_stability_chart(panel_states: dict, panels: dict) -> bytes:
     """
-    GitHub-style heatmap стабильности серверов.
-    Для каждой панели — своя сетка: ось X = недели (16 нед), ось Y = дни недели (Пн–Вс).
-    Цвет ячейки — градиент по кол-ву сбоев в этот день (серый→красный).
-    Показывает период, подписи месяцев, легенду градиента.
+    Компактная таблица стабильности: строки = серверы, столбцы = дни (30 дней).
+    Ширина ~800px — помещается на экран телефона целиком.
+    Цвет ячейки: зелёный (0 сбоев) → жёлтый → красный (много сбоев).
+    Показывает подписи дат сверху и имена серверов слева.
     """
     import io
     import datetime as dt_mod
     from PIL import Image, ImageDraw, ImageFont
 
-    now        = datetime.now()
-    WEEKS      = 16
-    TOTAL_DAYS = WEEKS * 7   # 112 дней
+    now   = datetime.now()
+    today = now.date()
+    DAYS  = 30
 
-    # Начало: отматываем назад до ближайшего понедельника, затем WEEKS недель
-    today      = now.date()
-    # начало текущей недели (пн)
-    week_start = today - dt_mod.timedelta(days=today.weekday())
-    # начало периода = WEEKS недель назад
-    period_start_date = week_start - dt_mod.timedelta(weeks=WEEKS - 1)
-    period_end_date   = week_start + dt_mod.timedelta(days=6)
+    # 30 дней: от (сегодня - 29) до сегодня
+    day_list = [today - dt_mod.timedelta(days=DAYS - 1 - i) for i in range(DAYS)]
 
     panel_ids = list(panels.keys())
     if not panel_ids:
@@ -4215,49 +4210,58 @@ def _build_stability_chart(panel_states: dict, panels: dict) -> bytes:
         if ps:
             for ev in ps.outage_events:
                 d = ev.date()
-                if period_start_date <= d <= period_end_date:
+                if d in set(day_list):
                     day_counts[d] = day_counts.get(d, 0) + 1
         outages_per_day[pid] = day_counts
 
-    # Максимум сбоев за день по всем панелям (для нормализации градиента)
     all_counts = [c for pid in panel_ids for c in outages_per_day[pid].values()]
     max_count  = max(all_counts) if all_counts else 1
 
-    # ── Константы размеров ────────────────────────────────────────────────────
-    CELL       = 13   # размер квадратика
-    GAP        = 3    # зазор между квадратиками
-    STEP       = CELL + GAP
-    DAY_LABELS_W = 28  # ширина подписей дней недели (Пн/Ср/Пт)
-    LEFT_PAD   = 10
-    RIGHT_PAD  = 16
-    TOP_PAD    = 36   # заголовок + месяцы
-    BLOCK_GAP  = 28   # вертикальный отступ между панелями
-    ALIAS_H    = 20   # высота строки с именем панели
-    GRID_H     = 7 * STEP - GAP
-    BLOCK_H    = ALIAS_H + TOP_PAD + GRID_H  # высота одного блока (панель)
-    LEGEND_H   = 28
-    BOTTOM_PAD = 8
+    # ── Размеры ───────────────────────────────────────────────────────────────
+    # Целевая ширина ~800px; подбираем размер ячейки автоматически
+    TARGET_W    = 800
+    ALIAS_W     = 80   # ширина колонки с именем сервера
+    RIGHT_PAD   = 12
+    DATE_H      = 32   # высота строки с датами
+    TITLE_H     = 36   # высота заголовка
+    BOTTOM_PAD  = 36   # место для легенды
+
+    available_w = TARGET_W - ALIAS_W - RIGHT_PAD
+    CELL        = max(16, available_w // DAYS - 2)   # размер ячейки
+    GAP         = 2
+    STEP        = CELL + GAP
+
+    # Пересчитываем реальную ширину
+    grid_w  = DAYS * STEP - GAP
+    img_w   = ALIAS_W + grid_w + RIGHT_PAD
 
     n_panels = len(panel_ids)
-    grid_w   = WEEKS * STEP - GAP
-    img_w    = LEFT_PAD + DAY_LABELS_W + grid_w + RIGHT_PAD
-    img_h    = (BLOCK_H + BLOCK_GAP) * n_panels - BLOCK_GAP + LEGEND_H + BOTTOM_PAD + 10
+    ROW_H    = CELL + GAP          # высота строки сервера
+    img_h    = TITLE_H + DATE_H + n_panels * ROW_H + BOTTOM_PAD
 
     BG        = (13,  17,  23)
-    SURFACE   = (22,  27,  34)
     TEXT_COL  = (201, 209, 217)
     MUTED_COL = (110, 118, 129)
-    EMPTY     = (33,  38,  45)    # ячейка без данных / 0 сбоев
+    EMPTY     = (33,  38,  45)
+    SEP_COL   = (40,  46,  54)
 
-    def _outage_color(count: int, mx: int) -> tuple:
-        """Градиент: 0 → серый, 1 → светло-красный, max → ярко-красный."""
+    def _cell_color(count: int, mx: int) -> tuple:
+        """0 → зелёный, середина → жёлтый, max → красный."""
         if count == 0:
-            return EMPTY
+            return (56, 193, 114)   # зелёный
         t = min(count / mx, 1.0) if mx > 0 else 1.0
-        # светло-красный (255,160,160) → насыщенный (220,38,38)
-        r = int(255 - t * (255 - 220))
-        g = int(160 - t * 160)
-        b = int(160 - t * 160)
+        if t <= 0.5:
+            # зелёный → жёлтый
+            s = t * 2
+            r = int(56  + s * (255 - 56))
+            g = int(193 + s * (200 - 193))
+            b = int(114 - s * 114)
+        else:
+            # жёлтый → красный
+            s = (t - 0.5) * 2
+            r = 255
+            g = int(200 - s * 200)
+            b = 0
         return (r, g, b)
 
     img  = Image.new("RGB", (img_w, img_h), color=BG)
@@ -4265,84 +4269,76 @@ def _build_stability_chart(panel_states: dict, panels: dict) -> bytes:
 
     # ── Шрифты ───────────────────────────────────────────────────────────────
     try:
-        font_bold  = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 12)
+        font_bold  = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 13)
         font_label = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 11)
         font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 10)
     except Exception:
         font_bold = font_label = font_small = ImageFont.load_default()
 
-    # Подписи дней недели (только Пн, Ср, Пт)
-    DAY_NAMES = ['Пн', '', 'Ср', '', 'Пт', '', '']
+    # ── Заголовок ─────────────────────────────────────────────────────────────
+    period_str = f"{day_list[0].strftime('%d.%m.%Y')}  —  {day_list[-1].strftime('%d.%m.%Y')}"
+    draw.text((ALIAS_W, 10), "Стабильность серверов", font=font_bold, fill=TEXT_COL)
+    draw.text((ALIAS_W, 24), period_str, font=font_small, fill=MUTED_COL)
 
-    for panel_idx, pid in enumerate(panel_ids):
+    # ── Подписи дат сверху ────────────────────────────────────────────────────
+    last_month = None
+    for col, d in enumerate(day_list):
+        cx = ALIAS_W + col * STEP + CELL // 2
+        # Число дня — каждый день
+        day_num = d.strftime('%-d') if hasattr(d, 'strftime') else d.strftime('%d').lstrip('0') or '0'
+        try:
+            day_num = str(d.day)
+        except Exception:
+            pass
+        draw.text((cx, TITLE_H + 2), day_num, font=font_small, fill=MUTED_COL,
+                  anchor="mt" if hasattr(draw, 'textbbox') else None)
+        # Месяц — только при смене
+        if d.month != last_month:
+            last_month = d.month
+            draw.text((cx, TITLE_H + 14), d.strftime('%b'), font=font_small, fill=TEXT_COL,
+                      anchor="mt" if hasattr(draw, 'textbbox') else None)
+
+    # ── Строки серверов ───────────────────────────────────────────────────────
+    for row_i, pid in enumerate(panel_ids):
         alias      = aliases[pid]
         day_counts = outages_per_day[pid]
+        row_y      = TITLE_H + DATE_H + row_i * ROW_H
 
-        block_top = panel_idx * (BLOCK_H + BLOCK_GAP)
+        # Горизонтальный разделитель
+        draw.line([(0, row_y), (img_w, row_y)], fill=SEP_COL, width=1)
 
-        # Имя панели
-        draw.text((LEFT_PAD, block_top + 4), alias, font=font_bold, fill=TEXT_COL)
+        # Имя сервера слева
+        draw.text((4, row_y + CELL // 2), alias, font=font_label, fill=TEXT_COL,
+                  anchor="lm" if hasattr(draw, 'textbbox') else None)
 
-        # Период под именем
-        pf = period_start_date.strftime('%d.%m.%Y')
-        pt = period_end_date.strftime('%d.%m.%Y')
-        draw.text((LEFT_PAD, block_top + 18), f"{pf} — {pt}", font=font_small, fill=MUTED_COL)
+        # Ячейки
+        for col, d in enumerate(day_list):
+            count = day_counts.get(d, 0)
+            color = _cell_color(count, max_count)
+            cx = ALIAS_W + col * STEP
+            cy = row_y + 1
+            draw.rounded_rectangle(
+                [cx, cy, cx + CELL - 1, cy + CELL - 1],
+                radius=3, fill=color
+            )
+            # Число сбоев — если > 0 и ячейка достаточно широкая
+            if count > 0 and CELL >= 18:
+                label = str(count) if count < 100 else "99+"
+                draw.text((cx + CELL // 2, cy + CELL // 2), label,
+                          font=font_small, fill=(0, 0, 0),
+                          anchor="mm" if hasattr(draw, 'textbbox') else None)
 
-        grid_top = block_top + ALIAS_H + TOP_PAD
-
-        # ── Подписи месяцев ───────────────────────────────────────────────────
-        last_month = None
-        for w in range(WEEKS):
-            week_date = period_start_date + dt_mod.timedelta(weeks=w)
-            if week_date.month != last_month:
-                last_month = week_date.month
-                mx = LEFT_PAD + DAY_LABELS_W + w * STEP
-                month_label = week_date.strftime('%b')
-                draw.text((mx, block_top + ALIAS_H + 4), month_label,
-                          font=font_small, fill=MUTED_COL)
-
-        # ── Подписи дней недели ───────────────────────────────────────────────
-        for dow, name in enumerate(DAY_NAMES):
-            if not name:
-                continue
-            dy = grid_top + dow * STEP + (CELL // 2)
-            draw.text((LEFT_PAD + DAY_LABELS_W - 4, dy), name,
-                      font=font_small, fill=MUTED_COL,
-                      anchor="rm" if hasattr(draw, 'textbbox') else None)
-
-        # ── Ячейки ────────────────────────────────────────────────────────────
-        for w in range(WEEKS):
-            for dow in range(7):
-                d = period_start_date + dt_mod.timedelta(weeks=w, days=dow)
-                cx = LEFT_PAD + DAY_LABELS_W + w * STEP
-                cy = grid_top + dow * STEP
-                if d > today:
-                    # будущие дни — не рисуем
-                    continue
-                count = day_counts.get(d, 0)
-                color = _outage_color(count, max_count)
-                draw.rounded_rectangle(
-                    [cx, cy, cx + CELL - 1, cy + CELL - 1],
-                    radius=2, fill=color
-                )
-                # Число сбоев внутри ячейки (если > 0 и ячейка достаточно крупная)
-                if count > 0 and CELL >= 13:
-                    draw.text((cx + CELL // 2, cy + CELL // 2), str(count),
-                              font=font_small, fill=(255, 255, 255),
-                              anchor="mm" if hasattr(draw, 'textbbox') else None)
-
-    # ── Легенда градиента (общая, внизу) ─────────────────────────────────────
-    leg_y  = (BLOCK_H + BLOCK_GAP) * n_panels - BLOCK_GAP + GRID_H // 2 + 6
-    leg_x  = LEFT_PAD + DAY_LABELS_W
-    draw.text((leg_x, leg_y + 1), "Меньше", font=font_small, fill=MUTED_COL)
+    # ── Легенда внизу ─────────────────────────────────────────────────────────
+    leg_y = TITLE_H + DATE_H + n_panels * ROW_H + 8
+    draw.line([(0, leg_y - 4), (img_w, leg_y - 4)], fill=SEP_COL, width=1)
+    leg_x = ALIAS_W
+    draw.text((leg_x, leg_y + 2), "0 сбоев", font=font_small, fill=MUTED_COL)
     leg_x += 52
-    steps  = [0, 1, 2, 3, 4]
-    for s in steps:
-        c = _outage_color(s, 4)
-        draw.rounded_rectangle([leg_x, leg_y, leg_x + CELL - 1, leg_y + CELL - 1],
-                                radius=2, fill=c)
-        leg_x += STEP
-    draw.text((leg_x + 2, leg_y + 1), "Больше", font=font_small, fill=MUTED_COL)
+    for s, label in [(0, ''), (1, ''), (2, ''), (3, ''), (4, '')]:
+        c = _cell_color(s, 4)
+        draw.rounded_rectangle([leg_x, leg_y, leg_x + 14, leg_y + 14], radius=2, fill=c)
+        leg_x += 18
+    draw.text((leg_x + 4, leg_y + 2), "много", font=font_small, fill=MUTED_COL)
 
     buf = io.BytesIO()
     img.save(buf, format="PNG")
