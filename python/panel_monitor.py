@@ -9,6 +9,7 @@ import sqlite3
 from datetime import datetime
 from typing import Dict, Optional, List
 from dataclasses import dataclass, field
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 logger = logging.getLogger(__name__)
 
@@ -342,7 +343,8 @@ class PanelMonitor:
                         f"🔄 <b>Автоматическое переключение панели</b>\n\n"
                         f"❌ Недоступна: <b>{failed_panel_alias}</b> <code>{failed_panel_id}</code>\n"
                         f"✅ Переключено на: <b>{panel_config.alias}</b> <code>{panel_id}</code>\n\n"
-                        f"⏰ Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                        f"⏰ Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                        panel_id=failed_panel_id
                     )
                     return
                 else:
@@ -416,12 +418,13 @@ class PanelMonitor:
         # Возвращаем ключи в том порядке, в котором они определены
         return list(panels.keys())
     
-    async def _notify_admins(self, message: str):
+    async def _notify_admins(self, message: str, panel_id: str = None):
         """
         Отправить уведомление всем администраторам
         
         Args:
             message: Текст уведомления (поддерживает HTML)
+            panel_id: ID панели для кнопки перехода к уведомлениям
         """
         # Проверка cooldown для предотвращения спама
         now = datetime.now()
@@ -432,14 +435,20 @@ class PanelMonitor:
                 return
         
         self.last_notification_time = now
-        
+
+        callback = f"notif_panel_{panel_id}" if panel_id else "notification_settings"
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="🔔 Уведомления", callback_data=callback)
+        ]])
+
         # Отправка уведомлений всем администраторам
         for admin_id in self.admin_ids:
             try:
                 await self.bot.send_message(
                     chat_id=admin_id,
                     text=message,
-                    parse_mode="HTML"
+                    parse_mode="HTML",
+                    reply_markup=keyboard
                 )
                 logger.info(f"📨 Уведомление отправлено администратору {admin_id}")
             except Exception as e:

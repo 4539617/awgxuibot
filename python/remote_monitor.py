@@ -11,6 +11,7 @@ import aiohttp
 import ssl
 from datetime import datetime
 from typing import Dict, Optional, List
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 logger = logging.getLogger(__name__)
 
@@ -269,9 +270,13 @@ class RemoteMonitor:
                 f"Не отвечает {self.threshold_check_count} раза подряд\n"
                 f"⏰ {now.strftime('%H:%M:%S')}"
             )
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="🔔 Уведомления", callback_data=f"notif_panel_{panel_id}")
+        ]])
         for admin_id in self.admin_ids:
             try:
-                await self.bot.send_message(chat_id=admin_id, text=text, parse_mode="HTML")
+                await self.bot.send_message(chat_id=admin_id, text=text, parse_mode="HTML",
+                                            reply_markup=keyboard)
             except Exception as e:
                 logger.error(f"RemoteMonitor: ошибка отправки availability алерта {admin_id}: {e}")
 
@@ -326,8 +331,12 @@ class RemoteMonitor:
                 f"⏰ {now.strftime('%H:%M:%S')}"
             )
 
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="🔔 Уведомления", callback_data=f"notif_panel_{panel_id}")
+        ]])
         for admin_id in self.admin_ids:
             try:
-                await self.bot.send_message(chat_id=admin_id, text=text, parse_mode="HTML")
+                await self.bot.send_message(chat_id=admin_id, text=text, parse_mode="HTML",
+                                            reply_markup=keyboard)
             except Exception as e:
                 logger.error(f"RemoteMonitor: ошибка отправки алерта {admin_id}: {e}")
