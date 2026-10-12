@@ -4178,6 +4178,165 @@ async def refresh_panels_status(callback_query: types.CallbackQuery, state: FSMC
     await show_panels_list(callback_query, state, is_refresh=True)
 
 
+
+def _build_stability_chart(panel_states: dict, panels: dict) -> bytes:
+    """
+    Строит PNG столбчатый график количества сбоев по дням за последние 7 дней.
+    Каждый сервер — своя линия столбцов своего цвета.
+    Ось X — даты (dd.mm), ось Y — количество сбоев.
+    Возвращает PNG как bytes.
+    """
+    import io
+    import datetime as dt_mod
+    from PIL import Image, ImageDraw, ImageFont
+
+    now = datetime.now()
+    DAYS = 7
+
+    # Даты: от 6 дней назад до сегодня включительно
+    day_dates = [(now - dt_mod.timedelta(days=i)).date() for i in range(DAYS - 1, -1, -1)]
+
+    panel_ids = list(panels.keys())
+    if not panel_ids:
+        raise ValueError("Нет панелей")
+
+    aliases = {pid: getattr(panels[pid], 'alias', pid) for pid in panel_ids}
+
+    # Подсчёт сбоев по дням для каждой панели
+    # outages_by_day[pid][day_index] = count
+    outages_by_day = {}
+    for pid in panel_ids:
+        counts = [0] * DAYS
+        ps = panel_states.get(pid)
+        if ps:
+            for ev in ps.outage_events:
+                ev_date = ev.date()
+                if ev_date in day_dates:
+                    idx = day_dates.index(ev_date)
+                    counts[idx] += 1
+        outages_by_day[pid] = counts
+
+    max_count = max(
+        (max(outages_by_day[pid]) for pid in panel_ids),
+        default=1
+    ) or 1
+
+    # Цвета для серверов
+    PALETTE = [
+        (99,  179, 237),   # голубой
+        (252, 129,  74),   # оранжевый
+        (72,  199, 142),   # зелёный
+        (246, 173,  85),   # жёлтый
+        (159, 122, 234),   # фиолетовый
+    ]
+
+    # Размеры холста
+    LEFT_PAD   = 52
+    RIGHT_PAD  = 24
+    TOP_PAD    = 44
+    BOTTOM_PAD = 48
+    BAR_AREA_W = 520
+    CHART_H    = 260
+
+    img_w = LEFT_PAD + BAR_AREA_W + RIGHT_PAD
+    img_h = TOP_PAD + CHART_H + BOTTOM_PAD
+
+    BG        = (24, 24, 36)
+    GRID_COL  = (50, 50, 68)
+    TEXT_COL  = (200, 200, 220)
+    MUTED_COL = (120, 120, 145)
+
+    img = Image.new("RGB", (img_w, img_h), color=BG)
+    draw = ImageDraw.Draw(img)
+
+    # Шрифты
+    try:
+        font_title  = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 14)
+        font_label  = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 11)
+        font_small  = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 10)
+    except Exception:
+        font_title = font_label = font_small = ImageFont.load_default()
+
+    # Заголовок
+    draw.text((LEFT_PAD, 12), "Сбои по дням · последние 7 дней", font=font_title, fill=TEXT_COL)
+
+    # Область графика
+    chart_x0 = LEFT_PAD
+    chart_y0 = TOP_PAD
+    chart_x1 = LEFT_PAD + BAR_AREA_W
+    chart_y1 = TOP_PAD + CHART_H
+
+    # Горизонтальные линии сетки (0, 25%, 50%, 75%, 100% от max_count)
+    y_ticks = 5
+    for i in range(y_ticks + 1):
+        val = round(max_count * i / y_ticks)
+        y = chart_y1 - int(CHART_H * i / y_ticks)
+        draw.line([(chart_x0, y), (chart_x1, y)], fill=GRID_COL, width=1)
+        label = str(val)
+        draw.text((chart_x0 - 8, y - 6), label, font=font_small, fill=MUTED_COL, anchor="rm" if hasattr(draw, 'textbbox') else None)
+
+    # Столбцы
+    group_w  = BAR_AREA_W / DAYS
+    bar_w    = max(6, int(group_w / (len(panel_ids) + 1)))
+    bar_gap  = max(2, int(bar_w * 0.25))
+
+    total_bars_w = len(panel_ids) * bar_w + (len(panel_ids) - 1) * bar_gap
+
+    for day_i, day_date in enumerate(day_dates):
+        group_center_x = chart_x0 + int(group_w * day_i + group_w / 2)
+        start_x = group_center_x - total_bars_w // 2
+
+        for pid_i, pid in enumerate(panel_ids):
+            count = outages_by_day[pid][day_i]
+            color = PALETTE[pid_i % len(PALETTE)]
+
+            bar_x0 = start_x + pid_i * (bar_w + bar_gap)
+            bar_x1 = bar_x0 + bar_w
+
+            if count > 0:
+                bar_h = max(4, int(CHART_H * count / max_count))
+                bar_y0 = chart_y1 - bar_h
+                bar_y1 = chart_y1
+                draw.rounded_rectangle([bar_x0, bar_y0, bar_x1, bar_y1], radius=3, fill=color)
+                # Значение над столбцом
+                if bar_h > 14:
+                    draw.text(
+                        (bar_x0 + bar_w // 2, bar_y0 - 2),
+                        str(count), font=font_small, fill=color,
+                        anchor="mb" if hasattr(draw, 'textbbox') else None
+                    )
+            else:
+                # Тонкая базовая линия если сбоев нет
+                draw.line([(bar_x0, chart_y1), (bar_x1, chart_y1)], fill=color, width=2)
+
+        # Метка даты под группой
+        date_label = day_date.strftime('%d.%m')
+        draw.text(
+            (group_center_x, chart_y1 + 6),
+            date_label, font=font_small, fill=MUTED_COL,
+            anchor="mt" if hasattr(draw, 'textbbox') else None
+        )
+
+    # Ось Y подпись
+    draw.text((4, chart_y0 + CHART_H // 2), "сбоев", font=font_small, fill=MUTED_COL)
+
+    # Легенда внизу
+    legend_x = LEFT_PAD
+    legend_y = chart_y1 + 24
+    for pid_i, pid in enumerate(panel_ids):
+        color = PALETTE[pid_i % len(PALETTE)]
+        draw.rounded_rectangle(
+            [legend_x, legend_y + 1, legend_x + 12, legend_y + 11], radius=2, fill=color
+        )
+        draw.text((legend_x + 16, legend_y), aliases[pid], font=font_small, fill=TEXT_COL)
+        legend_x += 16 + len(aliases[pid]) * 7 + 16
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+
 async def _render_servers_screen(callback_query: types.CallbackQuery, is_refresh: bool = False):
     """Рендер экрана 'Серверы': кнопки панелей + метрики текущей панели + статистика сбоев."""
     panel_manager = config.panel_manager
@@ -4222,6 +4381,7 @@ async def _render_servers_screen(callback_query: types.CallbackQuery, is_refresh
 
     keyboard_buttons.append([
         InlineKeyboardButton(text="📋 Все ключи сервера", callback_data="cmd_allclients"),
+        InlineKeyboardButton(text="📊 График стабильности", callback_data="stability_chart"),
     ])
     keyboard_buttons.append([
         InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_servers"),
@@ -4354,6 +4514,42 @@ async def refresh_servers(callback_query: types.CallbackQuery, state: FSMContext
     except Exception as e:
         logger.error(f"Ошибка обновления экрана серверов: {e}")
         await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
+
+
+@dp.callback_query(lambda c: c.data == "stability_chart")
+async def show_stability_chart(callback_query: types.CallbackQuery, state: FSMContext):
+    """График стабильности серверов"""
+    user_id = callback_query.from_user.id
+    if not is_admin(user_id):
+        await callback_query.answer("⛔ Доступ запрещен", show_alert=True)
+        return
+
+    await callback_query.answer("📊 Строю график...")
+
+    try:
+        panels = config.panel_manager.get_all_panels()
+        panel_states = _panel_monitor.panel_states if _panel_monitor else {}
+
+        png_bytes = await asyncio.get_event_loop().run_in_executor(
+            None, _build_stability_chart, panel_states, panels
+        )
+
+        import io
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="select_panel_to_connect")]
+        ])
+        await bot.send_photo(
+            callback_query.message.chat.id,
+            photo=types.BufferedInputFile(png_bytes, filename="stability.png"),
+            caption="📊 <b>График стабильности серверов</b>\nПоследние 7 дней · каждая ячейка = 6 часов",
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
+    except Exception as e:
+        logger.error(f"Ошибка построения графика стабильности: {e}")
+        await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
+
+
 
 
 @dp.callback_query(lambda c: c.data and c.data.startswith("connect_panel:"))
