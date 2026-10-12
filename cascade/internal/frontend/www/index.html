@@ -754,6 +754,10 @@
             <div class="flex gap-2">
               <!-- Add Widget dropdown -->
               <div style="position:relative;">
+                <div v-if="dashShowAddMenu"
+                  @click="dashShowAddMenu = false"
+                  style="position:fixed; inset:0; z-index:99;">
+                </div>
                 <button @click="dashShowAddMenu = !dashShowAddMenu"
                   class="flex items-center gap-2 text-white rounded-lg text-sm font-medium"
                   style="padding:7px 12px; background:#4f46e5; border:none; cursor:pointer;">
@@ -761,7 +765,6 @@
                   Add Widget
                 </button>
                 <div v-if="dashShowAddMenu"
-                  @click.self="dashShowAddMenu = false"
                   class="bg-white dark:bg-neutral-700 rounded-lg shadow-lg"
                   style="position:absolute; right:0; top:calc(100% + 6px); width:220px; z-index:100; border:1px solid #e5e7eb;">
                   <div v-for="wt in dashAvailableWidgetTypes" :key="wt.type"
