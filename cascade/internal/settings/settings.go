@@ -60,6 +60,13 @@ type GlobalSettings struct {
 	ExpiredPeerRateDown int    `json:"expiredPeerRateDown"` // kbps downstream limit; 0 = no limit
 	ExpiredPeerRateUp   int    `json:"expiredPeerRateUp"`   // kbps upstream limit;   0 = no limit
 	ExpiredPeerGroupId  string `json:"expiredPeerGroupId"`  // client-group alias ID to move expired peer into; "" = don't move
+
+	// Splash / background gradient colours (CSS hex, e.g. "#14532d").
+	SplashColor1 string `json:"splashColor1"` // first colour stop of the loading screen gradient
+	SplashColor2 string `json:"splashColor2"` // second colour stop of the loading screen gradient
+
+	// Custom logo: base64 data URL (e.g. "data:image/png;base64,..."). Empty = use built-in icon.
+	SplashLogo string `json:"splashLogo"`
 }
 
 // Template is an AWG2 obfuscation parameter set.
@@ -943,7 +950,37 @@ func applySettingKey(s *GlobalSettings, k, v string) {
 		}
 	case "expiredPeerGroupId":
 		s.ExpiredPeerGroupId = v
+	case "splashColor1":
+		if isHexColor(v) {
+			s.SplashColor1 = v
+		}
+	case "splashColor2":
+		if isHexColor(v) {
+			s.SplashColor2 = v
+		}
+	case "splashLogo":
+		// Accept empty string (reset) or a base64 data URL for an image.
+		if v == "" || strings.HasPrefix(v, "data:image/") {
+			s.SplashLogo = v
+		}
 	}
+}
+
+// isHexColor reports whether v is a valid CSS hex colour (#rgb or #rrggbb).
+func isHexColor(v string) bool {
+	if len(v) == 0 || v[0] != '#' {
+		return false
+	}
+	rest := v[1:]
+	if len(rest) != 3 && len(rest) != 6 {
+		return false
+	}
+	for _, c := range rest {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+			return false
+		}
+	}
+	return true
 }
 
 func boolInt(b bool) int {

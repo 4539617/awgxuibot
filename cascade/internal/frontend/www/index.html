@@ -166,12 +166,18 @@
   .drag-handle:active { cursor: grabbing; }
   .fw-drag-ghost { opacity: 0.4; background: #a5b4fc !important; }
 
+  /* ── Gradient palette (overridden at runtime by JS when settings load) ── */
+  :root {
+    --grad-c1: #1a0000;
+    --grad-c2: #000000;
+  }
+
   /* ── Splash screen ── */
   #app-splash {
     position: fixed;
     inset: 0;
     z-index: 9999;
-    background: linear-gradient(135deg, #14532d 0%, #0f172a 50%, #1e3a8a 100%);
+    background: linear-gradient(135deg, var(--grad-c1) 0%, var(--grad-c2) 100%);
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -186,7 +192,7 @@
   .splash-spinner {
     width: 40px;
     height: 40px;
-    border: 3px solid rgba(37,99,235,0.25);
+    border: 3px solid rgba(255,255,255,0.2);
     border-top-color: #22c55e;
     border-radius: 50%;
     animation: splash-spin 0.8s linear infinite;
@@ -195,15 +201,14 @@
     to { transform: rotate(360deg); }
   }
 
-  /* ── Page background — light mode: soft tint of logo palette ── */
+  /* ── Page background ── */
   html, body {
-    background: linear-gradient(135deg, #1a0000 0%, #3d0000 50%, #000000 100%) !important;
+    background: linear-gradient(135deg, var(--grad-c1) 0%, var(--grad-c2) 100%) !important;
     background-attachment: fixed !important;
     min-height: 100vh;
   }
-  /* ── Page background — dark mode: deep logo-gradient ── */
   html.dark, html.dark body {
-    background: linear-gradient(135deg, #000000 0%, #3d0000 50%, #1a0000 100%) !important;
+    background: linear-gradient(135deg, var(--grad-c2) 0%, var(--grad-c1) 100%) !important;
     background-attachment: fixed !important;
   }
 
@@ -372,7 +377,7 @@
 <body>
   <!-- Splash screen: hides raw {{ }} templates until Vue mounts -->
   <div id="app-splash">
-    <img src="./img/logo.svg" alt="Cascade" style="width:240px; max-width:80vw; opacity:0.95;">
+    <img src="./img/logo-icon.svg" alt="Cascade" style="width:120px; height:120px; opacity:0.95;">
     <div class="splash-spinner"></div>
   </div>
   <div id="app">
@@ -464,7 +469,7 @@
           <div class="nav-content" style="min-width:256px; flex:1; display:flex; flex-direction:column; overflow-y:auto; overflow-x:hidden;">
           <!-- Logo -->
           <div style="padding: 20px 16px 14px;">
-            <img :src="theme === 'dark' ? 'img/logo-dark.svg' : 'img/logo.svg'" style="width:216px; height:auto; display:block;" alt="Cascade" />
+            <img :src="appLogoSrc" style="width:120px; height:auto; display:block;" alt="Cascade" />
           </div>
           <!-- Router identity -->
           <div style="padding: 0 16px 14px; border-bottom: 1px solid #e5e7eb;" class="dark:border-neutral-700">
@@ -4278,6 +4283,92 @@
                     ⚠ No rate limits or group configured — restrict policy will have no effect.
                   </p>
                 </div>
+              </div>
+
+              <div class="flex items-center gap-3 pt-2">
+                <button @click="saveSettings"
+                  class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded transition text-sm font-medium">
+                  Save Settings
+                </button>
+                <span v-if="settingsSaved" class="text-sm text-green-600 dark:text-green-400">Saved!</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Appearance -->
+          <div class="shadow-md rounded-lg bg-white dark:bg-neutral-700 overflow-hidden">
+            <div class="p-5 border-b dark:border-neutral-600">
+              <p class="text-xl font-medium dark:text-neutral-200">Appearance</p>
+              <p class="text-sm text-gray-500 dark:text-neutral-400 mt-1">Logo and background gradient — applied to the splash screen, login page and all pages</p>
+            </div>
+            <div class="p-5" style="display:flex; flex-direction:column; gap:20px;">
+
+              <!-- ── Logo ── -->
+              <div>
+                <p class="text-sm font-semibold dark:text-neutral-300 mb-3">Logo</p>
+                <div style="display:flex; gap:20px; flex-wrap:wrap; align-items:center;">
+
+                  <!-- Current logo preview -->
+                  <div style="width:88px; height:88px; border-radius:10px; border:1px solid #e5e7eb; background:rgba(0,0,0,0.06); display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0;"
+                       class="dark:border-neutral-600" title="Current logo">
+                    <img :src="appLogoSrc" alt="Logo preview" style="max-width:80px; max-height:80px; object-fit:contain;">
+                  </div>
+
+                  <div style="display:flex; flex-direction:column; gap:8px;">
+                    <!-- Upload button -->
+                    <label style="display:inline-flex; align-items:center; gap:7px; cursor:pointer;"
+                           class="px-3 py-2 text-sm font-medium rounded border border-gray-300 dark:border-neutral-500 bg-white dark:bg-neutral-600 dark:text-neutral-200 hover:bg-gray-50 dark:hover:bg-neutral-500 transition">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                      </svg>
+                      Upload image
+                      <input id="logo-upload-input" type="file" accept="image/*" style="display:none;" @change="handleLogoUpload">
+                    </label>
+
+                    <!-- Reset to default -->
+                    <button v-if="globalSettings.splashLogo" @click="clearLogo"
+                      class="px-3 py-2 text-sm font-medium rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 bg-white dark:bg-neutral-600 hover:bg-red-50 dark:hover:bg-red-900 transition"
+                      style="display:inline-flex; align-items:center; gap:7px;">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+                      </svg>
+                      Reset to default
+                    </button>
+
+                    <p class="text-xs text-gray-400 dark:text-neutral-500">PNG, JPG, SVG, WebP — max 2 MB. Shown on splash screen, login page and sidebar.</p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ── Gradient ── -->
+              <div style="border-top:1px solid #e5e7eb; padding-top:16px;" class="dark:border-neutral-600">
+                <p class="text-sm font-semibold dark:text-neutral-300 mb-3">Background gradient</p>
+                <div style="display:flex; gap:24px; flex-wrap:wrap; align-items:flex-end;">
+                  <!-- Color 1 -->
+                  <div>
+                    <label class="block text-sm font-medium dark:text-neutral-300 mb-2">Color 1</label>
+                    <div style="display:flex; align-items:center; gap:10px;">
+                      <input type="color" v-model="globalSettings.splashColor1"
+                        style="width:44px; height:36px; padding:2px; border-radius:6px; border:1px solid #d1d5db; cursor:pointer; background:none;">
+                      <span class="text-sm font-mono dark:text-neutral-300">{{ globalSettings.splashColor1 }}</span>
+                    </div>
+                  </div>
+                  <!-- Color 2 -->
+                  <div>
+                    <label class="block text-sm font-medium dark:text-neutral-300 mb-2">Color 2</label>
+                    <div style="display:flex; align-items:center; gap:10px;">
+                      <input type="color" v-model="globalSettings.splashColor2"
+                        style="width:44px; height:36px; padding:2px; border-radius:6px; border:1px solid #d1d5db; cursor:pointer; background:none;">
+                      <span class="text-sm font-mono dark:text-neutral-300">{{ globalSettings.splashColor2 }}</span>
+                    </div>
+                  </div>
+                  <!-- Preview swatch -->
+                  <div>
+                    <label class="block text-sm font-medium dark:text-neutral-300 mb-2">Preview</label>
+                    <div :style="'width:120px; height:36px; border-radius:6px; border:1px solid #d1d5db; background:linear-gradient(135deg,' + globalSettings.splashColor1 + ' 0%,' + globalSettings.splashColor2 + ' 100%);'"></div>
+                  </div>
+                </div>
+                <p class="text-xs text-gray-400 dark:text-neutral-500 mt-2">Updates live as you change colors. Save to persist.</p>
               </div>
 
               <div class="flex items-center gap-3 pt-2">
@@ -10193,9 +10284,14 @@
 
       <div v-if="authenticated === false">
 
+        <!-- Logo above login card -->
+        <div style="display:flex; justify-content:center; margin-top:40px; margin-bottom:16px;">
+          <img :src="appLogoSrc" alt="Cascade" style="width:80px; height:80px; object-fit:contain; opacity:0.92;">
+        </div>
+
         <!-- Step 1: username + password -->
         <form v-if="!totpRequired" @submit="login"
-          class="shadow rounded-md bg-black mx-auto w-64 p-5 overflow-hidden mt-10">
+          class="shadow rounded-md bg-black mx-auto w-64 p-5 overflow-hidden">
           <!-- Avatar -->
           <div class="h-20 w-20 mb-10 mt-5 mx-auto rounded-full bg-red-800 relative overflow-hidden">
             <svg class="w-10 h-10 m-5 text-white" xmlns="http://www.w3.org/2000/svg"

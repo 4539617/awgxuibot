@@ -389,6 +389,11 @@ new Vue({
       expiredPeerGroupId:  '',         // client-group alias ID; '' = don't move
       // UI preferences
       lang: 'en',
+      // Splash / page gradient colours
+      splashColor1: '#1a0000',
+      splashColor2: '#000000',
+      // Custom logo: base64 data URL, or '' to use built-in icon
+      splashLogo: '',
       // Runtime-only (returned by GET, not sent in PUT)
       hostname:         '',
       resolvedPublicIP: '',
@@ -5963,6 +5968,38 @@ new Vue({
     // Settings & Templates
     // ============================================================
 
+    applyGradientColors(c1, c2) {
+      const root = document.documentElement;
+      root.style.setProperty('--grad-c1', c1 || '#1a0000');
+      root.style.setProperty('--grad-c2', c2 || '#000000');
+    },
+
+    handleLogoUpload(event) {
+      const file = event.target.files && event.target.files[0];
+      if (!file) return;
+      if (!file.type.startsWith('image/')) {
+        this.showToast('Please select an image file (PNG, JPG, SVG, …)', 'error');
+        return;
+      }
+      // 2 MB hard limit — avoid bloating the DB with giant bitmaps.
+      if (file.size > 2 * 1024 * 1024) {
+        this.showToast('Image must be smaller than 2 MB', 'error');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        this.globalSettings.splashLogo = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    },
+
+    clearLogo() {
+      this.globalSettings.splashLogo = '';
+      // Reset the file input so the same file can be re-selected after clearing.
+      const inp = document.getElementById('logo-upload-input');
+      if (inp) inp.value = '';
+    },
+
     async loadSettings() {
       try {
         this.globalSettings = await this.api.getSettings();
@@ -5973,6 +6010,8 @@ new Vue({
           i18n.locale = this.globalSettings.lang;
           localStorage.setItem('lang', this.globalSettings.lang);
         }
+        // Apply saved gradient colours to CSS variables.
+        this.applyGradientColors(this.globalSettings.splashColor1, this.globalSettings.splashColor2);
         // Capture local server name once — never overwrite with remote settings.
         if (!this.activeRemoteId) {
           this.localServerName = this.globalSettings.routerName || this.globalSettings.hostname || '';
@@ -7686,12 +7725,24 @@ new Vue({
         this.refreshAllPeers({ updateCharts: false });
       }
     },
+    'globalSettings.splashColor1'(val) {
+      this.applyGradientColors(val, this.globalSettings.splashColor2);
+    },
+    'globalSettings.splashColor2'(val) {
+      this.applyGradientColors(this.globalSettings.splashColor1, val);
+    },
   },
   computed: {
     // Browser tab title: routerName if set, otherwise hostname, otherwise 'Cascade'.
     pageTitle() {
       return this.globalSettings.routerName || this.globalSettings.hostname || 'Cascade';
     },
+
+    // Logo src: custom base64 data URL if set, otherwise the built-in icon-only SVG.
+    appLogoSrc() {
+      return this.globalSettings.splashLogo || 'img/logo-icon.svg';
+    },
+
 
     // The currently active remote record, or null if we're on the local server.
     activeRemote() {
