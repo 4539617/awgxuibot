@@ -3410,9 +3410,9 @@ new Vue({
 
     dashDefaultWidgets() {
       return [
-        { id: 'w-peers-summary', type: 'peers-summary',  x: 0, y: 0, w: 8, h: 9 },
-        { id: 'w-interfaces',    type: 'interfaces',     x: 8, y: 0, w: 4, h: 5 },
-        { id: 'w-server-info',   type: 'server-info',   x: 8, y: 5, w: 4, h: 4 },
+        { id: 'w-peers',      type: 'peers',        x: 0, y: 0, w: 8, h: 9 },
+        { id: 'w-interfaces', type: 'interfaces',   x: 8, y: 0, w: 4, h: 5 },
+        { id: 'w-server-info', type: 'server-info', x: 8, y: 5, w: 4, h: 4 },
       ];
     },
 
