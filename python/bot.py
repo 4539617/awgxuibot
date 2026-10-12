@@ -2785,100 +2785,12 @@ async def show_server_status(callback_query: types.CallbackQuery, state: FSMCont
     await state.clear()
     
     if not is_refresh:
-        await callback_query.answer("⏳ Получаю данные...")
-    
+        await callback_query.answer()
+
     try:
-        # Получаем статус сервера
-        status = await xui_client.get_server_status()
-        
-        # Форматируем данные
-        def format_bytes(bytes_value):
-            """Конвертация байтов в читаемый формат"""
-            if bytes_value >= 1024**3:  # GB
-                return f"{bytes_value / (1024**3):.2f} GB"
-            elif bytes_value >= 1024**2:  # MB
-                return f"{bytes_value / (1024**2):.2f} MB"
-            elif bytes_value >= 1024:  # KB
-                return f"{bytes_value / 1024:.2f} KB"
-            else:
-                return f"{bytes_value} B"
-        
-        # Получаем данные текущей панели
-        current_panel     = config.get_current_panel()
-        current_panel_id  = config.panel_manager.get_current_panel_id()
-        panel_alias       = getattr(current_panel, 'alias', current_panel_id) or current_panel_id if current_panel else current_panel_id or '—'
-        panel_version     = getattr(current_panel, 'xui_version', '') if current_panel else ''
-        panel_location    = getattr(current_panel, 'location_label', '') if current_panel else ''
-        panel_transport   = (getattr(current_panel, 'transport', '') or '').upper() if current_panel else ''
-        panel_security    = (getattr(current_panel, 'security', '')  or '').upper() if current_panel else ''
-
         # Формируем сообщение
-        message = "<b>⚙️ Администрирование</b>\n\n"
+        message = "<b>⚙️ Администрирование</b>"
 
-        # Блок текущей панели
-        message += f"📡 <b>{panel_alias}</b>"
-        if panel_version:
-            message += f"  <code>v{panel_version}</code>"
-        message += "\n"
-        if current_panel_id:
-            message += f"🆔 <code>{current_panel_id}</code>\n"
-        if panel_location:
-            message += f"📍 {panel_location}\n"
-        if panel_transport or panel_security:
-            message += f"🔌 <code>{panel_transport}</code> · <code>{panel_security}</code>\n"
-        message += "\n"
-
-        if status:
-            # CPU
-            cpu = status.get('cpu', 0)
-            
-            # Memory
-            mem = status.get('mem', {})
-            mem_current = mem.get('current', 0)
-            mem_total = mem.get('total', 1)
-            mem_percent = (mem_current / mem_total * 100) if mem_total > 0 else 0
-            
-            # Disk
-            disk = status.get('disk', {})
-            disk_current = disk.get('current', 0)
-            disk_total = disk.get('total', 1)
-            disk_percent = (disk_current / disk_total * 100) if disk_total > 0 else 0
-            
-            # Network
-            net_io = status.get('netIO', {})
-            net_up = net_io.get('up', 0)
-            net_down = net_io.get('down', 0)
-            
-            # Xray
-            xray = status.get('xray', {})
-            xray_state = xray.get('state', 'unknown')
-            xray_version = xray.get('version', 'unknown')
-            
-            # TCP connections
-            tcp_count = status.get('tcpCount', 0)
-            
-            # Получаем общий трафик всех клиентов
-            try:
-                all_clients = await xui_client.get_all_clients()
-                total_traffic_up = sum(c.get('up', 0) for c in all_clients)
-                total_traffic_down = sum(c.get('down', 0) for c in all_clients)
-            except Exception as e:
-                logger.error(f"Ошибка получения трафика клиентов: {e}")
-                total_traffic_up = 0
-                total_traffic_down = 0
-
-            xray_emoji = "✅" if xray_state == "running" else "❌"
-            message += (
-                f"💻 <b>CPU:</b> {cpu:.1f}%\n"
-                f"🧠 <b>RAM:</b> {mem_percent:.1f}% | {format_bytes(mem_current)} / {format_bytes(mem_total)}\n"
-                f"💿 <b>Диск:</b> {disk_percent:.1f}% | {format_bytes(disk_current)} / {format_bytes(disk_total)}\n"
-                f"🌐 <b>Сеть:</b> ⬆️ {format_bytes(net_up)} ⬇️ {format_bytes(net_down)}\n"
-                f"📊 <b>Трафик:</b> ⬆️ {format_bytes(total_traffic_up)} ⬇️ {format_bytes(total_traffic_down)}\n"
-                f"🔐 <b>Xray:</b> {xray_emoji} {xray_state} <code>v{xray_version}</code>\n"
-                f"🔌 <b>TCP:</b> {tcp_count}"
-            )
-        
-        
         # Добавляем кнопки в два ряда
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [
@@ -2890,7 +2802,6 @@ async def show_server_status(callback_query: types.CallbackQuery, state: FSMCont
                 InlineKeyboardButton(text="📥 JSON конфиг", callback_data="export_json_config")
             ],
             [
-                InlineKeyboardButton(text="📋 Все ключи", callback_data="cmd_allclients"),
                 InlineKeyboardButton(text="👥 Пользователи", callback_data="show_users")
             ],
             [
@@ -4268,7 +4179,7 @@ async def refresh_panels_status(callback_query: types.CallbackQuery, state: FSMC
 
 
 async def _render_servers_screen(callback_query: types.CallbackQuery, is_refresh: bool = False):
-    """Рендер экрана 'Серверы': кнопки панелей + статистика сбоев."""
+    """Рендер экрана 'Серверы': кнопки панелей + метрики текущей панели + статистика сбоев."""
     panel_manager = config.panel_manager
     panels = panel_manager.get_all_panels()
     current_panel_id = panel_manager.get_current_panel_id()
@@ -4310,11 +4221,75 @@ async def _render_servers_screen(callback_query: types.CallbackQuery, is_refresh
         ])
 
     keyboard_buttons.append([
+        InlineKeyboardButton(text="📋 Все ключи", callback_data="cmd_allclients"),
+    ])
+    keyboard_buttons.append([
         InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_servers"),
         InlineKeyboardButton(text="◀️ Назад",    callback_data="server_status"),
     ])
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+
+    # Блок текущей панели
+    current_panel   = config.get_current_panel()
+    panel_alias     = getattr(current_panel, 'alias', current_panel_id) or current_panel_id if current_panel else current_panel_id or '—'
+    panel_version   = getattr(current_panel, 'xui_version', '') if current_panel else ''
+    panel_location  = getattr(current_panel, 'location_label', '') if current_panel else ''
+    panel_transport = (getattr(current_panel, 'transport', '') or '').upper() if current_panel else ''
+    panel_security  = (getattr(current_panel, 'security',  '') or '').upper() if current_panel else ''
+
+    panel_block = f"📡 <b>{panel_alias}</b>"
+    if panel_version:
+        panel_block += f"  <code>v{panel_version}</code>"
+    panel_block += "\n"
+    if current_panel_id:
+        panel_block += f"🆔 <code>{current_panel_id}</code>\n"
+    if panel_location:
+        panel_block += f"📍 {panel_location}\n"
+    if panel_transport or panel_security:
+        panel_block += f"🔌 <code>{panel_transport}</code> · <code>{panel_security}</code>\n"
+
+    # Метрики сервера
+    metrics_block = ""
+    try:
+        status = await xui_client.get_server_status()
+        if status:
+            def _fmt(b):
+                if b >= 1024**3: return f"{b/(1024**3):.2f} GB"
+                if b >= 1024**2: return f"{b/(1024**2):.2f} MB"
+                if b >= 1024:    return f"{b/1024:.2f} KB"
+                return f"{b} B"
+
+            cpu      = status.get('cpu', 0)
+            mem      = status.get('mem', {})
+            mem_cur  = mem.get('current', 0);  mem_tot = mem.get('total', 1)
+            disk     = status.get('disk', {})
+            disk_cur = disk.get('current', 0); disk_tot = disk.get('total', 1)
+            net_io   = status.get('netIO', {})
+            xray     = status.get('xray', {})
+            xray_state   = xray.get('state', 'unknown')
+            xray_version = xray.get('version', 'unknown')
+            tcp_count    = status.get('tcpCount', 0)
+
+            try:
+                all_clients = await xui_client.get_all_clients()
+                tr_up   = sum(c.get('up',   0) for c in all_clients)
+                tr_down = sum(c.get('down', 0) for c in all_clients)
+            except Exception:
+                tr_up = tr_down = 0
+
+            xray_emoji = "✅" if xray_state == "running" else "❌"
+            metrics_block = (
+                f"\n💻 <b>CPU:</b> {cpu:.1f}%\n"
+                f"🧠 <b>RAM:</b> {(mem_cur/mem_tot*100):.1f}% | {_fmt(mem_cur)} / {_fmt(mem_tot)}\n"
+                f"💿 <b>Диск:</b> {(disk_cur/disk_tot*100):.1f}% | {_fmt(disk_cur)} / {_fmt(disk_tot)}\n"
+                f"🌐 <b>Сеть:</b> ⬆️ {_fmt(net_io.get('up',0))} ⬇️ {_fmt(net_io.get('down',0))}\n"
+                f"📊 <b>Трафик:</b> ⬆️ {_fmt(tr_up)} ⬇️ {_fmt(tr_down)}\n"
+                f"🔐 <b>Xray:</b> {xray_emoji} {xray_state} <code>v{xray_version}</code>\n"
+                f"🔌 <b>TCP:</b> {tcp_count}"
+            )
+    except Exception as e:
+        logger.warning(f"Не удалось получить метрики сервера для экрана Серверы: {e}")
 
     # Статистика сбоев
     stats_lines = []
@@ -4338,7 +4313,7 @@ async def _render_servers_screen(callback_query: types.CallbackQuery, is_refresh
     else:
         stats_block = "📊 Статистика сбоев пока недоступна"
 
-    text = f"🖥️ <b>Серверы</b>\n\n{stats_block}"
+    text = f"🖥️ <b>Серверы</b>\n\n{panel_block}{metrics_block}\n\n{stats_block}"
     try:
         await callback_query.message.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
     except Exception:
@@ -4385,297 +4360,97 @@ async def refresh_servers(callback_query: types.CallbackQuery, state: FSMContext
 async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContext):
     """Подключиться к выбранной панели"""
     global xui_client
-    
+
     await callback_query.answer()
-    
+
     user_id = callback_query.from_user.id
     if not is_admin(user_id):
         await callback_query.message.answer("⛔ Доступ запрещен")
         return
-    
+
     try:
         panel_id = callback_query.data.split(":", 1)[1]
         panel_manager = config.panel_manager
         current_panel_id = panel_manager.get_current_panel_id()
-        
+
         panel_config = panel_manager.get_panel(panel_id)
         if not panel_config:
             await callback_query.answer("❌ Панель не найдена", show_alert=True)
             return
-        
+
         alias = getattr(panel_config, 'alias', panel_id)
-        
-        # Если это текущая панель, проверяем подключение и показываем статистику
+
+        # Если это уже активная панель — просто обновляем экран Серверы
         if panel_id == current_panel_id:
-            await callback_query.message.edit_text(
-                f"🔄 Проверка подключения к панели <b>{alias}</b>...",
-                parse_mode="HTML"
-            )
-            
-            # Проверяем, что бот действительно подключен к этой панели
-            # Сравниваем URL из config с URL из panel_config
             panel_url = getattr(panel_config, 'xui_url', '') or getattr(panel_config, 'url', '')
-            current_url = config.xui.url
-            
-            if panel_url != current_url:
-                # URL не совпадают - нужно переподключиться
-                logger.warning(f"⚠️ URL не совпадают! Panel: {panel_url}, Current: {current_url}")
-                logger.info(f"🔄 Переподключение к панели {alias}...")
-                
-                # Создаем новый XUIConfig из панели
+            if panel_url != config.xui.url:
+                logger.warning(f"⚠️ URL не совпадают! Panel: {panel_url}, Current: {config.xui.url}")
                 new_xui_config = panel_manager.create_xui_config_from_panel(panel_id)
                 if new_xui_config:
                     config.xui = new_xui_config
                     xui_client.update_xui_config(new_xui_config)
-                    
-                    # Переподключаемся
                     if not await xui_client.login():
-                        await callback_query.message.edit_text(
-                            f"❌ <b>Ошибка переподключения к панели {alias}</b>\n\n"
-                            "Не удалось авторизоваться.",
-                            parse_mode="HTML",
-                            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                                [InlineKeyboardButton(text="◀️ Назад", callback_data="server_status")]
-                            ])
-                        )
+                        await callback_query.answer(f"❌ Не удалось переподключиться к {alias}", show_alert=True)
                         return
-                    
                     logger.info(f"✅ Переподключено к панели {alias}")
-            
-            await callback_query.message.edit_text(
-                f"🔄 Получение статистики панели <b>{alias}</b>...",
-                parse_mode="HTML"
-            )
-            
-            try:
-                all_clients = await xui_client.get_all_clients()
-                
-                total_clients = len(all_clients)
-                active_clients = sum(1 for c in all_clients if c.get('enable', False))
-                inactive_clients = total_clients - active_clients
-                
-                # Получаем количество онлайн клиентов
-                online_clients = await xui_client.get_online_clients_count()
-                
-                # Подсчет трафика
-                total_traffic_up = sum(c.get('up', 0) for c in all_clients)
-                total_traffic_down = sum(c.get('down', 0) for c in all_clients)
-                total_traffic = total_traffic_up + total_traffic_down
-                
-                def format_bytes(bytes_val):
-                    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
-                        if bytes_val < 1024.0:
-                            return f"{bytes_val:.2f} {unit}"
-                        bytes_val /= 1024.0
-                    return f"{bytes_val:.2f} PB"
-                
-                location = getattr(panel_config, 'location_label', '')
-                location_line = f"• Местонахождение: <b>{location}</b>\n" if location else ""
-                stats_text = (
-                    f"🟢 <b>Текущая панель: {alias}</b>\n\n"
-                    f"🔐 <b>Информация о панели:</b>\n"
-                    f"{location_line}"
-                    f"• URL: <code>{getattr(panel_config, 'xui_url', 'N/A') or getattr(panel_config, 'url', 'N/A')}</code>\n"
-                    f"• Версия: <code>{getattr(panel_config, 'xui_version', 'N/A') or getattr(panel_config, 'version', 'N/A')}</code>\n"
-                    f"• Inbound ID: <code>{getattr(panel_config, 'inbound_id', 'N/A')}</code>\n\n"
-                    f"📊 <b>Статистика ключей:</b>\n"
-                    f"• Всего ключей: <b>{total_clients}</b>\n"
-                    f"• Активных: <b>{active_clients}</b> \n"
-                    f"• Неактивных: <b>{inactive_clients}</b> \n"
-                    f"• 🟢 Онлайн: <b>{online_clients}</b>\n\n"
-                    f"📈 <b>Трафик:</b>\n"
-                    f"• Загружено: <code>{format_bytes(total_traffic_up)}</code>\n"
-                    f"• Скачано: <code>{format_bytes(total_traffic_down)}</code>\n"
-                    f"• Всего: <code>{format_bytes(total_traffic)}</code>"
-                )
-            except Exception as e:
-                logger.error(f"Ошибка получения статистики: {e}")
-                location_line2 = f"📍 Местонахождение: <b>{location}</b>\n" if location else ""
-                stats_text = (
-                    f"🟢 <b>Текущая панель: {alias}</b>\n\n"
-                    f"{location_line2}"
-                    f"🔐 URL: <code>{getattr(panel_config, 'xui_url', 'N/A') or getattr(panel_config, 'url', 'N/A')}</code>\n"
-                    f"📋 Версия: <code>{getattr(panel_config, 'xui_version', 'N/A') or getattr(panel_config, 'version', 'N/A')}</code>\n"
-                    f"🆔 Inbound ID: <code>{getattr(panel_config, 'inbound_id', 'N/A')}</code>\n\n"
-                    f"⚠️ Не удалось получить статистику ключей"
-                )
-            
-            await callback_query.message.edit_text(
-                stats_text,
-                parse_mode="HTML",
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="◀️ Назад", callback_data="server_status")],
-                    [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_start")]
-                ])
-            )
+            await _render_servers_screen(callback_query)
             return
-        
-        await callback_query.message.edit_text(
-            f"🔄 Подключение к панели <b>{alias}</b>...\n\n"
-            "⏳ Проверка доступности...",
-            parse_mode="HTML"
-        )
-        
+
         # Проверяем доступность панели
         is_available = await panel_manager.check_panel_status(panel_config)
-        
         if not is_available:
-            await callback_query.message.edit_text(
-                f"❌ <b>Панель {alias} недоступна</b>\n\n"
-                "Проверьте настройки подключения и доступность сервера.",
-                parse_mode="HTML",
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="◀️ Назад", callback_data="server_status")]
-                ])
-            )
+            await callback_query.answer(f"❌ Панель {alias} недоступна", show_alert=True)
             return
-        
+
         # Переключаемся на новую панель
-        if panel_manager.switch_panel(panel_id):
-            # Создаем новый XUIConfig из панели
-            new_xui_config = panel_manager.create_xui_config_from_panel(panel_id)
-            
-            if new_xui_config:
-                # Обновляем конфигурацию в config
-                config.xui = new_xui_config
-                
-                # Обновляем XUIClient
-                xui_client.update_xui_config(new_xui_config)
-                
-                # Пытаемся подключиться к новой панели
-                await callback_query.message.edit_text(
-                    f"🔄 Подключение к панели <b>{alias}</b>...\n\n"
-                    "⏳ Авторизация...",
-                    parse_mode="HTML"
-                )
-                
-                if await xui_client.login():
-                    logger.info(f"✅ Переключено на панель: {alias} (ID: {panel_id})")
-                    
-                    # Извлекаем и сохраняем параметры панели
-                    await callback_query.message.edit_text(
-                        f"🔄 Подключение к панели <b>{alias}</b>...\n\n"
-                        "⏳ Извлечение параметров панели...",
-                        parse_mode="HTML"
-                    )
-                    
-                    try:
-                        if await panel_manager.fetch_and_update_panel_settings(panel_id, xui_client):
-                            logger.info(f"✅ Параметры панели {alias} обновлены")
-                            # Обновляем VPN конфигурацию в config
-                            config.refresh_vpn_config()
-                            logger.info(f"✅ VPN конфигурация обновлена: transport={config.vpn.transport}, security={config.vpn.security}")
-                        else:
-                            logger.warning(f"⚠️ Не удалось обновить параметры панели {alias}")
-                    except Exception as e:
-                        logger.error(f"❌ Ошибка извлечения параметров панели: {e}")
-                    
-                    # Получаем статистику по ключам
-                    try:
-                        all_clients = await xui_client.get_all_clients()
-                        
-                        total_clients = len(all_clients)
-                        active_clients = sum(1 for c in all_clients if c.get('enable', False))
-                        inactive_clients = total_clients - active_clients
-                        
-                        # Получаем количество онлайн клиентов
-                        online_clients = await xui_client.get_online_clients_count()
-                        
-                        # Подсчет трафика
-                        total_traffic_up = sum(c.get('up', 0) for c in all_clients)
-                        total_traffic_down = sum(c.get('down', 0) for c in all_clients)
-                        total_traffic = total_traffic_up + total_traffic_down
-                        
-                        def format_bytes(bytes_val):
-                            for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
-                                if bytes_val < 1024.0:
-                                    return f"{bytes_val:.2f} {unit}"
-                                bytes_val /= 1024.0
-                            return f"{bytes_val:.2f} PB"
-                        
-                        loc = getattr(panel_config, 'location_label', '')
-                        loc_line = f"• Местонахождение: <b>{loc}</b>\n" if loc else ""
-                        stats_text = (
-                            f"✅ <b>Успешно подключено к панели {alias}</b>\n\n"
-                            f"🔐 <b>Информация о панели:</b>\n"
-                            f"{loc_line}"
-                            f"• URL: <code>{new_xui_config.url}</code>\n"
-                            f"• Версия: <code>{new_xui_config.version}</code>\n"
-                            f"• Inbound ID: <code>{new_xui_config.inbound_id}</code>\n\n"
-                            f"📊 <b>Статистика ключей:</b>\n"
-                            f"• Всего ключей: <b>{total_clients}</b>\n"
-                            f"• Активных: <b>{active_clients}</b> \n"
-                            f"• Неактивных: <b>{inactive_clients}</b> \n"
-                            f"• 🟢 Онлайн: <b>{online_clients}</b>\n\n"
-                            f"📈 <b>Трафик:</b>\n"
-                            f"• Загружено: <code>{format_bytes(total_traffic_up)}</code>\n"
-                            f"• Скачано: <code>{format_bytes(total_traffic_down)}</code>\n"
-                            f"• Всего: <code>{format_bytes(total_traffic)}</code>"
-                        )
-                    except Exception as e:
-                        logger.error(f"Ошибка получения статистики: {e}")
-                        loc_line2 = f"📍 Местонахождение: <b>{loc}</b>\n" if loc else ""
-                        stats_text = (
-                            f"✅ <b>Успешно подключено к панели {alias}</b>\n\n"
-                            f"{loc_line2}"
-                            f"🔐 URL: <code>{new_xui_config.url}</code>\n"
-                            f"📋 Версия: <code>{new_xui_config.version}</code>\n"
-                            f"🆔 Inbound ID: <code>{new_xui_config.inbound_id}</code>\n\n"
-                            f"⚠️ Не удалось получить статистику ключей"
-                        )
-                    
-                    await callback_query.message.edit_text(
-                        stats_text,
-                        parse_mode="HTML",
-                        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                            [InlineKeyboardButton(text="◀️ Назад", callback_data="server_status")],
-                            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_start")]
-                        ])
-                    )
-                else:
-                    # Откатываемся к предыдущей панели
-                    if current_panel_id:
-                        panel_manager.switch_panel(current_panel_id)
-                        old_config = panel_manager.create_xui_config_from_panel(current_panel_id)
-                        if old_config:
-                            config.xui = old_config
-                            xui_client.update_xui_config(old_config)
-                            await xui_client.login()
-                    
-                    logger.error(f"❌ Не удалось подключиться к панели: {alias}")
-                    
-                    await callback_query.message.edit_text(
-                        f"❌ <b>Ошибка подключения к панели {alias}</b>\n\n"
-                        "Не удалось авторизоваться. Проверьте учетные данные.\n"
-                        "Возвращено подключение к предыдущей панели.",
-                        parse_mode="HTML",
-                        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                            [InlineKeyboardButton(text="◀️ Назад", callback_data="server_status")]
-                        ])
-                    )
-            else:
-                await callback_query.message.edit_text(
-                    f"❌ Ошибка создания конфигурации для панели {alias}",
-                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                        [InlineKeyboardButton(text="◀️ Назад", callback_data="server_status")]
-                    ])
-                )
-        else:
-            await callback_query.message.edit_text(
-                f"❌ Ошибка переключения на панель {alias}",
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="◀️ Назад", callback_data="server_status")]
-                ])
+        if not panel_manager.switch_panel(panel_id):
+            await callback_query.answer(f"❌ Ошибка переключения на панель {alias}", show_alert=True)
+            return
+
+        new_xui_config = panel_manager.create_xui_config_from_panel(panel_id)
+        if not new_xui_config:
+            await callback_query.answer(f"❌ Ошибка создания конфигурации для панели {alias}", show_alert=True)
+            panel_manager.switch_panel(current_panel_id)
+            return
+
+        config.xui = new_xui_config
+        xui_client.update_xui_config(new_xui_config)
+
+        if not await xui_client.login():
+            # Откатываемся к предыдущей панели
+            if current_panel_id:
+                panel_manager.switch_panel(current_panel_id)
+                old_config = panel_manager.create_xui_config_from_panel(current_panel_id)
+                if old_config:
+                    config.xui = old_config
+                    xui_client.update_xui_config(old_config)
+                    await xui_client.login()
+            logger.error(f"❌ Не удалось подключиться к панели: {alias}")
+            await callback_query.answer(
+                f"❌ Не удалось авторизоваться на {alias}. Откат к предыдущей панели.",
+                show_alert=True
             )
-        
+            await _render_servers_screen(callback_query)
+            return
+
+        logger.info(f"✅ Переключено на панель: {alias} (ID: {panel_id})")
+
+        # Извлекаем параметры панели
+        try:
+            if await panel_manager.fetch_and_update_panel_settings(panel_id, xui_client):
+                config.refresh_vpn_config()
+                logger.info(f"✅ VPN конфигурация обновлена: transport={config.vpn.transport}, security={config.vpn.security}")
+            else:
+                logger.warning(f"⚠️ Не удалось обновить параметры панели {alias}")
+        except Exception as e:
+            logger.error(f"❌ Ошибка извлечения параметров панели: {e}")
+
+        # Показываем обновлённый экран Серверы
+        await _render_servers_screen(callback_query)
+
     except Exception as e:
         logger.error(f"Ошибка подключения к панели: {e}")
-        await callback_query.message.edit_text(
-            f"❌ Ошибка: {str(e)}",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="◀️ Назад", callback_data="server_status")]
-            ])
-        )
+        await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
 
 
 
