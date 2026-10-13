@@ -4239,7 +4239,7 @@ def _cell_color(count: int, mx: int) -> tuple:
 def _build_stability_chart(panel_states: dict, panels: dict) -> bytes:
     """
     Тепловая карта: строки = серверы, столбцы = дни (30 дней).
-    Ширина ~800px. Цвет ячейки: зелёный→жёлтый→красный по кол-ву сбоев.
+    Ширина ~1400px (высокое качество). Цвет ячейки: зелёный→жёлтый→красный по кол-ву сбоев.
     """
     import io
     import datetime as dt_mod
@@ -4270,22 +4270,22 @@ def _build_stability_chart(panel_states: dict, panels: dict) -> bytes:
     all_counts = [c for pid in panel_ids for c in outages_per_day[pid].values()]
     max_count  = max(all_counts) if all_counts else 1
 
-    TARGET_W   = 800
-    ALIAS_W    = 84
-    RIGHT_PAD  = 12
-    DATE_H     = 34
-    TITLE_H    = 38
-    BOTTOM_PAD = 38
+    TARGET_W   = 1400
+    ALIAS_W    = 160
+    RIGHT_PAD  = 24
+    DATE_H     = 56
+    TITLE_H    = 64
+    BOTTOM_PAD = 60
 
     available_w = TARGET_W - ALIAS_W - RIGHT_PAD
-    CELL = max(18, available_w // DAYS - 2)
-    GAP  = 2
+    CELL = max(30, available_w // DAYS - 4)
+    GAP  = 4
     STEP = CELL + GAP
     grid_w = DAYS * STEP - GAP
     img_w  = ALIAS_W + grid_w + RIGHT_PAD
 
     n_panels = len(panel_ids)
-    ROW_H  = CELL + GAP
+    ROW_H  = CELL + GAP + 4
     img_h  = TITLE_H + DATE_H + n_panels * ROW_H + BOTTOM_PAD
 
     BG        = (13,  17,  23)
@@ -4296,24 +4296,24 @@ def _build_stability_chart(panel_states: dict, panels: dict) -> bytes:
     img  = Image.new("RGB", (img_w, img_h), color=BG)
     draw = ImageDraw.Draw(img)
 
-    font_bold, font_label, font_small = _load_fonts([13, 11, 10])
+    font_bold, font_label, font_small = _load_fonts([22, 18, 15])
 
     # Заголовок
     period_str = f"{day_list[0].strftime('%d.%m.%Y')} — {day_list[-1].strftime('%d.%m.%Y')}"
-    draw.text((ALIAS_W, 8),  "Stability heatmap", font=font_bold,  fill=TEXT_COL)
-    draw.text((ALIAS_W, 24), period_str,           font=font_small, fill=MUTED_COL)
+    draw.text((ALIAS_W, 10),  "Статистика стабильности", font=font_bold,  fill=TEXT_COL)
+    draw.text((ALIAS_W, 38),  period_str,                 font=font_small, fill=MUTED_COL)
 
     # Подписи дат сверху
     last_month = None
+    MONTH_EN = ['','Jan','Feb','Mar','Apr','May','Jun',
+                'Jul','Aug','Sep','Oct','Nov','Dec']
     for col, d in enumerate(day_list):
         cx = ALIAS_W + col * STEP + CELL // 2
         draw.text((cx, TITLE_H + 2), str(d.day), font=font_small, fill=MUTED_COL,
                   anchor="mt" if hasattr(draw, 'textbbox') else None)
         if d.month != last_month:
             last_month = d.month
-            MONTH_EN = ['','Jan','Feb','Mar','Apr','May','Jun',
-                        'Jul','Aug','Sep','Oct','Nov','Dec']
-            draw.text((cx, TITLE_H + 16), MONTH_EN[d.month], font=font_small, fill=TEXT_COL,
+            draw.text((cx, TITLE_H + 26), MONTH_EN[d.month], font=font_small, fill=TEXT_COL,
                       anchor="mt" if hasattr(draw, 'textbbox') else None)
 
     # Строки серверов
@@ -4323,150 +4323,197 @@ def _build_stability_chart(panel_states: dict, panels: dict) -> bytes:
         row_y      = TITLE_H + DATE_H + row_i * ROW_H
 
         draw.line([(0, row_y), (img_w, row_y)], fill=SEP_COL, width=1)
-        draw.text((4, row_y + CELL // 2), alias, font=font_label, fill=TEXT_COL,
+        draw.text((8, row_y + ROW_H // 2), alias, font=font_label, fill=TEXT_COL,
                   anchor="lm" if hasattr(draw, 'textbbox') else None)
 
         for col, d in enumerate(day_list):
             count = day_counts.get(d, 0)
             color = _cell_color(count, max_count)
             cx = ALIAS_W + col * STEP
-            cy = row_y + 1
-            draw.rounded_rectangle([cx, cy, cx + CELL - 1, cy + CELL - 1], radius=3, fill=color)
-            if count > 0 and CELL >= 18:
+            cy = row_y + 3
+            draw.rounded_rectangle([cx, cy, cx + CELL - 1, cy + CELL - 1], radius=5, fill=color)
+            if count > 0 and CELL >= 28:
                 lbl = str(count) if count < 100 else "99+"
                 draw.text((cx + CELL // 2, cy + CELL // 2), lbl,
                           font=font_small, fill=(0, 0, 0),
                           anchor="mm" if hasattr(draw, 'textbbox') else None)
 
     # Легенда
-    leg_y = TITLE_H + DATE_H + n_panels * ROW_H + 8
-    draw.line([(0, leg_y - 4), (img_w, leg_y - 4)], fill=SEP_COL, width=1)
+    leg_y = TITLE_H + DATE_H + n_panels * ROW_H + 12
+    draw.line([(0, leg_y - 6), (img_w, leg_y - 6)], fill=SEP_COL, width=1)
     leg_x = ALIAS_W
-    draw.text((leg_x, leg_y + 3), "0", font=font_small, fill=MUTED_COL)
-    leg_x += 16
+    draw.text((leg_x, leg_y + 5), "0", font=font_small, fill=MUTED_COL)
+    leg_x += 28
     for s in range(5):
         c = _cell_color(s, 4)
-        draw.rounded_rectangle([leg_x, leg_y, leg_x + 14, leg_y + 14], radius=2, fill=c)
-        leg_x += 18
-    draw.text((leg_x + 4, leg_y + 3), "max", font=font_small, fill=MUTED_COL)
+        draw.rounded_rectangle([leg_x, leg_y, leg_x + 22, leg_y + 22], radius=4, fill=c)
+        leg_x += 28
+    draw.text((leg_x + 6, leg_y + 5), "max", font=font_small, fill=MUTED_COL)
 
     buf = io.BytesIO()
-    img.save(buf, format="PNG")
+    img.save(buf, format="PNG", optimize=False, compress_level=1)
     return buf.getvalue()
 
 
-def _build_outage_bar_chart(panel_states: dict, panels: dict) -> bytes:
+
+def _build_stability_chart_v2(panel_states: dict, panels: dict) -> bytes:
     """
-    Горизонтальный bar chart: одна строка на сервер.
-    Длина столбика = суммарное кол-во сбоев за всё время.
-    Число сбоев написано справа от столбика.
+    Тепловая карта v2 (многострочная): каждый сервер — блок из N строк по
+    временным слотам (0-4, 4-8, 8-12, 12-16, 16-20, 20-24).
+    Столбцы = дни (112 дней / ~16 недель).
+    Цвет: серый фон = 0 сбоев, розово-красный градиент = 1+ сбоев.
+    Шкалы крупные, текст хорошо читается, цифры в ячейках — чёрные.
     """
     import io
+    import datetime as dt_mod
     from PIL import Image, ImageDraw
+
+    SLOT_HOURS = 4          # часов в одном временном слоте
+    SLOTS      = 24 // SLOT_HOURS   # = 6 слотов
+    SLOT_LABELS = [f"{h:02d}h" for h in range(0, 24, SLOT_HOURS)]  # 00h 04h 08h …
+
+    now   = datetime.now()
+    today = now.date()
+    DAYS  = 112  # 16 недель
+    day_list = [today - dt_mod.timedelta(days=DAYS - 1 - i) for i in range(DAYS)]
+    day_set  = set(day_list)
 
     panel_ids = list(panels.keys())
     if not panel_ids:
         raise ValueError("Нет панелей")
     aliases = {pid: getattr(panels[pid], 'alias', pid) or pid for pid in panel_ids}
 
-    # Суммарные сбои за всё время
-    totals = {}
+    # outages_per_slot[pid][(date, slot_idx)] = count
+    outages_per_slot: dict = {}
     for pid in panel_ids:
+        slot_counts: dict = {}
         ps = panel_states.get(pid)
-        totals[pid] = len(ps.outage_events) if ps else 0
+        if ps:
+            for ev in ps.outage_events:
+                d = ev.date()
+                if d in day_set:
+                    slot_idx = ev.hour // SLOT_HOURS
+                    key = (d, slot_idx)
+                    slot_counts[key] = slot_counts.get(key, 0) + 1
+        outages_per_slot[pid] = slot_counts
 
-    max_total = max(totals.values()) if totals else 1
-    if max_total == 0:
-        max_total = 1
+    all_counts = [c for pid in panel_ids for c in outages_per_slot[pid].values()]
+    max_count  = max(all_counts) if all_counts else 1
 
-    # Размеры
-    ALIAS_W    = 90
-    BAR_MAX_W  = 580
-    COUNT_W    = 50
-    RIGHT_PAD  = 12
-    ROW_H      = 38
-    ROW_GAP    = 6
-    TOP_PAD    = 48
-    BOTTOM_PAD = 16
-    img_w      = ALIAS_W + BAR_MAX_W + COUNT_W + RIGHT_PAD
-    img_h      = TOP_PAD + len(panel_ids) * (ROW_H + ROW_GAP) - ROW_GAP + BOTTOM_PAD
+    # --- Размеры ---
+    CELL       = 16   # px — ширина/высота ячейки
+    GAP        = 2    # зазор между ячейками
+    STEP       = CELL + GAP
 
-    BG         = (13,  17,  23)
-    TEXT_COL   = (201, 209, 217)
-    MUTED_COL  = (110, 118, 129)
-    SEP_COL    = (40,  46,  54)
-    GRID_COL   = (30,  36,  44)
+    ALIAS_W    = 110  # ширина колонки с именем сервера
+    SLOT_LBL_W = 38   # ширина колонки подписей слотов (00h …)
+    LEFT_W     = ALIAS_W + SLOT_LBL_W
+    RIGHT_PAD  = 20
+    DATE_H     = 48   # высота строки с датами/месяцами
+    TITLE_H    = 52
+    SERVER_GAP = 14   # разрыв между блоками серверов
+    BOTTOM_PAD = 52
 
-    # Цвета столбиков по рейтингу нестабильности
-    BAR_COLORS = [
-        (229,  77,  77),   # красный   — самый нестабильный
-        (255, 140,   0),   # оранжевый
-        (255, 200,   0),   # жёлтый
-        (99,  179, 237),   # голубой
-        (56,  193, 114),   # зелёный   — самый стабильный
-    ]
+    grid_w  = DAYS * STEP - GAP
+    img_w   = LEFT_W + grid_w + RIGHT_PAD
+
+    block_h = SLOTS * STEP - GAP  # высота одного блока сервера
+    n       = len(panel_ids)
+    img_h   = TITLE_H + DATE_H + n * (block_h + SERVER_GAP) - SERVER_GAP + BOTTOM_PAD
+
+    # --- Цвета ---
+    BG         = (18,  22,  30)
+    TEXT_COL   = (210, 218, 226)
+    MUTED_COL  = (100, 110, 122)
+    SEP_COL    = (45,  52,  62)
+    EMPTY_COL  = (35,  42,  54)   # серый фон пустой ячейки
+
+    def _slot_color(count: int, mx: int) -> tuple:
+        """0 → EMPTY_COL (серый), 1+ → розово-красный градиент."""
+        if count == 0:
+            return EMPTY_COL
+        t = min(count / mx, 1.0) if mx > 0 else 1.0
+        # нежно-розовый (255,160,160) → ярко-красный (220,30,30)
+        r = 255
+        g = int(160 - t * 130)
+        b = int(160 - t * 130)
+        return (r, max(30, g), max(30, b))
 
     img  = Image.new("RGB", (img_w, img_h), color=BG)
     draw = ImageDraw.Draw(img)
 
-    font_bold, font_label, font_small = _load_fonts([14, 12, 11])
+    font_title, font_alias, font_date, font_cell = _load_fonts([18, 14, 12, 10])
 
-    # Заголовок
-    draw.text((ALIAS_W, 8),  "Outage count (all time)", font=font_bold, fill=TEXT_COL)
-    draw.text((ALIAS_W, 26), "total failures per server since monitoring start",
-              font=font_small, fill=MUTED_COL)
+    # --- Заголовок ---
+    period_str = f"{day_list[0].strftime('%d.%m.%Y')} — {day_list[-1].strftime('%d.%m.%Y')}"
+    draw.text((LEFT_W, 8),  "Статистика стабильности", font=font_title, fill=TEXT_COL)
+    draw.text((LEFT_W, 32), period_str,                 font=font_date,  fill=MUTED_COL)
 
-    # Вертикальные линии сетки
-    grid_steps = 5
-    for i in range(grid_steps + 1):
-        gx = ALIAS_W + int(BAR_MAX_W * i / grid_steps)
-        val = round(max_total * i / grid_steps)
-        draw.line([(gx, TOP_PAD - 4), (gx, img_h - BOTTOM_PAD)], fill=GRID_COL, width=1)
-        draw.text((gx, TOP_PAD - 6), str(val), font=font_small, fill=MUTED_COL,
-                  anchor="mb" if hasattr(draw, 'textbbox') else None)
+    # --- Шкала дат сверху ---
+    last_month = None
+    MONTH_RU = ['','Янв','Фев','Мар','Апр','Май','Июн',
+                'Июл','Авг','Сен','Окт','Ноя','Дек']
+    for col, d in enumerate(day_list):
+        cx = LEFT_W + col * STEP + CELL // 2
+        # число дня — каждые 7 дней (понедельник) или первый
+        if d.weekday() == 0 or col == 0:
+            draw.text((cx, TITLE_H + 2), str(d.day), font=font_date, fill=MUTED_COL,
+                      anchor="mt" if hasattr(draw, 'textbbox') else None)
+        # месяц — при смене
+        if d.month != last_month:
+            last_month = d.month
+            draw.text((cx, TITLE_H + 22), MONTH_RU[d.month], font=font_alias, fill=TEXT_COL,
+                      anchor="mt" if hasattr(draw, 'textbbox') else None)
 
-    # Сортируем по убыванию сбоев
-    sorted_panels = sorted(panel_ids, key=lambda p: totals[p], reverse=True)
+    # --- Блоки серверов ---
+    for row_i, pid in enumerate(panel_ids):
+        alias      = aliases[pid]
+        slot_counts = outages_per_slot[pid]
+        block_y    = TITLE_H + DATE_H + row_i * (block_h + SERVER_GAP)
+        mid_y      = block_y + block_h // 2
 
-    for row_i, pid in enumerate(sorted_panels):
-        alias = aliases[pid]
-        total = totals[pid]
-        row_y = TOP_PAD + row_i * (ROW_H + ROW_GAP)
+        # Разделитель перед блоком
+        draw.line([(0, block_y - 4), (img_w, block_y - 4)], fill=SEP_COL, width=1)
 
-        # Цвет зависит от позиции в рейтинге
-        color_idx = min(row_i, len(BAR_COLORS) - 1)
-        bar_color = BAR_COLORS[color_idx]
-
-        bar_w = int(BAR_MAX_W * total / max_total) if max_total > 0 else 0
-        bar_h = ROW_H - 6
-
-        # Имя сервера
-        draw.text((ALIAS_W - 6, row_y + ROW_H // 2), alias, font=font_label, fill=TEXT_COL,
-                  anchor="rm" if hasattr(draw, 'textbbox') else None)
-
-        # Фон строки
-        draw.rounded_rectangle(
-            [ALIAS_W, row_y + 2, ALIAS_W + BAR_MAX_W, row_y + 2 + bar_h],
-            radius=4, fill=GRID_COL
-        )
-
-        # Столбик
-        if bar_w > 0:
-            draw.rounded_rectangle(
-                [ALIAS_W, row_y + 2, ALIAS_W + bar_w, row_y + 2 + bar_h],
-                radius=4, fill=bar_color
-            )
-
-        # Число справа
-        count_str = str(total)
-        draw.text((ALIAS_W + BAR_MAX_W + 8, row_y + ROW_H // 2), count_str,
-                  font=font_label, fill=bar_color,
+        # Имя сервера — по центру блока слева
+        draw.text((6, mid_y), alias, font=font_alias, fill=TEXT_COL,
                   anchor="lm" if hasattr(draw, 'textbbox') else None)
 
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    return buf.getvalue()
+        # Подписи слотов
+        for s_i, lbl in enumerate(SLOT_LABELS):
+            sy = block_y + s_i * STEP + CELL // 2
+            draw.text((ALIAS_W + SLOT_LBL_W - 4, sy), lbl, font=font_cell, fill=MUTED_COL,
+                      anchor="rm" if hasattr(draw, 'textbbox') else None)
 
+        # Ячейки
+        for col, d in enumerate(day_list):
+            for s_i in range(SLOTS):
+                count = slot_counts.get((d, s_i), 0)
+                color = _slot_color(count, max_count)
+                cx = LEFT_W + col * STEP
+                cy = block_y + s_i * STEP
+                draw.rectangle([cx, cy, cx + CELL - 1, cy + CELL - 1], fill=color)
+                if count > 0 and CELL >= 14:
+                    lbl = str(count) if count < 10 else "9+"
+                    draw.text((cx + CELL // 2, cy + CELL // 2), lbl,
+                              font=font_cell, fill=(0, 0, 0),
+                              anchor="mm" if hasattr(draw, 'textbbox') else None)
+
+    # --- Легенда ---
+    leg_y = TITLE_H + DATE_H + n * (block_h + SERVER_GAP) - SERVER_GAP + 10
+    draw.line([(0, leg_y - 4), (img_w, leg_y - 4)], fill=SEP_COL, width=1)
+    leg_x = LEFT_W
+    draw.text((leg_x, leg_y + 3), "0", font=font_date, fill=MUTED_COL)
+    leg_x += 22
+    for s in range(6):
+        c = _slot_color(s, 5)
+        draw.rectangle([leg_x, leg_y, leg_x + 14, leg_y + 14], fill=c)
+        leg_x += 18
+    draw.text((leg_x + 4, leg_y + 3), "max", font=font_date, fill=MUTED_COL)
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", optimize=False, compress_level=1)
+    return buf.getvalue()
 
 
 async def _render_servers_screen(callback_query: types.CallbackQuery, is_refresh: bool = False):
@@ -4515,8 +4562,8 @@ async def _render_servers_screen(callback_query: types.CallbackQuery, is_refresh
         InlineKeyboardButton(text="📋 Все ключи сервера", callback_data="cmd_allclients"),
     ])
     keyboard_buttons.append([
-        InlineKeyboardButton(text="🗓 Тепловая карта",    callback_data="stability_chart"),
-        InlineKeyboardButton(text="📊 Рейтинг сбоев",     callback_data="outage_bar_chart"),
+        InlineKeyboardButton(text="📊 Статистика стабильности", callback_data="stability_chart"),
+        InlineKeyboardButton(text="🗓 По слотам (v2)",          callback_data="stability_chart_v2"),
     ])
     keyboard_buttons.append([
         InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_servers"),
@@ -4669,14 +4716,32 @@ async def show_stability_chart(callback_query: types.CallbackQuery, state: FSMCo
             None, _build_stability_chart, panel_states, panels
         )
 
-        import io
+        # Собираем статистику сбоев для подписи
+        stats_lines = []
+        for pid, panel_config in panels.items():
+            alias = getattr(panel_config, 'alias', pid)
+            ps = panel_states.get(pid)
+            if ps is None:
+                continue
+            count = len(ps.outage_events)
+            if count == 0:
+                stats_lines.append(f"  🟢 {alias}: сбоев нет")
+            else:
+                first_dt = ps.outage_events[0].strftime('%d.%m %H:%M')
+                last_dt  = ps.outage_events[-1].strftime('%d.%m %H:%M')
+                dot = "🔴" if not ps.is_available else "🟡"
+                stats_lines.append(f"  {dot} {alias}: <b>{count}</b> сбоев  ({first_dt} — {last_dt})")
+
+        stats_text = "\n".join(stats_lines) if stats_lines else "  данные недоступны"
+        caption = f"📊 <b>Статистика стабильности</b>\n\n<b>Сбои:</b>\n{stats_text}"
+
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 Назад", callback_data="select_panel_to_connect")]
         ])
         await bot.send_photo(
             callback_query.message.chat.id,
             photo=types.BufferedInputFile(png_bytes, filename="stability.png"),
-            caption="🗓 <b>Тепловая карта стабильности</b>\nКаждая ячейка = 1 день  ·  тёмно-красный = много сбоев  ·  серый = норма",
+            caption=caption,
             parse_mode="HTML",
             reply_markup=keyboard
         )
@@ -4685,9 +4750,9 @@ async def show_stability_chart(callback_query: types.CallbackQuery, state: FSMCo
         await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
 
 
-@dp.callback_query(lambda c: c.data == "outage_bar_chart")
-async def show_outage_bar_chart(callback_query: types.CallbackQuery, state: FSMContext):
-    """Рейтинг сбоев — горизонтальные столбики за всё время"""
+@dp.callback_query(lambda c: c.data == "stability_chart_v2")
+async def show_stability_chart_v2(callback_query: types.CallbackQuery, state: FSMContext):
+    """Тепловая карта v2 — разбивка по временным слотам"""
     user_id = callback_query.from_user.id
     if not is_admin(user_id):
         await callback_query.answer("⛔ Доступ запрещен", show_alert=True)
@@ -4700,22 +4765,43 @@ async def show_outage_bar_chart(callback_query: types.CallbackQuery, state: FSMC
         panel_states = _panel_monitor.panel_states if _panel_monitor else {}
 
         png_bytes = await asyncio.get_event_loop().run_in_executor(
-            None, _build_outage_bar_chart, panel_states, panels
+            None, _build_stability_chart_v2, panel_states, panels
         )
+
+        # Собираем статистику сбоев для подписи
+        stats_lines = []
+        for pid, panel_config in panels.items():
+            alias = getattr(panel_config, 'alias', pid)
+            ps = panel_states.get(pid)
+            if ps is None:
+                continue
+            count = len(ps.outage_events)
+            if count == 0:
+                stats_lines.append(f"  🟢 {alias}: сбоев нет")
+            else:
+                first_dt = ps.outage_events[0].strftime('%d.%m %H:%M')
+                last_dt  = ps.outage_events[-1].strftime('%d.%m %H:%M')
+                dot = "🔴" if not ps.is_available else "🟡"
+                stats_lines.append(f"  {dot} {alias}: <b>{count}</b> сбоев  ({first_dt} — {last_dt})")
+
+        stats_text = "\n".join(stats_lines) if stats_lines else "  данные недоступны"
+        caption = f"🗓 <b>Статистика стабильности (по слотам)</b>\n\n<b>Сбои:</b>\n{stats_text}"
 
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 Назад", callback_data="select_panel_to_connect")]
         ])
         await bot.send_photo(
             callback_query.message.chat.id,
-            photo=types.BufferedInputFile(png_bytes, filename="outage_bar.png"),
-            caption="📊 <b>Рейтинг нестабильности серверов</b>\nДлина столбика = кол-во сбоев за всё время наблюдений",
+            photo=types.BufferedInputFile(png_bytes, filename="stability_v2.png"),
+            caption=caption,
             parse_mode="HTML",
             reply_markup=keyboard
         )
     except Exception as e:
-        logger.error(f"Ошибка построения рейтинга сбоев: {e}")
+        logger.error(f"Ошибка построения графика стабильности v2: {e}")
         await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
+
+
 
 
 @dp.callback_query(lambda c: c.data and c.data.startswith("connect_panel:"))
