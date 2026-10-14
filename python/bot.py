@@ -5246,22 +5246,39 @@ def _build_combined_chart(panel_states: dict, panels: dict) -> bytes:
 
 @dp.callback_query(lambda c: c.data == "stability_chart")
 async def show_stability_chart(callback_query: types.CallbackQuery, state: FSMContext):
-    """Статистика стабильности: комбинированный график + текстовая статистика"""
+    """Статистика стабильности: timeline + детальные карты двух месяцев — три отдельных фото"""
+    import datetime as dt_mod
+    import calendar
+
     user_id = callback_query.from_user.id
     if not is_admin(user_id):
         await callback_query.answer("⛔ Доступ запрещен", show_alert=True)
         return
 
-    await callback_query.answer("📊 Строю график...")
+    await callback_query.answer("📊 Строю графики...")
 
     try:
         panels = config.panel_manager.get_all_panels()
         panel_states = _panel_monitor.panel_states if _panel_monitor else {}
 
-        png_bytes = await asyncio.get_event_loop().run_in_executor(
-            None, _build_combined_chart, panel_states, panels
+        # Строим все три изображения параллельно
+        today = datetime.now().date()
+        first_day_this = today.replace(day=1)
+        first_day_prev = (first_day_this - dt_mod.timedelta(days=1)).replace(day=1)
+        prev_y, prev_m = first_day_prev.year, first_day_prev.month
+        this_y, this_m = first_day_this.year, first_day_this.month
+
+        MONTH_EN = ['','Jan','Feb','Mar','Apr','May','Jun',
+                    'Jul','Aug','Sep','Oct','Nov','Dec']
+
+        loop = asyncio.get_event_loop()
+        tl_bytes, prev_bytes, this_bytes = await asyncio.gather(
+            loop.run_in_executor(None, _build_timeline_chart, panel_states, panels),
+            loop.run_in_executor(None, _build_month_heatmap, panel_states, panels, prev_y, prev_m),
+            loop.run_in_executor(None, _build_month_heatmap, panel_states, panels, this_y, this_m),
         )
 
+        # Текстовая статистика
         stats_lines = []
         for pid, panel_config in panels.items():
             alias = getattr(panel_config, 'alias', pid)
@@ -5278,17 +5295,31 @@ async def show_stability_chart(callback_query: types.CallbackQuery, state: FSMCo
                 stats_lines.append(f"  {dot} {alias}: <b>{count}</b> сбоев  ({first_dt} — {last_dt})")
 
         stats_text = "\n".join(stats_lines) if stats_lines else "  данные недоступны"
-        caption = f"📊 <b>Статистика стабильности</b>\n\n<b>Сбои:</b>\n{stats_text}"
-
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        back_kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 Назад", callback_data="select_panel_to_connect")]
         ])
+
+        # Фото 1: timeline (с текстом статистики)
         await bot.send_photo(
             callback_query.message.chat.id,
-            photo=types.BufferedInputFile(png_bytes, filename="stability.png"),
-            caption=caption,
+            photo=types.BufferedInputFile(tl_bytes, filename="timeline.png"),
+            caption=f"📊 <b>Статистика стабильности</b>\n\n<b>Сбои:</b>\n{stats_text}",
             parse_mode="HTML",
-            reply_markup=keyboard
+        )
+        # Фото 2: предыдущий месяц
+        await bot.send_photo(
+            callback_query.message.chat.id,
+            photo=types.BufferedInputFile(prev_bytes, filename=f"month_{prev_y}_{prev_m:02d}.png"),
+            caption=f"📅 <b>{MONTH_EN[prev_m]} {prev_y}</b>",
+            parse_mode="HTML",
+        )
+        # Фото 3: текущий месяц (с кнопкой Назад)
+        await bot.send_photo(
+            callback_query.message.chat.id,
+            photo=types.BufferedInputFile(this_bytes, filename=f"month_{this_y}_{this_m:02d}.png"),
+            caption=f"📅 <b>{MONTH_EN[this_m]} {this_y}</b>",
+            parse_mode="HTML",
+            reply_markup=back_kb,
         )
     except Exception as e:
         logger.error(f"Ошибка построения графика стабильности: {e}")
