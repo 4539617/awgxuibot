@@ -4741,8 +4741,6 @@ async def _render_servers_screen(callback_query: types.CallbackQuery, is_refresh
     ])
     keyboard_buttons.append([
         InlineKeyboardButton(text="📊 Статистика стабильности", callback_data="stability_chart"),
-        InlineKeyboardButton(text="🗓 По слотам (v2)",          callback_data="stability_chart_v2"),
-        InlineKeyboardButton(text="📈 Timeline",                callback_data="stability_timeline"),
     ])
     keyboard_buttons.append([
         InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_servers"),
@@ -4877,9 +4875,151 @@ async def refresh_servers(callback_query: types.CallbackQuery, state: FSMContext
         await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
 
 
+def _build_month_heatmap(panel_states: dict, panels: dict, year: int, month: int) -> bytes:
+    """
+    Тепловая карта за один месяц.
+    Строки = серверы, столбцы = дни месяца.
+    Ячейки с цифрами числа сбоев, цвет: зелёный→жёлтый→красный.
+    """
+    import io
+    import datetime as dt_mod
+    import calendar
+    from PIL import Image, ImageDraw
+
+    days_in_month = calendar.monthrange(year, month)[1]
+    day_list = [dt_mod.date(year, month, d) for d in range(1, days_in_month + 1)]
+
+    panel_ids = list(panels.keys())
+    if not panel_ids:
+        raise ValueError("Нет панелей")
+    aliases = {pid: getattr(panels[pid], 'alias', pid) or pid for pid in panel_ids}
+
+    outages_per_day: dict = {}
+    day_set = set(day_list)
+    for pid in panel_ids:
+        day_counts: dict = {}
+        ps = panel_states.get(pid)
+        if ps:
+            for ev in ps.outage_events:
+                d = ev.date()
+                if d in day_set:
+                    day_counts[d] = day_counts.get(d, 0) + 1
+        outages_per_day[pid] = day_counts
+
+    all_counts = [c for pid in panel_ids for c in outages_per_day[pid].values()]
+    max_count  = max(all_counts) if all_counts else 1
+
+    CELL       = 46
+    GAP        = 4
+    STEP       = CELL + GAP
+    ALIAS_W    = 130
+    RIGHT_PAD  = 20
+    HEADER_H   = 60   # заголовок
+    DATE_H     = 36   # строка с числами дней
+    ROW_GAP    = 6
+    BOTTOM_PAD = 54
+
+    n       = len(panel_ids)
+    grid_w  = days_in_month * STEP - GAP
+    img_w   = ALIAS_W + grid_w + RIGHT_PAD
+    img_h   = HEADER_H + DATE_H + n * (CELL + ROW_GAP) - ROW_GAP + BOTTOM_PAD
+
+    BG        = (18,  22,  30)
+    TEXT_COL  = (210, 218, 226)
+    MUTED_COL = (100, 110, 122)
+    SEP_COL   = (45,  52,  62)
+
+    MONTH_NAMES = ['','Jan','Feb','Mar','Apr','May','Jun',
+                   'Jul','Aug','Sep','Oct','Nov','Dec']
+    WDAY_SHORT  = ['Mo','Tu','We','Th','Fr','Sa','Su']
+
+    img  = Image.new("RGB", (img_w, img_h), color=BG)
+    draw = ImageDraw.Draw(img)
+    font_title, font_alias, font_day, font_cell = _load_fonts([20, 16, 13, 14])
+
+    # Заголовок
+    title_str  = f"{MONTH_NAMES[month]} {year}"
+    draw.text((ALIAS_W, 10), title_str, font=font_title, fill=TEXT_COL)
+    draw.text((ALIAS_W, 36), f"{days_in_month} days", font=font_day, fill=MUTED_COL)
+
+    # Шапка — числа дней + день недели
+    for col, d in enumerate(day_list):
+        cx = ALIAS_W + col * STEP + CELL // 2
+        draw.text((cx, HEADER_H + 2), str(d.day), font=font_day, fill=MUTED_COL,
+                  anchor="mt" if hasattr(draw, 'textbbox') else None)
+        wd = WDAY_SHORT[d.weekday()]
+        wd_col = (160, 80, 80) if d.weekday() >= 5 else MUTED_COL
+        draw.text((cx, HEADER_H + 18), wd, font=font_day, fill=wd_col,
+                  anchor="mt" if hasattr(draw, 'textbbox') else None)
+
+    # Строки серверов
+    rows_y0 = HEADER_H + DATE_H
+    for row_i, pid in enumerate(panel_ids):
+        alias      = aliases[pid]
+        day_counts = outages_per_day[pid]
+        row_y      = rows_y0 + row_i * (CELL + ROW_GAP)
+
+        draw.line([(0, row_y - ROW_GAP // 2), (img_w, row_y - ROW_GAP // 2)], fill=SEP_COL, width=1)
+        draw.text((6, row_y + CELL // 2), alias, font=font_alias, fill=TEXT_COL,
+                  anchor="lm" if hasattr(draw, 'textbbox') else None)
+
+        for col, d in enumerate(day_list):
+            count = day_counts.get(d, 0)
+            color = _cell_color(count, max_count)
+            cx = ALIAS_W + col * STEP
+            draw.rounded_rectangle([cx, row_y, cx + CELL - 1, row_y + CELL - 1], radius=6, fill=color)
+            lbl = str(count) if count < 100 else "99+"
+            draw.text((cx + CELL // 2, row_y + CELL // 2), lbl,
+                      font=font_cell, fill=(0, 0, 0),
+                      anchor="mm" if hasattr(draw, 'textbbox') else None)
+
+    # Легенда
+    leg_y = rows_y0 + n * (CELL + ROW_GAP) - ROW_GAP + 12
+    draw.line([(0, leg_y - 4), (img_w, leg_y - 4)], fill=SEP_COL, width=1)
+    leg_x = ALIAS_W
+    draw.text((leg_x, leg_y + 5), "0", font=font_day, fill=MUTED_COL)
+    leg_x += 24
+    for s in range(5):
+        c = _cell_color(s, 4)
+        draw.rounded_rectangle([leg_x, leg_y, leg_x + 22, leg_y + 22], radius=4, fill=c)
+        leg_x += 28
+    draw.text((leg_x + 4, leg_y + 5), "max", font=font_day, fill=MUTED_COL)
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", optimize=False, compress_level=1)
+    return buf.getvalue()
+
+
+def _get_available_months(panel_states: dict) -> list:
+    """Возвращает список (year, month) за которые есть хоть один сбой, отсортированный по дате."""
+    months = set()
+    for ps in panel_states.values():
+        for ev in ps.outage_events:
+            months.add((ev.year, ev.month))
+    return sorted(months)
+
+
+def _month_keyboard(available_months: list, back_cb: str = "select_panel_to_connect") -> InlineKeyboardMarkup:
+    """Строит клавиатуру с кнопками месяцев (по 4 в ряд) + кнопка Назад."""
+    MONTH_RU = ['','Янв','Фев','Мар','Апр','Май','Июн',
+                'Июл','Авг','Сен','Окт','Ноя','Дек']
+    rows = []
+    row  = []
+    for year, month in available_months:
+        label = f"{MONTH_RU[month]} {str(year)[-2:]}"
+        row.append(InlineKeyboardButton(text=label, callback_data=f"stability_month:{year}-{month:02d}"))
+        if len(row) == 4:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    rows.append([InlineKeyboardButton(text="🔙 Назад", callback_data=back_cb)])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
 @dp.callback_query(lambda c: c.data == "stability_chart")
 async def show_stability_chart(callback_query: types.CallbackQuery, state: FSMContext):
-    """График стабильности серверов"""
+    """Статистика стабильности: общая карта + статистика + кнопки месяцев"""
     user_id = callback_query.from_user.id
     if not is_admin(user_id):
         await callback_query.answer("⛔ Доступ запрещен", show_alert=True)
@@ -4895,7 +5035,7 @@ async def show_stability_chart(callback_query: types.CallbackQuery, state: FSMCo
             None, _build_stability_chart, panel_states, panels
         )
 
-        # Собираем статистику сбоев для подписи
+        # Статистика сбоев для подписи
         stats_lines = []
         for pid, panel_config in panels.items():
             alias = getattr(panel_config, 'alias', pid)
@@ -4912,11 +5052,11 @@ async def show_stability_chart(callback_query: types.CallbackQuery, state: FSMCo
                 stats_lines.append(f"  {dot} {alias}: <b>{count}</b> сбоев  ({first_dt} — {last_dt})")
 
         stats_text = "\n".join(stats_lines) if stats_lines else "  данные недоступны"
-        caption = f"📊 <b>Статистика стабильности</b>\n\n<b>Сбои:</b>\n{stats_text}"
+        caption = f"📊 <b>Статистика стабильности</b>\n\n<b>Сбои:</b>\n{stats_text}\n\n📅 <i>Выберите месяц для детального просмотра:</i>"
 
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 Назад", callback_data="select_panel_to_connect")]
-        ])
+        available_months = _get_available_months(panel_states)
+        keyboard = _month_keyboard(available_months)
+
         await bot.send_photo(
             callback_query.message.chat.id,
             photo=types.BufferedInputFile(png_bytes, filename="stability.png"),
@@ -4926,6 +5066,50 @@ async def show_stability_chart(callback_query: types.CallbackQuery, state: FSMCo
         )
     except Exception as e:
         logger.error(f"Ошибка построения графика стабильности: {e}")
+        await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
+
+
+@dp.callback_query(lambda c: c.data and c.data.startswith("stability_month:"))
+async def show_stability_month(callback_query: types.CallbackQuery, state: FSMContext):
+    """Тепловая карта за выбранный месяц"""
+    user_id = callback_query.from_user.id
+    if not is_admin(user_id):
+        await callback_query.answer("⛔ Доступ запрещен", show_alert=True)
+        return
+
+    try:
+        _, ym = callback_query.data.split(":", 1)
+        year, month = int(ym.split("-")[0]), int(ym.split("-")[1])
+    except Exception:
+        await callback_query.answer("❌ Неверный формат", show_alert=True)
+        return
+
+    await callback_query.answer("📅 Строю карту месяца...")
+
+    try:
+        panels = config.panel_manager.get_all_panels()
+        panel_states = _panel_monitor.panel_states if _panel_monitor else {}
+
+        png_bytes = await asyncio.get_event_loop().run_in_executor(
+            None, _build_month_heatmap, panel_states, panels, year, month
+        )
+
+        MONTH_RU = ['','Январь','Февраль','Март','Апрель','Май','Июнь',
+                    'Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь']
+        caption = f"📅 <b>{MONTH_RU[month]} {year}</b> — детальная карта сбоев"
+
+        available_months = _get_available_months(panel_states)
+        keyboard = _month_keyboard(available_months)
+
+        await bot.send_photo(
+            callback_query.message.chat.id,
+            photo=types.BufferedInputFile(png_bytes, filename=f"month_{year}_{month:02d}.png"),
+            caption=caption,
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
+    except Exception as e:
+        logger.error(f"Ошибка построения карты месяца: {e}")
         await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
 
 
