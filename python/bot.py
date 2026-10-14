@@ -4300,7 +4300,7 @@ def _build_stability_chart(panel_states: dict, panels: dict) -> bytes:
 
     # Заголовок
     period_str = f"{day_list[0].strftime('%d.%m.%Y')} — {day_list[-1].strftime('%d.%m.%Y')}"
-    draw.text((ALIAS_W, 10),  "Статистика стабильности", font=font_bold,  fill=TEXT_COL)
+    draw.text((ALIAS_W, 10),  "Stability", font=font_bold,  fill=TEXT_COL)
     draw.text((ALIAS_W, 38),  period_str,                 font=font_small, fill=MUTED_COL)
 
     # Подписи дат сверху
@@ -4446,13 +4446,13 @@ def _build_stability_chart_v2(panel_states: dict, panels: dict) -> bytes:
 
     # --- Заголовок ---
     period_str = f"{day_list[0].strftime('%d.%m.%Y')} — {day_list[-1].strftime('%d.%m.%Y')}"
-    draw.text((LEFT_W, 8),  "Статистика стабильности", font=font_title, fill=TEXT_COL)
+    draw.text((LEFT_W, 8),  "Stability (slots)", font=font_title, fill=TEXT_COL)
     draw.text((LEFT_W, 32), period_str,                 font=font_date,  fill=MUTED_COL)
 
     # --- Шкала дат сверху ---
     last_month = None
-    MONTH_RU = ['','Янв','Фев','Мар','Апр','Май','Июн',
-                'Июл','Авг','Сен','Окт','Ноя','Дек']
+    MONTH_EN = ['','Jan','Feb','Mar','Apr','May','Jun',
+                'Jul','Aug','Sep','Oct','Nov','Dec']
     for col, d in enumerate(day_list):
         cx = LEFT_W + col * STEP + CELL // 2
         # число дня — каждые 7 дней (понедельник) или первый
@@ -4462,7 +4462,7 @@ def _build_stability_chart_v2(panel_states: dict, panels: dict) -> bytes:
         # месяц — при смене
         if d.month != last_month:
             last_month = d.month
-            draw.text((cx, TITLE_H + 22), MONTH_RU[d.month], font=font_alias, fill=TEXT_COL,
+            draw.text((cx, TITLE_H + 22), MONTH_EN[d.month], font=font_alias, fill=TEXT_COL,
                       anchor="mt" if hasattr(draw, 'textbbox') else None)
 
     # --- Блоки серверов ---
@@ -4503,13 +4503,13 @@ def _build_stability_chart_v2(panel_states: dict, panels: dict) -> bytes:
     leg_y = TITLE_H + DATE_H + n * (block_h + SERVER_GAP) - SERVER_GAP + 10
     draw.line([(0, leg_y - 4), (img_w, leg_y - 4)], fill=SEP_COL, width=1)
     leg_x = LEFT_W
-    draw.text((leg_x, leg_y + 3), "0", font=font_date, fill=MUTED_COL)
+    draw.text((leg_x, leg_y + 3), "0 outages", font=font_date, fill=MUTED_COL)
     leg_x += 22
     for s in range(6):
         c = _slot_color(s, 5)
         draw.rectangle([leg_x, leg_y, leg_x + 14, leg_y + 14], fill=c)
         leg_x += 18
-    draw.text((leg_x + 4, leg_y + 3), "max", font=font_date, fill=MUTED_COL)
+    draw.text((leg_x + 4, leg_y + 3), "max outages", font=font_date, fill=MUTED_COL)
 
     buf = io.BytesIO()
     img.save(buf, format="PNG", optimize=False, compress_level=1)
@@ -4600,7 +4600,7 @@ def _build_timeline_chart(panel_states: dict, panels: dict) -> bytes:
 
     # --- Заголовок ---
     period_str = f"{day_list[0].strftime('%d.%m.%Y')} — {day_list[-1].strftime('%d.%m.%Y')}"
-    draw.text((grid_x0, TOP_PAD + 4),  "Статистика стабильности", font=font_title, fill=TEXT_COL)
+    draw.text((grid_x0, TOP_PAD + 4),  "Stability Timeline", font=font_title, fill=TEXT_COL)
     draw.text((grid_x0, TOP_PAD + 28), period_str,                  font=font_axis,  fill=MUTED_COL)
 
     bands_y0 = TOP_PAD + TITLE_H  # Y-начало первой ленты
@@ -4645,11 +4645,11 @@ def _build_timeline_chart(panel_states: dict, panels: dict) -> bytes:
         count_x = grid_x0 + grid_w + 12
         if total > 0:
             draw.text((count_x, band_y + BAND_H // 2),
-                      f"{total} сбоев", font=font_count, fill=(220, 100, 100),
+                      f"{total} outages", font=font_count, fill=(220, 100, 100),
                       anchor="lm" if hasattr(draw, 'textbbox') else None)
         else:
             draw.text((count_x, band_y + BAND_H // 2),
-                      "норма", font=font_count, fill=(80, 180, 100),
+                      "ok", font=font_count, fill=(80, 180, 100),
                       anchor="lm" if hasattr(draw, 'textbbox') else None)
 
         # Разделитель между серверами
@@ -4661,8 +4661,8 @@ def _build_timeline_chart(panel_states: dict, panels: dict) -> bytes:
     axis_y = bands_y0 + n * (BAND_H + BAND_GAP) - BAND_GAP + 6
     draw.line([(grid_x0, axis_y), (grid_x0 + grid_w, axis_y)], fill=SEP_COL, width=1)
 
-    MONTH_RU   = ['','Янв','Фев','Мар','Апр','Май','Июн',
-                  'Июл','Авг','Сен','Окт','Ноя','Дек']
+    MONTH_EN   = ['','Jan','Feb','Mar','Apr','May','Jun',
+                  'Jul','Aug','Sep','Oct','Nov','Dec']
     last_month = None
     for col, d in enumerate(day_list):
         cx = grid_x0 + col * DAY_STEP + DAY_W // 2
@@ -4673,13 +4673,13 @@ def _build_timeline_chart(panel_states: dict, panels: dict) -> bytes:
         # метка месяца при смене
         if d.month != last_month:
             last_month = d.month
-            draw.text((cx, axis_y + 22), MONTH_RU[d.month], font=font_alias, fill=TEXT_COL,
+            draw.text((cx, axis_y + 22), MONTH_EN[d.month], font=font_alias, fill=TEXT_COL,
                       anchor="mt" if hasattr(draw, 'textbbox') else None)
 
     # --- Легенда ---
     leg_y = axis_y + 44
     leg_x = grid_x0
-    draw.text((leg_x, leg_y), "норма", font=font_axis, fill=MUTED_COL)
+    draw.text((leg_x, leg_y), "ok", font=font_axis, fill=MUTED_COL)
     leg_x += 48
     draw.rectangle([leg_x, leg_y - 1, leg_x + 20, leg_y + 11], fill=EMPTY_COL)
     leg_x += 28
@@ -4687,7 +4687,7 @@ def _build_timeline_chart(panel_states: dict, panels: dict) -> bytes:
         c = _day_color(s + 1, 5)
         draw.rectangle([leg_x, leg_y - 1, leg_x + 20, leg_y + 11], fill=c)
         leg_x += 26
-    draw.text((leg_x + 4, leg_y), "много сбоев", font=font_axis, fill=MUTED_COL)
+    draw.text((leg_x + 4, leg_y), "many outages", font=font_axis, fill=MUTED_COL)
 
     buf = io.BytesIO()
     img.save(buf, format="PNG", optimize=False, compress_level=1)
