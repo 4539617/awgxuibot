@@ -5287,12 +5287,12 @@ async def show_stability_chart(callback_query: types.CallbackQuery, state: FSMCo
                 continue
             count = len(ps.outage_events)
             if count == 0:
-                stats_lines.append(f"  🟢 {alias}: сбоев нет")
+                stats_lines.append(f"  🟢 {alias}: 0")
             else:
                 first_dt = ps.outage_events[0].strftime('%d.%m %H:%M')
                 last_dt  = ps.outage_events[-1].strftime('%d.%m %H:%M')
                 dot = "🔴" if not ps.is_available else "🟡"
-                stats_lines.append(f"  {dot} {alias}: <b>{count}</b> сбоев  ({first_dt} — {last_dt})")
+                stats_lines.append(f"  {dot} {alias}: <b>{count}</b>  ({first_dt} — {last_dt})")
 
         stats_text = "\n".join(stats_lines) if stats_lines else "  данные недоступны"
         back_kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -5303,7 +5303,7 @@ async def show_stability_chart(callback_query: types.CallbackQuery, state: FSMCo
         await bot.send_photo(
             callback_query.message.chat.id,
             photo=types.BufferedInputFile(tl_bytes, filename="timeline.png"),
-            caption=f"📊 <b>Статистика стабильности</b>\n\n<b>Сбои:</b>\n{stats_text}",
+            caption=f"📊 <b>Количество случаев недоступности:</b>\n{stats_text}",
             parse_mode="HTML",
         )
         # Фото 2: предыдущий месяц
