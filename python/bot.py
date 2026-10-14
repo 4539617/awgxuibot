@@ -5274,7 +5274,7 @@ async def show_stability_chart(callback_query: types.CallbackQuery, state: FSMCo
 
         stats_text = "\n".join(stats_lines) if stats_lines else "  данные недоступны"
         back_kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 Назад", callback_data="select_panel_to_connect")]
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="server_status")]
         ])
 
         # Фото 1: timeline (с текстом статистики)
@@ -5342,7 +5342,7 @@ async def show_stability_chart_v2(callback_query: types.CallbackQuery, state: FS
         caption = f"🗓 <b>Статистика стабильности (по слотам)</b>\n\n<b>Сбои:</b>\n{stats_text}"
 
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 Назад", callback_data="select_panel_to_connect")]
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="server_status")]
         ])
         await bot.send_photo(
             callback_query.message.chat.id,
@@ -5395,7 +5395,7 @@ async def show_stability_timeline(callback_query: types.CallbackQuery, state: FS
         caption = f"📈 <b>Timeline стабильности</b>\n\n<b>Сбои:</b>\n{stats_text}"
 
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 Назад", callback_data="select_panel_to_connect")]
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="server_status")]
         ])
         await bot.send_photo(
             callback_query.message.chat.id,
