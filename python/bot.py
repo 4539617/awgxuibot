@@ -4810,29 +4810,7 @@ async def _render_servers_screen(callback_query: types.CallbackQuery, is_refresh
     except Exception as e:
         logger.warning(f"Не удалось получить метрики сервера для экрана Серверы: {e}")
 
-    # Статистика сбоев
-    stats_lines = []
-    if _panel_monitor:
-        for pid, panel_config in panels.items():
-            alias = getattr(panel_config, 'alias', pid)
-            ps = _panel_monitor.panel_states.get(pid)
-            if ps is None:
-                continue
-            count = len(ps.outage_events)
-            if count == 0:
-                stats_lines.append(f"  🟢 {alias}: сбоев нет")
-            else:
-                first_dt = ps.outage_events[0].strftime('%d.%m %H:%M')
-                last_dt  = ps.outage_events[-1].strftime('%d.%m %H:%M')
-                dot = "🔴" if not ps.is_available else "🟡"
-                stats_lines.append(f"  {dot} {alias}: <b>{count}</b> сбоев  ({first_dt} — {last_dt})")
-
-    if stats_lines:
-        stats_block = "📊 <b>Статистика сбоев:</b>\n" + "\n".join(stats_lines)
-    else:
-        stats_block = "📊 Статистика сбоев пока недоступна"
-
-    text = f"🖥️ <b>Сервер</b>\n\n{panel_block}{metrics_block}\n\n{stats_block}"
+    text = f"🖥️ <b>Сервер</b>\n\n{panel_block}{metrics_block}"
     try:
         await callback_query.message.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
     except Exception:
