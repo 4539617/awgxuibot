@@ -5017,9 +5017,236 @@ def _month_keyboard(available_months: list, back_cb: str = "select_panel_to_conn
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
+def _build_combined_chart(panel_states: dict, panels: dict) -> bytes:
+    """
+    Комбинированный график: два блока в одном изображении.
+    Левый  — timeline-лента 60 дней (пиксельный столбик = 1 день).
+    Правый — детальная ячеечная карта последних двух полных месяцев
+             (крупные ячейки с цифрами, цвет зелёный→жёлтый→красный).
+    """
+    import io
+    import calendar
+    import datetime as dt_mod
+    from PIL import Image, ImageDraw
+
+    now   = datetime.now()
+    today = now.date()
+
+    # --- Левый блок: timeline 60 дней ---
+    TL_DAYS    = 60
+    TL_DAY_W   = 13
+    TL_DAY_GAP = 2
+    TL_STEP    = TL_DAY_W + TL_DAY_GAP
+    TL_BAND_H  = 34
+    TL_BAND_GAP = 14
+    TL_ALIAS_W  = 110
+    TL_AXIS_H   = 48
+
+    tl_day_list = [today - dt_mod.timedelta(days=TL_DAYS - 1 - i) for i in range(TL_DAYS)]
+    tl_day_set  = set(tl_day_list)
+    tl_grid_w   = TL_DAYS * TL_STEP - TL_DAY_GAP
+
+    # --- Правый блок: ячеечная карта 2 последних месяца ---
+    HM_CELL    = 38
+    HM_GAP     = 3
+    HM_STEP    = HM_CELL + HM_GAP
+    HM_DATE_H  = 34
+    HM_ROW_GAP = TL_BAND_GAP
+
+    first_day_this = today.replace(day=1)
+    first_day_prev = (first_day_this - dt_mod.timedelta(days=1)).replace(day=1)
+    hm_months = [
+        (first_day_prev.year, first_day_prev.month),
+        (first_day_this.year, first_day_this.month),
+    ]
+    hm_day_lists = []
+    for yr, mo in hm_months:
+        dim = calendar.monthrange(yr, mo)[1]
+        hm_day_lists.append([dt_mod.date(yr, mo, d) for d in range(1, dim + 1)])
+
+    hm_all_days = [d for dl in hm_day_lists for d in dl]
+    hm_day_set  = set(hm_all_days)
+
+    panel_ids = list(panels.keys())
+    if not panel_ids:
+        raise ValueError("Нет панелей")
+    aliases = {pid: getattr(panels[pid], 'alias', pid) or pid for pid in panel_ids}
+    n = len(panel_ids)
+
+    # Считаем сбои
+    tl_counts = {}
+    hm_counts = {}
+    for pid in panel_ids:
+        tc, hc = {}, {}
+        ps = panel_states.get(pid)
+        if ps:
+            for ev in ps.outage_events:
+                d = ev.date()
+                if d in tl_day_set:
+                    tc[d] = tc.get(d, 0) + 1
+                if d in hm_day_set:
+                    hc[d] = hc.get(d, 0) + 1
+        tl_counts[pid] = tc
+        hm_counts[pid] = hc
+
+    tl_max = max((c for pid in panel_ids for c in tl_counts[pid].values()), default=1)
+    hm_max = max((c for pid in panel_ids for c in hm_counts[pid].values()), default=1)
+
+    # --- Размеры холста ---
+    TITLE_H    = 52
+    TOP_PAD    = 8
+    DIVIDER_W  = 2
+    RIGHT_PAD  = 16
+    BOTTOM_PAD = 20
+    SEP_PAD    = 28
+
+    hm_months_w  = [len(dl) * HM_STEP - HM_GAP for dl in hm_day_lists]
+    hm_total_w   = sum(hm_months_w) + SEP_PAD
+
+    row_h   = max(TL_BAND_H, HM_CELL)
+    rows_h  = n * row_h + (n - 1) * TL_BAND_GAP
+
+    RIGHT_X0 = TL_ALIAS_W + tl_grid_w + SEP_PAD // 2 + DIVIDER_W + SEP_PAD // 2
+    img_w    = RIGHT_X0 + hm_total_w + RIGHT_PAD
+    img_h    = TOP_PAD + TITLE_H + rows_h + TL_AXIS_H + BOTTOM_PAD
+
+    # --- Цвета ---
+    BG        = (18,  22,  30)
+    TEXT_COL  = (210, 218, 226)
+    MUTED_COL = (100, 110, 122)
+    SEP_COL   = (45,  52,  62)
+    EMPTY_COL = (38,  46,  60)
+    GRID_LINE = (30,  37,  50)
+
+    MONTH_EN   = ['','Jan','Feb','Mar','Apr','May','Jun',
+                  'Jul','Aug','Sep','Oct','Nov','Dec']
+    WDAY_SHORT = ['Mo','Tu','We','Th','Fr','Sa','Su']
+
+    def _tl_color(count, mx):
+        if count == 0:
+            return EMPTY_COL
+        t = min(count / mx, 1.0) if mx > 0 else 1.0
+        g = int(140 - t * 115)
+        b = int(140 - t * 115)
+        return (255, max(25, g), max(25, b))
+
+    img  = Image.new("RGB", (img_w, img_h), color=BG)
+    draw = ImageDraw.Draw(img)
+    font_title, font_alias, font_axis, font_cell = _load_fonts([18, 15, 12, 13])
+
+    bands_y0 = TOP_PAD + TITLE_H
+
+    # === ЗАГОЛОВКИ ===
+    tl_period = f"{tl_day_list[0].strftime('%d.%m')} - {tl_day_list[-1].strftime('%d.%m.%Y')}"
+    draw.text((TL_ALIAS_W, TOP_PAD + 4),  "Stability Timeline", font=font_title, fill=TEXT_COL)
+    draw.text((TL_ALIAS_W, TOP_PAD + 28), tl_period,             font=font_axis,  fill=MUTED_COL)
+
+    hm_label = f"{MONTH_EN[hm_months[0][1]]} + {MONTH_EN[hm_months[1][1]]} {hm_months[1][0]}"
+    draw.text((RIGHT_X0, TOP_PAD + 4),  "Detail (2 months)", font=font_title, fill=TEXT_COL)
+    draw.text((RIGHT_X0, TOP_PAD + 28), hm_label,             font=font_axis,  fill=MUTED_COL)
+
+    # === РАЗДЕЛИТЕЛЬ ===
+    div_x = TL_ALIAS_W + tl_grid_w + SEP_PAD // 2
+    draw.line([(div_x, TOP_PAD), (div_x, img_h - BOTTOM_PAD)], fill=SEP_COL, width=DIVIDER_W)
+
+    # === ПРАВЫЙ БЛОК: шапка дней ===
+    hm_x_offsets = []
+    cur_x = RIGHT_X0
+    for m_i, (yr, mo) in enumerate(hm_months):
+        dl = hm_day_lists[m_i]
+        hm_x_offsets.append(cur_x)
+        for col, d in enumerate(dl):
+            cx = cur_x + col * HM_STEP + HM_CELL // 2
+            draw.text((cx, bands_y0 - HM_DATE_H + 2), str(d.day), font=font_axis, fill=MUTED_COL,
+                      anchor="mt" if hasattr(draw, 'textbbox') else None)
+            wd_col = (170, 80, 80) if d.weekday() >= 5 else (60, 70, 90)
+            draw.text((cx, bands_y0 - HM_DATE_H + 18), WDAY_SHORT[d.weekday()],
+                      font=font_axis, fill=wd_col,
+                      anchor="mt" if hasattr(draw, 'textbbox') else None)
+        cur_x += len(dl) * HM_STEP - HM_GAP + SEP_PAD
+
+    # === ЛЕВЫЙ БЛОК: вертикальные линии сетки (каждый понедельник) ===
+    grid_bot = bands_y0 + rows_h
+    for col, d in enumerate(tl_day_list):
+        if d.weekday() == 0:
+            gx = TL_ALIAS_W + col * TL_STEP
+            draw.line([(gx, bands_y0), (gx, grid_bot)], fill=GRID_LINE, width=1)
+
+    # === СТРОКИ СЕРВЕРОВ ===
+    for row_i, pid in enumerate(panel_ids):
+        alias  = aliases[pid]
+        row_y  = bands_y0 + row_i * (row_h + TL_BAND_GAP)
+
+        if row_i > 0:
+            draw.line([(0, row_y - TL_BAND_GAP // 2), (img_w, row_y - TL_BAND_GAP // 2)],
+                      fill=SEP_COL, width=1)
+
+        # Имя сервера
+        draw.text((6, row_y + row_h // 2), alias, font=font_alias, fill=TEXT_COL,
+                  anchor="lm" if hasattr(draw, 'textbbox') else None)
+
+        # --- Левый блок: timeline-лента ---
+        tc = tl_counts[pid]
+        total_tl = sum(tc.values())
+        draw.rounded_rectangle(
+            [TL_ALIAS_W, row_y, TL_ALIAS_W + tl_grid_w, row_y + TL_BAND_H],
+            radius=4, fill=EMPTY_COL
+        )
+        for col, d in enumerate(tl_day_list):
+            count = tc.get(d, 0)
+            if count == 0:
+                continue
+            color = _tl_color(count, tl_max)
+            cx    = TL_ALIAS_W + col * TL_STEP
+            bar_h = max(4, int(TL_BAND_H * min(count / tl_max, 1.0)))
+            draw.rectangle([cx, row_y + TL_BAND_H - bar_h, cx + TL_DAY_W - 1, row_y + TL_BAND_H],
+                           fill=color)
+        # Счётчик в зоне разделителя
+        cnt_x   = TL_ALIAS_W + tl_grid_w + 6
+        cnt_col = (220, 100, 100) if total_tl > 0 else (80, 180, 100)
+        draw.text((cnt_x, row_y + TL_BAND_H // 2),
+                  str(total_tl) if total_tl > 0 else "ok",
+                  font=font_axis, fill=cnt_col,
+                  anchor="lm" if hasattr(draw, 'textbbox') else None)
+
+        # --- Правый блок: ячеечная карта ---
+        hc = hm_counts[pid]
+        for m_i in range(len(hm_months)):
+            dl  = hm_day_lists[m_i]
+            mx0 = hm_x_offsets[m_i]
+            for col, d in enumerate(dl):
+                count = hc.get(d, 0)
+                color = _cell_color(count, hm_max)
+                cx    = mx0 + col * HM_STEP
+                draw.rounded_rectangle([cx, row_y, cx + HM_CELL - 1, row_y + HM_CELL - 1],
+                                       radius=5, fill=color)
+                lbl = str(count) if count < 100 else "99+"
+                draw.text((cx + HM_CELL // 2, row_y + HM_CELL // 2), lbl,
+                          font=font_cell, fill=(0, 0, 0),
+                          anchor="mm" if hasattr(draw, 'textbbox') else None)
+
+    # === ЛЕВЫЙ БЛОК: ось X снизу ===
+    axis_y     = bands_y0 + rows_h + 4
+    last_month = None
+    draw.line([(TL_ALIAS_W, axis_y), (TL_ALIAS_W + tl_grid_w, axis_y)], fill=SEP_COL, width=1)
+    for col, d in enumerate(tl_day_list):
+        cx = TL_ALIAS_W + col * TL_STEP + TL_DAY_W // 2
+        if d.weekday() == 0 or col == 0:
+            draw.text((cx, axis_y + 4), str(d.day), font=font_axis, fill=MUTED_COL,
+                      anchor="mt" if hasattr(draw, 'textbbox') else None)
+        if d.month != last_month:
+            last_month = d.month
+            draw.text((cx, axis_y + 20), MONTH_EN[d.month], font=font_alias, fill=TEXT_COL,
+                      anchor="mt" if hasattr(draw, 'textbbox') else None)
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", optimize=False, compress_level=1)
+    return buf.getvalue()
+
+
 @dp.callback_query(lambda c: c.data == "stability_chart")
 async def show_stability_chart(callback_query: types.CallbackQuery, state: FSMContext):
-    """Статистика стабильности: общая карта + статистика + кнопки месяцев"""
+    """Статистика стабильности: комбинированный график + текстовая статистика"""
     user_id = callback_query.from_user.id
     if not is_admin(user_id):
         await callback_query.answer("⛔ Доступ запрещен", show_alert=True)
@@ -5032,10 +5259,9 @@ async def show_stability_chart(callback_query: types.CallbackQuery, state: FSMCo
         panel_states = _panel_monitor.panel_states if _panel_monitor else {}
 
         png_bytes = await asyncio.get_event_loop().run_in_executor(
-            None, _build_stability_chart, panel_states, panels
+            None, _build_combined_chart, panel_states, panels
         )
 
-        # Статистика сбоев для подписи
         stats_lines = []
         for pid, panel_config in panels.items():
             alias = getattr(panel_config, 'alias', pid)
@@ -5052,11 +5278,11 @@ async def show_stability_chart(callback_query: types.CallbackQuery, state: FSMCo
                 stats_lines.append(f"  {dot} {alias}: <b>{count}</b> сбоев  ({first_dt} — {last_dt})")
 
         stats_text = "\n".join(stats_lines) if stats_lines else "  данные недоступны"
-        caption = f"📊 <b>Статистика стабильности</b>\n\n<b>Сбои:</b>\n{stats_text}\n\n📅 <i>Выберите месяц для детального просмотра:</i>"
+        caption = f"📊 <b>Статистика стабильности</b>\n\n<b>Сбои:</b>\n{stats_text}"
 
-        available_months = _get_available_months(panel_states)
-        keyboard = _month_keyboard(available_months)
-
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="select_panel_to_connect")]
+        ])
         await bot.send_photo(
             callback_query.message.chat.id,
             photo=types.BufferedInputFile(png_bytes, filename="stability.png"),
@@ -5066,50 +5292,6 @@ async def show_stability_chart(callback_query: types.CallbackQuery, state: FSMCo
         )
     except Exception as e:
         logger.error(f"Ошибка построения графика стабильности: {e}")
-        await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
-
-
-@dp.callback_query(lambda c: c.data and c.data.startswith("stability_month:"))
-async def show_stability_month(callback_query: types.CallbackQuery, state: FSMContext):
-    """Тепловая карта за выбранный месяц"""
-    user_id = callback_query.from_user.id
-    if not is_admin(user_id):
-        await callback_query.answer("⛔ Доступ запрещен", show_alert=True)
-        return
-
-    try:
-        _, ym = callback_query.data.split(":", 1)
-        year, month = int(ym.split("-")[0]), int(ym.split("-")[1])
-    except Exception:
-        await callback_query.answer("❌ Неверный формат", show_alert=True)
-        return
-
-    await callback_query.answer("📅 Строю карту месяца...")
-
-    try:
-        panels = config.panel_manager.get_all_panels()
-        panel_states = _panel_monitor.panel_states if _panel_monitor else {}
-
-        png_bytes = await asyncio.get_event_loop().run_in_executor(
-            None, _build_month_heatmap, panel_states, panels, year, month
-        )
-
-        MONTH_RU = ['','Январь','Февраль','Март','Апрель','Май','Июнь',
-                    'Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь']
-        caption = f"📅 <b>{MONTH_RU[month]} {year}</b> — детальная карта сбоев"
-
-        available_months = _get_available_months(panel_states)
-        keyboard = _month_keyboard(available_months)
-
-        await bot.send_photo(
-            callback_query.message.chat.id,
-            photo=types.BufferedInputFile(png_bytes, filename=f"month_{year}_{month:02d}.png"),
-            caption=caption,
-            parse_mode="HTML",
-            reply_markup=keyboard
-        )
-    except Exception as e:
-        logger.error(f"Ошибка построения карты месяца: {e}")
         await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
 
 
