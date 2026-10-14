@@ -4516,6 +4516,184 @@ def _build_stability_chart_v2(panel_states: dict, panels: dict) -> bytes:
     return buf.getvalue()
 
 
+def _build_timeline_chart(panel_states: dict, panels: dict) -> bytes:
+    """
+    Timeline-лента: одна толстая горизонтальная полоска на сервер.
+    Ось X = дни (до 112 дней), цвет столбика = кол-во сбоев за день.
+    0 сбоев → тёмно-серый, 1+ → розово-красный градиент.
+    Справа: суммарный счётчик сбоев. Ось X: числа + метки месяцев.
+    """
+    import io
+    import datetime as dt_mod
+    from PIL import Image, ImageDraw
+
+    now   = datetime.now()
+    today = now.date()
+    DAYS  = 112
+    day_list = [today - dt_mod.timedelta(days=DAYS - 1 - i) for i in range(DAYS)]
+    day_set  = set(day_list)
+
+    panel_ids = list(panels.keys())
+    if not panel_ids:
+        raise ValueError("Нет панелей")
+    aliases = {pid: getattr(panels[pid], 'alias', pid) or pid for pid in panel_ids}
+
+    # outages_per_day[pid][date] = count
+    outages_per_day: dict = {}
+    for pid in panel_ids:
+        day_counts: dict = {}
+        ps = panel_states.get(pid)
+        if ps:
+            for ev in ps.outage_events:
+                d = ev.date()
+                if d in day_set:
+                    day_counts[d] = day_counts.get(d, 0) + 1
+        outages_per_day[pid] = day_counts
+
+    all_counts = [c for pid in panel_ids for c in outages_per_day[pid].values()]
+    max_count  = max(all_counts) if all_counts else 1
+
+    # --- Размеры ---
+    ALIAS_W    = 120   # колонка с именем сервера
+    RIGHT_PAD  = 16
+    COUNT_W    = 90    # колонка счётчика справа
+    BAND_H     = 36    # высота ленты одного сервера
+    BAND_GAP   = 18    # зазор между серверами
+    AXIS_H     = 52    # высота оси X снизу
+    TITLE_H    = 56    # высота заголовка
+    TOP_PAD    = 8
+    BOTTOM_PAD = 16
+
+    DAY_W = 11         # ширина столбика одного дня в px
+    DAY_GAP = 1        # зазор между столбиками
+    DAY_STEP = DAY_W + DAY_GAP
+
+    grid_w = DAYS * DAY_STEP - DAY_GAP
+    img_w  = ALIAS_W + grid_w + COUNT_W + RIGHT_PAD
+    n      = len(panel_ids)
+    img_h  = TOP_PAD + TITLE_H + n * (BAND_H + BAND_GAP) - BAND_GAP + AXIS_H + BOTTOM_PAD
+
+    # --- Цвета ---
+    BG          = (18,  22,  30)
+    TEXT_COL    = (210, 218, 226)
+    MUTED_COL   = (100, 110, 122)
+    SEP_COL     = (45,  52,  62)
+    EMPTY_COL   = (38,  46,  60)
+    GRID_LINE   = (30,  37,  50)
+    COUNT_MUTED = (120, 130, 145)
+
+    def _day_color(count: int, mx: int) -> tuple:
+        if count == 0:
+            return EMPTY_COL
+        t = min(count / mx, 1.0) if mx > 0 else 1.0
+        # розовый (255,140,140) → ярко-красный (220,25,25)
+        g = int(140 - t * 115)
+        b = int(140 - t * 115)
+        return (255, max(25, g), max(25, b))
+
+    img  = Image.new("RGB", (img_w, img_h), color=BG)
+    draw = ImageDraw.Draw(img)
+
+    font_title, font_alias, font_axis, font_count = _load_fonts([19, 15, 12, 13])
+
+    grid_x0 = ALIAS_W  # X-начало сетки
+
+    # --- Заголовок ---
+    period_str = f"{day_list[0].strftime('%d.%m.%Y')} — {day_list[-1].strftime('%d.%m.%Y')}"
+    draw.text((grid_x0, TOP_PAD + 4),  "Статистика стабильности", font=font_title, fill=TEXT_COL)
+    draw.text((grid_x0, TOP_PAD + 28), period_str,                  font=font_axis,  fill=MUTED_COL)
+
+    bands_y0 = TOP_PAD + TITLE_H  # Y-начало первой ленты
+
+    # --- Вертикальные линии сетки (каждую неделю) ---
+    for col, d in enumerate(day_list):
+        if d.weekday() == 0:
+            gx = grid_x0 + col * DAY_STEP
+            draw.line([(gx, bands_y0), (gx, bands_y0 + n * (BAND_H + BAND_GAP) - BAND_GAP)],
+                      fill=GRID_LINE, width=1)
+
+    # --- Ленты серверов ---
+    for row_i, pid in enumerate(panel_ids):
+        alias      = aliases[pid]
+        day_counts = outages_per_day[pid]
+        total      = sum(day_counts.values())
+        band_y     = bands_y0 + row_i * (BAND_H + BAND_GAP)
+
+        # Имя сервера
+        draw.text((6, band_y + BAND_H // 2), alias, font=font_alias, fill=TEXT_COL,
+                  anchor="lm" if hasattr(draw, 'textbbox') else None)
+
+        # Фоновая полоска
+        draw.rounded_rectangle(
+            [grid_x0, band_y, grid_x0 + grid_w, band_y + BAND_H],
+            radius=4, fill=EMPTY_COL
+        )
+
+        # Столбики дней
+        for col, d in enumerate(day_list):
+            count = day_counts.get(d, 0)
+            if count == 0:
+                continue
+            color = _day_color(count, max_count)
+            cx = grid_x0 + col * DAY_STEP
+            # Высота столбика пропорциональна count (минимум 4px)
+            bar_h = max(4, int(BAND_H * min(count / max_count, 1.0)))
+            cy_top = band_y + BAND_H - bar_h
+            draw.rectangle([cx, cy_top, cx + DAY_W - 1, band_y + BAND_H], fill=color)
+
+        # Счётчик справа
+        count_x = grid_x0 + grid_w + 12
+        if total > 0:
+            draw.text((count_x, band_y + BAND_H // 2),
+                      f"{total} сбоев", font=font_count, fill=(220, 100, 100),
+                      anchor="lm" if hasattr(draw, 'textbbox') else None)
+        else:
+            draw.text((count_x, band_y + BAND_H // 2),
+                      "норма", font=font_count, fill=(80, 180, 100),
+                      anchor="lm" if hasattr(draw, 'textbbox') else None)
+
+        # Разделитель между серверами
+        if row_i < n - 1:
+            sep_y = band_y + BAND_H + BAND_GAP // 2
+            draw.line([(0, sep_y), (img_w, sep_y)], fill=SEP_COL, width=1)
+
+    # --- Ось X (снизу) ---
+    axis_y = bands_y0 + n * (BAND_H + BAND_GAP) - BAND_GAP + 6
+    draw.line([(grid_x0, axis_y), (grid_x0 + grid_w, axis_y)], fill=SEP_COL, width=1)
+
+    MONTH_RU   = ['','Янв','Фев','Мар','Апр','Май','Июн',
+                  'Июл','Авг','Сен','Окт','Ноя','Дек']
+    last_month = None
+    for col, d in enumerate(day_list):
+        cx = grid_x0 + col * DAY_STEP + DAY_W // 2
+        # число каждого понедельника
+        if d.weekday() == 0 or col == 0:
+            draw.text((cx, axis_y + 4), str(d.day), font=font_axis, fill=MUTED_COL,
+                      anchor="mt" if hasattr(draw, 'textbbox') else None)
+        # метка месяца при смене
+        if d.month != last_month:
+            last_month = d.month
+            draw.text((cx, axis_y + 22), MONTH_RU[d.month], font=font_alias, fill=TEXT_COL,
+                      anchor="mt" if hasattr(draw, 'textbbox') else None)
+
+    # --- Легенда ---
+    leg_y = axis_y + 44
+    leg_x = grid_x0
+    draw.text((leg_x, leg_y), "норма", font=font_axis, fill=MUTED_COL)
+    leg_x += 48
+    draw.rectangle([leg_x, leg_y - 1, leg_x + 20, leg_y + 11], fill=EMPTY_COL)
+    leg_x += 28
+    for s in range(5):
+        c = _day_color(s + 1, 5)
+        draw.rectangle([leg_x, leg_y - 1, leg_x + 20, leg_y + 11], fill=c)
+        leg_x += 26
+    draw.text((leg_x + 4, leg_y), "много сбоев", font=font_axis, fill=MUTED_COL)
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", optimize=False, compress_level=1)
+    return buf.getvalue()
+
+
 async def _render_servers_screen(callback_query: types.CallbackQuery, is_refresh: bool = False):
     """Рендер экрана 'Серверы': кнопки панелей + метрики текущей панели + статистика сбоев."""
     panel_manager = config.panel_manager
@@ -4564,6 +4742,7 @@ async def _render_servers_screen(callback_query: types.CallbackQuery, is_refresh
     keyboard_buttons.append([
         InlineKeyboardButton(text="📊 Статистика стабильности", callback_data="stability_chart"),
         InlineKeyboardButton(text="🗓 По слотам (v2)",          callback_data="stability_chart_v2"),
+        InlineKeyboardButton(text="📈 Timeline",                callback_data="stability_timeline"),
     ])
     keyboard_buttons.append([
         InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_servers"),
@@ -4800,6 +4979,60 @@ async def show_stability_chart_v2(callback_query: types.CallbackQuery, state: FS
     except Exception as e:
         logger.error(f"Ошибка построения графика стабильности v2: {e}")
         await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
+
+
+
+@dp.callback_query(lambda c: c.data == "stability_timeline")
+async def show_stability_timeline(callback_query: types.CallbackQuery, state: FSMContext):
+    """Timeline-лента стабильности серверов"""
+    user_id = callback_query.from_user.id
+    if not is_admin(user_id):
+        await callback_query.answer("⛔ Доступ запрещен", show_alert=True)
+        return
+
+    await callback_query.answer("📈 Строю timeline...")
+
+    try:
+        panels = config.panel_manager.get_all_panels()
+        panel_states = _panel_monitor.panel_states if _panel_monitor else {}
+
+        png_bytes = await asyncio.get_event_loop().run_in_executor(
+            None, _build_timeline_chart, panel_states, panels
+        )
+
+        # Статистика сбоев для подписи
+        stats_lines = []
+        for pid, panel_config in panels.items():
+            alias = getattr(panel_config, 'alias', pid)
+            ps = panel_states.get(pid)
+            if ps is None:
+                continue
+            count = len(ps.outage_events)
+            if count == 0:
+                stats_lines.append(f"  🟢 {alias}: сбоев нет")
+            else:
+                first_dt = ps.outage_events[0].strftime('%d.%m %H:%M')
+                last_dt  = ps.outage_events[-1].strftime('%d.%m %H:%M')
+                dot = "🔴" if not ps.is_available else "🟡"
+                stats_lines.append(f"  {dot} {alias}: <b>{count}</b> сбоев  ({first_dt} — {last_dt})")
+
+        stats_text = "\n".join(stats_lines) if stats_lines else "  данные недоступны"
+        caption = f"📈 <b>Timeline стабильности</b>\n\n<b>Сбои:</b>\n{stats_text}"
+
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="select_panel_to_connect")]
+        ])
+        await bot.send_photo(
+            callback_query.message.chat.id,
+            photo=types.BufferedInputFile(png_bytes, filename="timeline.png"),
+            caption=caption,
+            parse_mode="HTML",
+            reply_markup=keyboard
+        )
+    except Exception as e:
+        logger.error(f"Ошибка построения timeline: {e}")
+        await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
+
 
 
 
