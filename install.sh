@@ -2478,9 +2478,8 @@ docker_prune() {
     echo -e "${YELLOW}🧹 Очистка неиспользуемых Docker-ресурсов...${NC}"
     docker container prune -f 2>/dev/null | grep -E "deleted|freed|Deleted|Freed" || true
     docker image prune -f 2>/dev/null | grep -E "deleted|freed|Deleted|Freed|reclaimed" || true
-    # NOTE: docker builder prune намеренно НЕ вызывается здесь —
-    # build cache (go mod download, go build) должен сохраняться между
-    # пересборками, иначе каждый раз ~150 сек вместо ~5 сек.
+    # Удаляем build cache старше 7 дней — свежий кэш сохраняется для быстрой пересборки
+    docker builder prune -f --filter "until=168h" 2>/dev/null | grep -E "Total reclaimed space" || true
     echo -e "${GREEN}✅ Очистка завершена${NC}"
 }
 
