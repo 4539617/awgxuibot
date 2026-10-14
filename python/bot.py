@@ -2805,6 +2805,9 @@ async def show_server_status(callback_query: types.CallbackQuery, state: FSMCont
                 InlineKeyboardButton(text="👥 Пользователи", callback_data="show_users")
             ],
             [
+                InlineKeyboardButton(text="📊 Статистика стабильности", callback_data="stability_chart")
+            ],
+            [
                 InlineKeyboardButton(text="🖥️ Сервер", callback_data="select_panel_to_connect")
             ],
             [
@@ -4737,10 +4740,7 @@ async def _render_servers_screen(callback_query: types.CallbackQuery, is_refresh
         ])
 
     keyboard_buttons.append([
-        InlineKeyboardButton(text="📋 Все ключи сервера", callback_data="cmd_allclients"),
-    ])
-    keyboard_buttons.append([
-        InlineKeyboardButton(text="📊 Статистика стабильности", callback_data="stability_chart"),
+        InlineKeyboardButton(text="📋 Все VLESS ключи сервера", callback_data="cmd_allclients"),
     ])
     keyboard_buttons.append([
         InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_servers"),
