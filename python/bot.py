@@ -2798,8 +2798,7 @@ async def show_server_status(callback_query: types.CallbackQuery, state: FSMCont
                 InlineKeyboardButton(text="💾 Бэкап", callback_data="create_backup")
             ],
             [
-                InlineKeyboardButton(text="🔔 Уведомления", callback_data="notification_settings"),
-                InlineKeyboardButton(text="📥 JSON конфиг", callback_data="export_json_config")
+                InlineKeyboardButton(text="🔔 Уведомления", callback_data="notification_settings")
             ],
             [
                 InlineKeyboardButton(text="👥 Пользователи", callback_data="show_users")
