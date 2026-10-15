@@ -4762,6 +4762,12 @@ async def _render_servers_screen(callback_query: types.CallbackQuery, is_refresh
         InlineKeyboardButton(text="📋 Все VLESS ключи сервера", callback_data="cmd_allclients"),
     ])
     keyboard_buttons.append([
+        InlineKeyboardButton(
+            text="📄 JSON конфиги",
+            callback_data=f"panel_json_configs:{current_panel_id}"
+        ),
+    ])
+    keyboard_buttons.append([
         InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_servers"),
         InlineKeyboardButton(text="◀️ Назад",    callback_data="server_status"),
     ])
@@ -5527,6 +5533,93 @@ async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContex
         logger.error(f"Ошибка подключения к панели: {e}")
         await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
 
+
+
+# ─── JSON конфиги выбранной панели ───────────────────────────────────────────
+
+@dp.callback_query(lambda c: c.data and c.data.startswith("panel_json_configs:"))
+async def panel_json_configs(callback_query: types.CallbackQuery, state: FSMContext):
+    """Отправляет JSON-файлы текущей панели: inbounds, clients, outbound_subs, routing."""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
+        return
+
+    await callback_query.answer()
+
+    panel_id = callback_query.data.split(":", 1)[1]
+    panel_cfg = config.panel_manager.get_panel(panel_id)
+    if not panel_cfg:
+        await callback_query.message.answer("❌ Панель не найдена")
+        return
+
+    version = panel_cfg.xui_version or ""
+    is_v3   = version.startswith("3.") or version == "latest"
+    if not is_v3:
+        await callback_query.message.answer(
+            f"⚠️ Панель <b>{panel_cfg.alias}</b> версии v2 — JSON конфиги через API недоступны.",
+            parse_mode="HTML"
+        )
+        return
+
+    await callback_query.message.answer(
+        f"⏳ Получаю JSON конфиги панели <b>{panel_cfg.alias}</b>...",
+        parse_mode="HTML"
+    )
+
+    from backup_manager import (
+        _fetch_inbounds, _fetch_clients,
+        _fetch_outbound_subs, _fetch_xray_config,
+    )
+    import json as _json
+    from datetime import datetime as _dt
+
+    alias = (panel_cfg.alias or panel_id).strip()
+    ts    = _dt.now().strftime("%Y%m%d_%H%M%S")
+
+    files = [
+        ("inbounds",      _fetch_inbounds,      f"{alias}_3xui_inbounds_{ts}.json"),
+        ("clients",       _fetch_clients,       f"{alias}_3xui_clients_{ts}.json"),
+        ("outbound_subs", _fetch_outbound_subs, f"{alias}_3xui_outbound_subs_{ts}.json"),
+        ("routing",       None,                 f"{alias}_3xui_routing_{ts}.json"),   # из xray_config
+    ]
+
+    sent = 0
+    xray_cfg_cache = None
+
+    for key, fetch_fn, filename in files:
+        try:
+            if key == "routing":
+                # routing извлекаем из xray_config (один запрос на оба)
+                if xray_cfg_cache is None:
+                    xray_cfg_cache = await _fetch_xray_config(panel_cfg)
+                data = (xray_cfg_cache or {}).get("routing") if xray_cfg_cache else None
+            else:
+                data = await fetch_fn(panel_cfg)
+                # кэшируем xray_config если он пришёл через inbounds (не нужно, но на всякий)
+
+            if data is None:
+                await callback_query.message.answer(f"⚠️ <code>{filename}</code> — не удалось получить", parse_mode="HTML")
+                continue
+
+            json_bytes = _json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
+            await callback_query.message.answer_document(
+                types.BufferedInputFile(json_bytes, filename=filename),
+                caption=f"📄 <code>{filename}</code>",
+                parse_mode="HTML",
+            )
+            sent += 1
+
+        except Exception as e:
+            logger.error(f"[json_configs] {key} error: {e}")
+            await callback_query.message.answer(f"❌ Ошибка при получении <code>{key}</code>: {e}", parse_mode="HTML")
+
+    if sent:
+        await callback_query.message.answer(
+            f"✅ Отправлено файлов: {sent}/4",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="◀️ Назад к серверам", callback_data="select_panel_to_connect")
+            ]])
+        )
 
 
 # ---------------------------------------------------------------------------
