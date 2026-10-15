@@ -621,7 +621,7 @@ async def run_backup(panel_manager, common) -> tuple[Path, dict]:
 
     # 4. Упаковка в ZIP с сохранением структуры папок
     _BACKUP_ROOT.mkdir(parents=True, exist_ok=True)
-    zip_path = _BACKUP_ROOT / f"backup_{ts}.zip"
+    zip_path = _BACKUP_ROOT / f"awgxuibot_backup_{ts}.zip"
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         for f in work_dir.rglob("*"):
             if f.is_file():
