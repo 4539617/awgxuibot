@@ -331,11 +331,12 @@ async def run_backup(panel_manager, common) -> tuple[Path, dict]:
             continue
         alias = (panel_cfg.alias or panel_id).strip()
         safe  = alias.replace("/", "_").replace("\\", "_").replace(" ", "_")
+        p     = f"{safe}_3xui"   # префикс для всех файлов панели
 
         # x-ui.db
         db_data = await _fetch_xui_db(panel_cfg)
         if db_data:
-            (work_dir / f"{safe}_xui.db").write_bytes(db_data)
+            (work_dir / f"{p}_xui.db").write_bytes(db_data)
             summary[f"{alias} x-ui.db"] = f"✅ {len(db_data) // 1024 + 1} КБ"
         else:
             summary[f"{alias} x-ui.db"] = "⚠️ недоступна"
@@ -343,7 +344,7 @@ async def run_backup(panel_manager, common) -> tuple[Path, dict]:
         # inbounds + clients JSON
         inbounds = await _fetch_inbounds(panel_cfg)
         if inbounds is not None:
-            (work_dir / f"{safe}_inbounds.json").write_text(
+            (work_dir / f"{p}_inbounds.json").write_text(
                 json.dumps(inbounds, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
@@ -370,7 +371,7 @@ async def run_backup(panel_manager, common) -> tuple[Path, dict]:
         # clients export — официальный формат для восстановления через /import (только v3)
         clients = await _fetch_clients(panel_cfg)
         if clients is not None:
-            (work_dir / f"{safe}_clients.json").write_text(
+            (work_dir / f"{p}_clients.json").write_text(
                 json.dumps(clients, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
@@ -384,7 +385,7 @@ async def run_backup(panel_manager, common) -> tuple[Path, dict]:
         # xray конфиг — шаблон (outbounds + routing + log + policy + ...) только v3
         xray_cfg = await _fetch_xray_config(panel_cfg)
         if xray_cfg is not None:
-            (work_dir / f"{safe}_xray_config.json").write_text(
+            (work_dir / f"{p}_xray_config.json").write_text(
                 json.dumps(xray_cfg, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
@@ -395,7 +396,7 @@ async def run_backup(panel_manager, common) -> tuple[Path, dict]:
                 f"✅ {len(outbounds)} outbounds, {len(routing_rules)} routing rules"
             )
             # отдельный файл маршрутизации
-            (work_dir / f"{safe}_routing.json").write_text(
+            (work_dir / f"{p}_routing.json").write_text(
                 json.dumps(routing, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
@@ -413,7 +414,7 @@ async def run_backup(panel_manager, common) -> tuple[Path, dict]:
         # subscription hosts — кастомные адреса для ссылок клиентам (только v3)
         hosts = await _fetch_hosts(panel_cfg)
         if hosts is not None:
-            (work_dir / f"{safe}_hosts.json").write_text(
+            (work_dir / f"{p}_hosts.json").write_text(
                 json.dumps(hosts, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
@@ -426,7 +427,7 @@ async def run_backup(panel_manager, common) -> tuple[Path, dict]:
         # настройки панели (только v3)
         settings = await _fetch_settings(panel_cfg)
         if settings is not None:
-            (work_dir / f"{safe}_settings.json").write_text(
+            (work_dir / f"{p}_settings.json").write_text(
                 json.dumps(settings, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
@@ -439,7 +440,7 @@ async def run_backup(panel_manager, common) -> tuple[Path, dict]:
         # outbound-подписки (только v3)
         ob_subs = await _fetch_outbound_subs(panel_cfg)
         if ob_subs is not None:
-            (work_dir / f"{safe}_outbound_subs.json").write_text(
+            (work_dir / f"{p}_outbound_subs.json").write_text(
                 json.dumps(ob_subs, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
