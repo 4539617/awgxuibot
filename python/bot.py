@@ -2953,9 +2953,10 @@ async def create_backup(callback_query: types.CallbackQuery, state: FSMContext):
         caption = (
             f"✅ <b>Полный бэкап создан</b>\n"
             f"📅 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-            f"💾 Размер: {zip_size_kb} КБ\n\n"
-            + "\n".join(lines)
+            f"💾 Размер: {zip_size_kb} КБ"
         )
+
+        report = "\n".join(lines)
 
         # Отправляем ZIP-архив в чат администратора
         zip_bytes = zip_path.read_bytes()
@@ -2964,6 +2965,9 @@ async def create_backup(callback_query: types.CallbackQuery, state: FSMContext):
             caption=caption,
             parse_mode="HTML",
         )
+
+        # Отправляем подробный отчёт отдельным сообщением (caption ограничен 1024 символами)
+        await callback_query.message.answer(report, parse_mode="HTML")
 
         logger.info(
             f"[backup] отправлен администратору {callback_query.from_user.id}: "
