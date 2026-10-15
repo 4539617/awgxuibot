@@ -715,24 +715,76 @@ class ConfigManager:
             logger.error(f"Ошибка при сохранении конфигурации: {e}")
     
     async def check_panel_status(self, panel_config: PanelConfig) -> bool:
-        """Проверить доступность панели"""
+        """Проверить функциональную доступность панели через API.
+
+        Делаем реальный API-запрос (не просто TCP/логин), чтобы отличить
+        ситуацию «веб-сервер отвечает, но 3x-ui сломан» от «панель работает».
+
+        Для v3 (Bearer Token): GET /panel/api/server/status
+        Для v2 (cookie-auth):  POST /login → GET /panel/api/inbounds/list
+        Считаем панель доступной только если API вернул HTTP 200 с success:true.
+        """
         async def _do_check():
-            login_url = f"{panel_config.xui_url.rstrip('/')}/login"
-            # connect=4 ограничивает TCP-handshake; total=5 — весь запрос
-            timeout = aiohttp.ClientTimeout(total=5, connect=4)
+            base_url = panel_config.xui_url.rstrip('/')
+            # connect=4 ограничивает TCP-handshake; total=6 — весь запрос
+            timeout = aiohttp.ClientTimeout(total=6, connect=4)
+            ssl_ctx = False  # отключаем проверку сертификата (self-signed)
+
+            is_v3 = (
+                panel_config.xui_version.startswith("3.")
+                or panel_config.xui_version == "latest"
+            )
+
             async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.post(
-                    login_url,
-                    json={'username': panel_config.xui_username, 'password': panel_config.xui_password},
-                    ssl=False
-                ) as response:
-                    return response.status in [200, 401, 403]
+                if is_v3 and panel_config.xui_api_token:
+                    # v3 — Bearer token, лёгкий endpoint статуса сервера
+                    headers = {'Authorization': f'Bearer {panel_config.xui_api_token}'}
+                    async with session.get(
+                        f"{base_url}/panel/api/server/status",
+                        headers=headers,
+                        ssl=ssl_ctx,
+                    ) as resp:
+                        if resp.status != 200:
+                            return False
+                        try:
+                            data = await resp.json(content_type=None)
+                            return bool(data.get('success'))
+                        except Exception:
+                            return False
+                else:
+                    # v2 или v3 без токена — логин через cookie, затем проверка inbounds
+                    cookie_jar = aiohttp.CookieJar(unsafe=True)
+                    async with aiohttp.ClientSession(
+                        timeout=timeout,
+                        cookie_jar=cookie_jar,
+                    ) as auth_session:
+                        async with auth_session.post(
+                            f"{base_url}/login",
+                            json={
+                                'username': panel_config.xui_username,
+                                'password': panel_config.xui_password,
+                            },
+                            ssl=ssl_ctx,
+                        ) as login_resp:
+                            if login_resp.status != 200:
+                                return False
+                        # Проверяем реальный API-endpoint
+                        async with auth_session.get(
+                            f"{base_url}/panel/api/inbounds/list",
+                            ssl=ssl_ctx,
+                        ) as api_resp:
+                            if api_resp.status != 200:
+                                return False
+                            try:
+                                data = await api_resp.json(content_type=None)
+                                return bool(data.get('success'))
+                            except Exception:
+                                return False
 
         try:
-            # Дополнительный hard-limit через asyncio на случай если aiohttp
-            # не успевает применить свой timeout (drop-пакеты, OS-таймаут TCP)
-            return await asyncio.wait_for(_do_check(), timeout=6)
-        except:
+            # Hard-limit через asyncio на случай зависших TCP-соединений
+            return await asyncio.wait_for(_do_check(), timeout=8)
+        except Exception:
             return False
     
     async def check_all_panels_status(self) -> Dict[str, bool]:
