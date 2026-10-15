@@ -1783,9 +1783,6 @@ export class RouteBot {
           ],
           [
             { text: '📱 Скачать приложение', callback_data: 'app_download' }
-          ],
-          [
-            { text: '🔄 Обновить', callback_data: 'refresh_main_menu' }
           ]
         ]
       };

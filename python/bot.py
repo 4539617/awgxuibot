@@ -57,6 +57,7 @@ xui_client = XUIClient(config)
 # Глобальная ссылка на монитор панелей (инициализируется в main())
 _panel_monitor = None
 _remote_monitor = None  # RemoteMonitor — мониторинг удалённых панелей
+_cascade_online: dict = {}  # cascade_id -> bool, кэш последней проверки доступности
 
 
 # ─── SQLite-хранилище имён AWG-пиров (только peer_name для отображения) ──────
@@ -205,6 +206,26 @@ def _build_panels_block_admin() -> str:
         lines.append(line)
     return "\n".join(lines) + "\n\n"
 
+
+def _build_cascade_block_admin() -> str:
+    """Список Cascade-серверов для главного меню администратора."""
+    cascade_servers = config.get_cascade_servers()
+    if not cascade_servers:
+        return ""
+    lines = []
+    for srv in cascade_servers:
+        online = _cascade_online.get(srv.cascade_id, True)
+        online_icon = "🟢 Онлайн" if online else "🔴 Оффлайн"
+        url = srv.url or ''
+        id_str = (
+            f"<a href=\"{url}\">{srv.cascade_id}</a>" if url else f"<code>{srv.cascade_id}</code>"
+        )
+        line = (
+            f"⏸️ <b>{srv.label}</b>\n"
+            f"   {online_icon}  |  🆔 {id_str}"
+        )
+        lines.append(line)
+    return "\n".join(lines) + "\n\n"
 
 
 async def send_panel_select(chat_id: int, header: str, back_callback: str, key_type: str):
@@ -1058,9 +1079,13 @@ async def cmd_start(message: Message, state: FSMContext):
             ])
 
             panels_block = _build_panels_block_admin()
+            cascade_block = _build_cascade_block_admin()
+            xui_header = "3X-UI:\n" if panels_block else ""
+            cascade_header = "CASCADE:\n" if cascade_block else ""
             await message.answer(
                 f"👑 Администратор\n\n"
-                f"{panels_block}"
+                f"{xui_header}{panels_block}"
+                f"{cascade_header}{cascade_block}"
                 f"📱 Выберите действие:",
                 reply_markup=keyboard,
                 parse_mode="HTML"
@@ -2803,7 +2828,6 @@ async def show_server_status(callback_query: types.CallbackQuery, state: FSMCont
         # Добавляем кнопки в два ряда
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [
-                InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_server_status"),
                 InlineKeyboardButton(text="💾 Бэкап", callback_data="create_backup")
             ],
             [
@@ -3510,22 +3534,38 @@ async def back_to_start_menu(callback_query: types.CallbackQuery, state: FSMCont
 
 
 async def _refresh_panel_states_now():
-    """Выполняет живую проверку всех панелей и обновляет кэш panel_states монитора.
-    Вызывается при нажатии кнопки 🔄 Обновить — чтобы статус был реальным, а не устаревшим."""
-    if _panel_monitor is None:
-        return
+    """Выполняет живую проверку всех панелей и Cascade-серверов, обновляет кэши."""
+    global _cascade_online
+    if _panel_monitor is not None:
+        try:
+            panels = config.panel_manager.get_all_panels()
+            for panel_id, panel_cfg in panels.items():
+                try:
+                    is_available = await config.panel_manager.check_panel_status(panel_cfg)
+                except Exception:
+                    is_available = False
+                state = _panel_monitor.panel_states.get(panel_id)
+                if state is not None:
+                    state.is_available = is_available
+        except Exception as e:
+            logger.warning(f"Ошибка обновления статусов панелей: {e}")
+    # Проверяем доступность Cascade-серверов
     try:
-        panels = config.panel_manager.get_all_panels()
-        for panel_id, panel_cfg in panels.items():
+        cascade_servers = config.get_cascade_servers()
+        for srv in cascade_servers:
             try:
-                is_available = await config.panel_manager.check_panel_status(panel_cfg)
+                async with CascadeClient(
+                    url=srv.url,
+                    api_key=srv.api_key,
+                    username=srv.username,
+                    password=srv.password,
+                    label=srv.label,
+                ) as client:
+                    _cascade_online[srv.cascade_id] = await client.ping()
             except Exception:
-                is_available = False
-            state = _panel_monitor.panel_states.get(panel_id)
-            if state is not None:
-                state.is_available = is_available
+                _cascade_online[srv.cascade_id] = False
     except Exception as e:
-        logger.warning(f"Ошибка обновления статусов панелей: {e}")
+        logger.warning(f"Ошибка обновления статусов Cascade: {e}")
 
 
 @dp.callback_query(lambda c: c.data == "refresh_main_menu")
@@ -3581,7 +3621,15 @@ async def _show_main_menu(callback_query: types.CallbackQuery, state: FSMContext
             ]
         ])
         panels_block = _build_panels_block_admin()
-        text = f"👑 Администратор\n\n{panels_block}📱 Выберите действие:"
+        cascade_block = _build_cascade_block_admin()
+        xui_header = "3X-UI:\n" if panels_block else ""
+        cascade_header = "CASCADE:\n" if cascade_block else ""
+        text = (
+            f"👑 Администратор\n\n"
+            f"{xui_header}{panels_block}"
+            f"{cascade_header}{cascade_block}"
+            f"📱 Выберите действие:"
+        )
         if edit:
             await callback_query.message.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
         else:
