@@ -150,9 +150,9 @@ async def _fetch_xray_config(panel_cfg) -> Optional[dict]:
 
 
 async def _fetch_clients(panel_cfg) -> Optional[list]:
-    """Скачивает полный список клиентов через /panel/api/clients/list (только v3).
-    Возвращает [{client: {...}, inboundIds: [...]}, ...] — содержит поля
-    password, resetDay, limitHwid, inboundIds которых нет внутри inbound.settings.
+    """Скачивает экспорт клиентов через /panel/api/clients/export (только v3).
+    Официальный бэкап-формат: [{client: {...}, inboundIds: [...]}] —
+    round-trip совместим с /panel/api/clients/import для восстановления.
     """
     version = panel_cfg.xui_version or ""
     is_v3   = version.startswith("3.") or version == "latest"
@@ -164,18 +164,111 @@ async def _fetch_clients(panel_cfg) -> Optional[list]:
     session = await _open_session(panel_cfg)
     try:
         async with session.get(
-            f"{base}/panel/api/clients/list", headers=hdrs
+            f"{base}/panel/api/clients/export", headers=hdrs
         ) as resp:
             if resp.status == 200:
                 data = await resp.json()
                 if data.get("success"):
                     return data.get("obj") or []
             logger.warning(
-                f"[backup] {panel_cfg.alias}: clients/list → HTTP {resp.status}"
+                f"[backup] {panel_cfg.alias}: clients/export → HTTP {resp.status}"
             )
             return None
     except Exception as e:
-        logger.warning(f"[backup] {panel_cfg.alias}: clients/list error: {e}")
+        logger.warning(f"[backup] {panel_cfg.alias}: clients/export error: {e}")
+        return None
+    finally:
+        await session.close()
+
+
+async def _fetch_hosts(panel_cfg) -> Optional[list]:
+    """Скачивает список subscription hosts через /panel/api/hosts/list (только v3).
+    Содержит кастомные домены/IP/порты для генерации ссылок клиентам.
+    """
+    version = panel_cfg.xui_version or ""
+    is_v3   = version.startswith("3.") or version == "latest"
+    if not is_v3:
+        return None
+
+    base = panel_cfg.xui_url.rstrip("/")
+    hdrs = _headers(panel_cfg)
+    session = await _open_session(panel_cfg)
+    try:
+        async with session.get(
+            f"{base}/panel/api/hosts/list", headers=hdrs
+        ) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                if data.get("success"):
+                    return data.get("obj") or []
+            logger.warning(
+                f"[backup] {panel_cfg.alias}: hosts/list → HTTP {resp.status}"
+            )
+            return None
+    except Exception as e:
+        logger.warning(f"[backup] {panel_cfg.alias}: hosts/list error: {e}")
+        return None
+    finally:
+        await session.close()
+
+
+async def _fetch_settings(panel_cfg) -> Optional[dict]:
+    """Скачивает все настройки панели через POST /panel/api/setting/all (только v3).
+    Содержит: web server, Telegram bot, подписки, безопасность, LDAP.
+    """
+    version = panel_cfg.xui_version or ""
+    is_v3   = version.startswith("3.") or version == "latest"
+    if not is_v3:
+        return None
+
+    base = panel_cfg.xui_url.rstrip("/")
+    hdrs = _headers(panel_cfg)
+    session = await _open_session(panel_cfg)
+    try:
+        async with session.post(
+            f"{base}/panel/api/setting/all", headers=hdrs
+        ) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                if data.get("success"):
+                    return data.get("obj") or {}
+            logger.warning(
+                f"[backup] {panel_cfg.alias}: setting/all → HTTP {resp.status}"
+            )
+            return None
+    except Exception as e:
+        logger.warning(f"[backup] {panel_cfg.alias}: settings error: {e}")
+        return None
+    finally:
+        await session.close()
+
+
+async def _fetch_outbound_subs(panel_cfg) -> Optional[list]:
+    """Скачивает список outbound-подписок через /panel/api/xray/outbound-subs (только v3).
+    Содержит удалённые URL которые поставляют дополнительные outbounds в xray конфиг.
+    """
+    version = panel_cfg.xui_version or ""
+    is_v3   = version.startswith("3.") or version == "latest"
+    if not is_v3:
+        return None
+
+    base = panel_cfg.xui_url.rstrip("/")
+    hdrs = _headers(panel_cfg)
+    session = await _open_session(panel_cfg)
+    try:
+        async with session.get(
+            f"{base}/panel/api/xray/outbound-subs", headers=hdrs
+        ) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                if data.get("success"):
+                    return data.get("obj") or []
+            logger.warning(
+                f"[backup] {panel_cfg.alias}: outbound-subs → HTTP {resp.status}"
+            )
+            return None
+    except Exception as e:
+        logger.warning(f"[backup] {panel_cfg.alias}: outbound-subs error: {e}")
         return None
     finally:
         await session.close()
@@ -274,7 +367,7 @@ async def run_backup(panel_manager, common) -> tuple[Path, dict]:
         else:
             summary[f"{alias} inbounds"] = "⚠️ не удалось получить"
 
-        # clients list — отдельный файл (только v3: содержит password, inboundIds, limitHwid)
+        # clients export — официальный формат для восстановления через /import (только v3)
         clients = await _fetch_clients(panel_cfg)
         if clients is not None:
             (work_dir / f"{safe}_clients.json").write_text(
@@ -291,19 +384,17 @@ async def run_backup(panel_manager, common) -> tuple[Path, dict]:
         # xray конфиг — шаблон (outbounds + routing + log + policy + ...) только v3
         xray_cfg = await _fetch_xray_config(panel_cfg)
         if xray_cfg is not None:
-            # полный шаблон конфига
             (work_dir / f"{safe}_xray_config.json").write_text(
                 json.dumps(xray_cfg, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
-            outbounds = xray_cfg.get("outbounds") or []
-            routing = xray_cfg.get("routing") or {}
+            outbounds     = xray_cfg.get("outbounds") or []
+            routing       = xray_cfg.get("routing") or {}
             routing_rules = routing.get("rules") or []
             summary[f"{alias} xray_config"] = (
                 f"✅ {len(outbounds)} outbounds, {len(routing_rules)} routing rules"
             )
-
-            # отдельный файл маршрутизации (routing.rules + domainStrategy)
+            # отдельный файл маршрутизации
             (work_dir / f"{safe}_routing.json").write_text(
                 json.dumps(routing, ensure_ascii=False, indent=2),
                 encoding="utf-8",
@@ -318,6 +409,45 @@ async def run_backup(panel_manager, common) -> tuple[Path, dict]:
                 summary[f"{alias} xray_config"] = "⚠️ не удалось получить"
                 summary[f"{alias} routing"]      = "⚠️ не удалось получить"
             # v2 — молчим
+
+        # subscription hosts — кастомные адреса для ссылок клиентам (только v3)
+        hosts = await _fetch_hosts(panel_cfg)
+        if hosts is not None:
+            (work_dir / f"{safe}_hosts.json").write_text(
+                json.dumps(hosts, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            summary[f"{alias} hosts"] = f"✅ {len(hosts)} хостов"
+        else:
+            version = panel_cfg.xui_version or ""
+            if version.startswith("3.") or version == "latest":
+                summary[f"{alias} hosts"] = "⚠️ не удалось получить"
+
+        # настройки панели (только v3)
+        settings = await _fetch_settings(panel_cfg)
+        if settings is not None:
+            (work_dir / f"{safe}_settings.json").write_text(
+                json.dumps(settings, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            summary[f"{alias} settings"] = "✅"
+        else:
+            version = panel_cfg.xui_version or ""
+            if version.startswith("3.") or version == "latest":
+                summary[f"{alias} settings"] = "⚠️ не удалось получить"
+
+        # outbound-подписки (только v3)
+        ob_subs = await _fetch_outbound_subs(panel_cfg)
+        if ob_subs is not None:
+            (work_dir / f"{safe}_outbound_subs.json").write_text(
+                json.dumps(ob_subs, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            summary[f"{alias} outbound_subs"] = f"✅ {len(ob_subs)} подписок"
+        else:
+            version = panel_cfg.xui_version or ""
+            if version.startswith("3.") or version == "latest":
+                summary[f"{alias} outbound_subs"] = "⚠️ не удалось получить"
 
     # 3. Упаковка в ZIP
     _BACKUP_ROOT.mkdir(parents=True, exist_ok=True)
