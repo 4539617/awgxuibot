@@ -148,6 +148,15 @@ class CascadeClient:
         try:
             async with session.request(method, url, **kwargs) as resp:
                 if resp.status == 401 and not retried:
+                    # Если используется статический api_key — повторная попытка бессмысленна,
+                    # тот же ключ снова вернёт 401. Сразу поднимаем ошибку.
+                    if self._api_key:
+                        text = await resp.text()
+                        raise CascadeAPIError(
+                            f"[Cascade:{self.label}] {method} {path} → 401: {text[:200]} "
+                            f"(api_key невалиден или истёк)",
+                            401,
+                        )
                     logger.warning(f"[Cascade:{self.label}] 401 — сбрасываем токен и повторяем")
                     self._token = None
                     return await self._req(method, path, body, retried=True)
@@ -185,9 +194,23 @@ class CascadeClient:
             raise CascadeAPIError(f"health failed: {e}")
 
     async def ping(self) -> bool:
+        """Проверяет доступность сервера И валидность токена.
+        Сначала проверяем /api/health (сервер жив?), затем делаем
+        авторизованный запрос /api/tunnel-interfaces (токен работает?).
+        Возвращает False если сервер недоступен ИЛИ токен невалиден (401).
+        """
         try:
             await self.health()
+        except Exception:
+            return False
+        # Проверяем авторизацию — /api/tunnel-interfaces требует валидный токен
+        try:
+            await self.list_interfaces()
             return True
+        except CascadeAPIError as e:
+            if e.status == 401:
+                logger.warning(f"[Cascade:{self.label}] ping: токен невалиден (401) → считаем оффлайн")
+            return False
         except Exception:
             return False
 

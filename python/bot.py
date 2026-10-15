@@ -397,15 +397,45 @@ async def on_key_proto_awg(callback_query: types.CallbackQuery, state: FSMContex
     await state.update_data(awg_duration_type=duration_type)
     await state.set_state(AwgKeyState.waiting_for_cascade_server)
 
+    # Обновляем статусы Cascade перед показом списка
+    await _refresh_panel_states_now()
+
     label = "♾ Бессрочный" if duration_type == "key_duration_new" else "⏱ Временный"
     buttons = []
+    online_count = 0
     for srv in cascade_servers:
-        buttons.append([
-            InlineKeyboardButton(
-                text=f"🖥 {srv.label}",
-                callback_data=f"awg_sel_cascade:{srv.cascade_id}",
-            )
-        ])
+        online = _cascade_online.get(srv.cascade_id, None)
+        if online is None:
+            # Статус ещё неизвестен — считаем онлайн (первый запуск)
+            online = True
+        if online:
+            online_count += 1
+            buttons.append([
+                InlineKeyboardButton(
+                    text=f"🖥 {srv.label} 🟢",
+                    callback_data=f"awg_sel_cascade:{srv.cascade_id}",
+                )
+            ])
+        else:
+            buttons.append([
+                InlineKeyboardButton(
+                    text=f"🔴 {srv.label} — недоступен",
+                    callback_data=f"cascade_offline:{srv.cascade_id}",
+                )
+            ])
+
+    if online_count == 0:
+        await bot.send_message(
+            callback_query.message.chat.id,
+            "🔴 <b>Все Cascade-серверы сейчас недоступны.</b>\n\nСоздание AWG ключей временно невозможно. Попробуйте позже.",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔙 Назад", callback_data=f"key_duration_{duration_type.split('_')[-1]}")]
+            ]),
+        )
+        await state.clear()
+        return
+
     buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data=f"key_duration_{duration_type.split('_')[-1]}")])
     await bot.send_message(
         callback_query.message.chat.id,
@@ -871,6 +901,19 @@ async def on_panel_offline(callback_query: types.CallbackQuery):
     loc_str = f" [{location}]" if location else ""
     await callback_query.answer(
         f"🔴 {alias}{loc_str} сейчас недоступна.\nВыберите другую панель.",
+        show_alert=True
+    )
+
+
+# ─── Хендлер нажатия на недоступный Cascade-сервер ────────────────────────
+@dp.callback_query(lambda c: c.data and c.data.startswith("cascade_offline:"))
+async def on_cascade_offline(callback_query: types.CallbackQuery):
+    cascade_id = callback_query.data.split(":", 1)[1]
+    srv_list = config.get_cascade_servers()
+    srv = next((s for s in srv_list if s.cascade_id == cascade_id), None)
+    label = srv.label if srv else cascade_id
+    await callback_query.answer(
+        f"🔴 {label} сейчас недоступен.\nВыберите другой сервер.",
         show_alert=True
     )
 
