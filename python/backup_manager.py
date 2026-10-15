@@ -117,6 +117,38 @@ async def _fetch_inbounds(panel_cfg) -> Optional[list]:
         await session.close()
 
 
+async def _fetch_clients(panel_cfg) -> Optional[list]:
+    """Скачивает полный список клиентов через /panel/api/clients/list (только v3).
+    Возвращает [{client: {...}, inboundIds: [...]}, ...] — содержит поля
+    password, resetDay, limitHwid, inboundIds которых нет внутри inbound.settings.
+    """
+    version = panel_cfg.xui_version or ""
+    is_v3   = version.startswith("3.") or version == "latest"
+    if not is_v3:
+        return None  # v2 не поддерживает этот endpoint
+
+    base = panel_cfg.xui_url.rstrip("/")
+    hdrs = _headers(panel_cfg)
+    session = await _open_session(panel_cfg)
+    try:
+        async with session.get(
+            f"{base}/panel/api/clients/list", headers=hdrs
+        ) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                if data.get("success"):
+                    return data.get("obj") or []
+            logger.warning(
+                f"[backup] {panel_cfg.alias}: clients/list → HTTP {resp.status}"
+            )
+            return None
+    except Exception as e:
+        logger.warning(f"[backup] {panel_cfg.alias}: clients/list error: {e}")
+        return None
+    finally:
+        await session.close()
+
+
 # ─── Ротация старых бэкапов ───────────────────────────────────────────────────
 
 def _prune_old_backups():
@@ -209,6 +241,20 @@ async def run_backup(panel_manager, common) -> tuple[Path, dict]:
             )
         else:
             summary[f"{alias} inbounds"] = "⚠️ не удалось получить"
+
+        # clients list — отдельный файл (только v3: содержит password, inboundIds, limitHwid)
+        clients = await _fetch_clients(panel_cfg)
+        if clients is not None:
+            (work_dir / f"{safe}_clients.json").write_text(
+                json.dumps(clients, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            summary[f"{alias} clients"] = f"✅ {len(clients)} клиентов"
+        else:
+            version = panel_cfg.xui_version or ""
+            if version.startswith("3.") or version == "latest":
+                summary[f"{alias} clients"] = "⚠️ не удалось получить"
+            # v2 — молчим, endpoint не поддерживается
 
     # 3. Упаковка в ZIP
     _BACKUP_ROOT.mkdir(parents=True, exist_ok=True)
