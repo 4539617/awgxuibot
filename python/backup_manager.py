@@ -117,8 +117,11 @@ async def _fetch_inbounds(panel_cfg) -> Optional[list]:
         await session.close()
 
 
-async def _fetch_outbounds(panel_cfg) -> Optional[list]:
-    """Скачивает список исходящих (outbounds) через GET /panel/api/xray/ (только v3)."""
+async def _fetch_xray_config(panel_cfg) -> Optional[dict]:
+    """Скачивает полный шаблон конфига Xray через GET /panel/api/xray/ (только v3).
+    Содержит: inbounds, outbounds, routing, log, policy, api, stats, metrics.
+    На основе этого шаблона 3x-ui генерирует реальный xray конфиг.
+    """
     version = panel_cfg.xui_version or ""
     is_v3   = version.startswith("3.") or version == "latest"
     if not is_v3:
@@ -134,14 +137,13 @@ async def _fetch_outbounds(panel_cfg) -> Optional[list]:
             if resp.status == 200:
                 data = await resp.json()
                 if data.get("success"):
-                    xray_config = data.get("obj") or {}
-                    return xray_config.get("outbounds") or []
+                    return data.get("obj") or {}
             logger.warning(
                 f"[backup] {panel_cfg.alias}: xray/ → HTTP {resp.status}"
             )
             return None
     except Exception as e:
-        logger.warning(f"[backup] {panel_cfg.alias}: outbounds error: {e}")
+        logger.warning(f"[backup] {panel_cfg.alias}: xray config error: {e}")
         return None
     finally:
         await session.close()
@@ -286,18 +288,23 @@ async def run_backup(panel_manager, common) -> tuple[Path, dict]:
                 summary[f"{alias} clients"] = "⚠️ не удалось получить"
             # v2 — молчим, endpoint не поддерживается
 
-        # outbounds — исходящие подключения (только v3)
-        outbounds = await _fetch_outbounds(panel_cfg)
-        if outbounds is not None:
-            (work_dir / f"{safe}_outbounds.json").write_text(
-                json.dumps(outbounds, ensure_ascii=False, indent=2),
+        # xray конфиг — шаблон (outbounds + routing + log + policy + ...) только v3
+        xray_cfg = await _fetch_xray_config(panel_cfg)
+        if xray_cfg is not None:
+            # полный шаблон конфига
+            (work_dir / f"{safe}_xray_config.json").write_text(
+                json.dumps(xray_cfg, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
-            summary[f"{alias} outbounds"] = f"✅ {len(outbounds)} исходящих"
+            outbounds = xray_cfg.get("outbounds") or []
+            routing_rules = len((xray_cfg.get("routing") or {}).get("rules") or [])
+            summary[f"{alias} xray_config"] = (
+                f"✅ {len(outbounds)} outbounds, {routing_rules} routing rules"
+            )
         else:
             version = panel_cfg.xui_version or ""
             if version.startswith("3.") or version == "latest":
-                summary[f"{alias} outbounds"] = "⚠️ не удалось получить"
+                summary[f"{alias} xray_config"] = "⚠️ не удалось получить"
             # v2 — молчим
 
     # 3. Упаковка в ZIP
