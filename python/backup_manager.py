@@ -117,6 +117,36 @@ async def _fetch_inbounds(panel_cfg) -> Optional[list]:
         await session.close()
 
 
+async def _fetch_outbounds(panel_cfg) -> Optional[list]:
+    """Скачивает список исходящих (outbounds) через GET /panel/api/xray/ (только v3)."""
+    version = panel_cfg.xui_version or ""
+    is_v3   = version.startswith("3.") or version == "latest"
+    if not is_v3:
+        return None  # v2 не поддерживает этот endpoint
+
+    base = panel_cfg.xui_url.rstrip("/")
+    hdrs = _headers(panel_cfg)
+    session = await _open_session(panel_cfg)
+    try:
+        async with session.get(
+            f"{base}/panel/api/xray/", headers=hdrs
+        ) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                if data.get("success"):
+                    xray_config = data.get("obj") or {}
+                    return xray_config.get("outbounds") or []
+            logger.warning(
+                f"[backup] {panel_cfg.alias}: xray/ → HTTP {resp.status}"
+            )
+            return None
+    except Exception as e:
+        logger.warning(f"[backup] {panel_cfg.alias}: outbounds error: {e}")
+        return None
+    finally:
+        await session.close()
+
+
 async def _fetch_clients(panel_cfg) -> Optional[list]:
     """Скачивает полный список клиентов через /panel/api/clients/list (только v3).
     Возвращает [{client: {...}, inboundIds: [...]}, ...] — содержит поля
@@ -255,6 +285,20 @@ async def run_backup(panel_manager, common) -> tuple[Path, dict]:
             if version.startswith("3.") or version == "latest":
                 summary[f"{alias} clients"] = "⚠️ не удалось получить"
             # v2 — молчим, endpoint не поддерживается
+
+        # outbounds — исходящие подключения (только v3)
+        outbounds = await _fetch_outbounds(panel_cfg)
+        if outbounds is not None:
+            (work_dir / f"{safe}_outbounds.json").write_text(
+                json.dumps(outbounds, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            summary[f"{alias} outbounds"] = f"✅ {len(outbounds)} исходящих"
+        else:
+            version = panel_cfg.xui_version or ""
+            if version.startswith("3.") or version == "latest":
+                summary[f"{alias} outbounds"] = "⚠️ не удалось получить"
+            # v2 — молчим
 
     # 3. Упаковка в ZIP
     _BACKUP_ROOT.mkdir(parents=True, exist_ok=True)
