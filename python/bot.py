@@ -2944,9 +2944,34 @@ async def create_backup(callback_query: types.CallbackQuery, state: FSMContext):
             config.panel_manager, config.common
         )
 
-        # Строим текст отчёта
+        # Строим текст отчёта — разбитый по источникам
+        _SYSTEM_KEYS = {"config.yaml", "bot_users.db", "apps.yaml"}
+        _CASCADE_SUFFIXES = (
+            " cascade system", " cascade interfaces",
+            " cascade peers", " cascade settings",
+        )
+
+        sys_items     = {k: v for k, v in summary.items() if k in _SYSTEM_KEYS}
+        cascade_items = {k: v for k, v in summary.items()
+                         if any(k.endswith(s) for s in _CASCADE_SUFFIXES)}
+        panel_items   = {k: v for k, v in summary.items()
+                         if k not in sys_items and k not in cascade_items}
+
         lines = ["<b>📦 Содержимое бэкапа:</b>"]
-        for label, status in summary.items():
+
+        lines.append("")
+        lines.append("<b>🖥 Система</b>")
+        for label, status in sys_items.items():
+            lines.append(f"  • {label}: {status}")
+
+        lines.append("")
+        lines.append("<b>📊 Панели → серверы</b>")
+        for label, status in panel_items.items():
+            lines.append(f"  • {label}: {status}")
+
+        lines.append("")
+        lines.append("<b>🔗 Каскад → серверы</b>")
+        for label, status in cascade_items.items():
             lines.append(f"  • {label}: {status}")
 
         zip_size_kb = zip_path.stat().st_size // 1024 + 1
