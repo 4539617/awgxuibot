@@ -2914,38 +2914,64 @@ async def export_json_config(callback_query: types.CallbackQuery, state: FSMCont
 
 @dp.callback_query(lambda c: c.data == "create_backup")
 async def create_backup(callback_query: types.CallbackQuery, state: FSMContext):
-    """Создать бэкап базы данных"""
+    """Создать полный бэкап системы — только для администратора."""
+    # ── Проверка прав: только главный администратор ────────────────────────────
     if not is_admin(callback_query.from_user.id):
         await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
         return
-    
-    await callback_query.answer("⏳ Создаю бэкап...")
-    
+
+    await callback_query.answer()
+
+    # Прогресс-сообщение
+    progress_msg = await callback_query.message.answer(
+        "⏳ <b>Создаю полный бэкап...</b>\n\n"
+        "Собираю данные со всех панелей, это займёт несколько секунд.",
+        parse_mode="HTML",
+    )
+
     try:
-        # Скачиваем бэкап
-        backup_data = await xui_client.download_backup()
-        
-        if not backup_data:
-            await callback_query.message.answer("❌ Не удалось создать бэкап")
-            return
-        
-        # Создаем файл для отправки
-        from datetime import datetime
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"x-ui_backup_{timestamp}.db"
-        
-        # Отправляем файл пользователю
-        backup_file = types.BufferedInputFile(backup_data, filename=filename)
-        await callback_query.message.answer_document(
-            backup_file,
-            caption=f"✅ Бэкап базы данных создан\n📅 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        from backup_manager import run_backup
+
+        zip_path, summary = await run_backup(
+            config.panel_manager, config.common
         )
-        
-        logger.info(f"Бэкап создан администратором {callback_query.from_user.id}")
-        
+
+        # Строим текст отчёта
+        lines = ["<b>📦 Содержимое бэкапа:</b>"]
+        for label, status in summary.items():
+            lines.append(f"  • {label}: {status}")
+
+        zip_size_kb = zip_path.stat().st_size // 1024 + 1
+        caption = (
+            f"✅ <b>Полный бэкап создан</b>\n"
+            f"📅 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f"💾 Размер: {zip_size_kb} КБ\n\n"
+            + "\n".join(lines)
+        )
+
+        # Отправляем ZIP-архив в чат администратора
+        zip_bytes = zip_path.read_bytes()
+        await callback_query.message.answer_document(
+            types.BufferedInputFile(zip_bytes, filename=zip_path.name),
+            caption=caption,
+            parse_mode="HTML",
+        )
+
+        logger.info(
+            f"[backup] отправлен администратору {callback_query.from_user.id}: "
+            f"{zip_path.name} ({zip_size_kb} КБ)"
+        )
+
     except Exception as e:
-        logger.error(f"Ошибка создания бэкапа: {e}")
-        await callback_query.message.answer(f"❌ Ошибка: {str(e)}")
+        logger.error(f"[backup] ошибка: {e}", exc_info=True)
+        await callback_query.message.answer(f"❌ Ошибка при создании бэкапа: {e}")
+
+    finally:
+        # Удаляем прогресс-сообщение
+        try:
+            await progress_msg.delete()
+        except Exception:
+            pass
 
 
 # ─── helper: получить текущие stats panel0 через psutil ────────────────────
