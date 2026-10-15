@@ -3094,16 +3094,15 @@ async def show_notification_settings(callback_query: types.CallbackQuery, state:
         panel_online = get_panel_online_status(panel_id)
         status_icon  = "🟢" if panel_online else "🔴"
 
-        alerts_on = sum([
-            settings.get('cpu_alert',  False),
-            settings.get('ram_alert',  False),
-            settings.get('disk_alert', False),
-        ])
-        monitor_icon = "🔔" if alerts_on > 0 else ""
+        resource_icons = ""
+        if settings.get('cpu_alert',          False): resource_icons += "🖥"
+        if settings.get('ram_alert',          False): resource_icons += "🧠"
+        if settings.get('disk_alert',         False): resource_icons += "💿"
+        if settings.get('availability_alert', False): resource_icons += "📡"
 
         location = getattr(panel_cfg, 'location_label', '') or ''
         loc_part = f" · {location}" if location else ""
-        btn_text = f"{status_icon}{monitor_icon} {alias}{loc_part}"
+        btn_text = f"{status_icon}{resource_icons} {alias}{loc_part}"
         buttons.append([InlineKeyboardButton(text=btn_text, callback_data=f"notif_panel_{panel_id}")])
 
     buttons.append([
