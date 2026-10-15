@@ -411,19 +411,6 @@ async def run_backup(panel_manager, common) -> tuple[Path, dict]:
                 summary[f"{alias} routing"]      = "⚠️ не удалось получить"
             # v2 — молчим
 
-        # subscription hosts — кастомные адреса для ссылок клиентам (только v3)
-        hosts = await _fetch_hosts(panel_cfg)
-        if hosts is not None:
-            (work_dir / f"{p}_hosts.json").write_text(
-                json.dumps(hosts, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
-            summary[f"{alias} hosts"] = f"✅ {len(hosts)} хостов"
-        else:
-            version = panel_cfg.xui_version or ""
-            if version.startswith("3.") or version == "latest":
-                summary[f"{alias} hosts"] = "⚠️ не удалось получить"
-
         # настройки панели (только v3)
         settings = await _fetch_settings(panel_cfg)
         if settings is not None:
