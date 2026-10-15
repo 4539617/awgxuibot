@@ -190,9 +190,20 @@ async def run_backup(panel_manager, common) -> tuple[Path, dict]:
                 json.dumps(inbounds, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
-            total_clients = sum(
-                len(ib.get("clientStats") or []) for ib in inbounds
-            )
+            def _count_clients(ib: dict) -> int:
+                # clientStats есть в некоторых версиях API
+                if ib.get("clientStats"):
+                    return len(ib["clientStats"])
+                # settings — строка JSON или уже dict
+                raw = ib.get("settings") or "{}"
+                if isinstance(raw, str):
+                    try:
+                        raw = json.loads(raw)
+                    except Exception:
+                        raw = {}
+                return len(raw.get("clients") or [])
+
+            total_clients = sum(_count_clients(ib) for ib in inbounds)
             summary[f"{alias} inbounds"] = (
                 f"✅ {len(inbounds)} инбаундов, {total_clients} клиентов"
             )
