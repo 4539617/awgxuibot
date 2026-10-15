@@ -161,7 +161,7 @@ def get_available_panels() -> list:
 
 
 def _build_panels_block() -> str:
-    """Компактный список всех панелей: алиас, локация, transport/security, доступность."""
+    """Компактный список всех панелей: алиас, локация, доступность."""
     panels = config.panel_manager.get_all_panels()
     if not panels:
         return ""
@@ -170,12 +170,7 @@ def _build_panels_block() -> str:
         status = "🟢" if get_panel_online_status(panel_id) else "🔴"
         location = p.location_label or ''
         loc_part = f" · <code>{location}</code>" if location else ""
-        transport = getattr(p, 'transport', '') or '—'
-        security = getattr(p, 'security', '') or '—'
-        lines.append(
-            f"{status} <b>{p.alias}</b>{loc_part}\n"
-            f"   <code>{transport}</code> · <code>{security}</code>"
-        )
+        lines.append(f"{status} <b>{p.alias}</b>{loc_part}")
     return "\n".join(lines) + "\n\n"
 
 
