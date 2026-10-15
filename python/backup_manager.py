@@ -274,6 +274,173 @@ async def _fetch_outbound_subs(panel_cfg) -> Optional[list]:
         await session.close()
 
 
+# ─── Cascade helpers ─────────────────────────────────────────────────────────
+
+def _cascade_headers(cascade_cfg) -> dict:
+    if cascade_cfg.api_key:
+        return {"Authorization": f"Bearer {cascade_cfg.api_key}"}
+    return {}
+
+
+async def _cascade_session(cascade_cfg) -> aiohttp.ClientSession:
+    ssl_ctx = ssl.create_default_context()
+    ssl_ctx.check_hostname = False
+    ssl_ctx.verify_mode = ssl.CERT_NONE
+    session = aiohttp.ClientSession(
+        connector=aiohttp.TCPConnector(ssl=ssl_ctx),
+        timeout=aiohttp.ClientTimeout(total=30, connect=10, sock_connect=10),
+    )
+    # Если только пароль — логинимся
+    if not cascade_cfg.api_key and cascade_cfg.password:
+        try:
+            async with session.post(
+                f"{cascade_cfg.url}/api/session",
+                json={"username": cascade_cfg.username, "password": cascade_cfg.password},
+            ) as resp:
+                if resp.status != 200:
+                    logger.warning(f"[backup] cascade {cascade_cfg.label}: login HTTP {resp.status}")
+        except Exception as e:
+            logger.warning(f"[backup] cascade {cascade_cfg.label}: login error: {e}")
+    return session
+
+
+async def _cascade_get(session, cascade_cfg, path: str) -> Optional[dict | list]:
+    """GET {cascade_url}{path} → распакованный obj (dict или list)."""
+    hdrs = _cascade_headers(cascade_cfg)
+    try:
+        async with session.get(f"{cascade_cfg.url}{path}", headers=hdrs) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                # Cascade возвращает именованную обёртку: { peers/interfaces/... : [...] }
+                # или плоский dict для settings. Возвращаем как есть.
+                return data
+            logger.warning(f"[backup] cascade {cascade_cfg.label}: GET {path} → HTTP {resp.status}")
+            return None
+    except Exception as e:
+        logger.warning(f"[backup] cascade {cascade_cfg.label}: GET {path} error: {e}")
+        return None
+
+
+async def _cascade_backup_binary(session, cascade_cfg) -> Optional[bytes]:
+    """POST /api/system/backup → tar.gz (awg.db + ipset файлы)."""
+    hdrs = _cascade_headers(cascade_cfg)
+    try:
+        async with session.post(
+            f"{cascade_cfg.url}/api/system/backup",
+            headers=hdrs,
+            json={},
+        ) as resp:
+            if resp.status == 200:
+                return await resp.read()
+            logger.warning(f"[backup] cascade {cascade_cfg.label}: system/backup → HTTP {resp.status}")
+            return None
+    except Exception as e:
+        logger.warning(f"[backup] cascade {cascade_cfg.label}: system/backup error: {e}")
+        return None
+
+
+async def _backup_cascade_server(cascade_cfg, work_dir: Path, summary: dict):
+    """Собирает бэкап одного Cascade-сервера."""
+    label = cascade_cfg.label or cascade_cfg.cascade_id
+    safe  = label.replace("/", "_").replace("\\", "_").replace(" ", "_")
+    p     = f"{safe}_cascade"
+
+    session = await _cascade_session(cascade_cfg)
+    try:
+        # 1. Системный бэкап (awg.db + ipset) — бинарный tar.gz
+        db_data = await _cascade_backup_binary(session, cascade_cfg)
+        if db_data:
+            (work_dir / f"{p}_system.tar.gz").write_bytes(db_data)
+            summary[f"{label} cascade system"] = f"✅ {len(db_data) // 1024 + 1} КБ"
+        else:
+            summary[f"{label} cascade system"] = "⚠️ недоступен"
+
+        # 2. Список интерфейсов
+        ifaces_resp = await _cascade_get(session, cascade_cfg, "/api/tunnel-interfaces")
+        ifaces = (ifaces_resp or {}).get("interfaces") or []
+        if ifaces_resp is not None:
+            (work_dir / f"{p}_interfaces.json").write_text(
+                json.dumps(ifaces, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            summary[f"{label} cascade interfaces"] = f"✅ {len(ifaces)} интерфейсов"
+        else:
+            summary[f"{label} cascade interfaces"] = "⚠️ не удалось получить"
+
+        # 3. Пиры каждого интерфейса отдельным файлом
+        total_peers = 0
+        for iface in ifaces:
+            iface_id   = iface.get("id") or iface.get("name", "unknown")
+            iface_name = (iface.get("name") or iface_id).replace("/", "_")
+            peers_resp = await _cascade_get(
+                session, cascade_cfg, f"/api/tunnel-interfaces/{iface_id}/peers"
+            )
+            peers = (peers_resp or {}).get("peers") or []
+            (work_dir / f"{p}_iface_{iface_name}_peers.json").write_text(
+                json.dumps(peers, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            total_peers += len(peers)
+        if ifaces:
+            summary[f"{label} cascade peers"] = f"✅ {total_peers} пиров в {len(ifaces)} интерфейсах"
+
+        # 4. Настройки
+        settings = await _cascade_get(session, cascade_cfg, "/api/settings")
+        if settings is not None:
+            (work_dir / f"{p}_settings.json").write_text(
+                json.dumps(settings, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            summary[f"{label} cascade settings"] = "✅"
+        else:
+            summary[f"{label} cascade settings"] = "⚠️ не удалось получить"
+
+        # 5. Алиасы
+        aliases_resp = await _cascade_get(session, cascade_cfg, "/api/aliases")
+        aliases = (aliases_resp or {}).get("aliases") or []
+        if aliases_resp is not None:
+            (work_dir / f"{p}_aliases.json").write_text(
+                json.dumps(aliases, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            summary[f"{label} cascade aliases"] = f"✅ {len(aliases)} алиасов"
+
+        # 6. Правила файрвола
+        fw_resp = await _cascade_get(session, cascade_cfg, "/api/firewall/rules")
+        fw_rules = (fw_resp or {}).get("rules") or []
+        if fw_resp is not None:
+            (work_dir / f"{p}_firewall.json").write_text(
+                json.dumps(fw_rules, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            summary[f"{label} cascade firewall"] = f"✅ {len(fw_rules)} правил"
+
+        # 7. Статические маршруты
+        routes_resp = await _cascade_get(session, cascade_cfg, "/api/routing/routes")
+        routes = (routes_resp or {}).get("routes") or []
+        if routes_resp is not None:
+            (work_dir / f"{p}_routes.json").write_text(
+                json.dumps(routes, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            summary[f"{label} cascade routes"] = f"✅ {len(routes)} маршрутов"
+
+        # 8. NAT-правила
+        nat_resp = await _cascade_get(session, cascade_cfg, "/api/nat/rules")
+        nat_rules = (nat_resp or {}).get("rules") or []
+        if nat_resp is not None:
+            (work_dir / f"{p}_nat.json").write_text(
+                json.dumps(nat_rules, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            summary[f"{label} cascade nat"] = f"✅ {len(nat_rules)} правил"
+
+        # 9. Шлюзы
+        gw_resp = await _cascade_get(session, cascade_cfg, "/api/gateways")
+        gateways = (gw_resp or {}).get("gateways") or []
+        if gw_resp is not None:
+            (work_dir / f"{p}_gateways.json").write_text(
+                json.dumps(gateways, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            summary[f"{label} cascade gateways"] = f"✅ {len(gateways)} шлюзов"
+
+    finally:
+        await session.close()
+
+
 # ─── Ротация старых бэкапов ───────────────────────────────────────────────────
 
 def _prune_old_backups():
@@ -437,7 +604,14 @@ async def run_backup(panel_manager, common) -> tuple[Path, dict]:
             if version.startswith("3.") or version == "latest":
                 summary[f"{alias} outbound_subs"] = "⚠️ не удалось получить"
 
-    # 3. Упаковка в ZIP
+    # 3. Cascade-серверы
+    cascade_servers = panel_manager.get_cascade_servers()
+    for cascade_cfg in cascade_servers:
+        if not cascade_cfg.enabled:
+            continue
+        await _backup_cascade_server(cascade_cfg, work_dir, summary)
+
+    # 4. Упаковка в ZIP
     _BACKUP_ROOT.mkdir(parents=True, exist_ok=True)
     zip_path = _BACKUP_ROOT / f"backup_{ts}.zip"
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
