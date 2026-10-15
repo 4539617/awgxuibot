@@ -211,6 +211,9 @@ async def send_panel_select(chat_id: int, header: str, back_callback: str, key_t
     """Отправляет экран выбора панели.
     key_type: 'new' | 'temp'
     """
+    # Живая проверка доступности всех панелей перед показом списка выбора
+    await _refresh_panel_states_now()
+
     current_panel_id = config.panel_manager.get_current_panel_id()
     available = get_available_panels()
 
@@ -763,6 +766,7 @@ async def on_key_proto_vless(callback_query: types.CallbackQuery, state: FSMCont
     duration_type = callback_query.data.split(":", 1)[1]  # key_duration_new | key_duration_temp
 
     chat_id = callback_query.message.chat.id
+    await _refresh_panel_states_now()
     available = get_available_panels()
     online_available = [(pid, pcfg) for pid, pcfg in available if get_panel_online_status(pid)]
 
@@ -1036,6 +1040,9 @@ async def cmd_start(message: Message, state: FSMContext):
 
     if is_allowed(user_id):
         if is_admin(user_id):
+            # Живая проверка доступности панелей перед показом меню администратора
+            await _refresh_panel_states_now()
+
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
                 [
                     InlineKeyboardButton(text="🔑 Создать ключ", callback_data="create_key"),
@@ -1108,6 +1115,7 @@ async def cmd_new(message: Message, state: FSMContext):
         await message.answer("⛔ Вы заблокированы администратором.")
         return
     await state.set_state(NewClientState.waiting_for_panel)
+    await _refresh_panel_states_now()
     available = get_available_panels()
     online_available = [(pid, pcfg) for pid, pcfg in available if get_panel_online_status(pid)]
     if len(online_available) == 0:
@@ -1227,6 +1235,7 @@ async def cmd_temp_key(message: Message, state: FSMContext):
         await message.answer("⛔ Вы заблокированы администратором.")
         return
     await state.set_state(TempKeyState.waiting_for_panel)
+    await _refresh_panel_states_now()
     available = get_available_panels()
     online_available = [(pid, pcfg) for pid, pcfg in available if get_panel_online_status(pid)]
     if len(online_available) == 0:
@@ -3011,6 +3020,7 @@ async def show_notification_settings(callback_query: types.CallbackQuery, state:
         await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
         return
     await callback_query.answer()
+    await _refresh_panel_states_now()
 
     panels = config.panel_manager.get_all_panels()
     check_interval = getattr(config.common, 'panel_check_interval', 30)
@@ -3532,6 +3542,9 @@ async def _show_main_menu(callback_query: types.CallbackQuery, state: FSMContext
         return
 
     if is_admin(user_id):
+        # Живая проверка доступности панелей перед показом меню администратора
+        await _refresh_panel_states_now()
+
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [
                 InlineKeyboardButton(text="🔑 Создать ключ", callback_data="create_key"),
@@ -3588,6 +3601,7 @@ async def callback_cmd_new(callback_query: types.CallbackQuery, state: FSMContex
         return
     await callback_query.answer()
     await state.set_state(NewClientState.waiting_for_panel)
+    await _refresh_panel_states_now()
     available = get_available_panels()
     online_available = [(pid, pcfg) for pid, pcfg in available if get_panel_online_status(pid)]
     if len(online_available) == 0:
@@ -3638,6 +3652,7 @@ async def callback_cmd_tempkey(callback_query: types.CallbackQuery, state: FSMCo
         return
     await callback_query.answer()
     await state.set_state(TempKeyState.waiting_for_panel)
+    await _refresh_panel_states_now()
     available = get_available_panels()
     online_available = [(pid, pcfg) for pid, pcfg in available if get_panel_online_status(pid)]
     if len(online_available) == 0:
@@ -3689,7 +3704,10 @@ async def callback_cmd_myclients(callback_query: types.CallbackQuery, state: FSM
         return
     
     await callback_query.answer()
-    
+
+    # Живая проверка перед сбором ключей
+    await _refresh_panel_states_now()
+
     # Собираем ключи со всех доступных панелей
     try:
         username = callback_query.from_user.username
@@ -3822,6 +3840,9 @@ async def refresh_myclients(callback_query: types.CallbackQuery, state: FSMConte
     if user_id in allclients_cache:
         del allclients_cache[user_id]
     
+    # Живая проверка перед сбором ключей
+    await _refresh_panel_states_now()
+
     try:
         username = callback_query.from_user.username
         if not username:
@@ -4856,6 +4877,8 @@ async def select_panel_to_connect(callback_query: types.CallbackQuery, state: FS
         await callback_query.message.answer("⛔ Доступ запрещен")
         return
 
+    await _refresh_panel_states_now()
+
     try:
         await _render_servers_screen(callback_query)
     except Exception as e:
@@ -4870,6 +4893,8 @@ async def refresh_servers(callback_query: types.CallbackQuery, state: FSMContext
     if not is_admin(user_id):
         await callback_query.answer("⛔ Доступ запрещен", show_alert=True)
         return
+
+    await _refresh_panel_states_now()
 
     try:
         await _render_servers_screen(callback_query, is_refresh=True)
@@ -5474,6 +5499,7 @@ async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContex
                         await callback_query.answer(f"❌ Не удалось переподключиться к {alias}", show_alert=True)
                         return
                     logger.info(f"✅ Переподключено к панели {alias}")
+            await _refresh_panel_states_now()
             await _render_servers_screen(callback_query)
             return
 
@@ -5511,6 +5537,7 @@ async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContex
                 f"❌ Не удалось авторизоваться на {alias}. Откат к предыдущей панели.",
                 show_alert=True
             )
+            await _refresh_panel_states_now()
             await _render_servers_screen(callback_query)
             return
 
@@ -5527,6 +5554,7 @@ async def connect_to_panel(callback_query: types.CallbackQuery, state: FSMContex
             logger.error(f"❌ Ошибка извлечения параметров панели: {e}")
 
         # Показываем обновлённый экран Серверы
+        await _refresh_panel_states_now()
         await _render_servers_screen(callback_query)
 
     except Exception as e:
