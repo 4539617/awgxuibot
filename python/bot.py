@@ -1040,7 +1040,11 @@ async def cmd_start(message: Message, state: FSMContext):
             panels_block = _build_panels_block()
             await message.answer(
                 f"👤 <b>Пользователь:</b> {username or first_name}\n\n"
-                f"{panels_block}",
+                f"{panels_block}"
+                f"📲 <b>Как начать:</b>\n"
+                f"1. Скачайте приложение\n"
+                f"2. Создайте ключ или выберите его из <b>Мои ключи</b>\n"
+                f"3. Добавьте ключ в приложении через кнопку <b>+</b> или <b>Добавить</b>",
                 reply_markup=keyboard,
                 parse_mode="HTML"
             )
@@ -1102,7 +1106,11 @@ async def cmd_start(message: Message, state: FSMContext):
             panels_block = _build_panels_block()
             await message.answer(
                 f"👤 <b>Пользователь:</b> {username or first_name}\n\n"
-                f"{panels_block}",
+                f"{panels_block}"
+                f"📲 <b>Как начать:</b>\n"
+                f"1. Скачайте приложение\n"
+                f"2. Создайте ключ или выберите его из <b>Мои ключи</b>\n"
+                f"3. Добавьте ключ в приложении через кнопку <b>+</b> или <b>Добавить</b>",
                 reply_markup=keyboard,
                 parse_mode="HTML"
             )
