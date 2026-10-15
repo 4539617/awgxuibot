@@ -117,15 +117,32 @@ async def _fetch_inbounds(panel_cfg) -> Optional[list]:
         await session.close()
 
 
+def _xray_config_supported(panel_cfg) -> bool:
+    """GET /panel/api/xray/ появился в 3x-ui ~3.5.x.
+    Версии 3.3.x / 3.4.x возвращают 404 — пропускаем."""
+    version = panel_cfg.xui_version or ""
+    if version == "latest":
+        return True
+    if not version.startswith("3."):
+        return False
+    try:
+        parts = version.split(".")
+        minor = int(parts[1]) if len(parts) > 1 else 0
+        return minor >= 5
+    except ValueError:
+        return True   # неизвестная версия — пробуем
+
+
 async def _fetch_xray_config(panel_cfg) -> Optional[dict]:
-    """Скачивает полный шаблон конфига Xray через GET /panel/api/xray/ (только v3).
+    """Скачивает полный шаблон конфига Xray через GET /panel/api/xray/ (только v3 ≥ 3.5).
     Содержит: inbounds, outbounds, routing, log, policy, api, stats, metrics.
-    На основе этого шаблона 3x-ui генерирует реальный xray конфиг.
     """
+    if not _xray_config_supported(panel_cfg):
+        return None  # v2 или старые v3 не поддерживают этот endpoint
     version = panel_cfg.xui_version or ""
     is_v3   = version.startswith("3.") or version == "latest"
     if not is_v3:
-        return None  # v2 не поддерживает этот endpoint
+        return None
 
     base = panel_cfg.xui_url.rstrip("/")
     hdrs = _headers(panel_cfg)
@@ -353,9 +370,19 @@ async def _backup_cascade_server(cascade_cfg, out_dir: Path, summary: dict):
         else:
             summary[f"{label} cascade system"] = "⚠️ недоступен"
 
+        # Вспомогательная функция: Cascade может вернуть голый список ИЛИ обёртку {key: [...]}
+        def _unwrap(resp, key: str) -> list:
+            if resp is None:
+                return []
+            if isinstance(resp, list):
+                return resp
+            if isinstance(resp, dict):
+                return resp.get(key) or []
+            return []
+
         # 2. Список интерфейсов
         ifaces_resp = await _cascade_get(session, cascade_cfg, "/api/tunnel-interfaces")
-        ifaces = (ifaces_resp or {}).get("interfaces") or []
+        ifaces = _unwrap(ifaces_resp, "interfaces")
         if ifaces_resp is not None:
             (out_dir / "interfaces.json").write_text(
                 json.dumps(ifaces, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -374,7 +401,7 @@ async def _backup_cascade_server(cascade_cfg, out_dir: Path, summary: dict):
             peers_resp = await _cascade_get(
                 session, cascade_cfg, f"/api/tunnel-interfaces/{iface_id}/peers"
             )
-            peers = (peers_resp or {}).get("peers") or []
+            peers = _unwrap(peers_resp, "peers")
             (peers_dir / f"{iface_name}_peers.json").write_text(
                 json.dumps(peers, ensure_ascii=False, indent=2), encoding="utf-8"
             )
@@ -382,7 +409,7 @@ async def _backup_cascade_server(cascade_cfg, out_dir: Path, summary: dict):
         if ifaces:
             summary[f"{label} cascade peers"] = f"✅ {total_peers} пиров в {len(ifaces)} интерфейсах"
 
-        # 4. Настройки
+        # 4. Настройки (возвращает dict напрямую)
         settings = await _cascade_get(session, cascade_cfg, "/api/settings")
         if settings is not None:
             (out_dir / "settings.json").write_text(
@@ -391,51 +418,6 @@ async def _backup_cascade_server(cascade_cfg, out_dir: Path, summary: dict):
             summary[f"{label} cascade settings"] = "✅"
         else:
             summary[f"{label} cascade settings"] = "⚠️ не удалось получить"
-
-        # 5. Алиасы
-        aliases_resp = await _cascade_get(session, cascade_cfg, "/api/aliases")
-        aliases = (aliases_resp or {}).get("aliases") or []
-        if aliases_resp is not None:
-            (out_dir / "aliases.json").write_text(
-                json.dumps(aliases, ensure_ascii=False, indent=2), encoding="utf-8"
-            )
-            summary[f"{label} cascade aliases"] = f"✅ {len(aliases)} алиасов"
-
-        # 6. Правила файрвола
-        fw_resp = await _cascade_get(session, cascade_cfg, "/api/firewall/rules")
-        fw_rules = (fw_resp or {}).get("rules") or []
-        if fw_resp is not None:
-            (out_dir / "firewall.json").write_text(
-                json.dumps(fw_rules, ensure_ascii=False, indent=2), encoding="utf-8"
-            )
-            summary[f"{label} cascade firewall"] = f"✅ {len(fw_rules)} правил"
-
-        # 7. Статические маршруты
-        routes_resp = await _cascade_get(session, cascade_cfg, "/api/routing/routes")
-        routes = (routes_resp or {}).get("routes") or []
-        if routes_resp is not None:
-            (out_dir / "routes.json").write_text(
-                json.dumps(routes, ensure_ascii=False, indent=2), encoding="utf-8"
-            )
-            summary[f"{label} cascade routes"] = f"✅ {len(routes)} маршрутов"
-
-        # 8. NAT-правила
-        nat_resp = await _cascade_get(session, cascade_cfg, "/api/nat/rules")
-        nat_rules = (nat_resp or {}).get("rules") or []
-        if nat_resp is not None:
-            (out_dir / "nat.json").write_text(
-                json.dumps(nat_rules, ensure_ascii=False, indent=2), encoding="utf-8"
-            )
-            summary[f"{label} cascade nat"] = f"✅ {len(nat_rules)} правил"
-
-        # 9. Шлюзы
-        gw_resp = await _cascade_get(session, cascade_cfg, "/api/gateways")
-        gateways = (gw_resp or {}).get("gateways") or []
-        if gw_resp is not None:
-            (out_dir / "gateways.json").write_text(
-                json.dumps(gateways, ensure_ascii=False, indent=2), encoding="utf-8"
-            )
-            summary[f"{label} cascade gateways"] = f"✅ {len(gateways)} шлюзов"
 
     finally:
         await session.close()
