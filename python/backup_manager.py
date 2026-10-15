@@ -297,14 +297,26 @@ async def run_backup(panel_manager, common) -> tuple[Path, dict]:
                 encoding="utf-8",
             )
             outbounds = xray_cfg.get("outbounds") or []
-            routing_rules = len((xray_cfg.get("routing") or {}).get("rules") or [])
+            routing = xray_cfg.get("routing") or {}
+            routing_rules = routing.get("rules") or []
             summary[f"{alias} xray_config"] = (
-                f"✅ {len(outbounds)} outbounds, {routing_rules} routing rules"
+                f"✅ {len(outbounds)} outbounds, {len(routing_rules)} routing rules"
+            )
+
+            # отдельный файл маршрутизации (routing.rules + domainStrategy)
+            (work_dir / f"{safe}_routing.json").write_text(
+                json.dumps(routing, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            summary[f"{alias} routing"] = (
+                f"✅ {len(routing_rules)} правил, "
+                f"strategy: {routing.get('domainStrategy', '—')}"
             )
         else:
             version = panel_cfg.xui_version or ""
             if version.startswith("3.") or version == "latest":
                 summary[f"{alias} xray_config"] = "⚠️ не удалось получить"
+                summary[f"{alias} routing"]      = "⚠️ не удалось получить"
             # v2 — молчим
 
     # 3. Упаковка в ZIP
