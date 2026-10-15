@@ -339,18 +339,16 @@ async def _cascade_backup_binary(session, cascade_cfg) -> Optional[bytes]:
         return None
 
 
-async def _backup_cascade_server(cascade_cfg, work_dir: Path, summary: dict):
-    """Собирает бэкап одного Cascade-сервера."""
+async def _backup_cascade_server(cascade_cfg, out_dir: Path, summary: dict):
+    """Собирает бэкап одного Cascade-сервера в out_dir (уже cascade/{label}/)."""
     label = cascade_cfg.label or cascade_cfg.cascade_id
-    safe  = label.replace("/", "_").replace("\\", "_").replace(" ", "_")
-    p     = f"{safe}_cascade"
 
     session = await _cascade_session(cascade_cfg)
     try:
         # 1. Системный бэкап (awg.db + ipset) — бинарный tar.gz
         db_data = await _cascade_backup_binary(session, cascade_cfg)
         if db_data:
-            (work_dir / f"{p}_system.tar.gz").write_bytes(db_data)
+            (out_dir / "system.tar.gz").write_bytes(db_data)
             summary[f"{label} cascade system"] = f"✅ {len(db_data) // 1024 + 1} КБ"
         else:
             summary[f"{label} cascade system"] = "⚠️ недоступен"
@@ -359,14 +357,16 @@ async def _backup_cascade_server(cascade_cfg, work_dir: Path, summary: dict):
         ifaces_resp = await _cascade_get(session, cascade_cfg, "/api/tunnel-interfaces")
         ifaces = (ifaces_resp or {}).get("interfaces") or []
         if ifaces_resp is not None:
-            (work_dir / f"{p}_interfaces.json").write_text(
+            (out_dir / "interfaces.json").write_text(
                 json.dumps(ifaces, ensure_ascii=False, indent=2), encoding="utf-8"
             )
             summary[f"{label} cascade interfaces"] = f"✅ {len(ifaces)} интерфейсов"
         else:
             summary[f"{label} cascade interfaces"] = "⚠️ не удалось получить"
 
-        # 3. Пиры каждого интерфейса отдельным файлом
+        # 3. Пиры каждого интерфейса — подпапка peers/
+        peers_dir = out_dir / "peers"
+        peers_dir.mkdir(exist_ok=True)
         total_peers = 0
         for iface in ifaces:
             iface_id   = iface.get("id") or iface.get("name", "unknown")
@@ -375,7 +375,7 @@ async def _backup_cascade_server(cascade_cfg, work_dir: Path, summary: dict):
                 session, cascade_cfg, f"/api/tunnel-interfaces/{iface_id}/peers"
             )
             peers = (peers_resp or {}).get("peers") or []
-            (work_dir / f"{p}_iface_{iface_name}_peers.json").write_text(
+            (peers_dir / f"{iface_name}_peers.json").write_text(
                 json.dumps(peers, ensure_ascii=False, indent=2), encoding="utf-8"
             )
             total_peers += len(peers)
@@ -385,7 +385,7 @@ async def _backup_cascade_server(cascade_cfg, work_dir: Path, summary: dict):
         # 4. Настройки
         settings = await _cascade_get(session, cascade_cfg, "/api/settings")
         if settings is not None:
-            (work_dir / f"{p}_settings.json").write_text(
+            (out_dir / "settings.json").write_text(
                 json.dumps(settings, ensure_ascii=False, indent=2), encoding="utf-8"
             )
             summary[f"{label} cascade settings"] = "✅"
@@ -396,7 +396,7 @@ async def _backup_cascade_server(cascade_cfg, work_dir: Path, summary: dict):
         aliases_resp = await _cascade_get(session, cascade_cfg, "/api/aliases")
         aliases = (aliases_resp or {}).get("aliases") or []
         if aliases_resp is not None:
-            (work_dir / f"{p}_aliases.json").write_text(
+            (out_dir / "aliases.json").write_text(
                 json.dumps(aliases, ensure_ascii=False, indent=2), encoding="utf-8"
             )
             summary[f"{label} cascade aliases"] = f"✅ {len(aliases)} алиасов"
@@ -405,7 +405,7 @@ async def _backup_cascade_server(cascade_cfg, work_dir: Path, summary: dict):
         fw_resp = await _cascade_get(session, cascade_cfg, "/api/firewall/rules")
         fw_rules = (fw_resp or {}).get("rules") or []
         if fw_resp is not None:
-            (work_dir / f"{p}_firewall.json").write_text(
+            (out_dir / "firewall.json").write_text(
                 json.dumps(fw_rules, ensure_ascii=False, indent=2), encoding="utf-8"
             )
             summary[f"{label} cascade firewall"] = f"✅ {len(fw_rules)} правил"
@@ -414,7 +414,7 @@ async def _backup_cascade_server(cascade_cfg, work_dir: Path, summary: dict):
         routes_resp = await _cascade_get(session, cascade_cfg, "/api/routing/routes")
         routes = (routes_resp or {}).get("routes") or []
         if routes_resp is not None:
-            (work_dir / f"{p}_routes.json").write_text(
+            (out_dir / "routes.json").write_text(
                 json.dumps(routes, ensure_ascii=False, indent=2), encoding="utf-8"
             )
             summary[f"{label} cascade routes"] = f"✅ {len(routes)} маршрутов"
@@ -423,7 +423,7 @@ async def _backup_cascade_server(cascade_cfg, work_dir: Path, summary: dict):
         nat_resp = await _cascade_get(session, cascade_cfg, "/api/nat/rules")
         nat_rules = (nat_resp or {}).get("rules") or []
         if nat_resp is not None:
-            (work_dir / f"{p}_nat.json").write_text(
+            (out_dir / "nat.json").write_text(
                 json.dumps(nat_rules, ensure_ascii=False, indent=2), encoding="utf-8"
             )
             summary[f"{label} cascade nat"] = f"✅ {len(nat_rules)} правил"
@@ -432,7 +432,7 @@ async def _backup_cascade_server(cascade_cfg, work_dir: Path, summary: dict):
         gw_resp = await _cascade_get(session, cascade_cfg, "/api/gateways")
         gateways = (gw_resp or {}).get("gateways") or []
         if gw_resp is not None:
-            (work_dir / f"{p}_gateways.json").write_text(
+            (out_dir / "gateways.json").write_text(
                 json.dumps(gateways, ensure_ascii=False, indent=2), encoding="utf-8"
             )
             summary[f"{label} cascade gateways"] = f"✅ {len(gateways)} шлюзов"
@@ -474,10 +474,17 @@ async def run_backup(panel_manager, common) -> tuple[Path, dict]:
     """
     ts       = datetime.now().strftime("%Y%m%d_%H%M%S")
     work_dir = _BACKUP_ROOT / f"_tmp_{ts}"
-    work_dir.mkdir(parents=True, exist_ok=True)
+
+    # Подпапки по группам
+    dir_system  = work_dir / "system"
+    dir_panels  = work_dir / "panels"
+    dir_cascade = work_dir / "cascade"
+    for d in (dir_system, dir_panels, dir_cascade):
+        d.mkdir(parents=True, exist_ok=True)
+
     summary = {}
 
-    # 1. Локальные файлы
+    # 1. Системные файлы → system/
     local_files = {
         "config.yaml":  _APP_ROOT / "config.yaml",
         "bot_users.db": Path(common.db_path),
@@ -485,25 +492,27 @@ async def run_backup(panel_manager, common) -> tuple[Path, dict]:
     }
     for name, src in local_files.items():
         if src.exists():
-            shutil.copy2(src, work_dir / name)
+            shutil.copy2(src, dir_system / name)
             size_kb = src.stat().st_size // 1024 + 1
             summary[name] = f"✅ {size_kb} КБ"
         else:
             summary[name] = "⚠️ не найден"
 
-    # 2. Данные каждой панели
+    # 2. Данные каждой панели → panels/{alias}/
     panels = panel_manager.get_all_panels()
     for panel_id, panel_cfg in panels.items():
         if not panel_cfg.enabled:
             continue
         alias = (panel_cfg.alias or panel_id).strip()
         safe  = alias.replace("/", "_").replace("\\", "_").replace(" ", "_")
-        p     = f"{safe}_3xui"   # префикс для всех файлов панели
+        panel_dir = dir_panels / safe
+        panel_dir.mkdir(exist_ok=True)
+        p     = f"{safe}_3xui"   # префикс имён файлов внутри папки
 
         # x-ui.db
         db_data = await _fetch_xui_db(panel_cfg)
         if db_data:
-            (work_dir / f"{p}_xui.db").write_bytes(db_data)
+            (panel_dir / f"{p}_xui.db").write_bytes(db_data)
             summary[f"{alias} x-ui.db"] = f"✅ {len(db_data) // 1024 + 1} КБ"
         else:
             summary[f"{alias} x-ui.db"] = "⚠️ недоступна"
@@ -511,15 +520,13 @@ async def run_backup(panel_manager, common) -> tuple[Path, dict]:
         # inbounds + clients JSON
         inbounds = await _fetch_inbounds(panel_cfg)
         if inbounds is not None:
-            (work_dir / f"{p}_inbounds.json").write_text(
+            (panel_dir / f"{p}_inbounds.json").write_text(
                 json.dumps(inbounds, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
             def _count_clients(ib: dict) -> int:
-                # clientStats есть в некоторых версиях API
                 if ib.get("clientStats"):
                     return len(ib["clientStats"])
-                # settings — строка JSON или уже dict
                 raw = ib.get("settings") or "{}"
                 if isinstance(raw, str):
                     try:
@@ -535,10 +542,10 @@ async def run_backup(panel_manager, common) -> tuple[Path, dict]:
         else:
             summary[f"{alias} inbounds"] = "⚠️ не удалось получить"
 
-        # clients export — официальный формат для восстановления через /import (только v3)
+        # clients export
         clients = await _fetch_clients(panel_cfg)
         if clients is not None:
-            (work_dir / f"{p}_clients.json").write_text(
+            (panel_dir / f"{p}_clients.json").write_text(
                 json.dumps(clients, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
@@ -547,12 +554,11 @@ async def run_backup(panel_manager, common) -> tuple[Path, dict]:
             version = panel_cfg.xui_version or ""
             if version.startswith("3.") or version == "latest":
                 summary[f"{alias} clients"] = "⚠️ не удалось получить"
-            # v2 — молчим, endpoint не поддерживается
 
-        # xray конфиг — шаблон (outbounds + routing + log + policy + ...) только v3
+        # xray конфиг
         xray_cfg = await _fetch_xray_config(panel_cfg)
         if xray_cfg is not None:
-            (work_dir / f"{p}_xray_config.json").write_text(
+            (panel_dir / f"{p}_xray_config.json").write_text(
                 json.dumps(xray_cfg, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
@@ -562,8 +568,7 @@ async def run_backup(panel_manager, common) -> tuple[Path, dict]:
             summary[f"{alias} xray_config"] = (
                 f"✅ {len(outbounds)} outbounds, {len(routing_rules)} routing rules"
             )
-            # отдельный файл маршрутизации
-            (work_dir / f"{p}_routing.json").write_text(
+            (panel_dir / f"{p}_routing.json").write_text(
                 json.dumps(routing, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
@@ -576,12 +581,11 @@ async def run_backup(panel_manager, common) -> tuple[Path, dict]:
             if version.startswith("3.") or version == "latest":
                 summary[f"{alias} xray_config"] = "⚠️ не удалось получить"
                 summary[f"{alias} routing"]      = "⚠️ не удалось получить"
-            # v2 — молчим
 
-        # настройки панели (только v3)
+        # настройки панели
         settings = await _fetch_settings(panel_cfg)
         if settings is not None:
-            (work_dir / f"{p}_settings.json").write_text(
+            (panel_dir / f"{p}_settings.json").write_text(
                 json.dumps(settings, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
@@ -591,10 +595,10 @@ async def run_backup(panel_manager, common) -> tuple[Path, dict]:
             if version.startswith("3.") or version == "latest":
                 summary[f"{alias} settings"] = "⚠️ не удалось получить"
 
-        # outbound-подписки (только v3)
+        # outbound-подписки
         ob_subs = await _fetch_outbound_subs(panel_cfg)
         if ob_subs is not None:
-            (work_dir / f"{p}_outbound_subs.json").write_text(
+            (panel_dir / f"{p}_outbound_subs.json").write_text(
                 json.dumps(ob_subs, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
@@ -604,19 +608,24 @@ async def run_backup(panel_manager, common) -> tuple[Path, dict]:
             if version.startswith("3.") or version == "latest":
                 summary[f"{alias} outbound_subs"] = "⚠️ не удалось получить"
 
-    # 3. Cascade-серверы
+    # 3. Cascade-серверы → cascade/{label}/
     cascade_servers = panel_manager.get_cascade_servers()
     for cascade_cfg in cascade_servers:
         if not cascade_cfg.enabled:
             continue
-        await _backup_cascade_server(cascade_cfg, work_dir, summary)
+        label_safe = (cascade_cfg.label or cascade_cfg.cascade_id).replace(
+            "/", "_").replace("\\", "_").replace(" ", "_")
+        cascade_dir = dir_cascade / label_safe
+        cascade_dir.mkdir(exist_ok=True)
+        await _backup_cascade_server(cascade_cfg, cascade_dir, summary)
 
-    # 4. Упаковка в ZIP
+    # 4. Упаковка в ZIP с сохранением структуры папок
     _BACKUP_ROOT.mkdir(parents=True, exist_ok=True)
     zip_path = _BACKUP_ROOT / f"backup_{ts}.zip"
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        for f in sorted(work_dir.iterdir()):
-            zf.write(f, arcname=f.name)
+        for f in work_dir.rglob("*"):
+            if f.is_file():
+                zf.write(f, arcname=f.relative_to(work_dir))
 
     # Удаляем временную папку — ZIP достаточно
     shutil.rmtree(work_dir, ignore_errors=True)
