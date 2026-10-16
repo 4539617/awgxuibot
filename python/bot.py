@@ -2853,8 +2853,8 @@ async def process_pay_period(callback_query: types.CallbackQuery):
         f"💳 <b>Подтверждение оплаты</b>\n\n"
         f"⏱ Период: <b>{period_text}</b>\n"
         f"💰 Сумма: <b>{price}</b>\n\n"
-        f"Нажмите «Оплатить» для подтверждения — после этого "
-        f"администратор пришлёт вам ссылку для оплаты.",
+        f" "
+        f" ",
         reply_markup=keyboard,
         parse_mode="HTML",
     )
@@ -2929,7 +2929,7 @@ async def process_pay_confirm(callback_query: types.CallbackQuery):
         f"✅ <b>Запрос на оплату отправлен!</b>\n\n"
         f"⏱ Период: <b>{period_text}</b>\n"
         f"💰 Сумма: <b>{price}</b>\n\n"
-        f"⏳ Ожидайте ссылку на оплату от администратора.",
+        f"⏳ Ожидайте.",
         parse_mode="HTML",
     )
 
