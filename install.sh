@@ -308,6 +308,10 @@ create_config_if_not_exists() {
 
 # Проверка наличия yq (YAML processor)
 check_yq() {
+    # Добавляем /usr/local/bin в PATH если его нет
+    if [[ ":$PATH:" != *":/usr/local/bin:"* ]]; then
+        export PATH="/usr/local/bin:$PATH"
+    fi
     if ! command -v yq &> /dev/null; then
         echo -e "${YELLOW}📦 Установка yq (YAML processor)...${NC}"
         
