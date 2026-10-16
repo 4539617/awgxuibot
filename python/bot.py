@@ -3006,6 +3006,10 @@ async def create_backup(callback_query: types.CallbackQuery, state: FSMContext):
 
         # Строим текст отчёта — разбитый по источникам
         _SYSTEM_KEYS = {"config.yaml", "bot_users.db", "apps.yaml"}
+        _PANEL_SUFFIXES = (
+            " x-ui.db", " inbounds", " clients",
+            " xray_config", " routing", " settings", " outbound_subs",
+        )
         _CASCADE_SUFFIXES = (
             " cascade system", " cascade interfaces",
             " cascade peers", " cascade settings",
@@ -3017,6 +3021,31 @@ async def create_backup(callback_query: types.CallbackQuery, state: FSMContext):
         panel_items   = {k: v for k, v in summary.items()
                          if k not in sys_items and k not in cascade_items}
 
+        # Группируем панельные ключи по алиасу сервера
+        from collections import defaultdict as _dd
+        _panel_groups: dict = _dd(dict)
+        for key, status in panel_items.items():
+            for suf in _PANEL_SUFFIXES:
+                if key.endswith(suf):
+                    alias_key = key[: -len(suf)]
+                    short_key = suf.lstrip()
+                    _panel_groups[alias_key][short_key] = status
+                    break
+            else:
+                _panel_groups[key]["—"] = status
+
+        # Группируем каскадные ключи по лейблу сервера
+        _cascade_groups: dict = _dd(dict)
+        for key, status in cascade_items.items():
+            for suf in _CASCADE_SUFFIXES:
+                if key.endswith(suf):
+                    label_key = key[: -len(suf)]
+                    short_key = suf.lstrip()
+                    _cascade_groups[label_key][short_key] = status
+                    break
+            else:
+                _cascade_groups[key]["—"] = status
+
         lines = ["<b>📦 Содержимое бэкапа:</b>"]
 
         lines.append("")
@@ -3025,14 +3054,18 @@ async def create_backup(callback_query: types.CallbackQuery, state: FSMContext):
             lines.append(f"  • {label}: {status}")
 
         lines.append("")
-        lines.append("<b>📊 Панели → серверы</b>")
-        for label, status in panel_items.items():
-            lines.append(f"  • {label}: {status}")
+        lines.append("<b>📊 3X-UI</b>")
+        for server, items in _panel_groups.items():
+            lines.append(f"   <b>{server}:</b>")
+            for short_key, status in items.items():
+                lines.append(f"    • {server} {short_key}: {status}")
 
         lines.append("")
-        lines.append("<b>🔗 Каскад → серверы</b>")
-        for label, status in cascade_items.items():
-            lines.append(f"  • {label}: {status}")
+        lines.append("<b>🔗 CASCADE</b>")
+        for server, items in _cascade_groups.items():
+            lines.append(f"   <b>{server}:</b>")
+            for short_key, status in items.items():
+                lines.append(f"    • {server} {short_key}: {status}")
 
         zip_size_kb = zip_path.stat().st_size // 1024 + 1
         caption = (
