@@ -1277,6 +1277,27 @@ class UserDatabase:
             return False
 
 
+    # ── Флаг «ожидает ссылку на оплату» ────────────────────────────────────
+    def set_pay_awaiting(self, user_id: int, period_code: str) -> None:
+        """Записать что кандидат подтвердил оплату и ждёт ссылку от администратора."""
+        self.set_admin_setting(f"pay_awaiting_{user_id}", period_code)
+
+    def get_pay_awaiting(self, user_id: int) -> str:
+        """Вернуть period_code если кандидат ожидает ссылку, иначе ''."""
+        return self.get_admin_setting(f"pay_awaiting_{user_id}", "")
+
+    def clear_pay_awaiting(self, user_id: int) -> None:
+        """Снять флаг ожидания ссылки на оплату."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute(
+                    "DELETE FROM admin_settings WHERE key = ?",
+                    (f"pay_awaiting_{user_id}",),
+                )
+        except Exception as e:
+            logger.error(f"Ошибка сброса pay_awaiting для {user_id}: {e}")
+
+
 class Config:
     """Главный класс конфигурации с поддержкой мультипанелей"""
     

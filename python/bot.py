@@ -2667,6 +2667,7 @@ async def process_reset_pending(callback_query: types.CallbackQuery):
         user_info = str(user_id)
 
     config.users_db.remove_pending_request(user_id)
+    config.users_db.clear_pay_awaiting(user_id)  # снимаем флаг незавершённой оплаты
 
     await callback_query.message.edit_text(
         f"🔄 Статус сброшен для {user_info}.\n\n"
@@ -2791,15 +2792,46 @@ def _get_pay_price(period_code: str) -> str:
     return raw if raw else "не указана"
 
 
-@dp.callback_query(lambda c: c.data and c.data.startswith("pay_req_"))
-async def process_pay_request(callback_query: types.CallbackQuery):
-    """Отправляет кандидату выбор периода оплаты с ценами."""
+@dp.callback_query(lambda c: c.data and c.data.startswith("pay_req_") and not c.data.startswith("pay_req_back_"))
+async def process_pay_request(callback_query: types.CallbackQuery, state: FSMContext):
+    """Отправляет кандидату выбор периода оплаты с ценами.
+    Если кандидат уже подтвердил оплату и ждёт ссылку — сразу открываем ввод ссылки.
+    """
     if not is_admin(callback_query.from_user.id):
         await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
         return
 
     user_id = int(callback_query.data.split("_", 2)[2])
     await callback_query.answer()
+
+    # Проверяем флаг «ожидает ссылку на оплату»
+    awaiting_period = config.users_db.get_pay_awaiting(user_id)
+    if awaiting_period:
+        period_labels = {"1h": "1 час", "3d": "3 дня", "30d": "30 дней"}
+        period_text = period_labels.get(awaiting_period, awaiting_period)
+        price = _get_pay_price(awaiting_period)
+
+        try:
+            chat = await bot.get_chat(user_id)
+            user_info = f"@{chat.username}" if chat.username else (chat.first_name or str(user_id))
+        except Exception:
+            user_info = str(user_id)
+
+        # Сразу переходим к вводу ссылки
+        await state.set_state(PaymentLinkState.waiting_for_link)
+        await state.update_data(pay_candidate_id=user_id, pay_period_text=period_text)
+
+        await callback_query.message.edit_text(
+            f"💳 <b>Незавершённая оплата</b>\n\n"
+            f"👤 Пользователь: {user_info}\n"
+            f"⏱ Период: <b>{period_text}</b>\n"
+            f"💰 Сумма: <b>{price}</b>\n\n"
+            f"Кандидат уже подтвердил оплату и ожидает ссылку.\n"
+            f"Отправьте ссылку на оплату следующим сообщением.\n"
+            f"Для отмены нажмите /start",
+            parse_mode="HTML",
+        )
+        return
 
     p1h  = _get_pay_price("1h")
     p3d  = _get_pay_price("3d")
@@ -2904,6 +2936,9 @@ async def process_pay_confirm(callback_query: types.CallbackQuery):
     except Exception:
         user_info = str(user_id)
 
+    # Сохраняем флаг: кандидат ожидает ссылку на оплату
+    config.users_db.set_pay_awaiting(user_id, period_code)
+
     admin_id = config.users_db.get_main_admin()
 
     # Уведомляем администратора
@@ -2929,7 +2964,7 @@ async def process_pay_confirm(callback_query: types.CallbackQuery):
         f"✅ <b>Запрос на оплату отправлен!</b>\n\n"
         f"⏱ Период: <b>{period_text}</b>\n"
         f"💰 Сумма: <b>{price}</b>\n\n"
-        f"⏳ Ожидайте.",
+        f"⏳ Ожидайте ссылку на оплату от администратора.",
         parse_mode="HTML",
     )
 
@@ -2987,6 +3022,8 @@ async def process_payment_link_input(message: types.Message, state: FSMContext):
         return
 
     await state.clear()
+    # Снимаем флаг «ожидает ссылку на оплату»
+    config.users_db.clear_pay_awaiting(candidate_id)
 
     try:
         await bot.send_message(
@@ -3792,8 +3829,10 @@ async def show_pending_requests(callback_query: types.CallbackQuery):
             label = f"@{chat.username}" if chat.username else chat.first_name or str(uid)
         except:
             label = str(uid)
+        # Показываем 💳 если кандидат ожидает ссылку на оплату
+        icon = "💳" if config.users_db.get_pay_awaiting(uid) else "🕐"
         buttons.append([InlineKeyboardButton(
-            text=f"🕐 {label}",
+            text=f"{icon} {label}",
             callback_data=f"pending_card_{uid}"
         )])
 
