@@ -687,16 +687,11 @@ async def run_backup(panel_manager, common) -> tuple[Path, dict]:
 
         # outbound-подписки
         ob_subs = await _fetch_outbound_subs(panel_cfg)
-        if ob_subs is not None:
+        if ob_subs:
             (panel_dir / f"{p}_outbound_subs.json").write_text(
                 json.dumps(ob_subs, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
-            summary[f"{alias} outbound_subs"] = f"✅ {len(ob_subs)} подписок"
-        else:
-            version = panel_cfg.xui_version or ""
-            if version.startswith("3.") or version == "latest":
-                summary[f"{alias} outbound_subs"] = "⚠️ не удалось получить"
 
     # 3. Cascade-серверы → cascade/{label}/
     cascade_servers = panel_manager.get_cascade_servers()
