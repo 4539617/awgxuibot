@@ -154,7 +154,29 @@ async def _fetch_xray_config(panel_cfg) -> Optional[dict]:
             if resp.status == 200:
                 data = await resp.json()
                 if data.get("success"):
-                    return data.get("obj") or {}
+                    obj = data.get("obj")
+                    # obj может быть:
+                    # - dict {"xraySetting": "<json string>", ...} (v3 новая)
+                    # - str  "<json string>" (старое поведение)
+                    # - dict с уже распакованным конфигом
+                    if isinstance(obj, dict) and "xraySetting" in obj:
+                        raw = obj["xraySetting"]
+                        try:
+                            return json.loads(raw) if isinstance(raw, str) else raw or {}
+                        except Exception:
+                            logger.warning(
+                                f"[backup] {panel_cfg.alias}: xraySetting не является JSON"
+                            )
+                            return None
+                    elif isinstance(obj, str):
+                        try:
+                            return json.loads(obj) or {}
+                        except Exception:
+                            logger.warning(
+                                f"[backup] {panel_cfg.alias}: xray obj — не JSON-строка"
+                            )
+                            return None
+                    return obj or {}
             logger.warning(
                 f"[backup] {panel_cfg.alias}: xray/ → HTTP {resp.status}"
             )
