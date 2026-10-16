@@ -313,6 +313,69 @@ async def _fetch_outbound_subs(panel_cfg) -> Optional[list]:
         await session.close()
 
 
+async def _fetch_outbounds(panel_cfg) -> Optional[list]:
+    """Скачивает список outbounds через GET /panel/api/xray/outbound/list (только v3).
+    Панель хранит outbounds отдельно от xray-шаблона — шаблон их не содержит.
+    """
+    version = panel_cfg.xui_version or ""
+    is_v3   = version.startswith("3.") or version == "latest"
+    if not is_v3:
+        return None
+
+    base = panel_cfg.xui_url.rstrip("/")
+    hdrs = _headers(panel_cfg)
+    session = await _open_session(panel_cfg)
+    try:
+        async with session.get(
+            f"{base}/panel/api/xray/outbound/list", headers=hdrs
+        ) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                if data.get("success"):
+                    return data.get("obj") or []
+            logger.warning(
+                f"[backup] {panel_cfg.alias}: xray/outbound/list → HTTP {resp.status}"
+            )
+            return None
+    except Exception as e:
+        logger.warning(f"[backup] {panel_cfg.alias}: outbounds error: {e}")
+        return None
+    finally:
+        await session.close()
+
+
+async def _fetch_routing(panel_cfg) -> Optional[dict]:
+    """Скачивает routing-конфиг через GET /panel/api/routing/list (только v3).
+    Панель хранит routing отдельно от xray-шаблона — шаблон его не содержит.
+    Возвращает dict с полями: rules (list), domainStrategy (str), и т.д.
+    """
+    version = panel_cfg.xui_version or ""
+    is_v3   = version.startswith("3.") or version == "latest"
+    if not is_v3:
+        return None
+
+    base = panel_cfg.xui_url.rstrip("/")
+    hdrs = _headers(panel_cfg)
+    session = await _open_session(panel_cfg)
+    try:
+        async with session.get(
+            f"{base}/panel/api/routing/list", headers=hdrs
+        ) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                if data.get("success"):
+                    return data.get("obj") or {}
+            logger.warning(
+                f"[backup] {panel_cfg.alias}: routing/list → HTTP {resp.status}"
+            )
+            return None
+    except Exception as e:
+        logger.warning(f"[backup] {panel_cfg.alias}: routing error: {e}")
+        return None
+    finally:
+        await session.close()
+
+
 # ─── Cascade helpers ─────────────────────────────────────────────────────────
 
 def _cascade_headers(cascade_cfg) -> dict:
@@ -559,19 +622,36 @@ async def run_backup(panel_manager, common) -> tuple[Path, dict]:
             if version.startswith("3.") or version == "latest":
                 summary[f"{alias} clients"] = "⚠️ не удалось получить"
 
-        # xray конфиг
+        # xray конфиг (шаблон — без outbounds и routing, они хранятся отдельно)
         xray_cfg = await _fetch_xray_config(panel_cfg)
         if xray_cfg is not None:
             (panel_dir / f"{p}_xray_config.json").write_text(
                 json.dumps(xray_cfg, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
-            outbounds     = xray_cfg.get("outbounds") or []
-            routing       = xray_cfg.get("routing") or {}
-            routing_rules = routing.get("rules") or []
-            summary[f"{alias} xray_config"] = (
-                f"✅ {len(outbounds)} outbounds, {len(routing_rules)} routing rules"
+            summary[f"{alias} xray_config"] = "✅"
+        else:
+            version = panel_cfg.xui_version or ""
+            if version.startswith("3.") or version == "latest":
+                summary[f"{alias} xray_config"] = "⚠️ не удалось получить"
+
+        # outbounds (хранятся отдельно от xray-шаблона)
+        outbounds = await _fetch_outbounds(panel_cfg)
+        if outbounds is not None:
+            (panel_dir / f"{p}_outbounds.json").write_text(
+                json.dumps(outbounds, ensure_ascii=False, indent=2),
+                encoding="utf-8",
             )
+            summary[f"{alias} outbounds"] = f"✅ {len(outbounds)} outbounds"
+        else:
+            version = panel_cfg.xui_version or ""
+            if version.startswith("3.") or version == "latest":
+                summary[f"{alias} outbounds"] = "⚠️ не удалось получить"
+
+        # routing (хранится отдельно от xray-шаблона)
+        routing = await _fetch_routing(panel_cfg)
+        if routing is not None:
+            routing_rules = routing.get("rules") or []
             (panel_dir / f"{p}_routing.json").write_text(
                 json.dumps(routing, ensure_ascii=False, indent=2),
                 encoding="utf-8",
@@ -583,8 +663,7 @@ async def run_backup(panel_manager, common) -> tuple[Path, dict]:
         else:
             version = panel_cfg.xui_version or ""
             if version.startswith("3.") or version == "latest":
-                summary[f"{alias} xray_config"] = "⚠️ не удалось получить"
-                summary[f"{alias} routing"]      = "⚠️ не удалось получить"
+                summary[f"{alias} routing"] = "⚠️ не удалось получить"
 
         # настройки панели
         settings = await _fetch_settings(panel_cfg)
