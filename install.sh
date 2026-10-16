@@ -314,30 +314,42 @@ check_yq() {
     fi
     if ! command -v yq &> /dev/null; then
         echo -e "${YELLOW}📦 Установка yq (YAML processor)...${NC}"
-        
+
         # Определяем архитектуру
         ARCH=$(uname -m)
         case $ARCH in
-            x86_64)
-                YQ_ARCH="amd64"
-                ;;
-            aarch64|arm64)
-                YQ_ARCH="arm64"
-                ;;
-            armv7l)
-                YQ_ARCH="arm"
-                ;;
+            x86_64)   YQ_ARCH="amd64" ;;
+            aarch64|arm64) YQ_ARCH="arm64" ;;
+            armv7l)   YQ_ARCH="arm" ;;
             *)
                 echo -e "${RED}❌ Неподдерживаемая архитектура: $ARCH${NC}"
                 return 1
                 ;;
         esac
-        
-        # Скачиваем и устанавливаем yq
+
         YQ_VERSION="v4.35.1"
-        wget -q "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_${YQ_ARCH}" -O /usr/local/bin/yq
-        chmod +x /usr/local/bin/yq
-        
+        YQ_URL="https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_${YQ_ARCH}"
+
+        # Попытка 1: wget
+        if command -v wget &> /dev/null; then
+            wget -q --timeout=15 "$YQ_URL" -O /usr/local/bin/yq 2>/dev/null && chmod +x /usr/local/bin/yq
+        fi
+
+        # Попытка 2: curl
+        if ! command -v yq &> /dev/null && command -v curl &> /dev/null; then
+            curl -sL --max-time 15 "$YQ_URL" -o /usr/local/bin/yq 2>/dev/null && chmod +x /usr/local/bin/yq
+        fi
+
+        # Попытка 3: pip3 install yq (обёртка над PyYAML)
+        if ! command -v yq &> /dev/null && command -v pip3 &> /dev/null; then
+            pip3 install --quiet yq 2>/dev/null
+        fi
+
+        # Попытка 4: snap
+        if ! command -v yq &> /dev/null && command -v snap &> /dev/null; then
+            snap install yq 2>/dev/null
+        fi
+
         if command -v yq &> /dev/null; then
             echo -e "${GREEN}✅ yq установлен${NC}"
         else
