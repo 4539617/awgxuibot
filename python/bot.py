@@ -303,6 +303,10 @@ class AddUserState(StatesGroup):
     waiting_for_username = State()
 
 
+class PaymentLinkState(StatesGroup):
+    waiting_for_link = State()
+
+
 # ─── Шаг 1: Создать ключ → выбор типа срока ───────────────────────────────
 @dp.callback_query(lambda c: c.data == "create_key")
 async def on_create_key(callback_query: types.CallbackQuery):
@@ -2527,6 +2531,7 @@ async def process_request_access(callback_query: types.CallbackQuery):
         [InlineKeyboardButton(text="📅 Ключ на 3 дня", callback_data=f"temp_3d_{user_id}"),
          InlineKeyboardButton(text="📅 Ключ на 7 дней", callback_data=f"temp_7d_{user_id}")],
         [InlineKeyboardButton(text="📅 Ключ на 30 дней", callback_data=f"temp_30d_{user_id}")],
+        [InlineKeyboardButton(text="💳 Отправить на оплату", callback_data=f"pay_req_{user_id}")],
         [InlineKeyboardButton(text="❌ Заблокировать", callback_data=f"deny_{user_id}")]
     ])
 
@@ -2735,6 +2740,153 @@ async def process_temp_key_request(callback_query: types.CallbackQuery):
         )
 
     await callback_query.answer()
+
+
+# ─── Оплата: шаг 1 — администратор нажимает «Отправить на оплату» ──────────
+@dp.callback_query(lambda c: c.data and c.data.startswith("pay_req_"))
+async def process_pay_request(callback_query: types.CallbackQuery):
+    """Отправляет кандидату выбор периода оплаты."""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
+        return
+
+    user_id = int(callback_query.data.split("_", 2)[2])
+    await callback_query.answer()
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⏱ 1 час",   callback_data=f"pay_period_1h_{user_id}")],
+        [InlineKeyboardButton(text="📅 3 дня",   callback_data=f"pay_period_3d_{user_id}")],
+        [InlineKeyboardButton(text="📅 30 дней", callback_data=f"pay_period_30d_{user_id}")],
+    ])
+
+    try:
+        await bot.send_message(
+            user_id,
+            "💳 <b>Выберите период действия доступа:</b>",
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+        await callback_query.message.edit_text(
+            callback_query.message.text + "\n\n⏳ Запрос на оплату отправлен кандидату.",
+            parse_mode="HTML",
+        )
+    except Exception as e:
+        await callback_query.answer(f"❌ Не удалось отправить сообщение: {e}", show_alert=True)
+
+
+# ─── Оплата: шаг 2 — кандидат выбрал период ───────────────────────────────
+@dp.callback_query(lambda c: c.data and c.data.startswith("pay_period_"))
+async def process_pay_period(callback_query: types.CallbackQuery):
+    """Кандидат выбрал период — уведомляем администратора."""
+    await callback_query.answer()
+
+    # pay_period_1h_123456  ->  parts = ['pay', 'period', '1h', '123456']
+    parts = callback_query.data.split("_")
+    period_code = parts[2]          # 1h | 3d | 30d
+    user_id     = int(parts[3])     # ID кандидата
+
+    period_labels = {"1h": "1 час", "3d": "3 дня", "30d": "30 дней"}
+    period_text = period_labels.get(period_code, period_code)
+
+    try:
+        chat = await bot.get_chat(user_id)
+        user_info = f"@{chat.username}" if chat.username else (chat.first_name or str(user_id))
+    except Exception:
+        user_info = str(user_id)
+
+    admin_id = config.users_db.get_main_admin()
+
+    # Уведомляем администратора
+    admin_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="🔗 Отправить ссылку на оплату",
+            callback_data=f"pay_send_link_{user_id}_{period_code}",
+        )]
+    ])
+    await bot.send_message(
+        admin_id,
+        f"💳 <b>Кандидат выбрал период оплаты</b>\n\n"
+        f"👤 Пользователь: {user_info}\n"
+        f"🆔 ID: <code>{user_id}</code>\n"
+        f"⏱ Период: <b>{period_text}</b>",
+        reply_markup=admin_keyboard,
+        parse_mode="HTML",
+    )
+
+    # Подтверждаем кандидату
+    await callback_query.message.edit_text(
+        f"✅ Вы выбрали период: <b>{period_text}</b>\n\n"
+        f"⏳ Ожидайте ссылку на оплату от администратора.",
+        parse_mode="HTML",
+    )
+
+
+# ─── Оплата: шаг 3 — администратор нажимает «Отправить ссылку» ─────────────
+@dp.callback_query(lambda c: c.data and c.data.startswith("pay_send_link_"))
+async def process_pay_send_link(callback_query: types.CallbackQuery, state: FSMContext):
+    """Переводит администратора в режим ожидания ввода ссылки."""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
+        return
+
+    await callback_query.answer()
+
+    # pay_send_link_123456_1h
+    parts = callback_query.data.split("_", 4)
+    # parts: ['pay', 'send', 'link', '123456', '1h']
+    candidate_id  = int(parts[3])
+    period_code   = parts[4] if len(parts) > 4 else ""
+
+    period_labels = {"1h": "1 час", "3d": "3 дня", "30d": "30 дней"}
+    period_text   = period_labels.get(period_code, period_code)
+
+    try:
+        chat = await bot.get_chat(candidate_id)
+        user_info = f"@{chat.username}" if chat.username else (chat.first_name or str(candidate_id))
+    except Exception:
+        user_info = str(candidate_id)
+
+    await state.set_state(PaymentLinkState.waiting_for_link)
+    await state.update_data(pay_candidate_id=candidate_id, pay_period_text=period_text)
+
+    await callback_query.message.edit_text(
+        f"🔗 Отправьте ссылку на оплату для {user_info} (период: <b>{period_text}</b>).\n\n"
+        f"Просто напишите или вставьте URL в следующем сообщении.\n"
+        f"Для отмены нажмите /start",
+        parse_mode="HTML",
+    )
+
+
+# ─── Оплата: шаг 4 — администратор отправляет ссылку ──────────────────────
+@dp.message(PaymentLinkState.waiting_for_link)
+async def process_payment_link_input(message: types.Message, state: FSMContext):
+    """Получает ссылку от администратора и пересылает кандидату."""
+    if not is_admin(message.from_user.id):
+        return
+
+    data = await state.get_data()
+    candidate_id = data.get("pay_candidate_id")
+    period_text  = data.get("pay_period_text", "")
+    link         = message.text.strip() if message.text else ""
+
+    if not link:
+        await message.answer("❌ Сообщение пустое. Отправьте ссылку текстом.")
+        return
+
+    await state.clear()
+
+    try:
+        await bot.send_message(
+            candidate_id,
+            f"💳 <b>Ссылка на оплату</b>\n\n"
+            f"⏱ Период: <b>{period_text}</b>\n\n"
+            f"👇 Перейдите по ссылке для оплаты:\n{link}",
+            parse_mode="HTML",
+        )
+        await message.answer(f"✅ Ссылка отправлена кандидату (ID: <code>{candidate_id}</code>).", parse_mode="HTML")
+    except Exception as e:
+        await message.answer(f"❌ Не удалось отправить ссылку кандидату: {e}")
+
 
 
 class EditThresholdState(StatesGroup):
@@ -3539,6 +3691,7 @@ async def show_pending_card(callback_query: types.CallbackQuery):
         [InlineKeyboardButton(text="📅 Ключ на 3 дня", callback_data=f"temp_3d_{user_id}"),
          InlineKeyboardButton(text="📅 Ключ на 7 дней", callback_data=f"temp_7d_{user_id}")],
         [InlineKeyboardButton(text="📅 Ключ на 30 дней", callback_data=f"temp_30d_{user_id}")],
+        [InlineKeyboardButton(text="💳 Отправить на оплату", callback_data=f"pay_req_{user_id}")],
         [InlineKeyboardButton(text="❌ Заблокировать", callback_data=f"deny_{user_id}")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="show_pending_requests")]
     ])
