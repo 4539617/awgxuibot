@@ -2964,7 +2964,7 @@ async def process_pay_confirm(callback_query: types.CallbackQuery):
         f"✅ <b>Запрос на оплату отправлен!</b>\n\n"
         f"⏱ Период: <b>{period_text}</b>\n"
         f"💰 Сумма: <b>{price}</b>\n\n"
-        f"⏳ Ожидайте ссылку на оплату от администратора.",
+        f"⏳ Формирую ссылку...",
         parse_mode="HTML",
     )
 
