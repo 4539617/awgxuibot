@@ -1161,7 +1161,7 @@ async def cmd_start(message: Message, state: FSMContext):
         # Если запрос уже ожидает решения — молчим (не показываем кнопку повторно)
         if config.users_db.has_pending_request(user_id):
             await message.answer(
-                "⏳ Ваш запрос на доступ уже отправлен.\n\nОжидайте решения администратора.",
+                "⏳ Ваш запрос на доступ уже отправлен.\n\n",
                 parse_mode="HTML"
             )
             return
@@ -1170,7 +1170,7 @@ async def cmd_start(message: Message, state: FSMContext):
         ])
         await message.answer(
             f"👋 Добро пожаловать, {first_name}!\n\n"
-            f"Нажмите кнопку ниже, чтобы отправить запрос на доступ.",
+            f"Нажмите кнопку ниже, чтобы начать.",
             reply_markup=keyboard,
             parse_mode="HTML"
         )
@@ -1183,7 +1183,7 @@ async def cmd_new(message: Message, state: FSMContext):
             await message.answer("⛔ Доступ запрещен. Пожалуйста, сначала выполните /start")
         return
     if is_blocked_by_admin(message.from_user.id):
-        await message.answer("⛔ Вы заблокированы администратором.")
+        await message.answer("⛔ Вы заблокированы.")
         return
     await state.set_state(NewClientState.waiting_for_panel)
     await _refresh_panel_states_now()
@@ -2532,6 +2532,7 @@ async def process_request_access(callback_query: types.CallbackQuery):
          InlineKeyboardButton(text="📅 Ключ на 7 дней", callback_data=f"temp_7d_{user_id}")],
         [InlineKeyboardButton(text="📅 Ключ на 30 дней", callback_data=f"temp_30d_{user_id}")],
         [InlineKeyboardButton(text="💳 Отправить на оплату", callback_data=f"pay_req_{user_id}")],
+        [InlineKeyboardButton(text="🔄 Сброс статуса", callback_data=f"reset_pending_{user_id}")],
         [InlineKeyboardButton(text="❌ Заблокировать", callback_data=f"deny_{user_id}")]
     ])
 
@@ -2643,6 +2644,42 @@ async def process_admin_decision(callback_query: types.CallbackQuery):
         except:
             pass
     await callback_query.answer()
+
+
+@dp.callback_query(lambda c: c.data and c.data.startswith("reset_pending_"))
+async def process_reset_pending(callback_query: types.CallbackQuery):
+    """Сброс статуса ожидающего запроса — пользователь сможет отправить запрос заново."""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
+        return
+
+    user_id = int(callback_query.data.split("_", 2)[2])
+    await callback_query.answer()
+
+    try:
+        chat = await bot.get_chat(user_id)
+        user_info = f"@{chat.username}" if chat.username else (chat.first_name or str(user_id))
+    except Exception:
+        user_info = str(user_id)
+
+    config.users_db.remove_pending_request(user_id)
+
+    await callback_query.message.edit_text(
+        f"🔄 Статус сброшен для {user_info}.\n\n"
+        f"Пользователь может снова отправить запрос на доступ.",
+        parse_mode="HTML",
+    )
+
+    try:
+        await bot.send_message(
+            user_id,
+            "🔄 Ваш запрос на доступ был сброшен администратором.\n\n"
+            "Вы можете отправить запрос повторно — нажмите /start.",
+        )
+    except Exception:
+        pass
+
+
 
 
 @dp.callback_query(lambda c: c.data and c.data.startswith('temp_'))
@@ -2817,7 +2854,7 @@ async def process_pay_period(callback_query: types.CallbackQuery):
     # Подтверждаем кандидату
     await callback_query.message.edit_text(
         f"✅ Вы выбрали период: <b>{period_text}</b>\n\n"
-        f"⏳ Ожидайте ссылку на оплату от администратора.",
+        f"⏳ Ожидайте ссылку на оплату.",
         parse_mode="HTML",
     )
 
@@ -3693,6 +3730,7 @@ async def show_pending_card(callback_query: types.CallbackQuery):
          InlineKeyboardButton(text="📅 Ключ на 7 дней", callback_data=f"temp_7d_{user_id}")],
         [InlineKeyboardButton(text="📅 Ключ на 30 дней", callback_data=f"temp_30d_{user_id}")],
         [InlineKeyboardButton(text="💳 Отправить на оплату", callback_data=f"pay_req_{user_id}")],
+        [InlineKeyboardButton(text="🔄 Сброс статуса", callback_data=f"reset_pending_{user_id}")],
         [InlineKeyboardButton(text="❌ Заблокировать", callback_data=f"deny_{user_id}")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="show_pending_requests")]
     ])
@@ -4338,7 +4376,7 @@ async def process_doremove_user(callback_query: types.CallbackQuery, state: FSMC
     try:
         if config.users_db.remove_user(user_id):
             try:
-                await bot.send_message(user_id, "⛔ Ваш доступ отозван администратором.")
+                await bot.send_message(user_id, "⛔ Ваш доступ отозван.")
             except:
                 pass
             ok_keyboard = InlineKeyboardMarkup(inline_keyboard=[
