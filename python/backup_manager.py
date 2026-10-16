@@ -118,7 +118,7 @@ async def _fetch_inbounds(panel_cfg) -> Optional[list]:
 
 
 def _xray_config_supported(panel_cfg) -> bool:
-    """GET /panel/api/xray/ появился в 3x-ui ~3.5.x.
+    """GET /panel/api/xray появился в 3x-ui ~3.5.x.
     Версии 3.3.x / 3.4.x возвращают 404 — пропускаем."""
     version = panel_cfg.xui_version or ""
     if version == "latest":
@@ -134,7 +134,7 @@ def _xray_config_supported(panel_cfg) -> bool:
 
 
 async def _fetch_xray_config(panel_cfg) -> Optional[dict]:
-    """Скачивает полный шаблон конфига Xray через GET /panel/api/xray/ (только v3 ≥ 3.5).
+    """Скачивает полный шаблон конфига Xray через GET /panel/api/xray (только v3 ≥ 3.5).
     Содержит: inbounds, outbounds, routing, log, policy, api, stats, metrics.
     """
     if not _xray_config_supported(panel_cfg):
@@ -149,7 +149,7 @@ async def _fetch_xray_config(panel_cfg) -> Optional[dict]:
     session = await _open_session(panel_cfg)
     try:
         async with session.get(
-            f"{base}/panel/api/xray/", headers=hdrs
+            f"{base}/panel/api/xray", headers=hdrs
         ) as resp:
             if resp.status == 200:
                 data = await resp.json()
