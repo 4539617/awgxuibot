@@ -2677,7 +2677,8 @@ async def process_temp_key_request(callback_query: types.CallbackQuery):
         username = str(user_id)
         first_name = str(user_id)
 
-    config.users_db.remove_pending_request(user_id)
+    # При выдаче временного ключа пользователь остаётся кандидатом —
+    # НЕ удаляем pending-запрос и НЕ добавляем в список пользователей.
 
     # Генерируем email для временного ключа
     random_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
