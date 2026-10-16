@@ -307,6 +307,10 @@ class PaymentLinkState(StatesGroup):
     waiting_for_link = State()
 
 
+class SetPriceState(StatesGroup):
+    waiting_for_price = State()
+
+
 # ─── Шаг 1: Создать ключ → выбор типа срока ───────────────────────────────
 @dp.callback_query(lambda c: c.data == "create_key")
 async def on_create_key(callback_query: types.CallbackQuery):
@@ -1035,7 +1039,7 @@ async def cmd_start(message: Message, state: FSMContext):
     current_state = await state.get_state()
     if current_state:
         await state.clear()
-        await message.answer("✅ Создание ключа отменено.")
+        await message.answer("✅ Редактирование отменено.")
 
     # Проверка на блокировку администратором
     if is_blocked_by_admin(user_id):
@@ -2781,9 +2785,15 @@ async def process_temp_key_request(callback_query: types.CallbackQuery):
 
 
 # ─── Оплата: шаг 1 — администратор нажимает «Отправить на оплату» ──────────
+def _get_pay_price(period_code: str) -> str:
+    """Возвращает цену из БД или 'не указана'."""
+    raw = config.users_db.get_admin_setting(f"pay_price_{period_code}", "")
+    return raw if raw else "не указана"
+
+
 @dp.callback_query(lambda c: c.data and c.data.startswith("pay_req_"))
 async def process_pay_request(callback_query: types.CallbackQuery):
-    """Отправляет кандидату выбор периода оплаты."""
+    """Отправляет кандидату выбор периода оплаты с ценами."""
     if not is_admin(callback_query.from_user.id):
         await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
         return
@@ -2791,10 +2801,14 @@ async def process_pay_request(callback_query: types.CallbackQuery):
     user_id = int(callback_query.data.split("_", 2)[2])
     await callback_query.answer()
 
+    p1h  = _get_pay_price("1h")
+    p3d  = _get_pay_price("3d")
+    p30d = _get_pay_price("30d")
+
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⏱ 1 час",   callback_data=f"pay_period_1h_{user_id}")],
-        [InlineKeyboardButton(text="📅 3 дня",   callback_data=f"pay_period_3d_{user_id}")],
-        [InlineKeyboardButton(text="📅 30 дней", callback_data=f"pay_period_30d_{user_id}")],
+        [InlineKeyboardButton(text=f"⏱ 1 час  —  {p1h}",   callback_data=f"pay_period_1h_{user_id}")],
+        [InlineKeyboardButton(text=f"📅 3 дня  —  {p3d}",   callback_data=f"pay_period_3d_{user_id}")],
+        [InlineKeyboardButton(text=f"📅 30 дней  —  {p30d}", callback_data=f"pay_period_30d_{user_id}")],
     ])
 
     try:
@@ -2812,19 +2826,77 @@ async def process_pay_request(callback_query: types.CallbackQuery):
         await callback_query.answer(f"❌ Не удалось отправить сообщение: {e}", show_alert=True)
 
 
-# ─── Оплата: шаг 2 — кандидат выбрал период ───────────────────────────────
+# ─── Оплата: шаг 2 — кандидат выбрал период, показываем диалог подтверждения
 @dp.callback_query(lambda c: c.data and c.data.startswith("pay_period_"))
 async def process_pay_period(callback_query: types.CallbackQuery):
-    """Кандидат выбрал период — уведомляем администратора."""
+    """Показывает кандидату сумму и кнопку «Оплатить»."""
     await callback_query.answer()
 
     # pay_period_1h_123456  ->  parts = ['pay', 'period', '1h', '123456']
     parts = callback_query.data.split("_")
     period_code = parts[2]          # 1h | 3d | 30d
-    user_id     = int(parts[3])     # ID кандидата
+    user_id     = int(parts[3])     # ID кандидата (sender == кандидат, не admin)
 
     period_labels = {"1h": "1 час", "3d": "3 дня", "30d": "30 дней"}
     period_text = period_labels.get(period_code, period_code)
+    price = _get_pay_price(period_code)
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="💳 Оплатить",
+            callback_data=f"pay_confirm_{period_code}_{user_id}",
+        )],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data=f"pay_req_back_{user_id}")],
+    ])
+
+    await callback_query.message.edit_text(
+        f"💳 <b>Подтверждение оплаты</b>\n\n"
+        f"⏱ Период: <b>{period_text}</b>\n"
+        f"💰 Сумма: <b>{price}</b>\n\n"
+        f"Нажмите «Оплатить» для подтверждения — после этого "
+        f"администратор пришлёт вам ссылку для оплаты.",
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+
+
+# ─── Оплата: шаг 2б — кандидат нажал «Назад» (вернуться к выбору периода) ─
+@dp.callback_query(lambda c: c.data and c.data.startswith("pay_req_back_"))
+async def process_pay_req_back(callback_query: types.CallbackQuery):
+    """Возврат к выбору периода (кандидат нажал Назад на экране подтверждения)."""
+    await callback_query.answer()
+    user_id = int(callback_query.data.split("_", 3)[3])
+
+    p1h  = _get_pay_price("1h")
+    p3d  = _get_pay_price("3d")
+    p30d = _get_pay_price("30d")
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=f"⏱ 1 час  —  {p1h}",    callback_data=f"pay_period_1h_{user_id}")],
+        [InlineKeyboardButton(text=f"📅 3 дня  —  {p3d}",    callback_data=f"pay_period_3d_{user_id}")],
+        [InlineKeyboardButton(text=f"📅 30 дней  —  {p30d}", callback_data=f"pay_period_30d_{user_id}")],
+    ])
+    await callback_query.message.edit_text(
+        "💳 <b>Выберите период действия доступа:</b>",
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+
+
+# ─── Оплата: шаг 3 — кандидат нажал «Оплатить» → уведомляем администратора ─
+@dp.callback_query(lambda c: c.data and c.data.startswith("pay_confirm_"))
+async def process_pay_confirm(callback_query: types.CallbackQuery):
+    """Кандидат подтвердил намерение оплатить — уведомляем администратора."""
+    await callback_query.answer()
+
+    # pay_confirm_1h_123456
+    parts = callback_query.data.split("_")
+    period_code = parts[2]
+    user_id     = int(parts[3])
+
+    period_labels = {"1h": "1 час", "3d": "3 дня", "30d": "30 дней"}
+    period_text = period_labels.get(period_code, period_code)
+    price = _get_pay_price(period_code)
 
     try:
         chat = await bot.get_chat(user_id)
@@ -2843,18 +2915,21 @@ async def process_pay_period(callback_query: types.CallbackQuery):
     ])
     await bot.send_message(
         admin_id,
-        f"💳 <b>Кандидат выбрал период оплаты</b>\n\n"
+        f"💳 <b>Кандидат подтвердил оплату</b>\n\n"
         f"👤 Пользователь: {user_info}\n"
         f"🆔 ID: <code>{user_id}</code>\n"
-        f"⏱ Период: <b>{period_text}</b>",
+        f"⏱ Период: <b>{period_text}</b>\n"
+        f"💰 Сумма: <b>{price}</b>",
         reply_markup=admin_keyboard,
         parse_mode="HTML",
     )
 
     # Подтверждаем кандидату
     await callback_query.message.edit_text(
-        f"✅ Вы выбрали период: <b>{period_text}</b>\n\n"
-        f"⏳ Ожидайте ссылку на оплату.",
+        f"✅ <b>Запрос на оплату отправлен!</b>\n\n"
+        f"⏱ Период: <b>{period_text}</b>\n"
+        f"💰 Сумма: <b>{price}</b>\n\n"
+        f"⏳ Ожидайте ссылку на оплату от администратора.",
         parse_mode="HTML",
     )
 
@@ -3001,6 +3076,44 @@ async def process_apps_import(message: Message, state: FSMContext):
     except Exception as e:
         logger.error(f"Ошибка импорта apps.yaml: {e}")
         await message.answer(f"❌ Ошибка при импорте: {e}\n\nФайл не сохранён.")
+
+
+@dp.message(SetPriceState.waiting_for_price)
+async def process_set_price_input(message: types.Message, state: FSMContext):
+    """Сохраняет введённую цену и показывает обновлённый экран расценок."""
+    if not is_admin(message.from_user.id):
+        return
+
+    data = await state.get_data()
+    period_code = data.get("set_price_period", "")
+    price = message.text.strip() if message.text else ""
+
+    if not price:
+        await message.answer("❌ Пустое значение. Введите цену текстом.")
+        return
+
+    await state.clear()
+    config.users_db.set_admin_setting(f"pay_price_{period_code}", price)
+
+    period_labels = {"1h": "1 час", "3d": "3 дня", "30d": "30 дней"}
+    period_text = period_labels.get(period_code, period_code)
+
+    p1h  = _get_pay_price("1h")
+    p3d  = _get_pay_price("3d")
+    p30d = _get_pay_price("30d")
+
+    text = (
+        f"✅ Цена для <b>{period_text}</b> обновлена: <b>{price}</b>\n\n"
+        "💰 <b>Текущие расценки:</b>\n\n"
+        f"⏱ 1 час:    <b>{p1h}</b>\n"
+        f"📅 3 дня:   <b>{p3d}</b>\n"
+        f"📅 30 дней: <b>{p30d}</b>"
+    )
+    await message.answer(
+        text,
+        reply_markup=_build_pay_prices_keyboard(),
+        parse_mode="HTML",
+    )
 
 
 @dp.message()
@@ -3666,7 +3779,8 @@ async def show_pending_requests(callback_query: types.CallbackQuery):
             callback_query.message.chat.id,
             "✅ Нет ожидающих запросов на доступ.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🔙 Назад", callback_data="show_users")]
+                [InlineKeyboardButton(text="💰 Установить расценки", callback_data="show_pay_prices")],
+                [InlineKeyboardButton(text="🔙 Назад", callback_data="show_users")],
             ])
         )
         return
@@ -3683,6 +3797,7 @@ async def show_pending_requests(callback_query: types.CallbackQuery):
             callback_data=f"pending_card_{uid}"
         )])
 
+    buttons.append([InlineKeyboardButton(text="💰 Установить расценки", callback_data="show_pay_prices")])
     buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="show_users")])
 
     await bot.send_message(
@@ -3743,6 +3858,86 @@ async def show_pending_card(callback_query: types.CallbackQuery):
         f"🆔 ID: <code>{user_id}</code>",
         reply_markup=admin_keyboard,
         parse_mode="HTML"
+    )
+
+
+
+# ─── Расценки: экран с текущими ценами ────────────────────────────────────
+def _build_pay_prices_keyboard() -> InlineKeyboardMarkup:
+    """Строит клавиатуру экрана расценок с текущими ценами."""
+    p1h  = _get_pay_price("1h")
+    p3d  = _get_pay_price("3d")
+    p30d = _get_pay_price("30d")
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text=f"⏱ 1 час: {p1h}",    callback_data="noop"),
+            InlineKeyboardButton(text="✏️",                  callback_data="set_price_1h"),
+        ],
+        [
+            InlineKeyboardButton(text=f"📅 3 дня: {p3d}",    callback_data="noop"),
+            InlineKeyboardButton(text="✏️",                  callback_data="set_price_3d"),
+        ],
+        [
+            InlineKeyboardButton(text=f"📅 30 дней: {p30d}", callback_data="noop"),
+            InlineKeyboardButton(text="✏️",                  callback_data="set_price_30d"),
+        ],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="show_pending_requests")],
+    ])
+
+
+@dp.callback_query(lambda c: c.data == "show_pay_prices")
+async def show_pay_prices(callback_query: types.CallbackQuery):
+    """Экран управления расценками на периоды доступа."""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
+        return
+    await callback_query.answer()
+
+    p1h  = _get_pay_price("1h")
+    p3d  = _get_pay_price("3d")
+    p30d = _get_pay_price("30d")
+
+    text = (
+        "💰 <b>Расценки на периоды доступа</b>\n\n"
+        f"⏱ 1 час:    <b>{p1h}</b>\n"
+        f"📅 3 дня:   <b>{p3d}</b>\n"
+        f"📅 30 дней: <b>{p30d}</b>\n\n"
+        "Нажмите ✏️ рядом с периодом, чтобы изменить цену."
+    )
+    await bot.send_message(
+        callback_query.message.chat.id,
+        text,
+        reply_markup=_build_pay_prices_keyboard(),
+        parse_mode="HTML",
+    )
+
+
+@dp.callback_query(lambda c: c.data == "noop")
+async def noop_callback(callback_query: types.CallbackQuery):
+    """Пустая кнопка-заглушка (текстовые ячейки в строке расценок)."""
+    await callback_query.answer()
+
+
+@dp.callback_query(lambda c: c.data and c.data.startswith("set_price_"))
+async def process_set_price(callback_query: types.CallbackQuery, state: FSMContext):
+    """Запрашивает у администратора новую цену для выбранного периода."""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
+        return
+    await callback_query.answer()
+
+    period_code = callback_query.data[len("set_price_"):]   # 1h | 3d | 30d
+    period_labels = {"1h": "1 час", "3d": "3 дня", "30d": "30 дней"}
+    period_text = period_labels.get(period_code, period_code)
+
+    await state.set_state(SetPriceState.waiting_for_price)
+    await state.update_data(set_price_period=period_code)
+
+    await callback_query.message.edit_text(
+        f"✏️ Введите новую цену для периода <b>{period_text}</b>.\n\n"
+        f"Например: <code>150 руб</code> или <code>1.5$</code>\n"
+        f"Для отмены нажмите /start",
+        parse_mode="HTML",
     )
 
 

@@ -1255,6 +1255,28 @@ class UserDatabase:
             return False
 
 
+    def get_admin_setting(self, key: str, default: str = "") -> str:
+        """Получить произвольную настройку администратора из admin_settings."""
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT value FROM admin_settings WHERE key = ?", (key,)
+            ).fetchone()
+        return row[0] if row else default
+
+    def set_admin_setting(self, key: str, value: str) -> bool:
+        """Сохранить произвольную настройку администратора в admin_settings."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute(
+                    "INSERT OR REPLACE INTO admin_settings (key, value) VALUES (?, ?)",
+                    (key, value),
+                )
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка сохранения admin_setting '{key}': {e}")
+            return False
+
+
 class Config:
     """Главный класс конфигурации с поддержкой мультипанелей"""
     
