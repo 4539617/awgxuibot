@@ -1746,7 +1746,6 @@ update_xuibot() {
     docker rmi awgxuibot-xuibot 2>/dev/null || true
     
     # Пересборка образа
-    docker_prune
     echo -e "${YELLOW}🐳 Пересборка образа...${NC}"
     $DOCKER_COMPOSE_CMD -f docker-compose.xuibot.yml build --no-cache
     
@@ -2000,7 +1999,6 @@ update_awgbot() {
     docker rmi awgxuibot-awgbot 2>/dev/null || true
     
     # Пересборка образа
-    docker_prune
     echo -e "${YELLOW}🐳 Пересборка образа...${NC}"
     $DOCKER_COMPOSE_CMD -f docker-compose.awgbot.yml build --no-cache
     
@@ -2152,7 +2150,6 @@ update_cascade() {
     echo -e "${YELLOW}🗑️  Удаление старого образа cascade...${NC}"
     docker rmi cascade:latest 2>/dev/null || true
     
-    docker_prune
     docker compose -f docker-compose.cascade.yml up -d --build
     # Удаляем dangling-образы, которые появились в результате пересборки
     docker_prune_after_build
@@ -2507,7 +2504,6 @@ rebuild_xuibot() {
     echo -e "${YELLOW}🗑️  Удаление старого образа xuibot...${NC}"
     docker rmi awgxuibot-xuibot 2>/dev/null || true
     
-    docker_prune
     echo -e "${YELLOW}🔨 Пересборка образа xuibot...${NC}"
     $DOCKER_COMPOSE_CMD -f docker-compose.xuibot.yml build --no-cache
     
@@ -2544,7 +2540,6 @@ rebuild_awgbot() {
     echo -e "${YELLOW}🗑️  Удаление старого образа awgbot...${NC}"
     docker rmi awgxuibot-awgbot 2>/dev/null || true
     
-    docker_prune
     echo -e "${YELLOW}🔨 Пересборка образа awgbot...${NC}"
     $DOCKER_COMPOSE_CMD -f docker-compose.awgbot.yml build --no-cache
     
