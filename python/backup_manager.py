@@ -622,7 +622,7 @@ async def run_backup(panel_manager, common) -> tuple[Path, dict]:
             if version.startswith("3.") or version == "latest":
                 summary[f"{alias} clients"] = "⚠️ не удалось получить"
 
-        # xray конфиг (шаблон — без outbounds и routing, они хранятся отдельно)
+        # xray конфиг (шаблон; в некоторых сборках содержит также routing и outbounds)
         xray_cfg = await _fetch_xray_config(panel_cfg)
         if xray_cfg is not None:
             (panel_dir / f"{p}_xray_config.json").write_text(
@@ -635,7 +635,7 @@ async def run_backup(panel_manager, common) -> tuple[Path, dict]:
             if version.startswith("3.") or version == "latest":
                 summary[f"{alias} xray_config"] = "⚠️ не удалось получить"
 
-        # outbounds (хранятся отдельно от xray-шаблона)
+        # outbounds (в некоторых сборках хранятся отдельно, в других — внутри xray_config)
         outbounds = await _fetch_outbounds(panel_cfg)
         if outbounds is not None:
             (panel_dir / f"{p}_outbounds.json").write_text(
@@ -646,9 +646,20 @@ async def run_backup(panel_manager, common) -> tuple[Path, dict]:
         else:
             version = panel_cfg.xui_version or ""
             if version.startswith("3.") or version == "latest":
-                summary[f"{alias} outbounds"] = "⚠️ не удалось получить"
+                # Извлекаем outbounds из xray_config и сохраняем отдельным файлом
+                xray_outbounds = (xray_cfg or {}).get("outbounds") if xray_cfg else None
+                if xray_outbounds:
+                    (panel_dir / f"{p}_outbounds.json").write_text(
+                        json.dumps(xray_outbounds, ensure_ascii=False, indent=2),
+                        encoding="utf-8",
+                    )
+                    summary[f"{alias} outbounds"] = (
+                        f"✅ {len(xray_outbounds)} outbounds (из xray_config)"
+                    )
+                else:
+                    summary[f"{alias} outbounds"] = "⚠️ не удалось получить"
 
-        # routing (хранится отдельно от xray-шаблона)
+        # routing (в некоторых сборках хранится отдельно, в других — внутри xray_config)
         routing = await _fetch_routing(panel_cfg)
         if routing is not None:
             routing_rules = routing.get("rules") or []
@@ -663,7 +674,20 @@ async def run_backup(panel_manager, common) -> tuple[Path, dict]:
         else:
             version = panel_cfg.xui_version or ""
             if version.startswith("3.") or version == "latest":
-                summary[f"{alias} routing"] = "⚠️ не удалось получить"
+                # Извлекаем routing из xray_config и сохраняем отдельным файлом
+                xray_routing = (xray_cfg or {}).get("routing") if xray_cfg else None
+                xray_rules = (xray_routing or {}).get("rules") or []
+                if xray_routing:
+                    (panel_dir / f"{p}_routing.json").write_text(
+                        json.dumps(xray_routing, ensure_ascii=False, indent=2),
+                        encoding="utf-8",
+                    )
+                    summary[f"{alias} routing"] = (
+                        f"✅ {len(xray_rules)} правил, "
+                        f"strategy: {xray_routing.get('domainStrategy', '—')} (из xray_config)"
+                    )
+                else:
+                    summary[f"{alias} routing"] = "⚠️ не удалось получить"
 
         # настройки панели
         settings = await _fetch_settings(panel_cfg)
