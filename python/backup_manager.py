@@ -134,7 +134,7 @@ def _xray_config_supported(panel_cfg) -> bool:
 
 
 async def _fetch_xray_config(panel_cfg) -> Optional[dict]:
-    """Скачивает полный шаблон конфига Xray через GET /panel/api/xray (только v3 ≥ 3.5).
+    """Скачивает полный шаблон конфига Xray через POST /panel/api/xray/ (только v3 ≥ 3.5).
     Содержит: inbounds, outbounds, routing, log, policy, api, stats, metrics.
     """
     if not _xray_config_supported(panel_cfg):
@@ -148,8 +148,8 @@ async def _fetch_xray_config(panel_cfg) -> Optional[dict]:
     hdrs = _headers(panel_cfg)
     session = await _open_session(panel_cfg)
     try:
-        async with session.get(
-            f"{base}/panel/api/xray", headers=hdrs
+        async with session.post(
+            f"{base}/panel/api/xray/", headers=hdrs, json={}
         ) as resp:
             if resp.status == 200:
                 data = await resp.json()
