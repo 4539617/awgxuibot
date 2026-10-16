@@ -1649,26 +1649,42 @@ update_xuibot() {
     echo -e "\n${BLUE}========================================${NC}"
     echo -e "${BLUE}   Обновление XUI Бота${NC}"
     echo -e "${BLUE}========================================${NC}\n"
-    
+
+    # Отключаем set -e на время функции, чтобы get_config_value не роняло скрипт
+    set +e
+
     echo -e "${YELLOW}🔄 Обновление XUI бота...${NC}"
-    
+
+    # Определяем DOCKER_COMPOSE_CMD если ещё не установлен
+    if [ -z "$DOCKER_COMPOSE_CMD" ]; then
+        if docker compose version &>/dev/null 2>&1; then
+            DOCKER_COMPOSE_CMD="docker compose"
+        elif command -v docker-compose &>/dev/null; then
+            DOCKER_COMPOSE_CMD="docker-compose"
+        else
+            echo -e "${RED}❌ Docker Compose не найден!${NC}"
+            set -e
+            return 1
+        fi
+    fi
+
     # Обновляем SERVER_ADDRESS и TLS_SNI из XUI_URL (ПОСЛЕ git pull, чтобы всегда выполнялось)
     echo ""
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${BLUE}📋 Шаг 1: Чтение XUI_URL из config.yaml${NC}"
     XUI_URL=$(get_config_value "XUI_URL")
     echo -e "${GREEN}✓ XUI_URL прочитан: ${XUI_URL}${NC}"
-    
+
     if [ -n "$XUI_URL" ]; then
         echo -e "\n${BLUE}📋 Шаг 2: Извлечение домена из URL${NC}"
         DOMAIN=$(echo "$XUI_URL" | sed -E 's|^https?://([^:/]+).*|\1|')
         echo -e "${GREEN}✓ Извлечён домен/IP: ${DOMAIN}${NC}"
-        
+
         echo -e "\n${BLUE}📋 Шаг 3: Проверка - домен или IP?${NC}"
         if [[ ! "$DOMAIN" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo -e "${GREEN}✓ Это ДОМЕН (не IP адрес)${NC}"
             echo -e "${YELLOW}🔄 Будут обновлены SERVER_ADDRESS и TLS_SNI${NC}"
-            
+
             echo -e "\n${BLUE}📋 Шаг 4: Обновление SERVER_ADDRESS${NC}"
             CURRENT_SERVER=$(get_config_value "SERVER_ADDRESS")
             echo -e "${YELLOW}  Текущее значение: ${CURRENT_SERVER}${NC}"
@@ -1676,7 +1692,7 @@ update_xuibot() {
             update_config_value "SERVER_ADDRESS" "${DOMAIN}"
             NEW_SERVER=$(get_config_value "SERVER_ADDRESS")
             echo -e "${GREEN}✅ SERVER_ADDRESS обновлён: ${NEW_SERVER}${NC}"
-            
+
             echo -e "\n${BLUE}📋 Шаг 5: Обновление TLS_SNI${NC}"
             CURRENT_TLS_SNI=$(get_config_value "TLS_SNI")
             echo -e "${YELLOW}  Текущее значение: ${CURRENT_TLS_SNI:-<пусто>}${NC}"
@@ -1692,23 +1708,24 @@ update_xuibot() {
         echo -e "${RED}❌ XUI_URL не найден в config.yaml${NC}"
     fi
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
-    
+
     # Проверка наличия инбаундов и создание при необходимости
     if ! check_and_create_inbound_if_needed; then
         echo -e "\n${CYAN}Нажмите Enter для возврата в главное меню...${NC}"
         read
+        set -e
         return
     fi
-    
+
     # Извлекаем параметры из панели (TLS_FINGERPRINT, TLS_ALPN и т.д.)
     echo ""
-    extract_inbound_params
+    extract_inbound_params || true
     echo ""
-    
+
     # Определяем и сохраняем версию панели
     echo -e "${YELLOW}🔍 Определение версии панели...${NC}"
     XUI_VERSION=""
-    
+
     # Способ 1: Из исполняемого файла x-ui (основной метод)
     if [ -f "/usr/local/x-ui/x-ui" ]; then
         XUI_VERSION=$(/usr/local/x-ui/x-ui -v 2>/dev/null | grep -oP '\d+\.\d+\.\d+' | head -1)
@@ -1716,7 +1733,7 @@ update_xuibot() {
             echo -e "${GREEN}✅ Версия панели определена: ${XUI_VERSION}${NC}"
         fi
     fi
-    
+
     # Способ 2: Из бинарного файла в bin/
     if [ -z "$XUI_VERSION" ] && [ -f "/usr/local/x-ui/bin/x-ui" ]; then
         XUI_VERSION=$(/usr/local/x-ui/bin/x-ui -v 2>/dev/null | grep -oP '\d+\.\d+\.\d+' | head -1)
@@ -1724,7 +1741,7 @@ update_xuibot() {
             echo -e "${GREEN}✅ Версия панели определена: ${XUI_VERSION}${NC}"
         fi
     fi
-    
+
     # Если версия определена, сохраняем в config.yaml
     if [ -n "$XUI_VERSION" ]; then
         echo -e "${YELLOW}📝 Сохранение версии в config.yaml...${NC}"
@@ -1735,20 +1752,22 @@ update_xuibot() {
         echo -e "${BLUE}ℹ️  Будет использоваться значение из config.yaml или 'latest'${NC}"
     fi
     echo ""
-    
+
+    set -e
+
     # Остановка контейнера
     echo -e "${YELLOW}🛑 Остановка контейнера...${NC}"
     docker stop xuibot > /dev/null 2>&1 || true
     docker rm xuibot > /dev/null 2>&1 || true
-    
+
     # Удаляем старый тегированный образ, чтобы сборка не тянула его слои
     echo -e "${YELLOW}🗑️  Удаление старого образа xuibot...${NC}"
     docker rmi awgxuibot-xuibot 2>/dev/null || true
-    
+
     # Пересборка образа
     echo -e "${YELLOW}🐳 Пересборка образа...${NC}"
     $DOCKER_COMPOSE_CMD -f docker-compose.xuibot.yml build --no-cache
-    
+
     # Запуск
     echo -e "${YELLOW}🚀 Запуск обновленного контейнера...${NC}"
     $DOCKER_COMPOSE_CMD -f docker-compose.xuibot.yml up -d
