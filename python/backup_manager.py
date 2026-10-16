@@ -117,32 +117,15 @@ async def _fetch_inbounds(panel_cfg) -> Optional[list]:
         await session.close()
 
 
-def _xray_config_supported(panel_cfg) -> bool:
-    """GET /panel/api/xray появился в 3x-ui ~3.5.x.
-    Версии 3.3.x / 3.4.x возвращают 404 — пропускаем."""
-    version = panel_cfg.xui_version or ""
-    if version == "latest":
-        return True
-    if not version.startswith("3."):
-        return False
-    try:
-        parts = version.split(".")
-        minor = int(parts[1]) if len(parts) > 1 else 0
-        return minor >= 5
-    except ValueError:
-        return True   # неизвестная версия — пробуем
-
-
 async def _fetch_xray_config(panel_cfg) -> Optional[dict]:
-    """Скачивает полный шаблон конфига Xray через POST /panel/api/xray/ (только v3 ≥ 3.5).
+    """Скачивает полный шаблон конфига Xray через POST /panel/api/xray/ (только v3).
     Содержит: inbounds, outbounds, routing, log, policy, api, stats, metrics.
+    Пробуем для любой v3 — если endpoint не поддерживается, вернётся 404 и None.
     """
-    if not _xray_config_supported(panel_cfg):
-        return None  # v2 или старые v3 не поддерживают этот endpoint
     version = panel_cfg.xui_version or ""
     is_v3   = version.startswith("3.") or version == "latest"
     if not is_v3:
-        return None
+        return None  # v2 не поддерживает этот endpoint
 
     base = panel_cfg.xui_url.rstrip("/")
     hdrs = _headers(panel_cfg)
@@ -156,9 +139,17 @@ async def _fetch_xray_config(panel_cfg) -> Optional[dict]:
                 if data.get("success"):
                     obj = data.get("obj")
                     # obj может быть:
+                    # - str  '{"xraySetting": "<json>", ...}' (rus 3.3.x — двойная сериализация)
                     # - dict {"xraySetting": "<json string>", ...} (v3 новая)
-                    # - str  "<json string>" (старое поведение)
                     # - dict с уже распакованным конфигом
+                    if isinstance(obj, str):
+                        try:
+                            obj = json.loads(obj)
+                        except Exception:
+                            logger.warning(
+                                f"[backup] {panel_cfg.alias}: xray obj — не JSON-строка"
+                            )
+                            return None
                     if isinstance(obj, dict) and "xraySetting" in obj:
                         raw = obj["xraySetting"]
                         try:
@@ -166,14 +157,6 @@ async def _fetch_xray_config(panel_cfg) -> Optional[dict]:
                         except Exception:
                             logger.warning(
                                 f"[backup] {panel_cfg.alias}: xraySetting не является JSON"
-                            )
-                            return None
-                    elif isinstance(obj, str):
-                        try:
-                            return json.loads(obj) or {}
-                        except Exception:
-                            logger.warning(
-                                f"[backup] {panel_cfg.alias}: xray obj — не JSON-строка"
                             )
                             return None
                     return obj or {}
