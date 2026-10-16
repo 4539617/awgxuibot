@@ -348,8 +348,8 @@ check_yq() {
 get_local_panel_id() {
     # Локальная панель всегда panel0
     if [ -f "config.yaml" ] && check_yq &>/dev/null; then
-        local panel_id=$(yq eval '.panels.panel0 | key' config.yaml 2>/dev/null)
-        if [ -z "$panel_id" ] || [ "$panel_id" = "null" ]; then
+        local panel_exists=$(yq eval '.panels | has("panel0")' config.yaml 2>/dev/null)
+        if [ "$panel_exists" != "true" ]; then
             # Панель panel0 не существует в конфиге
             echo -e "${YELLOW}⚠️  Панель panel0 не найдена в config.yaml${NC}" >&2
             echo ""
