@@ -340,12 +340,7 @@ check_yq() {
             curl -sL --max-time 15 "$YQ_URL" -o /usr/local/bin/yq 2>/dev/null && chmod +x /usr/local/bin/yq
         fi
 
-        # Попытка 3: pip3 install yq (обёртка над PyYAML)
-        if ! command -v yq &> /dev/null && command -v pip3 &> /dev/null; then
-            pip3 install --quiet yq 2>/dev/null
-        fi
-
-        # Попытка 4: snap
+        # Попытка 3: snap
         if ! command -v yq &> /dev/null && command -v snap &> /dev/null; then
             snap install yq 2>/dev/null
         fi
