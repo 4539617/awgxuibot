@@ -7521,16 +7521,6 @@ new Vue({
     },
   },
   mounted() {
-    // Splash is kept visible until getSession() responds — this ensures the
-    // loading indicator stays on screen on slow devices (mobile) while the
-    // initial API round-trip completes, instead of flashing a blank page.
-    const splash = document.getElementById('app-splash');
-    const hideSplash = () => {
-      if (!splash) return;
-      splash.classList.add('splash-hide');
-      setTimeout(() => { if (splash.parentNode) splash.parentNode.removeChild(splash); }, 400);
-    };
-
     // addListener is deprecated and removed in Safari iOS 16+ / Chrome Mobile —
     // use addEventListener('change', …) with a fallback for older browsers.
     if (this.prefersDarkScheme.addEventListener) {
@@ -7554,17 +7544,8 @@ new Vue({
       this.showToast(`${remoteName} disconnected (${reason}). Switched back to local.`, 'error');
     };
 
-    // Safety timeout: if getSession() doesn't resolve within 8 s (e.g. on mobile
-    // where the browser restores a background tab and the TCP connection to the
-    // server has already been reset), force-hide the splash so the login page
-    // is shown instead of an infinite spinner.
-    const splashTimeout = setTimeout(() => {
-      hideSplash();
-    }, 8000);
-
     this.api.getSession()
       .then((session) => {
-        clearTimeout(splashTimeout);
         this.authenticated = session.authenticated;
         this.requiresPassword = session.requiresPassword;
         // First run: no users → show setup modal (non-dismissible)
@@ -7591,12 +7572,8 @@ new Vue({
         // Load dashboard layout + start metrics poller.
         this.loadDashboard();
         this.metricsStartPoller();
-        // Session resolved — now safe to remove the splash screen.
-        hideSplash();
       })
       .catch((err) => {
-        clearTimeout(splashTimeout);
-        hideSplash();
         this.showToast(err.message || err.toString(), 'error');
       });
 
