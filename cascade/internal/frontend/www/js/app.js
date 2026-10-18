@@ -7531,7 +7531,13 @@ new Vue({
       setTimeout(() => { if (splash.parentNode) splash.parentNode.removeChild(splash); }, 400);
     };
 
-    this.prefersDarkScheme.addListener(this.handlePrefersChange);
+    // addListener is deprecated and removed in Safari iOS 16+ / Chrome Mobile —
+    // use addEventListener('change', …) with a fallback for older browsers.
+    if (this.prefersDarkScheme.addEventListener) {
+      this.prefersDarkScheme.addEventListener('change', this.handlePrefersChange);
+    } else if (this.prefersDarkScheme.addListener) {
+      this.prefersDarkScheme.addListener(this.handlePrefersChange);
+    }
     this.setTheme(this.uiTheme);
 
     this.api = new API();
@@ -7598,6 +7604,16 @@ new Vue({
       .then((rememberMeEnabled) => {
         this.rememberMeEnabled = rememberMeEnabled;
       });
+
+    // Mobile browsers restore pages from bfcache (back-forward cache) without
+    // re-running mounted(). The page looks loaded but the session is stale.
+    // pageshow with persisted=true means we came from bfcache → reload the page
+    // so the full init sequence runs again and the login screen appears if needed.
+    window.addEventListener('pageshow', (e) => {
+      if (e.persisted) {
+        window.location.reload();
+      }
+    });
 
     // Load local version info immediately — instant, no GitHub call.
     fetch('./api/version/info')
