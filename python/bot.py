@@ -2245,6 +2245,7 @@ async def show_qr_code(callback_query: types.CallbackQuery):
         # Добавляем кнопки навигации
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 Мои ключи", callback_data="cmd_myclients")],
+            [InlineKeyboardButton(text="📱 Скачать приложение", callback_data="app_download")],
             [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")]
         ])
         
