@@ -1297,6 +1297,26 @@ class UserDatabase:
         except Exception as e:
             logger.error(f"Ошибка сброса pay_awaiting для {user_id}: {e}")
 
+    # ── Флаг «запрос на оплату отправлен кандидату» ─────────────────────────
+    def set_pay_sent(self, user_id: int) -> None:
+        """Пометить что администратор уже отправил кандидату запрос на выбор периода."""
+        self.set_admin_setting(f"pay_sent_{user_id}", "1")
+
+    def get_pay_sent(self, user_id: int) -> bool:
+        """True если запрос на оплату уже был отправлен кандидату."""
+        return self.get_admin_setting(f"pay_sent_{user_id}", "") == "1"
+
+    def clear_pay_sent(self, user_id: int) -> None:
+        """Снять флаг отправленного запроса на оплату."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute(
+                    "DELETE FROM admin_settings WHERE key = ?",
+                    (f"pay_sent_{user_id}",),
+                )
+        except Exception as e:
+            logger.error(f"Ошибка сброса pay_sent для {user_id}: {e}")
+
 
 class Config:
     """Главный класс конфигурации с поддержкой мультипанелей"""

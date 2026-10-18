@@ -2668,6 +2668,7 @@ async def process_reset_pending(callback_query: types.CallbackQuery):
 
     config.users_db.remove_pending_request(user_id)
     config.users_db.clear_pay_awaiting(user_id)  # снимаем флаг незавершённой оплаты
+    config.users_db.clear_pay_sent(user_id)       # снимаем флаг отправленного запроса
 
     await callback_query.message.edit_text(
         f"🔄 Статус сброшен для {user_info}.\n\n"
@@ -2850,6 +2851,8 @@ async def process_pay_request(callback_query: types.CallbackQuery, state: FSMCon
             reply_markup=keyboard,
             parse_mode="HTML",
         )
+        # Помечаем: запрос успешно отправлен кандидату
+        config.users_db.set_pay_sent(user_id)
         await callback_query.message.edit_text(
             callback_query.message.text + "\n\n⏳ Запрос на оплату отправлен кандидату.",
             parse_mode="HTML",
@@ -3022,8 +3025,9 @@ async def process_payment_link_input(message: types.Message, state: FSMContext):
         return
 
     await state.clear()
-    # Снимаем флаг «ожидает ссылку на оплату»
+    # Снимаем оба флага — операция завершена
     config.users_db.clear_pay_awaiting(candidate_id)
+    config.users_db.clear_pay_sent(candidate_id)
 
     try:
         await bot.send_message(
@@ -3829,8 +3833,13 @@ async def show_pending_requests(callback_query: types.CallbackQuery):
             label = f"@{chat.username}" if chat.username else chat.first_name or str(uid)
         except:
             label = str(uid)
-        # Показываем 💳 если кандидат ожидает ссылку на оплату
-        icon = "💳" if config.users_db.get_pay_awaiting(uid) else "🕐"
+        # Иконки: 💳 ожидает ссылку → 📨 запрос отправлен → 🕐 обычный
+        if config.users_db.get_pay_awaiting(uid):
+            icon = "💳"
+        elif config.users_db.get_pay_sent(uid):
+            icon = "📨"
+        else:
+            icon = "🕐"
         buttons.append([InlineKeyboardButton(
             text=f"{icon} {label}",
             callback_data=f"pending_card_{uid}"
