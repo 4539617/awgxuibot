@@ -7521,13 +7521,15 @@ new Vue({
     },
   },
   mounted() {
-    // Remove splash screen — Vue is mounted, content is ready
+    // Splash is kept visible until getSession() responds — this ensures the
+    // loading indicator stays on screen on slow devices (mobile) while the
+    // initial API round-trip completes, instead of flashing a blank page.
     const splash = document.getElementById('app-splash');
-    if (splash) {
-      // Hide immediately — Vue is mounted, content is ready.
+    const hideSplash = () => {
+      if (!splash) return;
       splash.classList.add('splash-hide');
       setTimeout(() => { if (splash.parentNode) splash.parentNode.removeChild(splash); }, 400);
-    }
+    };
 
     this.prefersDarkScheme.addListener(this.handlePrefersChange);
     this.setTheme(this.uiTheme);
@@ -7574,8 +7576,11 @@ new Vue({
         // Load dashboard layout + start metrics poller.
         this.loadDashboard();
         this.metricsStartPoller();
+        // Session resolved — now safe to remove the splash screen.
+        hideSplash();
       })
       .catch((err) => {
+        hideSplash();
         this.showToast(err.message || err.toString(), 'error');
       });
 
