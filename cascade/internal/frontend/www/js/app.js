@@ -7521,6 +7521,13 @@ new Vue({
     },
   },
   mounted() {
+    const splash = document.getElementById('app-splash');
+    const hideSplash = () => {
+      if (!splash) return;
+      splash.classList.add('splash-hide');
+      setTimeout(() => { if (splash && splash.parentNode) splash.parentNode.removeChild(splash); }, 400);
+    };
+
     // addListener is deprecated and removed in Safari iOS 16+ / Chrome Mobile —
     // use addEventListener('change', …) with a fallback for older browsers.
     if (this.prefersDarkScheme.addEventListener) {
@@ -7533,19 +7540,22 @@ new Vue({
     this.api = new API();
 
     // Auto-switch back to local when the remote becomes unreachable.
-    // This fires when a proxy call returns 401 (token revoked/expired) or
-    // 5xx (remote server or network error), preventing a confusing login
-    // window after a remote goes down.
     this.api._onRemoteError = (status, path) => {
-      if (!this.activeRemoteId) return; // already local, ignore
+      if (!this.activeRemoteId) return;
       const remoteName = (this.activeRemote && this.activeRemote.name) || 'Remote server';
       this.switchToLocal();
       const reason = status === 401 ? 'authentication failed' : `error ${status}`;
       this.showToast(`${remoteName} disconnected (${reason}). Switched back to local.`, 'error');
     };
 
+    // Safety net: hide splash after 5 s even if getSession() never resolves
+    // (e.g. stale TCP connection on mobile after background/sleep).
+    const splashTimeout = setTimeout(hideSplash, 5000);
+
     this.api.getSession()
       .then((session) => {
+        clearTimeout(splashTimeout);
+        hideSplash();
         this.authenticated = session.authenticated;
         this.requiresPassword = session.requiresPassword;
         // First run: no users → show setup modal (non-dismissible)
@@ -7574,6 +7584,8 @@ new Vue({
         this.metricsStartPoller();
       })
       .catch((err) => {
+        clearTimeout(splashTimeout);
+        hideSplash();
         this.showToast(err.message || err.toString(), 'error');
       });
 

@@ -55,6 +55,14 @@ class API {
       ? `/remotes/${this._remoteId}/proxy${path}`
       : path;
 
+    // Use a 10 s timeout so fetch never hangs forever on mobile when the
+    // TCP connection has gone stale (background tab, sleep, network switch).
+    // AbortSignal.timeout is supported in all modern browsers (Chrome 103+,
+    // Safari 16+, Firefox 100+); on older browsers we fall back silently.
+    const signal = (typeof AbortSignal !== 'undefined' && AbortSignal.timeout)
+      ? AbortSignal.timeout(10000)
+      : undefined;
+
     const res = await fetch(`${apiBase}${effectivePath}`, {
       method: method.toUpperCase(), // Node.js 22 llhttp: HTTP method must be uppercase
       headers: {
@@ -63,6 +71,7 @@ class API {
       body: body
         ? JSON.stringify(body)
         : undefined,
+      signal,
     });
 
     // If a proxy call fails with an unrecoverable status (401 or 5xx),
