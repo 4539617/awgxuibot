@@ -6236,6 +6236,60 @@ menu_awgbot() {
     done
 }
 
+# ── Безопасная очистка (встроенная копия из disk_analyzer.sh) ──
+safe_cleanup_inline() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   БЕЗОПАСНАЯ ОЧИСТКА${NC}"
+    echo -e "${BLUE}========================================${NC}"
+    echo -e "${YELLOW}ВНИМАНИЕ! Эта очистка безопасна и не удалит важные данные.${NC}\n"
+    read -p "Выполнить безопасную очистку? (y/n): " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo -e "${YELLOW}Очистка отменена${NC}"
+        return
+    fi
+
+    # 1. Docker
+    if command -v docker &>/dev/null && docker info &>/dev/null; then
+        echo -e "${YELLOW}Очистка Docker...${NC}"
+        docker system prune -a -f --volumes 2>/dev/null
+        docker builder prune -a -f 2>/dev/null
+        echo -e "${GREEN}✔ Docker очищен${NC}"
+    fi
+
+    # 2. Логи
+    echo -e "${YELLOW}Очистка логов...${NC}"
+    journalctl --vacuum-size=200M 2>/dev/null
+    find /var/log -name "*.log" -type f -exec truncate -s 0 {} \; 2>/dev/null
+    find /var/log -name "*.gz" -delete 2>/dev/null
+    find /var/log -name "*.1" -delete 2>/dev/null
+    find /var/log -name "*.old" -delete 2>/dev/null
+    echo -e "${GREEN}✔ Логи очищены${NC}"
+
+    # 3. apt
+    echo -e "${YELLOW}Очистка apt кеша...${NC}"
+    apt clean 2>/dev/null
+    apt autoremove -y 2>/dev/null
+    rm -rf /var/lib/apt/lists/* 2>/dev/null
+    rm -rf /var/cache/apt/archives/*.deb 2>/dev/null
+    echo -e "${GREEN}✔ Apt кеш очищен${NC}"
+
+    # 4. Временные файлы
+    echo -e "${YELLOW}Очистка временных файлов...${NC}"
+    rm -rf /tmp/* 2>/dev/null
+    rm -rf /var/tmp/* 2>/dev/null
+    echo -e "${GREEN}✔ Временные файлы удалены${NC}"
+
+    # 5. Кеши
+    echo -e "${YELLOW}Очистка кешей...${NC}"
+    rm -rf ~/.cache/* 2>/dev/null
+    echo -e "${GREEN}✔ Кеши очищены${NC}"
+
+    echo -e "\n${GREEN}✔ Очистка завершена!${NC}"
+    echo -e "\n${BLUE}Результат после очистки:${NC}"
+    df -h / | awk 'NR==2 {printf "   Использовано: %s (%s)\n   Свободно: %s\n", $3, $5, $4}'
+}
+
 # ── Подменю: Обслуживание ─────────────────────────────────────
 menu_maintenance() {
     while true; do
@@ -6243,7 +6297,8 @@ menu_maintenance() {
         echo -e "${BLUE}   Обслуживание${NC}"
         echo -e "${BLUE}========================================${NC}"
         echo -e "${GREEN}1)${NC} Анализ диска и памяти"
-        echo -e "${RED}2)${NC} Удалить ВСЁ (AWG + Боты + 3x-ui + Cascade)"
+        echo -e "${GREEN}2)${NC} Безопасная очистка (автоматическая)"
+        echo -e "${RED}99)${NC} Удалить ВСЁ (AWG + Боты + 3x-ui + Cascade)"
         echo -e "${GREEN}0)${NC} Назад"
         echo -e "${BLUE}========================================${NC}"
         read -p "Введите номер: " sub
@@ -6255,7 +6310,8 @@ menu_maintenance() {
                     echo -e "${RED}❌ Файл disk_analyzer.sh не найден!${NC}"
                 fi
                 ;;
-            2) run_with_sync && remove_all ;;
+            2) safe_cleanup_inline ;;
+            99) run_with_sync && remove_all ;;
             0) return ;;
             *) echo -e "${RED}❌ Неверный выбор${NC}" ;;
         esac
@@ -6275,7 +6331,7 @@ show_menu() {
     echo -e "${GREEN}5)${NC} XUIBOT"
     echo -e "${GREEN}6)${NC} AWGBOT"
     echo -e "${GREEN}7)${NC} Обслуживание"
-    echo -e "${GREEN}8)${NC} Выход"
+    echo -e "${RED}0)${NC} Выход"
     echo -e "${BLUE}========================================${NC}"
 }
 
@@ -6299,7 +6355,7 @@ while true; do
         5) menu_xuibot ;;
         6) menu_awgbot ;;
         7) menu_maintenance ;;
-        8)
+        0)
             echo -e "\n${YELLOW}Переустановка скрипта:${NC}"
             echo -e "  git clone https://github.com/4539617/awgxuibot.git /opt/awgxuibot"
             echo -e "  cd /opt/awgxuibot"
