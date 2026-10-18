@@ -2174,12 +2174,15 @@ update_cascade() {
     fi
 
     echo -e "${YELLOW}🔄 Пересборка и перезапуск Cascade...${NC}"
+    # Останавливаем и удаляем контейнер любым способом (он мог быть запущен
+    # не через этот compose-файл — принудительное удаление надёжнее).
     docker compose -f docker-compose.cascade.yml down 2>/dev/null || true
-    
+    docker rm -f cascade 2>/dev/null || true
+
     # Удаляем старый тегированный образ, чтобы сборка не тянула его слои
     echo -e "${YELLOW}🗑️  Удаление старого образа cascade...${NC}"
     docker rmi cascade:latest 2>/dev/null || true
-    
+
     docker compose -f docker-compose.cascade.yml up -d --build
     # Удаляем dangling-образы, которые появились в результате пересборки
     docker_prune_after_build
