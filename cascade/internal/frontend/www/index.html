@@ -388,6 +388,22 @@
 </head>
 
 <body>
+  <!-- JS error overlay — shows any uncaught error on screen (visible without DevTools) -->
+  <div id="js-error-overlay" style="display:none; position:fixed; inset:0; z-index:99999;
+    background:rgba(0,0,0,0.92); color:#f87171; font-family:monospace; font-size:13px;
+    padding:32px; overflow:auto; white-space:pre-wrap; word-break:break-all;"></div>
+  <script>
+    window.addEventListener('error', function(e) {
+      var o = document.getElementById('js-error-overlay');
+      o.style.display = 'block';
+      o.textContent += '❌ ' + e.message + '\n   at ' + e.filename + ':' + e.lineno + ':' + e.colno + '\n\n';
+    });
+    window.addEventListener('unhandledrejection', function(e) {
+      var o = document.getElementById('js-error-overlay');
+      o.style.display = 'block';
+      o.textContent += '⚠️ Unhandled Promise: ' + (e.reason && (e.reason.message || e.reason)) + '\n\n';
+    });
+  </script>
   <!-- Splash screen: shown until Vue mounts and getSession() resolves -->
   <div id="app-splash">
     <img src="./img/logo-icon.svg" alt="Cascade" style="width:120px; height:120px; opacity:0.95;">
