@@ -75,6 +75,17 @@ https://:443 {
     #   /ADMIN_PATH/api/...   → /api/...    → Cascade API handler
     #
     handle_path /{$ADMIN_PATH}/* {
+        # Compress text responses (HTML, CSS, JS, JSON) before sending to the client.
+        # On a slow mobile connection this reduces transfer size by 60-80%.
+        encode gzip
+
+        # Cache static assets (JS, CSS, images) for 1 hour in the browser.
+        # index.html and API responses are not cached (no-store).
+        @static path *.js *.css *.png *.svg *.ico *.woff *.woff2
+        header @static Cache-Control "public, max-age=3600, immutable"
+        @nocache path /api/* /manifest.json /index.html
+        header @nocache Cache-Control "no-store"
+
         reverse_proxy 127.0.0.1:{$CASCADE_PORT}
     }
 

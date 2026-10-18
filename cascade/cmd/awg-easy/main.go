@@ -14,6 +14,7 @@ import (
 	_ "time/tzdata" // embed timezone database so TZ env var works without system tzdata
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/compress"
 	"github.com/gofiber/fiber/v2/middleware/filesystem"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 
@@ -106,6 +107,13 @@ func main() {
 
 	// Panic recovery — turns panics into HTTP 500 without crashing the server.
 	app.Use(recover.New())
+
+	// Gzip compression for text responses (HTML, CSS, JS, JSON).
+	// Reduces transfer size by 60-80% — critical for slow mobile connections.
+	// API responses and static assets are all compressed automatically.
+	app.Use(compress.New(compress.Config{
+		Level: compress.LevelBestSpeed,
+	}))
 
 	// Request logging:
 	//   normal mode  — log mutations (POST/PATCH/DELETE/PUT) and errors (4xx/5xx).
