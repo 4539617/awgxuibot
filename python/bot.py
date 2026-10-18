@@ -6303,7 +6303,10 @@ _apps_platforms: list = _load_apps_config()
 @dp.callback_query(lambda c: c.data == "app_download")
 async def show_download_menu(callback_query: types.CallbackQuery):
     """Меню выбора платформы для скачивания приложения."""
-    if not is_allowed(callback_query.from_user.id):
+    user_id = callback_query.from_user.id
+    logger.info(f"[app_download] user={user_id}, allowed={is_allowed(user_id)}, msg_has_photo={bool(callback_query.message.photo)}")
+    if not is_allowed(user_id):
+        await callback_query.answer("⛔ Нет доступа", show_alert=True)
         return
     await callback_query.answer()
     rows = [
@@ -6313,11 +6316,15 @@ async def show_download_menu(callback_query: types.CallbackQuery):
     rows.append([InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")])
     markup = InlineKeyboardMarkup(inline_keyboard=rows)
     text = "📱 <b>Скачать приложение</b>\n\nВыберите платформу:"
-    # Если предыдущее сообщение — фото (например QR-код), edit_text недоступен
-    if callback_query.message.photo:
+    try:
+        # Если предыдущее сообщение — фото (например QR-код), edit_text недоступен
+        if callback_query.message.photo:
+            await callback_query.message.answer(text, parse_mode="HTML", reply_markup=markup)
+        else:
+            await callback_query.message.edit_text(text, parse_mode="HTML", reply_markup=markup)
+    except Exception as e:
+        logger.error(f"[app_download] ошибка отправки: {e}")
         await callback_query.message.answer(text, parse_mode="HTML", reply_markup=markup)
-    else:
-        await callback_query.message.edit_text(text, parse_mode="HTML", reply_markup=markup)
 
 
 @dp.callback_query(lambda c: c.data and (
