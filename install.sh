@@ -2183,7 +2183,8 @@ update_cascade() {
     echo -e "${YELLOW}🗑️  Удаление старого образа cascade...${NC}"
     docker rmi cascade:latest 2>/dev/null || true
 
-    docker compose -f docker-compose.cascade.yml up -d --build
+    docker compose -f docker-compose.cascade.yml build --no-cache
+    docker compose -f docker-compose.cascade.yml up -d
     # Удаляем dangling-образы, которые появились в результате пересборки
     docker_prune_after_build
 

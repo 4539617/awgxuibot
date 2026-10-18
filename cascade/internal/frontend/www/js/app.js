@@ -7548,9 +7548,12 @@ new Vue({
       this.showToast(`${remoteName} disconnected (${reason}). Switched back to local.`, 'error');
     };
 
-    // Safety net: hide splash after 5 s even if getSession() never resolves
-    // (e.g. stale TCP connection on mobile after background/sleep).
-    const splashTimeout = setTimeout(hideSplash, 5000);
+    // Safety net: if getSession() never resolves (stale TCP on mobile/iOS),
+    // hide the splash and show the login page after 3 s.
+    const splashTimeout = setTimeout(() => {
+      hideSplash();
+      if (this.authenticated === null) this.authenticated = false;
+    }, 3000);
 
     this.api.getSession()
       .then((session) => {
