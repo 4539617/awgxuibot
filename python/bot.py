@@ -6311,11 +6311,13 @@ async def show_download_menu(callback_query: types.CallbackQuery):
         for i, p in enumerate(_apps_platforms)
     ]
     rows.append([InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")])
-    await callback_query.message.edit_text(
-        "📱 <b>Скачать приложение</b>\n\nВыберите платформу:",
-        parse_mode="HTML",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows)
-    )
+    markup = InlineKeyboardMarkup(inline_keyboard=rows)
+    text = "📱 <b>Скачать приложение</b>\n\nВыберите платформу:"
+    # Если предыдущее сообщение — фото (например QR-код), edit_text недоступен
+    if callback_query.message.photo:
+        await callback_query.message.answer(text, parse_mode="HTML", reply_markup=markup)
+    else:
+        await callback_query.message.edit_text(text, parse_mode="HTML", reply_markup=markup)
 
 
 @dp.callback_query(lambda c: c.data and (
