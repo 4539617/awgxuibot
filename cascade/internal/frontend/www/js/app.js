@@ -7586,7 +7586,15 @@ new Vue({
       .catch((err) => {
         clearTimeout(splashTimeout);
         hideSplash();
+        // If fetch was aborted (timeout/network) treat as unauthenticated so
+        // the login page is shown instead of an infinite spinner.
+        if (err.name === 'AbortError' || err.name === 'TimeoutError') {
+          this.authenticated = false;
+          return;
+        }
         this.showToast(err.message || err.toString(), 'error');
+        // Fallback: also show login page on any other getSession error
+        this.authenticated = false;
       });
 
     this.api.getRememberMeEnabled()

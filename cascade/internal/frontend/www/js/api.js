@@ -55,24 +55,27 @@ class API {
       ? `/remotes/${this._remoteId}/proxy${path}`
       : path;
 
-    // Use a 10 s timeout so fetch never hangs forever on mobile when the
-    // TCP connection has gone stale (background tab, sleep, network switch).
-    // AbortSignal.timeout is supported in all modern browsers (Chrome 103+,
-    // Safari 16+, Firefox 100+); on older browsers we fall back silently.
-    const signal = (typeof AbortSignal !== 'undefined' && AbortSignal.timeout)
-      ? AbortSignal.timeout(10000)
-      : undefined;
+    // Abort fetch after 8 s so a stale TCP connection on mobile never hangs
+    // the page forever. Uses AbortController (supported everywhere) instead of
+    // AbortSignal.timeout which is unavailable on older Safari/iOS.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
 
-    const res = await fetch(`${apiBase}${effectivePath}`, {
-      method: method.toUpperCase(), // Node.js 22 llhttp: HTTP method must be uppercase
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: body
-        ? JSON.stringify(body)
-        : undefined,
-      signal,
-    });
+    let res;
+    try {
+      res = await fetch(`${apiBase}${effectivePath}`, {
+        method: method.toUpperCase(), // Node.js 22 llhttp: HTTP method must be uppercase
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: body
+          ? JSON.stringify(body)
+          : undefined,
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     // If a proxy call fails with an unrecoverable status (401 or 5xx),
     // notify the app so it can switch back to local mode gracefully.
