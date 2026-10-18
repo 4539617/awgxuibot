@@ -7548,8 +7548,17 @@ new Vue({
       this.showToast(`${remoteName} disconnected (${reason}). Switched back to local.`, 'error');
     };
 
+    // Safety timeout: if getSession() doesn't resolve within 8 s (e.g. on mobile
+    // where the browser restores a background tab and the TCP connection to the
+    // server has already been reset), force-hide the splash so the login page
+    // is shown instead of an infinite spinner.
+    const splashTimeout = setTimeout(() => {
+      hideSplash();
+    }, 8000);
+
     this.api.getSession()
       .then((session) => {
+        clearTimeout(splashTimeout);
         this.authenticated = session.authenticated;
         this.requiresPassword = session.requiresPassword;
         // First run: no users → show setup modal (non-dismissible)
@@ -7580,6 +7589,7 @@ new Vue({
         hideSplash();
       })
       .catch((err) => {
+        clearTimeout(splashTimeout);
         hideSplash();
         this.showToast(err.message || err.toString(), 'error');
       });

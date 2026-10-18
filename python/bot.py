@@ -768,9 +768,16 @@ async def on_awg_show_qr(callback_query: types.CallbackQuery):
             key_type_line = "♾ Бессрочный"
 
         # Генерируем QR из текста .conf
-        qr = qrcode.QRCode(box_size=5, border=2)
+        # AWG 3.0 конфиг содержит много данных (параметры обфускации + ключи),
+        # поэтому нужен крупный box_size — иначе QR слишком плотный для камеры мобильного.
+        # ERROR_CORRECT_L минимизирует количество модулей (конфиги не нуждаются в коррекции ошибок).
+        qr = qrcode.QRCode(
+            box_size=10,
+            border=4,
+            error_correction=qrcode.constants.ERROR_CORRECT_L,
+        )
         qr.add_data(peer_conf)
-        qr.make()
+        qr.make(fit=True)
         qr_img = qr.make_image(fill_color="black", back_color="white")
         buf = BytesIO()
         qr_img.save(buf, format="PNG")
