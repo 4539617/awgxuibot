@@ -336,6 +336,38 @@ async def on_create_key(callback_query: types.CallbackQuery):
     )
 
 
+
+# ─── Вспомогательная функция: экран выбора комментария ─────────────────────
+async def _send_comment_choice(chat_id: int, state: FSMContext, key_type: str, context_text: str):
+    """Показывает экран выбора: добавить комментарий или создать без него.
+    key_type: "new" (бессрочный VLESS) | "temp" (временный VLESS) | "awg_new" | "awg_temp"
+    """
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(
+                text="✏️ Добавить комментарий (рекомендуется)",
+                callback_data=f"comment_choice_add:{key_type}",
+            ),
+        ],
+        [
+            InlineKeyboardButton(
+                text="⏭️ Без комментария",
+                callback_data=f"comment_choice_skip:{key_type}",
+            ),
+        ],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")],
+    ])
+    await bot.send_message(
+        chat_id,
+        f"{context_text}\n\n💬 Добавить комментарий к ключу?",
+        parse_mode="HTML",
+        reply_markup=keyboard,
+    )
+    # Сохраняем тип ключа и оставляем состояние — оно будет установлено в хендлере кнопки
+    await state.update_data(_comment_key_type=key_type)
+
+
+
 # ─── Шаг 2: выбор протокола ────────────────────────────────────────────────
 @dp.callback_query(lambda c: c.data in ("key_duration_new", "key_duration_temp"))
 async def on_key_duration(callback_query: types.CallbackQuery):
@@ -557,8 +589,7 @@ async def on_awg_select_cascade(callback_query: types.CallbackQuery, state: FSMC
         if not username:
             username = (callback_query.from_user.first_name or "user").lower().replace(" ", "_")
 
-        import random, string as _string
-        suffix = "".join(random.choices(_string.ascii_lowercase + _string.digits, k=6))
+        suffix = "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
         peer_name = f"{username}_{suffix}"
 
         await status_msg.edit_text(f"⏳ Создаю ключ <b>{peer_name}</b>...", parse_mode="HTML")
@@ -586,9 +617,7 @@ async def on_awg_select_cascade(callback_query: types.CallbackQuery, state: FSMC
             await state.clear()
             return
 
-    # Сохраняем имя пира в БД для отображения
     _awg_peer_save(peer_id, peer_name)
-
     await bot.delete_message(chat_id, status_msg.message_id)
     await state.clear()
 
@@ -653,8 +682,7 @@ async def on_awg_select_duration(callback_query: types.CallbackQuery, state: FSM
     if not username:
         username = (callback_query.from_user.first_name or "user").lower().replace(" ", "_")
 
-    import random, string as _string
-    suffix = "".join(random.choices(_string.ascii_lowercase + _string.digits, k=6))
+    suffix = "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
     peer_name = f"{username}_{suffix}"
 
     status_msg = await bot.send_message(
@@ -663,9 +691,8 @@ async def on_awg_select_duration(callback_query: types.CallbackQuery, state: FSM
         parse_mode="HTML",
     )
 
-    # Вычисляем дату истечения и передаём прямо в Cascade
     expires_dt = datetime.utcnow() + timedelta(days=days)
-    expired_at_str = expires_dt.strftime("%Y-%m-%dT%H:%M:%SZ")  # RFC3339 UTC
+    expired_at_str = expires_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
     try:
         async with CascadeClient(
@@ -698,14 +725,11 @@ async def on_awg_select_duration(callback_query: types.CallbackQuery, state: FSM
         await state.clear()
         return
 
-    # Сохраняем имя пира в БД; срок живёт в Cascade
     _awg_peer_save(peer_id, peer_name)
-
     await bot.delete_message(chat_id, status_msg.message_id)
     await state.clear()
 
     expiry_str = expires_dt.strftime("%Y-%m-%d %H:%M UTC")
-
     cb_qr = f"awg_showqr:{cascade_id}:{iface_id}:{peer_id}"
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📱 Показать QR / Ключ", callback_data=cb_qr)],
@@ -720,6 +744,158 @@ async def on_awg_select_duration(callback_query: types.CallbackQuery, state: FSM
         parse_mode="HTML",
         reply_markup=keyboard,
     )
+
+
+
+# ─── Хендлеры выбора: добавить комментарий или без ─────────────────────────
+
+@dp.callback_query(lambda c: c.data and c.data.startswith("comment_choice_add:"))
+async def on_comment_choice_add(callback_query: types.CallbackQuery, state: FSMContext):
+    """Пользователь выбрал «добавить комментарий» — показываем форму ввода."""
+    if not is_allowed(callback_query.from_user.id):
+        await callback_query.answer("⛔ Доступ запрещен", show_alert=True)
+        return
+    await callback_query.answer()
+    key_type = callback_query.data.split(":", 1)[1]
+
+    if key_type == "new":
+        await state.set_state(NewClientState.waiting_for_comment)
+        await bot.send_message(
+            callback_query.message.chat.id,
+            "📝 Введите комментарий к новому бессрочному ключу\n\n"
+            "Или отправьте /start для отмены",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+            ]),
+        )
+    elif key_type == "temp":
+        await state.set_state(TempKeyState.waiting_for_comment)
+        await bot.send_message(
+            callback_query.message.chat.id,
+            "📝 Введите комментарий к временному ключу\n\n"
+            "Или отправьте /start для отмены",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+            ]),
+        )
+
+
+@dp.callback_query(lambda c: c.data and c.data.startswith("comment_choice_skip:"))
+async def on_comment_choice_skip(callback_query: types.CallbackQuery, state: FSMContext):
+    """Пользователь выбрал «без комментария» — создаём ключ с пустым комментарием."""
+    if not is_allowed(callback_query.from_user.id):
+        await callback_query.answer("⛔ Доступ запрещен", show_alert=True)
+        return
+    await callback_query.answer()
+    key_type = callback_query.data.split(":", 1)[1]
+    data = await state.get_data()
+
+    if key_type == "new":
+        # VLESS бессрочный — имитируем ввод пустого комментария
+        panel_id = data.get('selected_panel_id') or config.panel_manager.get_current_panel_id()
+        if not get_panel_online_status(panel_id):
+            panel_cfg_chk = config.panel_manager.get_panel(panel_id)
+            alias_chk = panel_cfg_chk.alias if panel_cfg_chk else panel_id
+            await callback_query.message.answer(
+                f"🔴 <b>Панель {alias_chk} сейчас недоступна.</b>\n\nПопробуйте позже.",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+                ])
+            )
+            await state.clear()
+            return
+        panel_cfg = config.panel_manager.get_panel(panel_id)
+        username = callback_query.from_user.username
+        if not username:
+            username = (callback_query.from_user.first_name or "user").lower().replace(" ", "_")
+        panel_prefix = (panel_cfg.alias[:5].lower() if panel_cfg and panel_cfg.alias else "panel")
+        random_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
+        email = f"{panel_prefix}_{username}_{random_suffix}"
+        status_msg = await callback_query.message.answer("🔄 Ожидайте...")
+        async with make_panel_client(panel_id) as local_client:
+            result = await local_client.add_client(email, 0, 3650, "")
+            if result['success']:
+                vless_link = await get_client_link(local_client, email, result['uuid'], local_client.config.vpn, panel_cfg.inbound_id)
+                if not vless_link:
+                    await status_msg.edit_text("❌ Ошибка получения ссылки")
+                    await state.clear()
+                    return
+                await bot.delete_message(callback_query.message.chat.id, status_msg.message_id)
+                location = getattr(panel_cfg, 'location_label', '')
+                loc_str = f" [{location}]" if location else ""
+                pid = data.get('selected_panel_id', '')
+                cb_qr = f"showqr_{pid}:{result['uuid']}" if pid else f"showqr_{result['uuid']}"
+                keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="📱 Показать QR / Ключ", callback_data=cb_qr)],
+                    [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")]
+                ])
+                await callback_query.message.answer(
+                    f"🔑 <b>Бессрочный ключ создан</b>\n\n"
+                    f"📡 Панель: <b>{panel_cfg.alias}{loc_str}</b>",
+                    parse_mode="HTML",
+                    reply_markup=keyboard,
+                )
+            else:
+                await status_msg.edit_text(f"❌ Ошибка: {result.get('error')}")
+        await state.clear()
+
+    elif key_type == "temp":
+        # VLESS временный — имитируем ввод пустого комментария
+        panel_id = data.get('selected_panel_id') or config.panel_manager.get_current_panel_id()
+        duration = data.get('temp_duration', '1d')
+        if not get_panel_online_status(panel_id):
+            panel_cfg_chk = config.panel_manager.get_panel(panel_id)
+            alias_chk = panel_cfg_chk.alias if panel_cfg_chk else panel_id
+            await callback_query.message.answer(
+                f"🔴 <b>Панель {alias_chk} сейчас недоступна.</b>\n\nПопробуйте позже.",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+                ])
+            )
+            await state.clear()
+            return
+        duration_map = {
+            '1h': (1/24, '1 час'), '1d': (1, '1 день'),
+            '3d': (3, '3 дня'),    '7d': (7, '7 дней'), '30d': (30, '30 дней')
+        }
+        days, duration_text = duration_map.get(duration, (1, '1 день'))
+        panel_cfg = config.panel_manager.get_panel(panel_id)
+        username = callback_query.from_user.username
+        if not username:
+            username = (callback_query.from_user.first_name or "user").lower().replace(" ", "_")
+        random_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
+        email = f"temp_{username}_{random_suffix}"
+        status_msg = await callback_query.message.answer(f"🔄 Создаю временный ключ на {duration_text}...")
+        async with make_panel_client(panel_id) as local_client:
+            result = await local_client.add_client(email, 0, days, f"Временный {duration_text}")
+            if result['success']:
+                vless_link = await get_client_link(local_client, email, result['uuid'], local_client.config.vpn, panel_cfg.inbound_id)
+                if not vless_link:
+                    await status_msg.edit_text("❌ Ошибка получения ссылки")
+                    await state.clear()
+                    return
+                await bot.delete_message(callback_query.message.chat.id, status_msg.message_id)
+                location = getattr(panel_cfg, 'location_label', '')
+                loc_str = f" [{location}]" if location else ""
+                pid = data.get('selected_panel_id', '')
+                cb_qr = f"showqr_{pid}:{result['uuid']}" if pid else f"showqr_{result['uuid']}"
+                keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="📱 Показать QR / Ключ", callback_data=cb_qr)],
+                    [InlineKeyboardButton(text="🏠 В главное меню", callback_data="back_to_start")]
+                ])
+                await callback_query.message.answer(
+                    f"⏰ <b>Временный ключ на {duration_text} создан</b>\n\n"
+                    f"📡 Панель: <b>{panel_cfg.alias}{loc_str}</b>",
+                    parse_mode="HTML",
+                    reply_markup=keyboard,
+                )
+            else:
+                await status_msg.edit_text(f"❌ Ошибка: {result.get('error')}")
+        await state.clear()
 
 
 @dp.callback_query(lambda c: c.data and c.data.startswith("awg_showqr:"))
@@ -846,18 +1022,9 @@ async def on_key_proto_vless(callback_query: types.CallbackQuery, state: FSMCont
         if len(online_available) == 1:
             panel_id, panel_cfg = online_available[0]
             await state.update_data(selected_panel_id=panel_id)
-            await state.set_state(NewClientState.waiting_for_comment)
             location = getattr(panel_cfg, 'location_label', '')
             loc_str = f" [{location}]" if location else ""
-            await bot.send_message(
-                chat_id,
-                f"📝 Введите комментарий к новому бессрочному ключу\n"
-                f"📡 Панель: <b>{panel_cfg.alias}{loc_str}</b>",
-                parse_mode="HTML",
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
-                ]),
-            )
+            await _send_comment_choice(chat_id, state, "new", f"📡 Панель: <b>{panel_cfg.alias}{loc_str}</b>")
             return
         await send_panel_select(
             chat_id,
@@ -957,18 +1124,9 @@ async def on_select_panel_new(callback_query: types.CallbackQuery, state: FSMCon
         return
     await callback_query.answer()
     await state.update_data(selected_panel_id=panel_id)
-    await state.set_state(NewClientState.waiting_for_comment)
     location = getattr(panel_cfg, 'location_label', '')
     loc_str = f" [{location}]" if location else ""
-    await bot.send_message(
-        callback_query.message.chat.id,
-        f"📝 Введите комментарий к новому бессрочному ключу\n"
-        f"📡 Панель: <b>{panel_cfg.alias}{loc_str}</b>",
-        parse_mode="HTML",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
-        ])
-    )
+    await _send_comment_choice(callback_query.message.chat.id, state, "new", f"📡 Панель: <b>{panel_cfg.alias}{loc_str}</b>")
 
 
 # ─── Хендлер выбора панели для временного ключа ────────────────────────────
@@ -1212,12 +1370,7 @@ async def cmd_new(message: Message, state: FSMContext):
     if len(online_available) == 1:
         panel_id, panel_cfg = online_available[0]
         await state.update_data(selected_panel_id=panel_id)
-        await state.set_state(NewClientState.waiting_for_comment)
-        await message.answer(
-            f"📝 Введите комментарий к новому бессрочному ключу\n"
-            f"📡 Панель: <b>{panel_cfg.alias}</b>",
-            parse_mode="HTML"
-        )
+        await _send_comment_choice(message.chat.id, state, "new", f"📡 Панель: <b>{panel_cfg.alias}</b>")
         return
     await send_panel_select(
         message.chat.id,
@@ -1357,17 +1510,10 @@ async def process_tempkey_duration(callback_query: types.CallbackQuery, state: F
     panel_cfg = config.panel_manager.get_panel(panel_id)
     panel_alias = panel_cfg.alias if panel_cfg else "N/A"
     await callback_query.answer()
-    await bot.send_message(
-        callback_query.message.chat.id,
-        f"⏰ <b>Временный ключ на {duration_text}</b>\n"
-        f"📡 Панель: <b>{panel_alias}</b>\n\n"
-        f"📝 Введите комментарий к ключу:",
-        parse_mode="HTML",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
-        ])
+    await _send_comment_choice(
+        callback_query.message.chat.id, state, "temp",
+        f"⏰ <b>Временный ключ на {duration_text}</b>\n📡 Панель: <b>{panel_alias}</b>"
     )
-    await state.set_state(TempKeyState.waiting_for_comment)
 
 
 @dp.message(TempKeyState.waiting_for_comment)
@@ -4338,16 +4484,7 @@ async def callback_cmd_new(callback_query: types.CallbackQuery, state: FSMContex
     if len(online_available) == 1:
         panel_id, panel_cfg = online_available[0]
         await state.update_data(selected_panel_id=panel_id)
-        await state.set_state(NewClientState.waiting_for_comment)
-        await bot.send_message(
-            callback_query.message.chat.id,
-            f"📝 Введите комментарий к новому бессрочному ключу\n"
-            f"📡 Панель: <b>{panel_cfg.alias}</b>",
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
-            ])
-        )
+        await _send_comment_choice(callback_query.message.chat.id, state, "new", f"📡 Панель: <b>{panel_cfg.alias}</b>")
         return
     await send_panel_select(
         callback_query.message.chat.id,
