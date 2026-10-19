@@ -1094,6 +1094,7 @@ new Vue({
           if (res && res.totp_required) {
             this.totpRequired = true;
             this.totpCode = '';
+            this.$nextTick(() => this.$refs.totpInput?.focus());
             return; // stay on login screen — show TOTP input
           }
           // Fully authenticated (no TOTP or TOTP already done).

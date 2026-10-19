@@ -10399,6 +10399,7 @@
             Enter the 6-digit code from your authenticator app
           </p>
           <input type="text" inputmode="numeric" maxlength="6" placeholder="000000"
+            ref="totpInput"
             v-model="totpCode"
             @keyup.enter="loginStep2"
             class="px-3 py-2 text-sm bg-black text-white mb-5 border-2 border-neutral-700 rounded-lg w-full text-center tracking-widest font-mono text-lg focus:border-red-800 outline-none" />
