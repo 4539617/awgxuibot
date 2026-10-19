@@ -99,8 +99,18 @@ func systemDeploy(c *fiber.Ctx) error {
 		}
 
 		// Step 2: docker compose up -d --build
-		log.Printf("%s: running docker compose -f %s up -d --build", logPrefix, composeFile)
-		dcCmd := exec.Command("docker", "compose", "-f", composeFile, "up", "-d", "--build")
+		// Try the V2 plugin first ("docker compose"), fall back to the standalone
+		// V1 binary ("docker-compose") for hosts that don't have the plugin.
+		composeArgs := []string{"-f", composeFile, "up", "-d", "--build"}
+		var dcCmd *exec.Cmd
+		if err := exec.Command("docker", "compose", "version").Run(); err == nil {
+			log.Printf("%s: running docker compose -f %s up -d --build", logPrefix, composeFile)
+			dcCmd = exec.Command("docker", append([]string{"compose"}, composeArgs...)...)
+		} else {
+			log.Printf("%s: docker compose plugin not found, falling back to docker-compose", logPrefix)
+			log.Printf("%s: running docker-compose -f %s up -d --build", logPrefix, composeFile)
+			dcCmd = exec.Command("docker-compose", composeArgs...)
+		}
 		dcCmd.Dir = repoRoot
 		dcCmd.Stdout = os.Stdout
 		dcCmd.Stderr = os.Stderr
