@@ -2358,6 +2358,7 @@ new Vue({
       this.api.setRemote(remote.id);
       this.activeRemoteId = remote.id;
       // Reset current page data so stale local data isn't shown.
+      this.activeInterfaceId = null;
       this.tunnelInterfaces = [];
       this.allPeers = [];
       this.gateways = [];
@@ -2380,6 +2381,7 @@ new Vue({
     switchToLocal() {
       this.api.clearRemote();
       this.activeRemoteId = null;
+      this.activeInterfaceId = null;
       this.tunnelInterfaces = [];
       this.allPeers = [];
       this.gateways = [];
