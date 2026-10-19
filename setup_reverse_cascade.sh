@@ -13,10 +13,12 @@ set -euo pipefail
 # ─────────────────────────────────────────────────────────────────────────────
 
 RU_URL="https://157.22.173.47:2053"      # адрес панели российского сервера
-RU_USER="admin"                           # логин
-RU_PASS="password"                        # пароль
+RU_TOKEN=""                               # API токен (рекомендуется)
+RU_USER="admin"                           # логин (если токен не задан)
+RU_PASS="password"                        # пароль (если токен не задан)
 
 VPS_URL="https://VPS_IP:2053"            # адрес панели VPS
+VPS_TOKEN=""                              # API токен (рекомендуется)
 VPS_USER="admin"
 VPS_PASS="password"
 
@@ -66,31 +68,47 @@ random_spider_x() {
     echo "/$(openssl rand -hex 8)"
 }
 
-# curl с сессионными куками
-CURL_OPTS=(-sk --cookie-jar /tmp/3xui_ru.cook --cookie /tmp/3xui_ru.cook)
-CURL_OPTS_VPS=(-sk --cookie-jar /tmp/3xui_vps.cook --cookie /tmp/3xui_vps.cook)
+# curl базовые опции
+CURL_BASE=(-sk)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # API ФУНКЦИИ — российский сервер
 # ─────────────────────────────────────────────────────────────────────────────
 
-ru_login() {
-    log "Логин на российском сервере $RU_URL ..."
-    local resp
-    resp=$(curl "${CURL_OPTS[@]}" -X POST "$RU_URL/login" \
-        -H "Content-Type: application/json" \
-        -d "{\"username\":\"$RU_USER\",\"password\":\"$RU_PASS\"}")
-    echo "$resp" | jq -e '.success == true' &>/dev/null \
-        || die "Не удалось войти на российский сервер: $resp"
-    log "  ✓ Авторизован"
+# Авторизационные заголовки для каждого сервера (заполняются в ru_auth/vps_auth)
+RU_AUTH_HEADER=()
+VPS_AUTH_HEADER=()
+
+ru_auth() {
+    if [[ -n "$RU_TOKEN" ]]; then
+        log "Авторизация на российском сервере по токену ..."
+        RU_AUTH_HEADER=(-H "Authorization: Bearer $RU_TOKEN")
+        # Проверка токена
+        local resp
+        resp=$(curl "${CURL_BASE[@]}" "${RU_AUTH_HEADER[@]}" "$RU_URL/xui/API/inbounds" -H "Accept: application/json")
+        echo "$resp" | jq -e '.success == true' &>/dev/null \
+            || die "Токен российского сервера не принят: $resp"
+        log "  ✓ Авторизован по токену"
+    else
+        log "Логин на российском сервере по логину/паролю ..."
+        local resp
+        resp=$(curl "${CURL_BASE[@]}" --cookie-jar /tmp/3xui_ru.cook --cookie /tmp/3xui_ru.cook \
+            -X POST "$RU_URL/login" \
+            -H "Content-Type: application/json" \
+            -d "{\"username\":\"$RU_USER\",\"password\":\"$RU_PASS\"}")
+        echo "$resp" | jq -e '.success == true' &>/dev/null \
+            || die "Не удалось войти на российский сервер: $resp"
+        RU_AUTH_HEADER=(--cookie /tmp/3xui_ru.cook)
+        log "  ✓ Авторизован по логину/паролю"
+    fi
 }
 
 ru_get() {
-    curl "${CURL_OPTS[@]}" -X GET "$RU_URL$1" -H "Accept: application/json"
+    curl "${CURL_BASE[@]}" "${RU_AUTH_HEADER[@]}" -X GET "$RU_URL$1" -H "Accept: application/json"
 }
 
 ru_post() {
-    curl "${CURL_OPTS[@]}" -X POST "$RU_URL$1" \
+    curl "${CURL_BASE[@]}" "${RU_AUTH_HEADER[@]}" -X POST "$RU_URL$1" \
         -H "Content-Type: application/json" \
         -d "$2"
 }
@@ -233,23 +251,36 @@ ru_create_inbound() {
 # API ФУНКЦИИ — VPS сервер
 # ─────────────────────────────────────────────────────────────────────────────
 
-vps_login() {
-    log "Логин на VPS $VPS_URL ..."
-    local resp
-    resp=$(curl "${CURL_OPTS_VPS[@]}" -X POST "$VPS_URL/login" \
-        -H "Content-Type: application/json" \
-        -d "{\"username\":\"$VPS_USER\",\"password\":\"$VPS_PASS\"}")
-    echo "$resp" | jq -e '.success == true' &>/dev/null \
-        || die "Не удалось войти на VPS: $resp"
-    log "  ✓ Авторизован"
+vps_auth() {
+    if [[ -n "$VPS_TOKEN" ]]; then
+        log "Авторизация на VPS по токену ..."
+        VPS_AUTH_HEADER=(-H "Authorization: Bearer $VPS_TOKEN")
+        # Проверка токена
+        local resp
+        resp=$(curl "${CURL_BASE[@]}" "${VPS_AUTH_HEADER[@]}" "$VPS_URL/xui/API/inbounds" -H "Accept: application/json")
+        echo "$resp" | jq -e '.success == true' &>/dev/null \
+            || die "Токен VPS не принят: $resp"
+        log "  ✓ Авторизован по токену"
+    else
+        log "Логин на VPS по логину/паролю ..."
+        local resp
+        resp=$(curl "${CURL_BASE[@]}" --cookie-jar /tmp/3xui_vps.cook --cookie /tmp/3xui_vps.cook \
+            -X POST "$VPS_URL/login" \
+            -H "Content-Type: application/json" \
+            -d "{\"username\":\"$VPS_USER\",\"password\":\"$VPS_PASS\"}")
+        echo "$resp" | jq -e '.success == true' &>/dev/null \
+            || die "Не удалось войти на VPS: $resp"
+        VPS_AUTH_HEADER=(--cookie /tmp/3xui_vps.cook)
+        log "  ✓ Авторизован по логину/паролю"
+    fi
 }
 
 vps_get() {
-    curl "${CURL_OPTS_VPS[@]}" -X GET "$VPS_URL$1" -H "Accept: application/json"
+    curl "${CURL_BASE[@]}" "${VPS_AUTH_HEADER[@]}" -X GET "$VPS_URL$1" -H "Accept: application/json"
 }
 
 vps_post() {
-    curl "${CURL_OPTS_VPS[@]}" -X POST "$VPS_URL$1" \
+    curl "${CURL_BASE[@]}" "${VPS_AUTH_HEADER[@]}" -X POST "$VPS_URL$1" \
         -H "Content-Type: application/json" \
         -d "$2"
 }
@@ -377,8 +408,8 @@ main() {
     RU_IP=$(echo "$RU_URL" | sed -E 's|https?://([^:/]+).*|\1|')
 
     # Авторизация
-    ru_login
-    vps_login
+    ru_auth
+    vps_auth
 
     # Генерируем параметры
     UUID=$(uuidgen | tr '[:upper:]' '[:lower:]')
