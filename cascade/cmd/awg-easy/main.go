@@ -52,6 +52,7 @@ func main() {
 	cfg := parseConfig()
 
 	log.Printf("Cascade %s (%s)", version.Version, version.GitCommit)
+	version.Start()
 	if awgparams.IsUserspaceMode() {
 		log.Printf("AmneziaWG run mode: userspace (amneziawg-go)")
 	} else {

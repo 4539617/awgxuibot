@@ -730,6 +730,20 @@
                 </svg>
                 API Guide
               </a>
+              <!-- GitHub releases link — shows latest version from GitHub; yellow when update available -->
+              <a v-if="versionInfo && versionInfo.latestVersion"
+                :href="versionInfo.releaseURL || 'https://github.com/JohnnyVBut/cascade/releases'"
+                target="_blank"
+                :title="versionInfo.updateAvailable ? ('New version available: ' + versionInfo.latestVersion) : ('Latest release: ' + versionInfo.latestVersion)"
+                style="display:inline-flex; align-items:center; gap:3px; padding:1px 6px; border-radius:999px; font-size:11px; font-weight:500; text-decoration:none; flex-shrink:0; border:1px solid transparent;"
+                :style="versionInfo.updateAvailable
+                  ? { background: '#f59e0b', color: '#fff', borderColor: 'transparent' }
+                  : { background: theme==='dark' ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)', color: theme==='dark' ? '#a3a3a3' : '#6b7280', borderColor: theme==='dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)' }">
+                <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" style="opacity:0.8">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M7 7h.01M3 7l9-4 9 4v5a9 9 0 01-9 9 9 9 0 01-9-9V7z"/>
+                </svg>
+                {{ versionInfo.updateAvailable ? '↑ ' + versionInfo.latestVersion : versionInfo.latestVersion }}
+              </a>
               <!-- Check for updates button (shown only when no update available) -->
               <button v-if="versionInfo && !versionInfo.updateAvailable"
                 @click="checkForUpdates"
@@ -741,18 +755,10 @@
                 <span v-else>↻</span>
               </button>
 
-              <!-- Update available badge -->
-              <span v-if="versionInfo && versionInfo.updateAvailable && !updateBannerDismissed"
-                style="display:inline-flex; align-items:center; gap:3px; flex-shrink:0;">
-                <a :href="versionInfo.releaseURL || 'https://github.com/JohnnyVBut/cascade/releases'"
-                  target="_blank"
-                  :title="'New version available: ' + versionInfo.latestVersion + '\nRun: cd /root/cascade && ./deploy/update.sh'"
-                  style="display:inline-flex; align-items:center; gap:3px; padding:1px 7px; border-radius:999px; font-size:11px; font-weight:600; text-decoration:none; background:#f59e0b; color:#fff;">
-                  ↑ {{ versionInfo.latestVersion }}
-                </a>
-                <button @click="updateBannerDismissed = true" title="Dismiss"
-                  style="display:inline-flex; align-items:center; justify-content:center; width:14px; height:14px; border-radius:50%; border:none; background:rgba(0,0,0,0.15); color:#9ca3af; font-size:10px; cursor:pointer; padding:0; line-height:1;">×</button>
-              </span>
+              <!-- Update available badge — dismiss button only -->
+              <button v-if="versionInfo && versionInfo.updateAvailable && !updateBannerDismissed"
+                @click="updateBannerDismissed = true" title="Dismiss update notification"
+                style="display:inline-flex; align-items:center; justify-content:center; width:14px; height:14px; border-radius:50%; border:none; background:rgba(245,158,11,0.25); color:#f59e0b; font-size:10px; cursor:pointer; padding:0; line-height:1; flex-shrink:0;">×</button>
             </div>
           </div>
           </div><!-- /nav-content -->

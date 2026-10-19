@@ -21,7 +21,7 @@ COPY internal/ ./internal/
 # Version metadata injected at build time so the binary knows its own version.
 # ARG VERSION defaults to "dev" for local builds without explicit --build-arg.
 # CI passes the git tag (e.g. "v1.2.3") and short commit hash.
-ARG VERSION=dev
+ARG VERSION=v0.9.8
 ARG GIT_COMMIT=unknown
 
 # Build static binary.
