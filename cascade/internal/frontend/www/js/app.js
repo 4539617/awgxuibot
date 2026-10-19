@@ -252,6 +252,8 @@ new Vue({
     selectedInterfacePeers: [],
     allPeers: [],            // dashboard: flat list of peers from all interfaces
     peersLoading: false,     // true while peers are being fetched after a tab switch
+    _peersSeq: 0,            // incremented on every refresh call; stale responses are discarded
+    _allPeersSeq: 0,         // same for refreshAllPeers
     showInterfaceCreate: false,
     createMode: 'quick',        // 'quick' | 'manual' — controls which form is shown in the create modal
     importConfForm: { name: '', conf: '', fileName: '' },
@@ -5722,11 +5724,21 @@ new Vue({
     async refreshPeers({ updateCharts = false } = {}) {
       if (!this.authenticated || !this.activeInterfaceId) return;
 
+      // Capture the interface this call is for and a sequence number so that
+      // a slow response arriving after the user has switched to another tab
+      // does not overwrite the newly-loaded data (race condition fix).
+      const seq = ++this._peersSeq;
+      const ifaceId = this.activeInterfaceId;
+
       try {
-        const res = await this.api.getTunnelInterfacePeers({ interfaceId: this.activeInterfaceId });
+        const res = await this.api.getTunnelInterfacePeers({ interfaceId: ifaceId });
+
+        // Discard stale response: user switched tab while this request was in-flight.
+        if (seq !== this._peersSeq || ifaceId !== this.activeInterfaceId) return;
+
         const peers = (res.peers || []).map(peer => {
           // Tag with interfaceId so actions work from dashboard too
-          peer.interfaceId = this.activeInterfaceId;
+          peer.interfaceId = ifaceId;
 
           // Parse dates
           peer.createdAt = peer.createdAt ? new Date(peer.createdAt) : null;
@@ -5778,11 +5790,13 @@ new Vue({
           return peer;
         });
 
+        // Final stale check after synchronous mapping (belt-and-suspenders).
+        if (seq !== this._peersSeq || ifaceId !== this.activeInterfaceId) return;
         this.selectedInterfacePeers = peers;
       } catch (err) {
-        console.error('refreshPeers failed:', err);
+        if (seq === this._peersSeq) console.error('refreshPeers failed:', err);
       } finally {
-        this.peersLoading = false;
+        if (seq === this._peersSeq) this.peersLoading = false;
       }
     },
 
@@ -5794,6 +5808,11 @@ new Vue({
       if (!this.authenticated) return;
       // Also refresh remote widget data in parallel (fire-and-forget, non-blocking)
       this.refreshRemoteWidgets().catch(console.error);
+
+      // Sequence guard: if the user switches to an interface tab (or another
+      // refreshAllPeers starts) while this one is mid-flight, discard the result.
+      const seq = ++this._allPeersSeq;
+
       try {
       const all = [];
       for (const iface of this.tunnelInterfaces) {
@@ -5850,9 +5869,12 @@ new Vue({
           // skip failed interface silently
         }
       }
-      this.allPeers = all;
+      // Discard result if a newer call has started or user switched to a specific tab.
+      if (seq === this._allPeersSeq && !this.activeInterfaceId) {
+        this.allPeers = all;
+      }
       } finally {
-        this.peersLoading = false;
+        if (seq === this._allPeersSeq) this.peersLoading = false;
       }
     },
 
@@ -7746,11 +7768,15 @@ new Vue({
     },
     activeInterfaceId(newId) {
       if (newId) {
+        // Invalidate any in-flight refreshAllPeers so its result is discarded.
+        this._allPeersSeq++;
         this.selectedInterface = this.currentInterface;
         this.selectedInterfacePeers = [];
         this.peersLoading = true;
         this.refreshPeers({ updateCharts: false });
       } else {
+        // Invalidate any in-flight refreshPeers so its result is discarded.
+        this._peersSeq++;
         this.selectedInterface = null;
         this.selectedInterfacePeers = [];
         this.allPeers = [];
