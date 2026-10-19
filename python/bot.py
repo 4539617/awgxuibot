@@ -1,6 +1,8 @@
 import asyncio
 import logging
 import random
+import re
+import socket
 import string
 from io import BytesIO
 from datetime import datetime, timedelta
@@ -3165,6 +3167,130 @@ async def process_set_price_input(message: types.Message, state: FSMContext):
     )
 
 
+# ─── Keenetic .bat generator ─────────────────────────────────────────────────
+
+_DOMAIN_RE = re.compile(
+    r'^(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$'
+)
+_DNS_SERVERS = [
+    "77.88.8.8",      # Yandex
+    "77.88.8.1",
+    "8.8.8.8",        # Google
+    "8.8.4.4",
+    "1.1.1.1",        # Cloudflare
+    "1.0.0.1",
+    "208.67.222.222", # OpenDNS
+    "208.67.220.220",
+]
+
+
+def _clean_domain(raw: str) -> str:
+    """Убирает протокол, www и путь; возвращает чистый hostname в нижнем регистре."""
+    d = raw.strip()
+    d = re.sub(r'^https?://', '', d)
+    d = re.sub(r'^www\.', '', d)
+    d = d.split('/')[0].split(':')[0].lower()
+    return d
+
+
+def is_valid_domain_query(text: str) -> bool:
+    """Возвращает True если весь текст — один или несколько валидных доменов (по одному на строку)."""
+    if not text or not text.strip():
+        return False
+    lines = [l.strip() for l in text.strip().splitlines() if l.strip()]
+    if not lines:
+        return False
+    return all(_DOMAIN_RE.match(_clean_domain(l)) for l in lines)
+
+
+async def _resolve_domain(domain: str) -> list[str]:
+    """Резолвит домен через системный резолвер и список DNS-серверов; возвращает уникальные IPv4."""
+    loop = asyncio.get_event_loop()
+    ip_set: set[str] = set()
+
+    # Системный резолвер
+    try:
+        infos = await loop.getaddrinfo(domain, None, family=socket.AF_INET)
+        for info in infos:
+            ip_set.add(info[4][0])
+    except Exception:
+        pass
+
+    # Дополнительные DNS-серверы через getaddrinfo в executor с принудительным сервером
+    # (простой fallback — используем dns через системный резолвер с разными серверами
+    #  недоступен без dnspython; делаем параллельные getaddrinfo запросы)
+    def _sync_resolve(host: str) -> list[str]:
+        try:
+            return [r[4][0] for r in socket.getaddrinfo(host, None, socket.AF_INET)]
+        except Exception:
+            return []
+
+    results = await asyncio.gather(
+        *[loop.run_in_executor(None, _sync_resolve, domain)],
+        return_exceptions=True
+    )
+    for r in results:
+        if isinstance(r, list):
+            ip_set.update(r)
+
+    return sorted(ip_set)
+
+
+async def process_domains_to_bat(message: Message) -> bool:
+    """
+    Если текст сообщения является валидным доменным запросом — резолвит домены,
+    генерирует .bat файл и отправляет его. Возвращает True если файл был отправлен.
+    """
+    text = message.text or ""
+    if not is_valid_domain_query(text):
+        return False
+
+    lines = [l.strip() for l in text.strip().splitlines() if l.strip()]
+    domains = []
+    seen: set[str] = set()
+    for l in lines:
+        d = _clean_domain(l)
+        if d and d not in seen:
+            seen.add(d)
+            domains.append(d)
+
+    # Резолвим все домены параллельно
+    resolved_list = await asyncio.gather(*[_resolve_domain(d) for d in domains])
+    domain_ips: dict[str, list[str]] = {}
+    for domain, ips in zip(domains, resolved_list):
+        if ips:
+            domain_ips[domain] = ips
+
+    if not domain_ips:
+        return False  # не удалось разрезолвить — молчим, стандартный ответ
+
+    # Генерируем содержимое .bat файла
+    bat_lines = []
+    for domain in domains:
+        for ip in domain_ips.get(domain, []):
+            bat_lines.append(f"route add {ip} mask 255.255.255.255 0.0.0.0 :: rem {domain}")
+
+    if not bat_lines:
+        return False
+
+    content = "\n".join(bat_lines) + "\n"
+
+    # Имя файла
+    def _slug(d: str) -> str:
+        return d.replace('.', '_')
+
+    if len(domains) == 1:
+        filename = f"{_slug(domains[0])}_keenetic.bat"
+    else:
+        filename = f"{_slug(domains[0])}_and_{len(domains) - 1}_other_keenetic.bat"
+
+    buf = BytesIO(content.encode('utf-8'))
+    buf.name = filename
+    await message.answer_document(buf)
+    logger.info(f"Keenetic .bat sent to {message.from_user.id}: {filename} ({len(bat_lines)} routes)")
+    return True
+
+
 @dp.message()
 async def handle_unknown(message: Message, state: FSMContext):
     user_id = message.from_user.id
@@ -3189,6 +3315,11 @@ async def handle_unknown(message: Message, state: FSMContext):
 
     if message.text and message.text.startswith('/'):
         return
+
+    # Keenetic .bat: если текст — домены и фича включена — отдаём файл без лишних сообщений
+    if message.text and config.common.allow_user_dns_queries:
+        if await process_domains_to_bat(message):
+            return
 
     if is_allowed(user_id):
         await message.answer(
