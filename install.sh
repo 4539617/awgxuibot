@@ -6302,6 +6302,7 @@ menu_maintenance() {
         echo -e "${BLUE}========================================${NC}"
         echo -e "${GREEN}1)${NC} Анализ диска и памяти"
         echo -e "${GREEN}2)${NC} Безопасная очистка (автоматическая)"
+        echo -e "${GREEN}3)${NC} Настройка обратного каскада 3x-ui"
         echo -e "${RED}99)${NC} Удалить ВСЁ (AWG + Боты + 3x-ui + Cascade)"
         echo -e "${GREEN}0)${NC} Назад"
         echo -e "${BLUE}========================================${NC}"
@@ -6315,6 +6316,16 @@ menu_maintenance() {
                 fi
                 ;;
             2) safe_cleanup_inline ;;
+            3)
+                if [ -f "${WORK_DIR}/setup_reverse_cascade.sh" ]; then
+                    bash "${WORK_DIR}/setup_reverse_cascade.sh"
+                elif [ -f "setup_reverse_cascade.sh" ]; then
+                    bash setup_reverse_cascade.sh
+                else
+                    echo -e "${RED}❌ Файл setup_reverse_cascade.sh не найден!${NC}"
+                    echo -e "${YELLOW}Ожидается: ${WORK_DIR}/setup_reverse_cascade.sh${NC}"
+                fi
+                ;;
             99) run_with_sync && remove_all ;;
             0) return ;;
             *) echo -e "${RED}❌ Неверный выбор${NC}" ;;
