@@ -1242,23 +1242,18 @@ async def cmd_start(message: Message, state: FSMContext):
             # Уведомления администратору отключены
             # Пользователь добавлен автоматически при наличии активных ключей
             
-            # Живая проверка доступности панелей перед показом меню
-            await _refresh_panel_states_now()
-
             # Показываем меню пользователя с кнопками
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
                 [
                     InlineKeyboardButton(text="🔑 Создать ключ", callback_data="create_key"),
+                    InlineKeyboardButton(text="📡 Статус", callback_data="status_servers"),
                 ],
                 [
                     InlineKeyboardButton(text="🗝 Мои ключи", callback_data="cmd_myclients")
                 ]
             ])
-
-            panels_block = _build_panels_block()
             await message.answer(
-                f"👤 <b>Пользователь:</b> {username or first_name}\n\n"
-                f"{panels_block}",
+                f"👤 <b>Пользователь:</b> {username or first_name}\n\n",
                 reply_markup=keyboard,
                 parse_mode="HTML"
             )
@@ -1274,13 +1269,10 @@ async def cmd_start(message: Message, state: FSMContext):
 
     if is_allowed(user_id):
         if is_admin(user_id):
-            # Живая проверка доступности панелей перед показом меню администратора
-            await _refresh_panel_states_now()
-
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
                 [
                     InlineKeyboardButton(text="🔑 Создать ключ", callback_data="create_key"),
-                    InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_main_menu"),
+                    InlineKeyboardButton(text="📡 Статус", callback_data="status_servers"),
                 ],
                 [
                     InlineKeyboardButton(text="🗝 Мои ключи", callback_data="cmd_myclients"),
@@ -1290,37 +1282,25 @@ async def cmd_start(message: Message, state: FSMContext):
                     InlineKeyboardButton(text="⚙️ Администрирование", callback_data="server_status"),
                 ]
             ])
-
-            panels_block = _build_panels_block_admin()
-            cascade_block = _build_cascade_block_admin()
-            xui_header = "3X-UI:\n" if panels_block else ""
-            cascade_header = "CASCADE:\n" if cascade_block else ""
             await message.answer(
                 f"👑 Администратор\n\n"
-                f"{xui_header}{panels_block}"
-                f"{cascade_header}{cascade_block}"
                 f"📱 Выберите действие:",
                 reply_markup=keyboard,
                 parse_mode="HTML"
             )
         else:
-            # Живая проверка доступности панелей перед показом меню
-            await _refresh_panel_states_now()
-
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
                 [
                     InlineKeyboardButton(text="🔑 Создать ключ", callback_data="create_key"),
+                    InlineKeyboardButton(text="📡 Статус", callback_data="status_servers"),
                 ],
                 [
                     InlineKeyboardButton(text="🗝 Мои ключи", callback_data="cmd_myclients"),
                     InlineKeyboardButton(text="📱 Скачать приложение", callback_data="app_download"),
                 ]
             ])
-
-            panels_block = _build_panels_block()
             await message.answer(
                 f"👤 <b>Пользователь:</b> {username or first_name}\n\n"
-                f"{panels_block}"
                 f"📲 <b>Как начать:</b>\n"
                 f"1. Скачайте приложение\n"
                 f"2. Создайте ключ или выберите его из <b>Мои ключи</b>\n"
@@ -4399,13 +4379,10 @@ async def _show_main_menu(callback_query: types.CallbackQuery, state: FSMContext
         return
 
     if is_admin(user_id):
-        # Живая проверка доступности панелей перед показом меню администратора
-        await _refresh_panel_states_now()
-
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [
                 InlineKeyboardButton(text="🔑 Создать ключ", callback_data="create_key"),
-                InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_main_menu"),
+                InlineKeyboardButton(text="📡 Статус", callback_data="status_servers"),
             ],
             [
                 InlineKeyboardButton(text="🗝 Мои ключи", callback_data="cmd_myclients"),
@@ -4415,14 +4392,8 @@ async def _show_main_menu(callback_query: types.CallbackQuery, state: FSMContext
                 InlineKeyboardButton(text="⚙️ Администрирование", callback_data="server_status"),
             ]
         ])
-        panels_block = _build_panels_block_admin()
-        cascade_block = _build_cascade_block_admin()
-        xui_header = "3X-UI:\n" if panels_block else ""
-        cascade_header = "CASCADE:\n" if cascade_block else ""
         text = (
             f"👑 Администратор\n\n"
-            f"{xui_header}{panels_block}"
-            f"{cascade_header}{cascade_block}"
             f"📱 Выберите действие:"
         )
         if edit:
@@ -4430,27 +4401,61 @@ async def _show_main_menu(callback_query: types.CallbackQuery, state: FSMContext
         else:
             await bot.send_message(callback_query.message.chat.id, text, parse_mode="HTML", reply_markup=keyboard)
     else:
-        # Живая проверка доступности панелей перед показом меню
-        await _refresh_panel_states_now()
-
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [
                 InlineKeyboardButton(text="🔑 Создать ключ", callback_data="create_key"),
+                InlineKeyboardButton(text="📡 Статус", callback_data="status_servers"),
             ],
             [
                 InlineKeyboardButton(text="🗝 Мои ключи", callback_data="cmd_myclients"),
                 InlineKeyboardButton(text="📱 Скачать приложение", callback_data="app_download"),
             ]
         ])
-        panels_block = _build_panels_block()
         text = (
             f"👤 <b>Пользователь:</b> {username or first_name}\n\n"
-            f"{panels_block}"
+            f"📲 <b>Как начать:</b>\n"
+            f"1. Скачайте приложение\n"
+            f"2. Создайте ключ или выберите его из <b>Мои ключи</b>\n"
+            f"3. Добавьте ключ в приложении через кнопку <b>+</b> или <b>Добавить</b>"
         )
         if edit:
             await callback_query.message.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
         else:
             await bot.send_message(callback_query.message.chat.id, text, parse_mode="HTML", reply_markup=keyboard)
+@dp.callback_query(lambda c: c.data == "status_servers")
+async def show_status_servers(callback_query: types.CallbackQuery):
+    """Кнопка 'Статус' — живая проверка и отображение доступности серверов."""
+    if not is_allowed(callback_query.from_user.id):
+        await callback_query.answer("⛔ Доступ запрещен", show_alert=True)
+        return
+    await callback_query.answer()
+    await callback_query.message.answer("⏳ Проверяю доступность серверов...", parse_mode="HTML")
+    await _refresh_panel_states_now()
+
+    user_id = callback_query.from_user.id
+    if is_admin(user_id):
+        panels_block = _build_panels_block_admin()
+        cascade_block = _build_cascade_block_admin()
+        xui_header = "3X-UI:\n" if panels_block else ""
+        cascade_header = "CASCADE:\n" if cascade_block else ""
+        text = (
+            f"{xui_header}{panels_block}"
+            f"{cascade_header}{cascade_block}"
+        )
+    else:
+        panels_block = _build_panels_block()
+        text = panels_block
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")],
+    ])
+    await callback_query.message.answer(
+        text.strip() or "ℹ️ Нет данных о серверах.",
+        parse_mode="HTML",
+        reply_markup=keyboard,
+    )
+
+
 @dp.callback_query(lambda c: c.data == "cmd_new")
 async def callback_cmd_new(callback_query: types.CallbackQuery, state: FSMContext):
     """Обработчик кнопки 'Создать ключ'"""
