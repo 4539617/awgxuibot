@@ -5722,7 +5722,10 @@ new Vue({
      * Refresh peers with transfer stats (called periodically like admin tunnel's refresh()).
      */
     async refreshPeers({ updateCharts = false } = {}) {
-      if (!this.authenticated || !this.activeInterfaceId) return;
+      if (!this.authenticated || !this.activeInterfaceId) {
+        this.peersLoading = false;
+        return;
+      }
 
       // Capture the interface this call is for and a sequence number so that
       // a slow response arriving after the user has switched to another tab
@@ -5805,7 +5808,10 @@ new Vue({
      * Each peer gets peer.interfaceId and peer.interfaceName set.
      */
     async refreshAllPeers({ updateCharts = false } = {}) {
-      if (!this.authenticated) return;
+      if (!this.authenticated) {
+        this.peersLoading = false;
+        return;
+      }
       // Also refresh remote widget data in parallel (fire-and-forget, non-blocking)
       this.refreshRemoteWidgets().catch(console.error);
 
