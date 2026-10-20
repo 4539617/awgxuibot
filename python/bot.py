@@ -1284,7 +1284,7 @@ async def cmd_start(message: Message, state: FSMContext):
             ])
             await message.answer(
                 f"👑 Администратор\n\n"
-                f"📱 Выберите действие:",
+                f"",
                 reply_markup=keyboard,
                 parse_mode="HTML"
             )
@@ -4394,7 +4394,7 @@ async def _show_main_menu(callback_query: types.CallbackQuery, state: FSMContext
         ])
         text = (
             f"👑 Администратор\n\n"
-            f"📱 Выберите действие:"
+            f""
         )
         if edit:
             await callback_query.message.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
