@@ -271,6 +271,8 @@ export class RouteBot {
           await this.showDownloadSubMenu(chatId, 'windows');
         } else if (data === 'app_apk') {
           await this.showDownloadSubMenu(chatId, 'apk');
+        } else if (data === 'app_cloud') {
+          await this.showCloudMenu(chatId);
         }
       }
     });
@@ -1685,6 +1687,7 @@ export class RouteBot {
           [{ text: '🍎 Apple iOS', callback_data: 'app_ios' }],
           [{ text: '🖥 Windows', callback_data: 'app_windows' }],
           [{ text: '📦 APK', callback_data: 'app_apk' }],
+          [{ text: '☁️ Облако', callback_data: 'app_cloud' }],
           [{ text: '🔙 Назад', callback_data: 'main_menu' }]
         ]
       };
@@ -1754,6 +1757,26 @@ export class RouteBot {
       );
     } catch (error) {
       logger.error(`Error showing download sub-menu (${platform}) for chat ${chatId}:`, error);
+      this.bot.sendMessage(chatId, `❌ Ошибка: ${error.message}`);
+    }
+  }
+
+  async showCloudMenu(chatId) {
+    try {
+      const keyboard = {
+        inline_keyboard: [
+          [{ text: '📦 APK', callback_data: 'app_apk' }],
+          [{ text: '🖥 Windows', callback_data: 'app_windows' }],
+          [{ text: '🔙 Назад', callback_data: 'app_download' }]
+        ]
+      };
+      await this.sendNewMessage(
+        chatId,
+        '☁️ *Облако — выберите платформу:*',
+        { parse_mode: 'Markdown', reply_markup: keyboard }
+      );
+    } catch (error) {
+      logger.error(`Error showing cloud menu for chat ${chatId}:`, error);
       this.bot.sendMessage(chatId, `❌ Ошибка: ${error.message}`);
     }
   }

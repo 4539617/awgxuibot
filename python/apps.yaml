@@ -53,3 +53,11 @@ platforms:
         url: "https://github.com/Happ-proxy/happ-android/releases/latest/download/Happ.apk"
       - name: "AMNEZIA"
         url: "https://github.com/amnezia-vpn/amnezia-client/releases/download/5.0.3.0/AmneziaVPN_5.0.3.0_android11+_arm64-v8a.apk"
+
+  - name: "☁️ Облако"
+    callback: "app_cloud"
+    submenu:
+      - callback: "app_apk"
+        label: "📦 APK"
+      - callback: "app_windows"
+        label: "🖥 Windows"
