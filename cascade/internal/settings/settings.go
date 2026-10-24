@@ -43,7 +43,7 @@ type GlobalSettings struct {
 	Lang      string `json:"lang"`      // UI language: "en" | "ru"
 
 	// Quick-create pools
-	SubnetPool string `json:"subnetPool"` // CIDR block for auto-assigning /24 subnets, e.g. "192.168.0.0/16"
+	SubnetPool string `json:"subnetPool"` // CIDR block for auto-assigning /24 subnets, e.g. "10.8.0.0/16"
 	PortPool   string `json:"portPool"`   // Port ranges/list for auto-assigning listen ports, e.g. "51831-65535"
 
 	// Firewall
