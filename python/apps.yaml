@@ -56,8 +56,6 @@ platforms:
 
   - name: "☁️ Облако"
     callback: "app_cloud"
-    submenu:
-      - callback: "app_apk"
-        label: "📦 APK"
-      - callback: "app_windows"
-        label: "🖥 Windows"
+    apps:
+      - name: "Все приложения"
+        url: "https://example.com"

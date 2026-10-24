@@ -6523,15 +6523,19 @@ _APPS_YAML_PATH = "/app/data/apps.yaml"
 _APPS_YAML_DEFAULT = _os.path.join(_os.path.dirname(__file__), "apps.yaml")
 
 def _ensure_apps_yaml():
-    """Копирует дефолтный apps.yaml в /app/data/ если там его ещё нет."""
-    if not _os.path.exists(_APPS_YAML_PATH) and _os.path.exists(_APPS_YAML_DEFAULT):
-        try:
-            import shutil as _shutil
-            _os.makedirs(_os.path.dirname(_APPS_YAML_PATH), exist_ok=True)
+    """Синхронизирует /app/data/apps.yaml с дефолтным если дефолт новее."""
+    if not _os.path.exists(_APPS_YAML_DEFAULT):
+        return
+    try:
+        import shutil as _shutil
+        _os.makedirs(_os.path.dirname(_APPS_YAML_PATH), exist_ok=True)
+        # Перезаписываем если файла нет или дефолт новее
+        if (not _os.path.exists(_APPS_YAML_PATH) or
+                _os.path.getmtime(_APPS_YAML_DEFAULT) > _os.path.getmtime(_APPS_YAML_PATH)):
             _shutil.copy2(_APPS_YAML_DEFAULT, _APPS_YAML_PATH)
-            logger.info(f"📋 apps.yaml скопирован в {_APPS_YAML_PATH}")
-        except Exception as e:
-            logger.warning(f"Не удалось скопировать apps.yaml в data/: {e}")
+            logger.info(f"📋 apps.yaml обновлён в {_APPS_YAML_PATH}")
+    except Exception as e:
+        logger.warning(f"Не удалось синхронизировать apps.yaml: {e}")
 
 _ensure_apps_yaml()
 
