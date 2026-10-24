@@ -10,18 +10,24 @@ import (
 // string literals) so a future protocol version bump is a small, safe change
 // instead of finding every exact-match comparison by hand.
 const (
-	ProtocolWireGuard1 = "wireguard-1.0"
-	ProtocolAmneziaWG2 = "amneziawg-2.0"
-	ProtocolAmneziaWG3 = "amneziawg-3.0"
+	ProtocolWireGuard1  = "wireguard-1.0"
+	ProtocolAmneziaWG1  = "amneziawg-1.0" // AWG 1.0 — legacy Keenetic-compatible subset: Jc/Jmin/Jmax/S1/S2/H1-H4 only (no S3/S4/I1-I5)
+	ProtocolAmneziaWG2  = "amneziawg-2.0"
+	ProtocolAmneziaWG3  = "amneziawg-3.0"
 )
 
 // IsAmneziaWG reports whether protocol is any AmneziaWG obfuscation line
-// (2.0 or 3.0). Both use the same AWG2Settings-shaped params (Jc/Jmin/Jmax/
-// S1-S4/H1-H4/I1-I5) for config generation; 3.0 additionally allows the
-// optional Transport Protection fields to be set (enforced separately, not
-// by this check — see internal/settings.CreateTemplate/UpdateTemplate).
+// (1.0, 2.0 or 3.0). All use the same AWG2Settings-shaped params for storage;
+// 1.0 omits S3/S4/I1-I5 from generated configs (Keenetic legacy compatibility);
+// 3.0 additionally allows Transport Protection fields (enforced separately).
 func IsAmneziaWG(protocol string) bool {
-	return protocol == ProtocolAmneziaWG2 || protocol == ProtocolAmneziaWG3
+	return protocol == ProtocolAmneziaWG1 || protocol == ProtocolAmneziaWG2 || protocol == ProtocolAmneziaWG3
+}
+
+// IsAmneziaWGLegacy reports whether the protocol is the Keenetic-compatible
+// AWG 1.0 subset — configs must omit S3, S4 and I1-I5.
+func IsAmneziaWGLegacy(protocol string) bool {
+	return protocol == ProtocolAmneziaWG1
 }
 
 // IsUserspaceMode reports whether AmneziaWG is running via the amneziawg-go

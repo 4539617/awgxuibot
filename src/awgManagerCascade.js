@@ -182,8 +182,9 @@ export class AWGManagerCascade {
       }
 
       // Шаг 3: по протоколу
+      // amneziawg-1.0 (Keenetic Legacy) maps to v1 like wireguard-1.0
       if (!baseKey) {
-        baseKey = iface.protocol === 'wireguard-1.0' ? 'v1' : 'v2';
+        baseKey = (iface.protocol === 'wireguard-1.0' || iface.protocol === 'amneziawg-1.0') ? 'v1' : 'v2';
       }
 
       let key = `${keyPrefix}${baseKey}`;

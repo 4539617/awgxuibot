@@ -621,26 +621,32 @@ func (p *Peer) generateCompleteConfig(iface InterfaceData) string {
 		fmt.Fprintf(&sb, "Jmax = %d\n", s.Jmax)
 		fmt.Fprintf(&sb, "S1 = %d\n", s.S1)
 		fmt.Fprintf(&sb, "S2 = %d\n", s.S2)
-		fmt.Fprintf(&sb, "S3 = %d\n", s.S3)
-		fmt.Fprintf(&sb, "S4 = %d\n", s.S4)
+		// AWG 1.0 (Keenetic legacy) omits S3/S4 and I1-I5 — old firmware
+		// doesn't recognise these fields and refuses to import the config.
+		if !awgparams.IsAmneziaWGLegacy(iface.Protocol) {
+			fmt.Fprintf(&sb, "S3 = %d\n", s.S3)
+			fmt.Fprintf(&sb, "S4 = %d\n", s.S4)
+		}
 		fmt.Fprintf(&sb, "H1 = %s\n", s.H1)
 		fmt.Fprintf(&sb, "H2 = %s\n", s.H2)
 		fmt.Fprintf(&sb, "H3 = %s\n", s.H3)
 		fmt.Fprintf(&sb, "H4 = %s\n", s.H4)
-		if s.I1 != "" {
-			fmt.Fprintf(&sb, "I1 = %s\n", s.I1)
-		}
-		if s.I2 != "" {
-			fmt.Fprintf(&sb, "I2 = %s\n", s.I2)
-		}
-		if s.I3 != "" {
-			fmt.Fprintf(&sb, "I3 = %s\n", s.I3)
-		}
-		if s.I4 != "" {
-			fmt.Fprintf(&sb, "I4 = %s\n", s.I4)
-		}
-		if s.I5 != "" {
-			fmt.Fprintf(&sb, "I5 = %s\n", s.I5)
+		if !awgparams.IsAmneziaWGLegacy(iface.Protocol) {
+			if s.I1 != "" {
+				fmt.Fprintf(&sb, "I1 = %s\n", s.I1)
+			}
+			if s.I2 != "" {
+				fmt.Fprintf(&sb, "I2 = %s\n", s.I2)
+			}
+			if s.I3 != "" {
+				fmt.Fprintf(&sb, "I3 = %s\n", s.I3)
+			}
+			if s.I4 != "" {
+				fmt.Fprintf(&sb, "I4 = %s\n", s.I4)
+			}
+			if s.I5 != "" {
+				fmt.Fprintf(&sb, "I5 = %s\n", s.I5)
+			}
 		}
 		// AWG 3.0 Transport Protection — HeaderProtectionKey in particular
 		// MUST match the server or handshakes are silently dropped, since
@@ -684,6 +690,9 @@ func (p *Peer) generateTemplateConfig(iface InterfaceData) string {
 	bin := "wg-quick"
 	if iface.Protocol == awgparams.ProtocolAmneziaWG3 {
 		proto = "AmneziaWG 3.0"
+		bin = "awg-quick"
+	} else if iface.Protocol == awgparams.ProtocolAmneziaWG1 {
+		proto = "AmneziaWG 1.0 (Keenetic Legacy)"
 		bin = "awg-quick"
 	} else if awgparams.IsAmneziaWG(iface.Protocol) {
 		proto = "AmneziaWG 2.0"
@@ -730,22 +739,28 @@ func (p *Peer) generateTemplateConfig(iface InterfaceData) string {
 		s := iface.Settings
 		fmt.Fprintf(&sb, "# %s Parameters (MUST match EXACTLY on both sides!)\n", proto)
 		fmt.Fprintf(&sb, "Jc = %d\nJmin = %d\nJmax = %d\n", s.Jc, s.Jmin, s.Jmax)
-		fmt.Fprintf(&sb, "S1 = %d\nS2 = %d\nS3 = %d\nS4 = %d\n", s.S1, s.S2, s.S3, s.S4)
+		if awgparams.IsAmneziaWGLegacy(iface.Protocol) {
+			fmt.Fprintf(&sb, "S1 = %d\nS2 = %d\n", s.S1, s.S2)
+		} else {
+			fmt.Fprintf(&sb, "S1 = %d\nS2 = %d\nS3 = %d\nS4 = %d\n", s.S1, s.S2, s.S3, s.S4)
+		}
 		fmt.Fprintf(&sb, "H1 = %s\nH2 = %s\nH3 = %s\nH4 = %s\n", s.H1, s.H2, s.H3, s.H4)
-		if s.I1 != "" {
-			fmt.Fprintf(&sb, "I1 = %s\n", s.I1)
-		}
-		if s.I2 != "" {
-			fmt.Fprintf(&sb, "I2 = %s\n", s.I2)
-		}
-		if s.I3 != "" {
-			fmt.Fprintf(&sb, "I3 = %s\n", s.I3)
-		}
-		if s.I4 != "" {
-			fmt.Fprintf(&sb, "I4 = %s\n", s.I4)
-		}
-		if s.I5 != "" {
-			fmt.Fprintf(&sb, "I5 = %s\n", s.I5)
+		if !awgparams.IsAmneziaWGLegacy(iface.Protocol) {
+			if s.I1 != "" {
+				fmt.Fprintf(&sb, "I1 = %s\n", s.I1)
+			}
+			if s.I2 != "" {
+				fmt.Fprintf(&sb, "I2 = %s\n", s.I2)
+			}
+			if s.I3 != "" {
+				fmt.Fprintf(&sb, "I3 = %s\n", s.I3)
+			}
+			if s.I4 != "" {
+				fmt.Fprintf(&sb, "I4 = %s\n", s.I4)
+			}
+			if s.I5 != "" {
+				fmt.Fprintf(&sb, "I5 = %s\n", s.I5)
+			}
 		}
 		if iface.Protocol == awgparams.ProtocolAmneziaWG3 {
 			writeAWG3Fields(&sb, s)

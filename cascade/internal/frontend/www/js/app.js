@@ -1421,7 +1421,7 @@ new Vue({
           dns: this.interfaceCreate.dns || '',
         };
 
-        if (this.interfaceCreate.protocol === 'amneziawg-2.0') {
+        if (this.interfaceCreate.protocol === 'amneziawg-1.0' || this.interfaceCreate.protocol === 'amneziawg-2.0') {
           payload.settings = this.interfaceCreate.settings;
         } else if (this.interfaceCreate.protocol === 'amneziawg-3.0') {
           // AWG 3.0 carries the base obfuscation params PLUS the Transport
@@ -1471,7 +1471,8 @@ new Vue({
         const iface = data.interface || {};
         const addr  = iface.address    || '';
         const port  = iface.listenPort || '';
-        const proto = iface.protocol === 'amneziawg-2.0' ? ' · AWG2'
+        const proto = iface.protocol === 'amneziawg-1.0' ? ' · AWG1'
+          : iface.protocol === 'amneziawg-2.0' ? ' · AWG2'
           : iface.protocol === 'amneziawg-3.0' ? ' · AWG3' : '';
 
         if (data.started) {
@@ -1525,7 +1526,8 @@ new Vue({
         this.loadFirewallInterfaces();
 
         const iface = res.interface || {};
-        const proto = iface.protocol === 'amneziawg-2.0' ? ' · AWG2'
+        const proto = iface.protocol === 'amneziawg-1.0' ? ' · AWG1'
+          : iface.protocol === 'amneziawg-2.0' ? ' · AWG2'
           : iface.protocol === 'amneziawg-3.0' ? ' · AWG3' : ' · WG1';
         if (res.conflictWarning) {
           this.showToast(`⚠️ ${res.conflictWarning}`, 'error');
@@ -1588,7 +1590,8 @@ new Vue({
         this.loadFirewallInterfaces();
 
         const iface = res.interface || {};
-        const proto = iface.protocol === 'amneziawg-2.0' ? ' · AWG2'
+        const proto = iface.protocol === 'amneziawg-1.0' ? ' · AWG1'
+          : iface.protocol === 'amneziawg-2.0' ? ' · AWG2'
           : iface.protocol === 'amneziawg-3.0' ? ' · AWG3' : ' · WG1';
         const failed = (res.peersFailed || []).length;
 
@@ -1652,7 +1655,8 @@ new Vue({
         this.loadNatInterfaces();
         this.loadFirewallInterfaces();
         const iface = res.interface || {};
-        const proto = iface.protocol === 'amneziawg-2.0' ? ' · AWG2'
+        const proto = iface.protocol === 'amneziawg-1.0' ? ' · AWG1'
+          : iface.protocol === 'amneziawg-2.0' ? ' · AWG2'
           : iface.protocol === 'amneziawg-3.0' ? ' · AWG3' : ' · WG1';
         const msg = res.started
           ? `✅ Interface restored: ${iface.id} · ${iface.address}${proto} · ${res.peersCreated} peers`
@@ -1863,7 +1867,7 @@ new Vue({
         mtu: mtu || 0,
         mss: mss || 0,
       };
-      if (protocol === 'amneziawg-2.0') {
+      if (protocol === 'amneziawg-1.0' || protocol === 'amneziawg-2.0') {
         payload.settings = { ...settings };
       } else if (protocol === 'amneziawg-3.0') {
         // AWG 3.0 carries the base obfuscation params PLUS the Transport
@@ -4539,6 +4543,7 @@ new Vue({
     // Human-readable protocol label for dashboard badges
     dashProtoLabel(protocol) {
       if (protocol === 'wireguard' || protocol === 'wireguard-1.0') return 'WG1.0';
+      if (protocol === 'amneziawg-1.0') return 'AWG1 (Keenetic)';
       if (protocol === 'amneziawg-2.0') return 'AWG2.0';
       if (protocol === 'amneziawg-3.0') return 'AWG3.0';
       if (protocol === 'amneziawg') return 'AWG';
@@ -4546,14 +4551,15 @@ new Vue({
     },
 
     // isAmneziaWG mirrors the backend's awgparams.IsAmneziaWG — true for
-    // both AWG 2.0 and 3.0, false for plain WireGuard.
+    // AWG 1.0, 2.0 and 3.0, false for plain WireGuard.
     isAmneziaWG(protocol) {
-      return protocol === 'amneziawg-2.0' || protocol === 'amneziawg-3.0';
+      return protocol === 'amneziawg-1.0' || protocol === 'amneziawg-2.0' || protocol === 'amneziawg-3.0';
     },
 
     // awgVersion maps a full protocol string to its AWG template version
-    // ("2.0"/"3.0"), or null for non-AWG protocols (e.g. wireguard-1.0).
+    // ("1.0"/"2.0"/"3.0"), or null for non-AWG protocols (e.g. wireguard-1.0).
     awgVersion(protocol) {
+      if (protocol === 'amneziawg-1.0') return '2.0'; // uses AWG2 template params (same shape, subset)
       if (protocol === 'amneziawg-2.0') return '2.0';
       if (protocol === 'amneziawg-3.0') return '3.0';
       return null;

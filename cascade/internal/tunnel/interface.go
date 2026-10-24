@@ -1320,35 +1320,43 @@ func (t *TunnelInterface) generateWgConfig() string {
 		sb.WriteString(postDown)
 	}
 
-	// AmneziaWG 2.0 obfuscation parameters.
+	// AmneziaWG obfuscation parameters.
 	if awgparams.IsAmneziaWG(t.Protocol) && t.AWG2 != nil {
 		a := t.AWG2
-		sb.WriteString("\n# AmneziaWG 2.0 Parameters\n")
+		protoLabel := "AmneziaWG 2.0"
+		if awgparams.IsAmneziaWGLegacy(t.Protocol) {
+			protoLabel = "AmneziaWG 1.0"
+		}
+		sb.WriteString(fmt.Sprintf("\n# %s Parameters\n", protoLabel))
 		sb.WriteString(fmt.Sprintf("Jc = %d\n", a.Jc))
 		sb.WriteString(fmt.Sprintf("Jmin = %d\n", a.Jmin))
 		sb.WriteString(fmt.Sprintf("Jmax = %d\n", a.Jmax))
 		sb.WriteString(fmt.Sprintf("S1 = %d\n", a.S1))
 		sb.WriteString(fmt.Sprintf("S2 = %d\n", a.S2))
-		sb.WriteString(fmt.Sprintf("S3 = %d\n", a.S3))
-		sb.WriteString(fmt.Sprintf("S4 = %d\n", a.S4))
+		if !awgparams.IsAmneziaWGLegacy(t.Protocol) {
+			sb.WriteString(fmt.Sprintf("S3 = %d\n", a.S3))
+			sb.WriteString(fmt.Sprintf("S4 = %d\n", a.S4))
+		}
 		sb.WriteString(fmt.Sprintf("H1 = %s\n", a.H1))
 		sb.WriteString(fmt.Sprintf("H2 = %s\n", a.H2))
 		sb.WriteString(fmt.Sprintf("H3 = %s\n", a.H3))
 		sb.WriteString(fmt.Sprintf("H4 = %s\n", a.H4))
-		if a.I1 != "" {
-			sb.WriteString(fmt.Sprintf("I1 = %s\n", a.I1))
-		}
-		if a.I2 != "" {
-			sb.WriteString(fmt.Sprintf("I2 = %s\n", a.I2))
-		}
-		if a.I3 != "" {
-			sb.WriteString(fmt.Sprintf("I3 = %s\n", a.I3))
-		}
-		if a.I4 != "" {
-			sb.WriteString(fmt.Sprintf("I4 = %s\n", a.I4))
-		}
-		if a.I5 != "" {
-			sb.WriteString(fmt.Sprintf("I5 = %s\n", a.I5))
+		if !awgparams.IsAmneziaWGLegacy(t.Protocol) {
+			if a.I1 != "" {
+				sb.WriteString(fmt.Sprintf("I1 = %s\n", a.I1))
+			}
+			if a.I2 != "" {
+				sb.WriteString(fmt.Sprintf("I2 = %s\n", a.I2))
+			}
+			if a.I3 != "" {
+				sb.WriteString(fmt.Sprintf("I3 = %s\n", a.I3))
+			}
+			if a.I4 != "" {
+				sb.WriteString(fmt.Sprintf("I4 = %s\n", a.I4))
+			}
+			if a.I5 != "" {
+				sb.WriteString(fmt.Sprintf("I5 = %s\n", a.I5))
+			}
 		}
 		writeAWG3Fields(&sb, a)
 		if t.Protocol == awgparams.ProtocolAmneziaWG3 {
@@ -1383,26 +1391,30 @@ func (t *TunnelInterface) generateSyncConfig() string {
 		sb.WriteString(fmt.Sprintf("Jmax = %d\n", a.Jmax))
 		sb.WriteString(fmt.Sprintf("S1 = %d\n", a.S1))
 		sb.WriteString(fmt.Sprintf("S2 = %d\n", a.S2))
-		sb.WriteString(fmt.Sprintf("S3 = %d\n", a.S3))
-		sb.WriteString(fmt.Sprintf("S4 = %d\n", a.S4))
+		if !awgparams.IsAmneziaWGLegacy(t.Protocol) {
+			sb.WriteString(fmt.Sprintf("S3 = %d\n", a.S3))
+			sb.WriteString(fmt.Sprintf("S4 = %d\n", a.S4))
+		}
 		sb.WriteString(fmt.Sprintf("H1 = %s\n", a.H1))
 		sb.WriteString(fmt.Sprintf("H2 = %s\n", a.H2))
 		sb.WriteString(fmt.Sprintf("H3 = %s\n", a.H3))
 		sb.WriteString(fmt.Sprintf("H4 = %s\n", a.H4))
-		if a.I1 != "" {
-			sb.WriteString("I1 = " + a.I1 + "\n")
-		}
-		if a.I2 != "" {
-			sb.WriteString("I2 = " + a.I2 + "\n")
-		}
-		if a.I3 != "" {
-			sb.WriteString("I3 = " + a.I3 + "\n")
-		}
-		if a.I4 != "" {
-			sb.WriteString("I4 = " + a.I4 + "\n")
-		}
-		if a.I5 != "" {
-			sb.WriteString("I5 = " + a.I5 + "\n")
+		if !awgparams.IsAmneziaWGLegacy(t.Protocol) {
+			if a.I1 != "" {
+				sb.WriteString("I1 = " + a.I1 + "\n")
+			}
+			if a.I2 != "" {
+				sb.WriteString("I2 = " + a.I2 + "\n")
+			}
+			if a.I3 != "" {
+				sb.WriteString("I3 = " + a.I3 + "\n")
+			}
+			if a.I4 != "" {
+				sb.WriteString("I4 = " + a.I4 + "\n")
+			}
+			if a.I5 != "" {
+				sb.WriteString("I5 = " + a.I5 + "\n")
+			}
 		}
 		writeAWG3Fields(&sb, a)
 		if t.Protocol == awgparams.ProtocolAmneziaWG3 {
