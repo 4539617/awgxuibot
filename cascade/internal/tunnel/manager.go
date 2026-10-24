@@ -288,9 +288,16 @@ func (m *Manager) QuickCreate(name, protocol string) (*QuickCreateResult, error)
 	// own snapshot. Address collisions are benign because the DB unique constraint
 	// will catch them, and subnet exhaustion is checked freshly here before calling
 	// CreateInterface (which will recheck under the lock for port selection anyway).
-	address, err := m.nextSubnet(gs.SubnetPool)
+	//
+	// amneziawg-1.0 (Keenetic legacy) always uses 10.8.0.0/16 regardless of the
+	// configured SubnetPool — Keenetic firmware expects 10.8.x.x addressing.
+	subnetPool := gs.SubnetPool
+	if awgparams.IsAmneziaWGLegacy(protocol) {
+		subnetPool = "10.8.0.0/16"
+	}
+	address, err := m.nextSubnet(subnetPool)
 	if err != nil {
-		return nil, fmt.Errorf("no available subnet in pool %q: %w", gs.SubnetPool, err)
+		return nil, fmt.Errorf("no available subnet in pool %q: %w", subnetPool, err)
 	}
 
 	// Build AWG2 params before acquiring the lock (may hit the DB / generator).
