@@ -1707,40 +1707,41 @@ export class RouteBot {
       android: {
         title: '🤖 *Android — выберите приложение:*',
         buttons: [
-          [{ text: 'INCY', url: 'https://play.google.com/store/apps/details?id=llc.itdev.incyV2RAYTun' }],
-          [{ text: 'HAPP', url: 'https://play.google.com/store/apps/details?id=com.happproxy' }],
-          [{ text: 'HIDDIFY', url: 'https://play.google.com/store/apps/details?id=app.hiddify.com' }],
-          [{ text: 'AMNEZIA', url: 'https://play.google.com/store/apps/details?id=org.amnezia.vpn&utm_source=amnezia.org&utm_campaign=organic&utm_medium=referral' }],
+          [{ text: 'INCY (VLESS, AWG) 🚀', url: 'https://play.google.com/store/apps/details?id=llc.itdev.incy' }],
+          [{ text: 'V2RAYTun (VLESS)', url: 'https://play.google.com/store/apps/details?id=com.v2raytun.android' }],
+          [{ text: 'HAPP (VLESS)', url: 'https://play.google.com/store/apps/details?id=com.happproxy' }],
+          [{ text: 'HIDDIFY (VLESS)', url: 'https://play.google.com/store/apps/details?id=app.hiddify.com' }],
+          [{ text: 'AMNEZIA (AWG)', url: 'https://play.google.com/store/apps/details?id=org.amnezia.vpn&utm_source=amnezia.org&utm_campaign=organic&utm_medium=referral' }],
           [{ text: '🔙 Назад', callback_data: 'app_download' }]
         ]
       },
       ios: {
         title: '🍎 *Apple iOS — выберите приложение:*',
         buttons: [
-          [{ text: 'INCY', url: 'https://apps.apple.com/ru/app/incy/id6756943388' }],
-          [{ text: 'HAPP', url: 'https://apps.apple.com/us/app/happ-proxy-utility/id6504287215' }],
-          [{ text: 'HIDDIFY', url: 'https://apps.apple.com/us/app/hiddify-proxy-vpn/id6596777532' }],
-          [{ text: 'AMNEZIA', url: 'https://apps.apple.com/us/app/amneziavpn/id1600529900' }],
+          [{ text: 'INCY (VLESS, AWG) 🚀', url: 'https://apps.apple.com/ru/app/incy/id6756943388' }],
+          [{ text: 'HAPP (VLESS)', url: 'https://apps.apple.com/us/app/happ-proxy-utility/id6504287215' }],
+          [{ text: 'HIDDIFY (VLESS)', url: 'https://apps.apple.com/us/app/hiddify-proxy-vpn/id6596777532' }],
+          [{ text: 'AMNEZIA (AWG)', url: 'https://apps.apple.com/us/app/amneziavpn/id1600529900' }],
           [{ text: '🔙 Назад', callback_data: 'app_download' }]
         ]
       },
       windows: {
         title: '🖥 *Windows — выберите приложение:*',
         buttons: [
-          [{ text: 'INCY', url: 'https://github.com/INCY-DEV/incy-platforms/releases/latest/download/incy-windows-setup.exe' }],
-          [{ text: 'V2RAYTun', url: 'https://storage.v2raytun.com/v2RayTun_Setup.exe' }],
-          [{ text: 'HAPP', url: 'https://github.com/Happ-proxy/happ-desktop/releases/latest/download/setup-Happ.x64.exe' }],
-          [{ text: 'HIDDIFY', url: 'https://github.com/hiddify/hiddify-app/releases/download/v4.1.1/Hiddify-Windows-Setup-x64.exe' }],
-          [{ text: 'AMNEZIA', url: 'https://github.com/amnezia-vpn/amnezia-client/releases/download/5.0.3.0/AmneziaVPN_5.0.3.0_windows_x64.exe' }],
+          [{ text: 'INCY (VLESS, AWG) 🚀', url: 'https://github.com/INCY-DEV/incy-platforms/releases/latest/download/incy-windows-setup.exe' }],
+          [{ text: 'V2RAYTun (VLESS)', url: 'https://storage.v2raytun.com/v2RayTun_Setup.exe' }],
+          [{ text: 'HAPP (VLESS)', url: 'https://github.com/Happ-proxy/happ-desktop/releases/latest/download/setup-Happ.x64.exe' }],
+          [{ text: 'HIDDIFY (VLESS)', url: 'https://github.com/hiddify/hiddify-app/releases/download/v4.1.1/Hiddify-Windows-Setup-x64.exe' }],
+          [{ text: 'AMNEZIA (AWG)', url: 'https://github.com/amnezia-vpn/amnezia-client/releases/download/5.0.3.0/AmneziaVPN_5.0.3.0_windows_x64.exe' }],
           [{ text: '🔙 Назад', callback_data: 'app_download' }]
         ]
       },
       apk: {
         title: '📦 *APK — выберите приложение:*',
         buttons: [
-          [{ text: 'INCY', url: 'https://github.com/INCY-DEV/incy-platforms/releases/latest/download/Incy.apk' }],
-          [{ text: 'HAPP', url: 'https://github.com/Happ-proxy/happ-android/releases/latest/download/Happ.apk' }],
-          [{ text: 'AMNEZIA', url: 'https://github.com/amnezia-vpn/amnezia-client/releases/download/5.0.3.0/AmneziaVPN_5.0.3.0_android11+_arm64-v8a.apk' }],
+          [{ text: 'INCY (VLESS, AWG) 🚀', url: 'https://github.com/INCY-DEV/incy-platforms/releases/latest/download/Incy.apk' }],
+          [{ text: 'HAPP (VLESS)', url: 'https://github.com/Happ-proxy/happ-android/releases/latest/download/Happ.apk' }],
+          [{ text: 'AMNEZIA (AWG)', url: 'https://github.com/amnezia-vpn/amnezia-client/releases/download/5.0.3.0/AmneziaVPN_5.0.3.0_android11+_arm64-v8a.apk' }],
           [{ text: '🔙 Назад', callback_data: 'app_download' }]
         ]
       }
