@@ -57,5 +57,5 @@ platforms:
   - name: "☁️ Облако"
     callback: "app_cloud"
     apps:
-      - name: "Все приложения"
-        url: "https://example.com"
+      - name: "📂 Открыть папку"
+        url: "https://drive.google.com/drive/folders/12fWdEB-KIXG1C8nnMGtnc39ZFllM20qe?usp=drive_link"
