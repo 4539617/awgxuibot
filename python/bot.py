@@ -2815,8 +2815,8 @@ async def process_reset_pending(callback_query: types.CallbackQuery):
     try:
         await bot.send_message(
             user_id,
-            "🔄 Ваш запрос на доступ был сброшен администратором.\n\n"
-            "Вы можете отправить запрос повторно — нажмите /start.",
+            "🔄 Время на обработку запроса вышло.\n\n"
+            "Отправить запрос повторно — нажмите /start.",
         )
     except Exception:
         pass
