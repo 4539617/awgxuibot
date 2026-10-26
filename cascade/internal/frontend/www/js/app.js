@@ -3636,8 +3636,7 @@ new Vue({
         const token = (res.peer || {}).oneTimeLink;
         if (token) {
           const url = `${location.protocol}//${location.host}/cnf/${token}`;
-          await navigator.clipboard.writeText(url);
-          this.showToast('One-time link copied to clipboard', 'success');
+          await this._copyToClipboard(url, 'One-time link copied to clipboard');
         }
       } catch (err) {
         this.showToast(err.message || 'Failed to generate one-time link', 'error');
@@ -5579,8 +5578,7 @@ new Vue({
         const token = (res.peer || {}).oneTimeLink;
         if (token) {
           const url = `${location.protocol}//${location.host}/cnf/${token}`;
-          await navigator.clipboard.writeText(url);
-          this.showToast('One-time link copied to clipboard', 'success');
+          await this._copyToClipboard(url, 'One-time link copied to clipboard');
         }
         await this._refreshPeersOrAll();
       } catch (err) {
@@ -6489,6 +6487,33 @@ new Vue({
           .catch(() => this._copyFallback(this.newTokenValue));
       } else {
         this._copyFallback(this.newTokenValue);
+      }
+    },
+
+    async _copyToClipboard(text, successMessage) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        try {
+          await navigator.clipboard.writeText(text);
+          this.showToast(successMessage || 'Copied to clipboard', 'success');
+          return;
+        } catch {
+          // fall through to execCommand fallback
+        }
+      }
+      const el = document.createElement('textarea');
+      el.value = text;
+      el.style.position = 'fixed';
+      el.style.opacity = '0';
+      document.body.appendChild(el);
+      el.focus();
+      el.select();
+      try {
+        const ok = document.execCommand('copy');
+        this.showToast(ok ? (successMessage || 'Copied to clipboard') : 'Failed to copy — select and copy manually', ok ? 'success' : 'error');
+      } catch {
+        this.showToast('Failed to copy — select and copy manually', 'error');
+      } finally {
+        document.body.removeChild(el);
       }
     },
 
