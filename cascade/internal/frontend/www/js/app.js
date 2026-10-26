@@ -5730,9 +5730,11 @@ new Vue({
 
       try {
         const res = await this.api.getTunnelInterfacePeers({ interfaceId: this.activeInterfaceId });
+        const activeIface = this.tunnelInterfaces.find(i => i.id === this.activeInterfaceId);
         const peers = (res.peers || []).map(peer => {
           // Tag with interfaceId so actions work from dashboard too
-          peer.interfaceId = this.activeInterfaceId;
+          peer.interfaceId   = this.activeInterfaceId;
+          peer.interfaceName = activeIface ? (activeIface.name || activeIface.id) : this.activeInterfaceId;
 
           // Parse dates
           peer.createdAt = peer.createdAt ? new Date(peer.createdAt) : null;
