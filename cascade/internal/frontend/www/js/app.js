@@ -2084,7 +2084,8 @@ new Vue({
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `${peer.name.replace(/\s+/g, '-')}.conf`;
+        const ifaceName = (peer.interfaceName || this._peerIfaceId(peer) || '').replace(/\s+/g, '-');
+        a.download = `${peer.name.replace(/\s+/g, '-')}_${ifaceName}.conf`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -3729,7 +3730,8 @@ new Vue({
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `${(peer.name || peer.id).replace(/\s+/g, '-')}.conf`;
+        const ifaceName = (peer.interfaceName || peer.interfaceId || '').replace(/\s+/g, '-');
+        a.download = `${(peer.name || peer.id).replace(/\s+/g, '-')}_${ifaceName}.conf`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
