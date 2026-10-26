@@ -8,6 +8,7 @@ import logging
 import psutil
 from datetime import datetime
 from typing import Dict, Optional, List
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 logger = logging.getLogger(__name__)
 
@@ -267,7 +268,11 @@ class SystemMonitor:
         
         # Обновляем время последнего уведомления
         self.last_alert_time[resource_type] = now
-        
+
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="🔔 Уведомления", callback_data=f"notif_panel_{self.panel_id}")
+        ]])
+
         # Отправляем уведомления всем администраторам
         sent_count = 0
         for admin_id in self.admin_ids:
@@ -276,7 +281,8 @@ class SystemMonitor:
                 await self.bot.send_message(
                     chat_id=admin_id,
                     text=message,
-                    parse_mode="HTML"
+                    parse_mode="HTML",
+                    reply_markup=keyboard
                 )
                 sent_count += 1
                 logger.info(f"✅ Уведомление о {resource_type} успешно отправлено администратору {admin_id}")

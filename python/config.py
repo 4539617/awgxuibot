@@ -94,6 +94,27 @@ class PanelConfig:
         return self.tls_fingerprint if self.security == "tls" else self.reality_fingerprint
 
 
+@dataclass
+class CascadeServerConfig:
+    """Конфигурация одного Cascade-сервера"""
+    cascade_id: str
+    label: str
+    url: str
+    api_key: str = ""
+    username: str = "admin"
+    password: str = ""
+    enabled: bool = True
+    version: str = ""
+
+    @property
+    def auth_method(self) -> str:
+        if self.api_key:
+            return "token"
+        if self.password:
+            return "password"
+        return "none"
+
+
 class ConfigManager:
     """Менеджер конфигурации из config.yaml"""
     
@@ -102,6 +123,8 @@ class ConfigManager:
         self.common: Optional[CommonConfig] = None
         self.panels: Dict[str, PanelConfig] = {}
         self.default_panel_id: Optional[str] = None
+        self.cascade_servers: List[CascadeServerConfig] = []
+        self.cascade_stubs: List[str] = []
         self._load_config()
     
     def _load_config(self):
@@ -144,6 +167,27 @@ class ConfigManager:
             if not data:
                 logger.error("❌ config.yaml пустой")
                 raise ValueError("config.yaml пустой или содержит некорректные данные")
+
+            # ── Self-healing: добавляем секцию cascades: если её нет ────────────
+            if 'cascades' not in data:
+                logger.info("ℹ️  Секция cascades: не найдена в config.yaml — добавляем заглушку")
+                stub = (
+                    "\n# ── Cascade Web UI ──────────────────────────────────────────────────────────\n"
+                    "# Заполните url и api_key чтобы включить создание AWG 3.0 ключей.\n"
+                    "# api_key: Cascade UI → Settings → Tokens → Create token (ws_...)\n"
+                    "cascades:\n"
+                    "  cascade0:\n"
+                    "    label: Master\n"
+                    "    url: \"\"\n"
+                    "    api_key: \"\"\n"
+                    "    enabled: false\n"
+                )
+                with open(self.config_path, 'a', encoding='utf-8') as f:
+                    f.write(stub)
+                logger.info("✅ Заглушка cascades: добавлена в конец config.yaml")
+                data['cascades'] = {
+                    'cascade0': {'label': 'Master', 'url': '', 'api_key': '', 'enabled': False}
+                }
             
             # Вспомогательная функция для безопасного преобразования в int
             def safe_int(value, default):
@@ -248,9 +292,44 @@ class ConfigManager:
             
             # Загружаем панель по умолчанию
             self.default_panel_id = data.get('default_panel')
+
+            # Загружаем Cascade-серверы
+            self.cascade_servers = []
+            # Незаполненные записи — чтобы бот мог предупредить администратора
+            self.cascade_stubs: List[str] = []
+            cascades_data = data.get('cascades', {}) or {}
+            for cid, srv in cascades_data.items():
+                if not srv or not isinstance(srv, dict):
+                    continue
+                url = (srv.get('url') or '').strip()
+                api_key = (srv.get('api_key') or srv.get('token') or '').strip()
+                password = (srv.get('password') or '').strip()
+                enabled = srv.get('enabled', True)
+
+                # Запись-заглушка: url пустой ИЛИ явно enabled: false
+                if not url or enabled is False:
+                    label = (srv.get('label') or cid).strip()
+                    self.cascade_stubs.append(label or cid)
+                    logger.info(
+                        f"ℹ️  Cascade {cid!r} ({label!r}): не настроен "
+                        f"(url={'пустой' if not url else url!r}, enabled={enabled})"
+                    )
+                    continue
+
+                self.cascade_servers.append(CascadeServerConfig(
+                    cascade_id=cid,
+                    label=(srv.get('label') or cid).strip(),
+                    url=url,
+                    api_key=api_key,
+                    username=(srv.get('username') or 'admin').strip(),
+                    password=password,
+                    enabled=enabled,
+                    version=srv.get('version') or '',
+                ))
             
             logger.info(f"✅ Загружено панелей: {len(self.panels)}")
             logger.info(f"✅ Панель по умолчанию: {self.default_panel_id}")
+            logger.info(f"✅ Загружено Cascade-серверов: {len(self.cascade_servers)}")
             
         except yaml.YAMLError as e:
             logger.error(f"❌ Ошибка парсинга YAML: {e}")
@@ -308,7 +387,15 @@ class ConfigManager:
     def get_all_panels(self) -> Dict[str, PanelConfig]:
         """Получить все панели"""
         return self.panels
-    
+
+    def get_cascade_servers(self) -> List[CascadeServerConfig]:
+        """Получить список настроенных (заполненных) Cascade-серверов"""
+        return self.cascade_servers
+
+    def get_cascade_stubs(self) -> List[str]:
+        """Получить метки незаполненных Cascade-записей (url пустой или enabled: false)"""
+        return self.cascade_stubs
+
     def get_current_panel_id(self) -> Optional[str]:
         """Получить ID текущей активной панели"""
         return self.default_panel_id
@@ -612,6 +699,12 @@ class ConfigManager:
                     'reality_short_id': panel.reality_short_id
                 }
             
+            # Сохраняем секцию cascades: из существующего файла без изменений
+            # (бот никогда не редактирует cascades: программно — только читает)
+            existing_cascades = existing_config.get('cascades')
+            if existing_cascades is not None:
+                config_dict['cascades'] = existing_cascades
+
             # Сохраняем в файл
             with open(self.config_path, 'w', encoding='utf-8') as f:
                 yaml.dump(config_dict, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
@@ -622,19 +715,76 @@ class ConfigManager:
             logger.error(f"Ошибка при сохранении конфигурации: {e}")
     
     async def check_panel_status(self, panel_config: PanelConfig) -> bool:
-        """Проверить доступность панели"""
-        try:
-            login_url = f"{panel_config.xui_url.rstrip('/')}/login"
-            timeout = aiohttp.ClientTimeout(total=5)
-            
+        """Проверить функциональную доступность панели через API.
+
+        Делаем реальный API-запрос (не просто TCP/логин), чтобы отличить
+        ситуацию «веб-сервер отвечает, но 3x-ui сломан» от «панель работает».
+
+        Для v3 (Bearer Token): GET /panel/api/server/status
+        Для v2 (cookie-auth):  POST /login → GET /panel/api/inbounds/list
+        Считаем панель доступной только если API вернул HTTP 200 с success:true.
+        """
+        async def _do_check():
+            base_url = panel_config.xui_url.rstrip('/')
+            # connect=4 ограничивает TCP-handshake; total=6 — весь запрос
+            timeout = aiohttp.ClientTimeout(total=6, connect=4)
+            ssl_ctx = False  # отключаем проверку сертификата (self-signed)
+
+            is_v3 = (
+                panel_config.xui_version.startswith("3.")
+                or panel_config.xui_version == "latest"
+            )
+
             async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.post(
-                    login_url,
-                    json={'username': panel_config.xui_username, 'password': panel_config.xui_password},
-                    ssl=False
-                ) as response:
-                    return response.status in [200, 401, 403]
-        except:
+                if is_v3 and panel_config.xui_api_token:
+                    # v3 — Bearer token, лёгкий endpoint статуса сервера
+                    headers = {'Authorization': f'Bearer {panel_config.xui_api_token}'}
+                    async with session.get(
+                        f"{base_url}/panel/api/server/status",
+                        headers=headers,
+                        ssl=ssl_ctx,
+                    ) as resp:
+                        if resp.status != 200:
+                            return False
+                        try:
+                            data = await resp.json(content_type=None)
+                            return bool(data.get('success'))
+                        except Exception:
+                            return False
+                else:
+                    # v2 или v3 без токена — логин через cookie, затем проверка inbounds
+                    cookie_jar = aiohttp.CookieJar(unsafe=True)
+                    async with aiohttp.ClientSession(
+                        timeout=timeout,
+                        cookie_jar=cookie_jar,
+                    ) as auth_session:
+                        async with auth_session.post(
+                            f"{base_url}/login",
+                            json={
+                                'username': panel_config.xui_username,
+                                'password': panel_config.xui_password,
+                            },
+                            ssl=ssl_ctx,
+                        ) as login_resp:
+                            if login_resp.status != 200:
+                                return False
+                        # Проверяем реальный API-endpoint
+                        async with auth_session.get(
+                            f"{base_url}/panel/api/inbounds/list",
+                            ssl=ssl_ctx,
+                        ) as api_resp:
+                            if api_resp.status != 200:
+                                return False
+                            try:
+                                data = await api_resp.json(content_type=None)
+                                return bool(data.get('success'))
+                            except Exception:
+                                return False
+
+        try:
+            # Hard-limit через asyncio на случай зависших TCP-соединений
+            return await asyncio.wait_for(_do_check(), timeout=8)
+        except Exception:
             return False
     
     async def check_all_panels_status(self) -> Dict[str, bool]:
@@ -772,13 +922,19 @@ class UserDatabase:
                 CREATE TABLE IF NOT EXISTS panel_outages (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     panel_id TEXT NOT NULL,
-                    started_at TIMESTAMP NOT NULL
+                    started_at TIMESTAMP NOT NULL,
+                    ended_at TIMESTAMP
                 )
             """)
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_panel_outages_panel_id
                 ON panel_outages(panel_id)
             """)
+            # Миграция: добавить ended_at если таблица уже существует без неё
+            try:
+                conn.execute("ALTER TABLE panel_outages ADD COLUMN ended_at TIMESTAMP")
+            except Exception:
+                pass  # колонка уже есть
             
             # Добавляем главного админа
             main_admin = self.get_main_admin()
@@ -1099,6 +1255,69 @@ class UserDatabase:
             return False
 
 
+    def get_admin_setting(self, key: str, default: str = "") -> str:
+        """Получить произвольную настройку администратора из admin_settings."""
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT value FROM admin_settings WHERE key = ?", (key,)
+            ).fetchone()
+        return row[0] if row else default
+
+    def set_admin_setting(self, key: str, value: str) -> bool:
+        """Сохранить произвольную настройку администратора в admin_settings."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute(
+                    "INSERT OR REPLACE INTO admin_settings (key, value) VALUES (?, ?)",
+                    (key, value),
+                )
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка сохранения admin_setting '{key}': {e}")
+            return False
+
+
+    # ── Флаг «ожидает ссылку на оплату» ────────────────────────────────────
+    def set_pay_awaiting(self, user_id: int, period_code: str) -> None:
+        """Записать что кандидат подтвердил оплату и ждёт ссылку от администратора."""
+        self.set_admin_setting(f"pay_awaiting_{user_id}", period_code)
+
+    def get_pay_awaiting(self, user_id: int) -> str:
+        """Вернуть period_code если кандидат ожидает ссылку, иначе ''."""
+        return self.get_admin_setting(f"pay_awaiting_{user_id}", "")
+
+    def clear_pay_awaiting(self, user_id: int) -> None:
+        """Снять флаг ожидания ссылки на оплату."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute(
+                    "DELETE FROM admin_settings WHERE key = ?",
+                    (f"pay_awaiting_{user_id}",),
+                )
+        except Exception as e:
+            logger.error(f"Ошибка сброса pay_awaiting для {user_id}: {e}")
+
+    # ── Флаг «запрос на оплату отправлен кандидату» ─────────────────────────
+    def set_pay_sent(self, user_id: int) -> None:
+        """Пометить что администратор уже отправил кандидату запрос на выбор периода."""
+        self.set_admin_setting(f"pay_sent_{user_id}", "1")
+
+    def get_pay_sent(self, user_id: int) -> bool:
+        """True если запрос на оплату уже был отправлен кандидату."""
+        return self.get_admin_setting(f"pay_sent_{user_id}", "") == "1"
+
+    def clear_pay_sent(self, user_id: int) -> None:
+        """Снять флаг отправленного запроса на оплату."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute(
+                    "DELETE FROM admin_settings WHERE key = ?",
+                    (f"pay_sent_{user_id}",),
+                )
+        except Exception as e:
+            logger.error(f"Ошибка сброса pay_sent для {user_id}: {e}")
+
+
 class Config:
     """Главный класс конфигурации с поддержкой мультипанелей"""
     
@@ -1269,7 +1488,15 @@ class Config:
     def get_all_panels(self) -> Dict[str, PanelConfig]:
         """Получить все панели"""
         return self.config_manager.get_all_panels()
-    
+
+    def get_cascade_servers(self) -> List[CascadeServerConfig]:
+        """Получить список Cascade-серверов"""
+        return self.config_manager.get_cascade_servers()
+
+    def get_cascade_stubs(self) -> List[str]:
+        """Получить метки незаполненных Cascade-записей"""
+        return self.config_manager.get_cascade_stubs()
+
     def switch_panel(self, panel_id: str) -> bool:
         """Переключить текущую панель"""
         return self.config_manager.switch_default_panel(panel_id)

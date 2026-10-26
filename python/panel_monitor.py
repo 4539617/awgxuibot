@@ -9,6 +9,7 @@ import sqlite3
 from datetime import datetime
 from typing import Dict, Optional, List
 from dataclasses import dataclass, field
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +123,19 @@ class PanelMonitor:
                 )
         except Exception as e:
             logger.warning(f"⚠️ Не удалось сохранить обрыв в БД: {e}")
+
+    def _close_outage_in_db(self, panel_id: str, ended_at: datetime):
+        """Закрыть последний открытый обрыв панели (записать ended_at)"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute(
+                    """UPDATE panel_outages SET ended_at = ?
+                       WHERE panel_id = ? AND ended_at IS NULL
+                       ORDER BY id DESC LIMIT 1""",
+                    (ended_at.isoformat(), panel_id)
+                )
+        except Exception as e:
+            logger.warning(f"⚠️ Не удалось закрыть обрыв в БД: {e}")
     
     async def start_monitoring(self):
         """Запуск фонового мониторинга"""
@@ -182,6 +196,36 @@ class PanelMonitor:
                     await self._handle_panel_available(current_panel_id)
                 else:
                     await self._handle_panel_unavailable(current_panel_id)
+
+                # Также проверяем все остальные (не текущие) панели для учёта их обрывов
+                for panel_id, state in self.panel_states.items():
+                    if panel_id == current_panel_id:
+                        continue
+                    panel_config = self.config_manager.get_panel(panel_id)
+                    if not panel_config or not getattr(panel_config, 'enabled', True):
+                        continue
+                    try:
+                        available = await self.config_manager.check_panel_status(panel_config)
+                        state.last_check = datetime.now()
+                    except Exception:
+                        available = False
+                    if available:
+                        if not state.is_available:
+                            now = datetime.now()
+                            logger.info(f"✅ Панель {panel_id} восстановлена")
+                            state.is_available = True
+                            state.last_status_change = now
+                            self._close_outage_in_db(panel_id, now)
+                        state.consecutive_failures = 0
+                    else:
+                        state.consecutive_failures += 1
+                        if state.is_available:
+                            state.is_available = False
+                            now = datetime.now()
+                            state.last_status_change = now
+                            state.outage_events.append(now)
+                            self._save_outage_to_db(panel_id, now)
+                            logger.warning(f"⚠️ Панель {panel_id} (резервная) стала недоступна — обрыв зафиксирован")
                 
             except Exception as e:
                 logger.error(f"❌ Ошибка в цикле мониторинга: {e}", exc_info=True)
@@ -225,9 +269,11 @@ class PanelMonitor:
         
         # Логируем только изменения статуса
         if not state.is_available:
+            now = datetime.now()
             logger.info(f"✅ Панель {panel_id} восстановлена")
             state.is_available = True
-            state.last_status_change = datetime.now()
+            state.last_status_change = now
+            self._close_outage_in_db(panel_id, now)
         
         # Детальное логирование только для отладки
         if state.consecutive_successes <= 3:
@@ -246,10 +292,12 @@ class PanelMonitor:
         
         logger.warning(f"⚠️ Панель {panel_id} недоступна ({failures}/{self.failure_threshold})")
         
-        # Обновляем статус и записываем начало нового обрыва
-        if state.is_available:
-            state.is_available = False
+        # Записываем начало нового обрыва при первом сбое в новой серии (failures == 1).
+        # Условие по is_available недостаточно: после failover is_available остаётся False,
+        # поэтому повторные отключения никогда не фиксировались.
+        if failures == 1:
             now = datetime.now()
+            state.is_available = False
             state.last_status_change = now
             state.outage_events.append(now)
             self._save_outage_to_db(panel_id, now)
@@ -312,7 +360,8 @@ class PanelMonitor:
                         f"🔄 <b>Автоматическое переключение панели</b>\n\n"
                         f"❌ Недоступна: <b>{failed_panel_alias}</b> <code>{failed_panel_id}</code>\n"
                         f"✅ Переключено на: <b>{panel_config.alias}</b> <code>{panel_id}</code>\n\n"
-                        f"⏰ Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                        f"⏰ Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                        panel_id=failed_panel_id
                     )
                     return
                 else:
@@ -386,12 +435,13 @@ class PanelMonitor:
         # Возвращаем ключи в том порядке, в котором они определены
         return list(panels.keys())
     
-    async def _notify_admins(self, message: str):
+    async def _notify_admins(self, message: str, panel_id: str = None):
         """
         Отправить уведомление всем администраторам
         
         Args:
             message: Текст уведомления (поддерживает HTML)
+            panel_id: ID панели для кнопки перехода к уведомлениям
         """
         # Проверка cooldown для предотвращения спама
         now = datetime.now()
@@ -402,14 +452,20 @@ class PanelMonitor:
                 return
         
         self.last_notification_time = now
-        
+
+        callback = f"notif_panel_{panel_id}" if panel_id else "notification_settings"
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="🔔 Уведомления", callback_data=callback)
+        ]])
+
         # Отправка уведомлений всем администраторам
         for admin_id in self.admin_ids:
             try:
                 await self.bot.send_message(
                     chat_id=admin_id,
                     text=message,
-                    parse_mode="HTML"
+                    parse_mode="HTML",
+                    reply_markup=keyboard
                 )
                 logger.info(f"📨 Уведомление отправлено администратору {admin_id}")
             except Exception as e:

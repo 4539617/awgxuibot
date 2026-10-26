@@ -1,0 +1,29 @@
+# --- node / frontend tooling (not needed in Docker build context) ---
+/src/node_modules
+node_modules
+
+# --- git & IDE ---
+.git
+.gitignore
+.editorconfig
+.github
+
+# --- docs & non-build assets ---
+docs
+plans
+assets
+deploy
+scripts
+sysctl.d
+*.md
+LICENSE
+
+# --- local dev overrides / compose files (not needed in build context) ---
+docker-compose.yml
+docker-compose.override.yml
+docker-compose.override.yml.example
+docker-compose.isolated.yml
+
+# --- shell scripts (except entrypoint which is COPYed into the image) ---
+*.sh
+!entrypoint.sh

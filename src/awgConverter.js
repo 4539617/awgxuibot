@@ -121,8 +121,9 @@ export function generateAwgConfig(config) {
   let content = '[Interface]\n';
   
   // Interface section - maintain order
+  // ListenPort перед AWG-параметрами (соответствует reference peer.go/conf_parser.go)
   const interfaceOrder = [
-    'Address', 'DNS', 'PrivateKey',
+    'PrivateKey', 'Address', 'ListenPort', 'DNS', 'MTU',
     'Jc', 'Jmin', 'Jmax',
     'S1', 'S2', 'S3', 'S4',
     'H1', 'H2', 'H3', 'H4',
