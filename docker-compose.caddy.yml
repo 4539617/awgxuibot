@@ -1,0 +1,68 @@
+# docker-compose.caddy.yml
+#
+# Разворачивает Caddy перед Cascade — даёт HTTPS/HTTP3, сайт-заглушку StreamVault
+# и скрытый путь /ADMIN_PATH/ для доступа к Cascade UI.
+#
+# ── Порядок запуска ────────────────────────────────────────────────────────────
+# 1. Убедиться что Cascade запущен:
+#      docker compose -f docker-compose.cascade.yml up -d
+# 2. Выдать TLS-сертификат (первый раз):
+#      sudo bash caddy/scripts/acme-install.sh 85.204.18.253 your@email.com
+#    (скрипт сам запустит Caddy после выдачи сертификата)
+# 3. Или запустить Caddy вручную если сертификат уже есть:
+#      cp caddy/.env.example caddy/.env  # и заполнить ADMIN_PATH
+#      docker compose -f docker-compose.caddy.yml up -d --build
+#
+# ── Доступ после запуска ───────────────────────────────────────────────────────
+#   Cascade UI:  https://85.204.18.253/<ADMIN_PATH>/
+#   Заглушка:    https://85.204.18.253/
+#
+# ── Закрыть прямой доступ к Cascade ───────────────────────────────────────────
+# Весь трафик должен идти через Caddy. Заблокировать прямой доступ:
+#   iptables-nft -A INPUT ! -i lo -p tcp --dport 51821 -j DROP
+
+services:
+  caddy:
+    build:
+      context: ./caddy
+      dockerfile: Dockerfile
+    container_name: cascade-caddy
+    # network_mode: host — чтобы Caddy мог достучаться до 127.0.0.1:51821 (Cascade).
+    # Caddy сам биндит порты 80 и 443 на хосте.
+    network_mode: host
+    restart: unless-stopped
+
+    # ADMIN_PATH и CASCADE_PORT — в caddy/.env (скопировать из caddy/.env.example)
+    env_file: ./caddy/.env
+
+    volumes:
+      # Caddy конфиг (read-only)
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Сайт-заглушка StreamVault
+      - ./caddy/www:/srv/www:ro
+      # acme.sh webroot для ACME HTTP-01 challenge при обновлении сертификата
+      - /srv/acme:/srv/acme:ro
+      # TLS-сертификаты, выданные acme.sh на хосте
+      - /etc/ssl/cascade:/certs:ro
+      # Логи (persistent volume)
+      - caddy_logs:/logs
+
+    # Только необходимые capabilities — бинд портов < 1024
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+
+    # Read-only rootfs — Caddy пишет только в /logs (volume) и /tmp
+    read_only: true
+    tmpfs:
+      - /tmp
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  caddy_logs:

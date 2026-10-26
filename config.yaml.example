@@ -52,3 +52,74 @@ panels:
     reality_public_key: ""
     reality_private_key: ""
     reality_short_id: ""
+
+# ── Cascade Web UI ────────────────────────────────────────────────────────────
+# Если заполнена хотя бы одна запись — бот использует Cascade API вместо
+# прямых docker exec вызовов.
+#
+# Серверы задаются по аналогии с panels: cascade0, cascade1, ... cascadeN.
+#
+# Поля:
+#   label       — отображаемое имя в дашборде бота
+#   url         — адрес Cascade UI (http://host:port)
+#   api_key     — токен из Cascade UI → Settings → Tokens
+#   username    — логин (если нет api_key)
+#   password    — пароль (если нет api_key)
+#   enabled     — true/false, по умолчанию true
+#   version     — опционально: принудить к "v1" или "v2"
+#
+# ── Приоритет авторизации ─────────────────────────────────────────────────────
+#
+#   1. api_key заполнен
+#        → прямое подключение по Bearer-токену (рекомендуется)
+#
+#   2. api_key пуст, password заполнен
+#        → прямое подключение через login + password,
+#          бот автоматически получает токен при старте
+#
+#   3. api_key и password оба пусты
+#        → remote-only: бот не подключается напрямую,
+#          интерфейсы сервера будут видны только если он добавлен
+#          как Remote через Cascade UI другого сервера
+#          (autodiscovery через /api/remotes)
+#
+# ── Autodiscovery Remotes ─────────────────────────────────────────────────────
+#   Каждый сервер с авторизацией (вариант 1 или 2) автоматически опрашивает
+#   /api/remotes и подтягивает интерфейсы всех подключённых Remote-серверов
+#   на дашборд без дополнительной настройки в config.yaml.
+#
+# ── Примеры ───────────────────────────────────────────────────────────────────
+#
+# Вариант 1 — api_key (рекомендуется):
+#
+# cascades:
+#   cascade0:
+#     label: "VPS-Finland"
+#     url: "http://localhost:51821"
+#     api_key: "ws_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+#     enabled: true
+#
+# Вариант 2 — login + password:
+#
+# cascades:
+#   cascade0:
+#     label: "VPS-Germany"
+#     url: "http://10.0.0.2:51821"
+#     username: "admin"
+#     password: "секретный-пароль"
+#
+# Вариант 3 — remote-only (сервер добавлен через Cascade UI):
+#
+# cascades:
+#   cascade0:
+#     label: "Primary"
+#     url: "http://localhost:51821"
+#     api_key: "ws_токен"
+#   cascade1:
+#     label: "Remote VPS"
+#     url: "http://remote.example.com:51821"
+#     # api_key и password не заполнены → autodiscovery через cascade0
+#
+# Все три варианта можно комбинировать в одном config.yaml.
+#
+cascades: {}

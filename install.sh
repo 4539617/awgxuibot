@@ -14,11 +14,6 @@ DEFAULT_REALITY_SNI="www.nvidia.com"
 DEFAULT_REALITY_FINGERPRINT="firefox"  # Варианты: edge, chrome, firefox, safari
 
 
-echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}   awgbot + xuibot Installer${NC}"
-echo -e "${BLUE}   AWG + XUI Management${NC}"
-echo -e "${BLUE}========================================${NC}\n"
-
 # Проверка прав root
 if [ "$EUID" -ne 0 ]; then
     echo -e "${RED}❌ Запустите с правами root (sudo ./install.sh)${NC}"
@@ -313,32 +308,43 @@ create_config_if_not_exists() {
 
 # Проверка наличия yq (YAML processor)
 check_yq() {
+    # Добавляем /usr/local/bin в PATH если его нет
+    if [[ ":$PATH:" != *":/usr/local/bin:"* ]]; then
+        export PATH="/usr/local/bin:$PATH"
+    fi
     if ! command -v yq &> /dev/null; then
         echo -e "${YELLOW}📦 Установка yq (YAML processor)...${NC}"
-        
+
         # Определяем архитектуру
         ARCH=$(uname -m)
         case $ARCH in
-            x86_64)
-                YQ_ARCH="amd64"
-                ;;
-            aarch64|arm64)
-                YQ_ARCH="arm64"
-                ;;
-            armv7l)
-                YQ_ARCH="arm"
-                ;;
+            x86_64)   YQ_ARCH="amd64" ;;
+            aarch64|arm64) YQ_ARCH="arm64" ;;
+            armv7l)   YQ_ARCH="arm" ;;
             *)
                 echo -e "${RED}❌ Неподдерживаемая архитектура: $ARCH${NC}"
                 return 1
                 ;;
         esac
-        
-        # Скачиваем и устанавливаем yq
+
         YQ_VERSION="v4.35.1"
-        wget -q "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_${YQ_ARCH}" -O /usr/local/bin/yq
-        chmod +x /usr/local/bin/yq
-        
+        YQ_URL="https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_${YQ_ARCH}"
+
+        # Попытка 1: wget
+        if command -v wget &> /dev/null; then
+            wget -q --timeout=15 "$YQ_URL" -O /usr/local/bin/yq 2>/dev/null && chmod +x /usr/local/bin/yq
+        fi
+
+        # Попытка 2: curl
+        if ! command -v yq &> /dev/null && command -v curl &> /dev/null; then
+            curl -sL --max-time 15 "$YQ_URL" -o /usr/local/bin/yq 2>/dev/null && chmod +x /usr/local/bin/yq
+        fi
+
+        # Попытка 3: snap
+        if ! command -v yq &> /dev/null && command -v snap &> /dev/null; then
+            snap install yq 2>/dev/null
+        fi
+
         if command -v yq &> /dev/null; then
             echo -e "${GREEN}✅ yq установлен${NC}"
         else
@@ -353,8 +359,8 @@ check_yq() {
 get_local_panel_id() {
     # Локальная панель всегда panel0
     if [ -f "config.yaml" ] && check_yq &>/dev/null; then
-        local panel_id=$(yq eval '.panels.panel0 | key' config.yaml 2>/dev/null)
-        if [ -z "$panel_id" ] || [ "$panel_id" = "null" ]; then
+        local panel_exists=$(yq eval '.panels | has("panel0")' config.yaml 2>/dev/null)
+        if [ "$panel_exists" != "true" ]; then
             # Панель panel0 не существует в конфиге
             echo -e "${YELLOW}⚠️  Панель panel0 не найдена в config.yaml${NC}" >&2
             echo ""
@@ -1047,8 +1053,8 @@ install_bot() {
     
     # Остановка старых контейнеров
     echo -e "\n${YELLOW}🛑 Остановка старых контейнеров...${NC}"
-    docker stop xuibot 2>/dev/null || true
-    docker rm xuibot 2>/dev/null || true
+    docker stop xuibot > /dev/null 2>&1 || true
+    docker rm xuibot > /dev/null 2>&1 || true
     
     # Проверка docker-compose.xuibot.yml
     echo -e "\n${YELLOW}🔍 Проверка конфигурации...${NC}"
@@ -1582,10 +1588,10 @@ install_xuibot() {
     
     # Остановка старых контейнеров
     echo -e "\n${YELLOW}🛑 Остановка старых контейнеров...${NC}"
-    docker stop xuibot 2>/dev/null || true
-    docker rm xuibot 2>/dev/null || true
-    docker stop netcrazybot 2>/dev/null || true
-    docker rm netcrazybot 2>/dev/null || true
+    docker stop xuibot > /dev/null 2>&1 || true
+    docker rm xuibot > /dev/null 2>&1 || true
+    docker stop netcrazybot > /dev/null 2>&1 || true
+    docker rm netcrazybot > /dev/null 2>&1 || true
     
     # Запуск только XUI бота
     echo -e "\n${YELLOW}🐳 Сборка и запуск XUI бота...${NC}"
@@ -1654,26 +1660,42 @@ update_xuibot() {
     echo -e "\n${BLUE}========================================${NC}"
     echo -e "${BLUE}   Обновление XUI Бота${NC}"
     echo -e "${BLUE}========================================${NC}\n"
-    
+
+    # Отключаем set -e на время функции, чтобы get_config_value не роняло скрипт
+    set +e
+
     echo -e "${YELLOW}🔄 Обновление XUI бота...${NC}"
-    
+
+    # Определяем DOCKER_COMPOSE_CMD если ещё не установлен
+    if [ -z "$DOCKER_COMPOSE_CMD" ]; then
+        if docker compose version &>/dev/null 2>&1; then
+            DOCKER_COMPOSE_CMD="docker compose"
+        elif command -v docker-compose &>/dev/null; then
+            DOCKER_COMPOSE_CMD="docker-compose"
+        else
+            echo -e "${RED}❌ Docker Compose не найден!${NC}"
+            set -e
+            return 1
+        fi
+    fi
+
     # Обновляем SERVER_ADDRESS и TLS_SNI из XUI_URL (ПОСЛЕ git pull, чтобы всегда выполнялось)
     echo ""
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${BLUE}📋 Шаг 1: Чтение XUI_URL из config.yaml${NC}"
     XUI_URL=$(get_config_value "XUI_URL")
     echo -e "${GREEN}✓ XUI_URL прочитан: ${XUI_URL}${NC}"
-    
+
     if [ -n "$XUI_URL" ]; then
         echo -e "\n${BLUE}📋 Шаг 2: Извлечение домена из URL${NC}"
         DOMAIN=$(echo "$XUI_URL" | sed -E 's|^https?://([^:/]+).*|\1|')
         echo -e "${GREEN}✓ Извлечён домен/IP: ${DOMAIN}${NC}"
-        
+
         echo -e "\n${BLUE}📋 Шаг 3: Проверка - домен или IP?${NC}"
         if [[ ! "$DOMAIN" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo -e "${GREEN}✓ Это ДОМЕН (не IP адрес)${NC}"
             echo -e "${YELLOW}🔄 Будут обновлены SERVER_ADDRESS и TLS_SNI${NC}"
-            
+
             echo -e "\n${BLUE}📋 Шаг 4: Обновление SERVER_ADDRESS${NC}"
             CURRENT_SERVER=$(get_config_value "SERVER_ADDRESS")
             echo -e "${YELLOW}  Текущее значение: ${CURRENT_SERVER}${NC}"
@@ -1681,7 +1703,7 @@ update_xuibot() {
             update_config_value "SERVER_ADDRESS" "${DOMAIN}"
             NEW_SERVER=$(get_config_value "SERVER_ADDRESS")
             echo -e "${GREEN}✅ SERVER_ADDRESS обновлён: ${NEW_SERVER}${NC}"
-            
+
             echo -e "\n${BLUE}📋 Шаг 5: Обновление TLS_SNI${NC}"
             CURRENT_TLS_SNI=$(get_config_value "TLS_SNI")
             echo -e "${YELLOW}  Текущее значение: ${CURRENT_TLS_SNI:-<пусто>}${NC}"
@@ -1697,23 +1719,24 @@ update_xuibot() {
         echo -e "${RED}❌ XUI_URL не найден в config.yaml${NC}"
     fi
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
-    
+
     # Проверка наличия инбаундов и создание при необходимости
     if ! check_and_create_inbound_if_needed; then
         echo -e "\n${CYAN}Нажмите Enter для возврата в главное меню...${NC}"
         read
+        set -e
         return
     fi
-    
+
     # Извлекаем параметры из панели (TLS_FINGERPRINT, TLS_ALPN и т.д.)
     echo ""
-    extract_inbound_params
+    extract_inbound_params || true
     echo ""
-    
+
     # Определяем и сохраняем версию панели
     echo -e "${YELLOW}🔍 Определение версии панели...${NC}"
     XUI_VERSION=""
-    
+
     # Способ 1: Из исполняемого файла x-ui (основной метод)
     if [ -f "/usr/local/x-ui/x-ui" ]; then
         XUI_VERSION=$(/usr/local/x-ui/x-ui -v 2>/dev/null | grep -oP '\d+\.\d+\.\d+' | head -1)
@@ -1721,7 +1744,7 @@ update_xuibot() {
             echo -e "${GREEN}✅ Версия панели определена: ${XUI_VERSION}${NC}"
         fi
     fi
-    
+
     # Способ 2: Из бинарного файла в bin/
     if [ -z "$XUI_VERSION" ] && [ -f "/usr/local/x-ui/bin/x-ui" ]; then
         XUI_VERSION=$(/usr/local/x-ui/bin/x-ui -v 2>/dev/null | grep -oP '\d+\.\d+\.\d+' | head -1)
@@ -1729,7 +1752,7 @@ update_xuibot() {
             echo -e "${GREEN}✅ Версия панели определена: ${XUI_VERSION}${NC}"
         fi
     fi
-    
+
     # Если версия определена, сохраняем в config.yaml
     if [ -n "$XUI_VERSION" ]; then
         echo -e "${YELLOW}📝 Сохранение версии в config.yaml...${NC}"
@@ -1740,20 +1763,28 @@ update_xuibot() {
         echo -e "${BLUE}ℹ️  Будет использоваться значение из config.yaml или 'latest'${NC}"
     fi
     echo ""
-    
+
+    set -e
+
     # Остановка контейнера
     echo -e "${YELLOW}🛑 Остановка контейнера...${NC}"
-    docker stop xuibot 2>/dev/null || true
-    docker rm xuibot 2>/dev/null || true
-    
+    docker stop xuibot > /dev/null 2>&1 || true
+    docker rm xuibot > /dev/null 2>&1 || true
+
+    # Удаляем старый тегированный образ, чтобы сборка не тянула его слои
+    echo -e "${YELLOW}🗑️  Удаление старого образа xuibot...${NC}"
+    docker rmi awgxuibot-xuibot 2>/dev/null || true
+
     # Пересборка образа
-    docker_prune
     echo -e "${YELLOW}🐳 Пересборка образа...${NC}"
     $DOCKER_COMPOSE_CMD -f docker-compose.xuibot.yml build --no-cache
-    
+
     # Запуск
     echo -e "${YELLOW}🚀 Запуск обновленного контейнера...${NC}"
     $DOCKER_COMPOSE_CMD -f docker-compose.xuibot.yml up -d
+    
+    # Удаляем dangling-образы, которые появились в результате пересборки
+    docker_prune_after_build
     
     echo -e "\n${YELLOW}⏳ Ожидание запуска контейнера...${NC}"
     sleep 8
@@ -1786,8 +1817,8 @@ remove_xuibot() {
     
     # Остановка и удаление контейнера
     echo -e "${YELLOW}🛑 Остановка контейнера...${NC}"
-    docker stop xuibot 2>/dev/null || true
-    docker rm xuibot 2>/dev/null || true
+    docker stop xuibot > /dev/null 2>&1 || true
+    docker rm xuibot > /dev/null 2>&1 || true
     
     # Удаление образа
     echo -e "${YELLOW}🗑️  Удаление образа...${NC}"
@@ -1990,17 +2021,23 @@ update_awgbot() {
     
     # Остановка контейнера
     echo -e "\n${YELLOW}🛑 Остановка контейнера...${NC}"
-    docker stop awgbot 2>/dev/null || true
-    docker rm awgbot 2>/dev/null || true
+    docker stop awgbot > /dev/null 2>&1 || true
+    docker rm awgbot > /dev/null 2>&1 || true
+    
+    # Удаляем старый тегированный образ, чтобы сборка не тянула его слои
+    echo -e "${YELLOW}🗑️  Удаление старого образа awgbot...${NC}"
+    docker rmi awgxuibot-awgbot 2>/dev/null || true
     
     # Пересборка образа
-    docker_prune
     echo -e "${YELLOW}🐳 Пересборка образа...${NC}"
     $DOCKER_COMPOSE_CMD -f docker-compose.awgbot.yml build --no-cache
     
     # Запуск
     echo -e "${YELLOW}🚀 Запуск пересобранного контейнера...${NC}"
     $DOCKER_COMPOSE_CMD -f docker-compose.awgbot.yml up -d
+    
+    # Удаляем dangling-образы, которые появились в результате пересборки
+    docker_prune_after_build
     
     sleep 5
     echo -e "\n${GREEN}✅ AWG Бот пересобран!${NC}"
@@ -2031,8 +2068,8 @@ remove_awgbot() {
     
     # Остановка и удаление контейнера
     echo -e "${YELLOW}🛑 Остановка контейнера...${NC}"
-    docker stop awgbot 2>/dev/null || true
-    docker rm awgbot 2>/dev/null || true
+    docker stop awgbot > /dev/null 2>&1 || true
+    docker rm awgbot > /dev/null 2>&1 || true
     
     # Удаление образа
     echo -e "${YELLOW}🗑️  Удаление образа...${NC}"
@@ -2049,6 +2086,318 @@ remove_awgbot() {
     
     echo -e "${GREEN}✅ AWG Бот удален!${NC}"
 }
+
+# ============================================
+# CASCADE WEB UI Functions
+# ============================================
+
+install_cascade() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Установка Cascade Web UI${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+
+    if [ ! -f "docker-compose.cascade.yml" ]; then
+        echo -e "${RED}❌ Файл docker-compose.cascade.yml не найден!${NC}"
+        echo -e "${YELLOW}Убедитесь что файл присутствует в директории: $(pwd)${NC}"
+        return 1
+    fi
+
+    # Проверяем, установлен ли уже Cascade
+    if docker ps -a --format '{{.Names}}' | grep -q "^cascade$"; then
+        echo -e "${YELLOW}⚠️  Cascade уже установлен.${NC}"
+        read -p "Переустановить? (y/n): " reinstall
+        if [ "$reinstall" != "y" ]; then
+            return 0
+        fi
+        echo -e "${YELLOW}🗑️  Остановка старого контейнера...${NC}"
+        docker compose -f docker-compose.cascade.yml down 2>/dev/null || true
+    fi
+
+    echo -e "${YELLOW}🔨 Сборка образа Cascade из исходников...${NC}"
+    if docker compose -f docker-compose.cascade.yml up -d --build; then
+        sleep 3
+        local status=$(docker ps --filter name="^cascade$" --format "{{.Status}}" 2>/dev/null)
+        if [[ "$status" == *"Up"* ]]; then
+            local server_ip=$(curl -4 -s --max-time 3 ifconfig.me 2>/dev/null || echo "YOUR_SERVER_IP")
+            local inst_cascade_port=$(docker inspect cascade --format='{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | grep '^PORT=' | cut -d= -f2)
+            [ -z "$inst_cascade_port" ] && inst_cascade_port="51821"
+            echo -e "\n${GREEN}✅ Cascade Web UI успешно установлен!${NC}"
+            echo -e "${BLUE}========================================${NC}"
+            # Если уже запущен Caddy — показываем HTTPS URL
+            if docker ps --format '{{.Names}}' | grep -q "^cascade-caddy$"; then
+                local caddy_env_file="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/caddy/.env"
+                local admin_path=""
+                [ -f "$caddy_env_file" ] && admin_path=$(grep '^ADMIN_PATH=' "$caddy_env_file" 2>/dev/null | cut -d= -f2)
+                if [ -n "$admin_path" ] && [ "$admin_path" != "replace-with-random-string" ]; then
+                    echo -e "${GREEN}🌐 Веб-интерфейс: ${YELLOW}https://${server_ip}/${admin_path}/${NC}"
+                else
+                    echo -e "${GREEN}🌐 Веб-интерфейс: ${YELLOW}https://${server_ip}/${NC} ${YELLOW}(задайте ADMIN_PATH в caddy/.env)${NC}"
+                fi
+            else
+                echo -e "${GREEN}🌐 Веб-интерфейс: ${YELLOW}http://${server_ip}:${inst_cascade_port}${NC}"
+            fi
+            echo -e "${BLUE}========================================${NC}"
+            echo -e "${YELLOW}💡 Для миграции существующих AWG серверов используйте пункт меню 26${NC}"
+        else
+            echo -e "${RED}❌ Cascade не запустился. Проверьте логи:${NC}"
+            docker logs cascade 2>&1 | tail -20
+            return 1
+        fi
+    else
+        echo -e "${RED}❌ Ошибка запуска Cascade${NC}"
+        return 1
+    fi
+}
+
+show_cascade_logs() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Логи Cascade Web UI${NC}"
+    echo -e "${BLUE}========================================${NC}"
+
+    if ! docker ps -a --format '{{.Names}}' | grep -q "^cascade$"; then
+        echo -e "${RED}❌ Контейнер cascade не найден${NC}"
+        return 1
+    fi
+
+    echo -e "${YELLOW}Последние 100 строк логов (Ctrl+C для выхода):${NC}\n"
+    docker logs --tail=100 -f cascade 2>&1
+}
+
+update_cascade() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Пересборка Cascade Web UI${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+
+    if [ ! -f "docker-compose.cascade.yml" ]; then
+        echo -e "${RED}❌ Файл docker-compose.cascade.yml не найден!${NC}"
+        return 1
+    fi
+
+    echo -e "${YELLOW}🔄 Пересборка и перезапуск Cascade...${NC}"
+    # Останавливаем и удаляем контейнер любым способом (он мог быть запущен
+    # не через этот compose-файл — принудительное удаление надёжнее).
+    docker compose -f docker-compose.cascade.yml down 2>/dev/null || true
+    docker rm -f cascade 2>/dev/null || true
+
+    # Удаляем старый тегированный образ, чтобы сборка не тянула его слои
+    echo -e "${YELLOW}🗑️  Удаление старого образа cascade...${NC}"
+    docker rmi cascade:latest 2>/dev/null || true
+
+    docker compose -f docker-compose.cascade.yml build --no-cache
+    docker compose -f docker-compose.cascade.yml up -d
+    # Удаляем dangling-образы, которые появились в результате пересборки
+    docker_prune_after_build
+
+    sleep 3
+    local status=$(docker ps --filter name="^cascade$" --format "{{.Status}}" 2>/dev/null)
+    if [[ "$status" == *"Up"* ]]; then
+        echo -e "${GREEN}✅ Cascade успешно обновлён и запущен${NC}"
+    else
+        echo -e "${RED}❌ Cascade не запустился после пересборки${NC}"
+        docker logs cascade 2>&1 | tail -20
+        return 1
+    fi
+}
+
+install_caddy() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Установка Caddy (HTTPS для Cascade)${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+
+    # Проверяем что Cascade запущен
+    if ! docker ps --format '{{.Names}}' | grep -q "^cascade$"; then
+        echo -e "${RED}❌ Cascade не запущен! Сначала установите Cascade (пункт 22)${NC}"
+        return 1
+    fi
+
+    # Проверяем что acme-install.sh есть
+    if [ ! -f "caddy/scripts/acme-install.sh" ]; then
+        echo -e "${RED}❌ Файл caddy/scripts/acme-install.sh не найден!${NC}"
+        return 1
+    fi
+
+    # Проверяем что docker-compose.caddy.yml есть
+    if [ ! -f "docker-compose.caddy.yml" ]; then
+        echo -e "${RED}❌ Файл docker-compose.caddy.yml не найден!${NC}"
+        return 1
+    fi
+
+    # Если Caddy уже запущен — предлагаем пересоздать
+    if docker ps --format '{{.Names}}' | grep -q "^cascade-caddy$"; then
+        echo -e "${YELLOW}⚠️  Caddy уже запущен.${NC}"
+        read -p "Переустановить? (y/n): " reinstall
+        if [ "$reinstall" != "y" ]; then
+            return 0
+        fi
+        docker compose -f docker-compose.caddy.yml down 2>/dev/null || true
+    fi
+
+    # Получаем публичный IP сервера
+    local server_ip
+    server_ip=$(curl -4 -s --max-time 5 ifconfig.me 2>/dev/null || echo "")
+    if [ -z "$server_ip" ]; then
+        read -p "Не удалось определить IP автоматически. Введите публичный IP сервера: " server_ip
+    fi
+    if [ -z "$server_ip" ]; then
+        echo -e "${RED}❌ IP сервера не указан${NC}"
+        return 1
+    fi
+    echo -e "  Публичный IP: ${GREEN}${server_ip}${NC}"
+
+    # Email для Let's Encrypt
+    read -p "Введите email для Let's Encrypt (для уведомлений об истечении): " le_email
+    if [ -z "$le_email" ]; then
+        echo -e "${RED}❌ Email обязателен для получения сертификата${NC}"
+        return 1
+    fi
+
+    # Генерируем ADMIN_PATH если не задан
+    local caddy_env="caddy/.env"
+    local admin_path=""
+    if [ -f "$caddy_env" ]; then
+        admin_path=$(grep '^ADMIN_PATH=' "$caddy_env" 2>/dev/null | cut -d= -f2)
+    fi
+    if [ -z "$admin_path" ] || [ "$admin_path" = "replace-with-random-string" ]; then
+        admin_path=$(openssl rand -hex 12 2>/dev/null || cat /proc/sys/kernel/random/uuid | tr -d '-' | head -c 24)
+        echo -e "  Генерирую ADMIN_PATH: ${GREEN}${admin_path}${NC}"
+    else
+        echo -e "  Используется существующий ADMIN_PATH: ${GREEN}${admin_path}${NC}"
+    fi
+
+    # Читаем CASCADE_PORT из ENV контейнера
+    local cascade_port
+    cascade_port=$(docker inspect cascade --format='{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | grep '^PORT=' | cut -d= -f2)
+    [ -z "$cascade_port" ] && cascade_port="51821"
+
+    # Записываем caddy/.env
+    echo -e "${YELLOW}📝 Записываем caddy/.env...${NC}"
+    cat > "$caddy_env" <<EOF
+# Generated by install.sh
+ADMIN_PATH=${admin_path}
+CASCADE_PORT=${cascade_port}
+EOF
+    echo -e "${GREEN}✅ caddy/.env создан${NC}"
+
+    # Проверяем что порт 80 свободен
+    if ss -tuln 2>/dev/null | grep -q ':80 ' || netstat -tuln 2>/dev/null | grep -q ':80 '; then
+        echo -e "${RED}❌ Порт 80 занят! Он нужен для получения TLS-сертификата.${NC}"
+        echo -e "${YELLOW}   Остановите сервис на порту 80 и повторите.${NC}"
+        return 1
+    fi
+
+    # Запускаем acme-install.sh
+    echo -e "\n${YELLOW}🔒 Получаем TLS-сертификат и запускаем Caddy...${NC}"
+    echo -e "${YELLOW}   (потребуется доступ к порту 80 из интернета)${NC}\n"
+    if bash caddy/scripts/acme-install.sh "$server_ip" "$le_email"; then
+        echo -e "\n${GREEN}✅ Caddy успешно установлен!${NC}"
+        echo -e "${BLUE}========================================${NC}"
+        echo -e "${GREEN}🌐 Cascade UI: ${YELLOW}https://${server_ip}/${admin_path}/${NC}"
+        echo -e "${GREEN}🔒 Прямой доступ к Cascade рекомендуется закрыть:${NC}"
+        echo -e "${YELLOW}   iptables-nft -A INPUT ! -i lo -p tcp --dport ${cascade_port} -j DROP${NC}"
+        echo -e "${BLUE}========================================${NC}"
+    else
+        echo -e "${RED}❌ Ошибка установки Caddy. Проверьте вывод выше.${NC}"
+        return 1
+    fi
+}
+
+remove_caddy() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Удаление Caddy${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+
+    read -p "⚠️  Удалить Caddy? (нажмите Enter для подтверждения или 0 для отмены): " confirm
+    if [[ "$confirm" == "0" ]]; then
+        echo -e "${YELLOW}Отменено${NC}"
+        return
+    fi
+
+    docker compose -f docker-compose.caddy.yml down 2>/dev/null || true
+    docker rmi cascade-caddy 2>/dev/null || true
+    echo -e "${GREEN}✅ Caddy удалён${NC}"
+    echo -e "${YELLOW}💡 Сертификаты сохранены в /etc/ssl/cascade/ (удалите вручную при необходимости)${NC}"
+}
+
+remove_cascade() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Удаление Cascade Web UI${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+
+    read -p "⚠️  Вы уверены что хотите удалить Cascade? (нажмите Enter для подтверждения или 0 для отмены): " confirm
+    if [[ "$confirm" == "0" ]]; then
+        echo -e "${YELLOW}Отменено${NC}"
+        return
+    fi
+
+    echo -e "${YELLOW}🗑️  Удаление Cascade...${NC}"
+    if [ -f "docker-compose.cascade.yml" ]; then
+        docker compose -f docker-compose.cascade.yml down -v 2>/dev/null || true
+    else
+        docker stop cascade 2>/dev/null || true
+        docker rm cascade 2>/dev/null || true
+    fi
+
+    docker rmi cascade 2>/dev/null || true
+    echo -e "${GREEN}✅ Cascade удалён!${NC}"
+    echo -e "${YELLOW}💡 Данные Cascade сохранены в ./cascade-data (удалите вручную при необходимости)${NC}"
+}
+
+migrate_to_cascade_menu() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Миграция AWG в Cascade${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+
+    # Проверяем что Cascade запущен
+    if ! docker ps --format '{{.Names}}' | grep -q "^cascade$"; then
+        echo -e "${RED}❌ Cascade не запущен! Сначала установите Cascade (пункт 22)${NC}"
+        return 1
+    fi
+
+    # Проверяем наличие скрипта миграции
+    if [ ! -f "migrate-to-cascade.js" ]; then
+        echo -e "${RED}❌ Файл migrate-to-cascade.js не найден!${NC}"
+        return 1
+    fi
+
+    # Проверяем Node.js
+    if ! command -v node &>/dev/null; then
+        echo -e "${RED}❌ Node.js не установлен. Установите для работы миграции.${NC}"
+        return 1
+    fi
+
+    echo -e "${YELLOW}Этот инструмент мигрирует существующие AWG контейнеры в Cascade.${NC}"
+    echo -e "${YELLOW}Существующие клиенты продолжат работать без переконфигурации.${NC}\n"
+
+    echo -e "${GREEN}1)${NC} Мигрировать AWG v1 и v2"
+    echo -e "${GREEN}2)${NC} Мигрировать только AWG v1"
+    echo -e "${GREEN}3)${NC} Мигрировать только AWG v2"
+    echo -e "${GREEN}4)${NC} Пробный запуск (dry-run, без изменений)"
+    echo -e "${GREEN}0)${NC} Вернуться"
+    read -p "Введите номер: " migrate_choice
+
+    case $migrate_choice in
+        1)
+            echo -e "${YELLOW}🔄 Миграция AWG v1 и v2...${NC}"
+            node migrate-to-cascade.js
+            ;;
+        2)
+            echo -e "${YELLOW}🔄 Миграция AWG v1...${NC}"
+            node migrate-to-cascade.js --v1-only
+            ;;
+        3)
+            echo -e "${YELLOW}🔄 Миграция AWG v2...${NC}"
+            node migrate-to-cascade.js --v2-only
+            ;;
+        4)
+            echo -e "${YELLOW}🔍 Пробный запуск миграции...${NC}"
+            node migrate-to-cascade.js --dry-run
+            ;;
+        0) return 0 ;;
+        *) echo -e "${RED}❌ Неверный выбор${NC}" ;;
+    esac
+}
+
+
 
 
 # Объединенная функция удаления AWG
@@ -2160,7 +2509,15 @@ docker_prune() {
     echo -e "${YELLOW}🧹 Очистка неиспользуемых Docker-ресурсов...${NC}"
     docker container prune -f 2>/dev/null | grep -E "deleted|freed|Deleted|Freed" || true
     docker image prune -f 2>/dev/null | grep -E "deleted|freed|Deleted|Freed|reclaimed" || true
-    docker builder prune -f 2>/dev/null | grep -E "deleted|freed|Deleted|Freed|reclaimed" || true
+    # Удаляем build cache старше 7 дней — свежий кэш сохраняется для быстрой пересборки
+    docker builder prune -f --filter "until=168h" 2>/dev/null | grep -E "Total reclaimed space" || true
+    echo -e "${GREEN}✅ Очистка завершена${NC}"
+}
+
+# Очистка dangling-образов ПОСЛЕ пересборки (они появляются именно после build)
+docker_prune_after_build() {
+    echo -e "${YELLOW}🧹 Очистка старых dangling-образов после пересборки...${NC}"
+    docker image prune -f 2>/dev/null | grep -E "Total reclaimed space" || true
     echo -e "${GREEN}✅ Очистка завершена${NC}"
 }
 
@@ -2177,12 +2534,18 @@ rebuild_xuibot() {
     echo -e "${YELLOW}🛑 Остановка контейнера xuibot...${NC}"
     $DOCKER_COMPOSE_CMD -f docker-compose.xuibot.yml down 2>/dev/null || true
     
-    docker_prune
+    # Удаляем старый тегированный образ, чтобы сборка не тянула его слои
+    echo -e "${YELLOW}🗑️  Удаление старого образа xuibot...${NC}"
+    docker rmi awgxuibot-xuibot 2>/dev/null || true
+    
     echo -e "${YELLOW}🔨 Пересборка образа xuibot...${NC}"
     $DOCKER_COMPOSE_CMD -f docker-compose.xuibot.yml build --no-cache
     
     echo -e "${YELLOW}🚀 Запуск контейнера xuibot...${NC}"
     $DOCKER_COMPOSE_CMD -f docker-compose.xuibot.yml up -d
+    
+    # Удаляем dangling-образы, которые появились в результате пересборки
+    docker_prune_after_build
     
     echo -e "\n${YELLOW}⏳ Ожидание запуска контейнера...${NC}"
     sleep 8
@@ -2207,12 +2570,18 @@ rebuild_awgbot() {
     echo -e "${YELLOW}🛑 Остановка контейнера awgbot...${NC}"
     $DOCKER_COMPOSE_CMD -f docker-compose.awgbot.yml down 2>/dev/null || true
     
-    docker_prune
+    # Удаляем старый тегированный образ, чтобы сборка не тянула его слои
+    echo -e "${YELLOW}🗑️  Удаление старого образа awgbot...${NC}"
+    docker rmi awgxuibot-awgbot 2>/dev/null || true
+    
     echo -e "${YELLOW}🔨 Пересборка образа awgbot...${NC}"
     $DOCKER_COMPOSE_CMD -f docker-compose.awgbot.yml build --no-cache
     
     echo -e "${YELLOW}🚀 Запуск контейнера awgbot...${NC}"
     $DOCKER_COMPOSE_CMD -f docker-compose.awgbot.yml up -d
+    
+    # Удаляем dangling-образы, которые появились в результате пересборки
+    docker_prune_after_build
     
     sleep 5
     echo -e "\n${GREEN}✅ AWG Бот пересобран!${NC}"
@@ -2356,13 +2725,13 @@ show_status() {
                 xui_api_token=$(yq eval ".panels.${_lpid}.xui_api_token" config.yaml 2>/dev/null)
             fi
             
-            # Выводим данные подключения если они есть
-            if [ -n "$xui_url" ]; then
+            # Выводим данные подключения если они есть (и не null)
+            if [ -n "$xui_url" ] && [ "$xui_url" != "null" ]; then
                 echo -e "\n  ${BOLD}Данные подключения:${NC}"
                 echo -e "  • URL: ${xui_url}"
-                [ -n "$xui_username" ] && echo -e "  • Username: ${xui_username}"
-                [ -n "$xui_password" ] && echo -e "  • Password: ${xui_password}"
-                [ -n "$xui_api_token" ] && echo -e "  • API Token: ${xui_api_token}"
+                [ -n "$xui_username" ] && [ "$xui_username" != "null" ] && echo -e "  • Username: ${xui_username}"
+                [ -n "$xui_password" ] && [ "$xui_password" != "null" ] && echo -e "  • Password: ${xui_password}"
+                [ -n "$xui_api_token" ] && [ "$xui_api_token" != "null" ] && echo -e "  • API Token: ${xui_api_token}"
             fi
         else
             echo -e "  ${GREEN}✅ Установлена${NC}"
@@ -2480,18 +2849,44 @@ show_status() {
     
     
     # ============================================
-    # SYSTEM AUTOSTART
+    # CASCADE WEB UI
     # ============================================
-    echo -e "\n${YELLOW}${BOLD}SYSTEM AUTOSTART:${NC}"
-    
-    # Проверка Docker в автозагрузке
-    if systemctl is-enabled docker &>/dev/null; then
-        echo -e "  Docker: ${GREEN}✅ Включен в автозагрузку${NC}"
+    echo -e "\n${YELLOW}${BOLD}CASCADE WEB UI:${NC}"
+
+    if docker ps --format '{{.Names}}' | grep -q "^cascade$"; then
+        # network_mode: host не публикует порты через PortBindings — читаем из ENV
+        local cascade_port=$(docker inspect cascade --format='{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | grep '^PORT=' | cut -d= -f2)
+        [ -z "$cascade_port" ] && cascade_port="51821"
+        local server_ip_c=$(curl -4 -s --max-time 3 ifconfig.me 2>/dev/null || echo "")
+        echo -e "  Cascade: ${GREEN}✅ Запущен${NC}"
+        if [ -n "$server_ip_c" ]; then
+            # Если запущен Caddy — показываем HTTPS URL с hidden path
+            if docker ps --format '{{.Names}}' | grep -q "^cascade-caddy$"; then
+                local caddy_env_file="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/caddy/.env"
+                local admin_path=""
+                [ -f "$caddy_env_file" ] && admin_path=$(grep '^ADMIN_PATH=' "$caddy_env_file" 2>/dev/null | cut -d= -f2)
+                echo -e "  Caddy (HTTPS): ${GREEN}✅ Запущен${NC}"
+                if [ -n "$admin_path" ] && [ "$admin_path" != "replace-with-random-string" ]; then
+                    echo -e "  Веб-интерфейс: ${GREEN}https://${server_ip_c}/${admin_path}/${NC}"
+                else
+                    echo -e "  Веб-интерфейс: ${GREEN}https://${server_ip_c}/${NC} ${YELLOW}(ADMIN_PATH не задан в caddy/.env)${NC}"
+                fi
+            else
+                echo -e "  Веб-интерфейс: ${GREEN}http://${server_ip_c}:${cascade_port}${NC}"
+            fi
+        else
+            echo -e "  Порт: ${cascade_port}"
+        fi
+        local cascade_version=$(docker inspect cascade --format='{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | grep '^CASCADE_VERSION=' | cut -d= -f2)
+        [ -n "$cascade_version" ] && echo -e "  Версия: ${cascade_version}"
+    elif docker ps -a --format '{{.Names}}' | grep -q "^cascade$"; then
+        echo -e "  Cascade: ${YELLOW}⚠️  Остановлен${NC}"
+        echo -e "  ${YELLOW}Запустите: docker start cascade${NC}"
     else
-        echo -e "  Docker: ${RED}❌ Не включен в автозагрузку${NC}"
-        echo -e "  ${YELLOW}Для включения выполните: systemctl enable docker${NC}"
+        echo -e "  Cascade: ${RED}❌ Не установлен${NC}"
+        echo -e "  ${BLUE}Установите через пункт меню 22${NC}"
     fi
-    
+
     echo -e "\n${BLUE}========================================${NC}"
 }
 
@@ -2508,21 +2903,23 @@ remove_all() {
     echo -e "  - 3x-ui панель"
     echo -e "  - AWG v1 сервер"
     echo -e "  - AWG v2 сервер"
+    echo -e "  - Cascade Web UI"
     echo -e "  - Все конфигурации и данные"
     echo -e ""
     read -p "Вы уверены? (нажмите Enter для подтверждения или 0 для отмены): " confirm
-    
+
     if [[ "$confirm" == "0" ]]; then
         echo -e "${YELLOW}Отменено${NC}"
         return
     fi
-    
+
     echo -e "${YELLOW}🗑️  Удаление всех компонентов...${NC}"
-    
-    # Остановка всех контейнеров
+
+    # Остановка всех контейнеров (включая Cascade)
     echo -e "${YELLOW}🛑 Остановка контейнеров...${NC}"
-    docker stop awgbot xuibot amnezia-awg amnezia-awg2 2>/dev/null || true
-    docker rm awgbot xuibot amnezia-awg amnezia-awg2 2>/dev/null || true
+    docker stop awgbot xuibot amnezia-awg amnezia-awg2 cascade > /dev/null 2>&1 || true
+    docker rm awgbot xuibot amnezia-awg amnezia-awg2 cascade > /dev/null 2>&1 || true
+    docker rmi cascade 2>/dev/null || true
     
     # Удаление образов
     echo -e "${YELLOW}🗑️  Удаление образов...${NC}"
@@ -4053,14 +4450,9 @@ install_3xui_v294() {
     echo -e "${BLUE}========================================${NC}\n"
     
     # Проверка установлена ли уже панель
-    if systemctl is-active --quiet x-ui; then
+    if [ -f /etc/systemd/system/x-ui.service ]; then
         echo -e "${YELLOW}⚠ 3x-ui панель уже установлена${NC}"
-        if [ -z "$NONINTERACTIVE" ]; then
-            read -p "Переустановить? (нажмите Enter для подтверждения или 0 для отмены): " reinstall
-        else
-            reinstall=""
-            echo -e "${BLUE}ℹ️  Автоматический режим: продолжаем переустановку${NC}"
-        fi
+        read -p "Нажмите Enter для переустановки или 0 для выхода в меню: " reinstall
         if [[ "$reinstall" == "0" ]]; then
             echo -e "${YELLOW}Отменено${NC}"
             return
@@ -4307,14 +4699,9 @@ install_3xui_v3() {
     echo -e "${BLUE}========================================${NC}\n"
     
     # Проверка установленной панели
-    if systemctl is-active --quiet x-ui; then
+    if [ -f /etc/systemd/system/x-ui.service ]; then
         echo -e "${YELLOW}⚠ 3x-ui панель уже установлена${NC}"
-        if [ -z "$NONINTERACTIVE" ]; then
-            read -p "Переустановить? (нажмите Enter для продолжения или 0 для отмены): " reinstall
-        else
-            reinstall=""
-            echo -e "${BLUE}ℹ️  Автоматический режим: продолжаем переустановку${NC}"
-        fi
+        read -p "Нажмите Enter для переустановки или 0 для выхода в меню: " reinstall
         if [[ "$reinstall" == "0" ]]; then
             echo -e "${YELLOW}Отменено${NC}"
             return
@@ -4801,37 +5188,109 @@ remove_3xui() {
 # ============================================
 
 # Генерация ключей AWG через Docker
+# $1 — "v1" (используем wg) или "v2" (используем awg из образа amnezia-awg2)
 generate_awg_keys() {
-    echo -e "${YELLOW}🔑 Генерация ключей...${NC}"
-    
+    local version="${1:-v1}"
+    echo -e "${YELLOW}🔑 Генерация ключей (${version})...${NC}"
+
+    local wg_bin="wg"
+    local docker_image="alpine:latest"
+    local install_cmd="apk add -q wireguard-tools >/dev/null 2>&1 &&"
+
+    # Для v2 используем бинарник awg из образа amnezia-awg2
+    if [ "$version" = "v2" ]; then
+        wg_bin="awg"
+        # Если образ amnezia-awg2 доступен — используем его awg бинарник напрямую
+        if docker images --format "{{.Repository}}:{{.Tag}}" | grep -q "^amnezia-awg2:latest$"; then
+            docker_image="amnezia-awg2:latest"
+            install_cmd=""
+        elif docker ps -a --format '{{.Names}}' | grep -q "^amnezia-awg2$"; then
+            # Контейнер существует — генерируем внутри него
+            local private_key=$(docker exec amnezia-awg2 awg genkey 2>/dev/null)
+            if [ -z "$private_key" ]; then
+                echo -e "${RED}❌ Ошибка генерации приватного ключа через amnezia-awg2${NC}"
+                return 1
+            fi
+            local public_key=$(echo "$private_key" | docker exec -i amnezia-awg2 awg pubkey 2>/dev/null)
+            if [ -z "$public_key" ]; then
+                echo -e "${RED}❌ Ошибка генерации публичного ключа через amnezia-awg2${NC}"
+                return 1
+            fi
+            local preshared_key=$(docker exec amnezia-awg2 awg genpsk 2>/dev/null)
+            if [ -z "$preshared_key" ]; then
+                echo -e "${RED}❌ Ошибка генерации preshared ключа через amnezia-awg2${NC}"
+                return 1
+            fi
+            export AWG_PRIVATE_KEY="$private_key"
+            export AWG_PUBLIC_KEY="$public_key"
+            export AWG_PRESHARED_KEY="$preshared_key"
+            echo -e "${GREEN}✅ Ключи успешно сгенерированы (awg, через контейнер)${NC}"
+            return 0
+        else
+            # Fallback: используем wg для генерации ключей (ключи совместимы с awg)
+            echo -e "${YELLOW}⚠️  Образ amnezia-awg2 не найден, используем wg для генерации ключей${NC}"
+            wg_bin="wg"
+            docker_image="alpine:latest"
+            install_cmd="apk add -q wireguard-tools >/dev/null 2>&1 &&"
+        fi
+    fi
+
     # Генерируем приватный ключ
-    local private_key=$(docker run --rm alpine:latest sh -c "apk add -q wireguard-tools >/dev/null 2>&1 && wg genkey" 2>/dev/null)
+    local private_key=$(docker run --rm "$docker_image" sh -c "${install_cmd} ${wg_bin} genkey" 2>/dev/null)
     if [ -z "$private_key" ]; then
         echo -e "${RED}❌ Ошибка генерации приватного ключа${NC}"
         return 1
     fi
-    
+
     # Генерируем публичный ключ из приватного
-    local public_key=$(echo "$private_key" | docker run --rm -i alpine:latest sh -c "apk add -q wireguard-tools >/dev/null 2>&1 && wg pubkey" 2>/dev/null)
+    local public_key=$(echo "$private_key" | docker run --rm -i "$docker_image" sh -c "${install_cmd} ${wg_bin} pubkey" 2>/dev/null)
     if [ -z "$public_key" ]; then
         echo -e "${RED}❌ Ошибка генерации публичного ключа${NC}"
         return 1
     fi
-    
+
     # Генерируем preshared key
-    local preshared_key=$(docker run --rm alpine:latest sh -c "apk add -q wireguard-tools >/dev/null 2>&1 && wg genpsk" 2>/dev/null)
+    local preshared_key=$(docker run --rm "$docker_image" sh -c "${install_cmd} ${wg_bin} genpsk" 2>/dev/null)
     if [ -z "$preshared_key" ]; then
         echo -e "${RED}❌ Ошибка генерации preshared ключа${NC}"
         return 1
     fi
-    
+
     # Экспортируем ключи
     export AWG_PRIVATE_KEY="$private_key"
     export AWG_PUBLIC_KEY="$public_key"
     export AWG_PRESHARED_KEY="$preshared_key"
-    
+
     echo -e "${GREEN}✅ Ключи успешно сгенерированы${NC}"
     return 0
+}
+
+# Генерация случайного числа в диапазоне [lo, hi] (без bc)
+rand_range() {
+    local lo=$1
+    local hi=$2
+    local range=$(( hi - lo + 1 ))
+    echo $(( lo + RANDOM % range ))
+}
+
+# Генерация 4 непересекающихся диапазонов H1-H4 для AWG v2
+# Зеркало алгоритма FIX-4 из settings.go:generateRandomHRanges()
+# Пространство uint32 (5 .. 0xFFFFFFFF) делится на 4 равные зоны,
+# в каждой выбирается случайное начало диапазона размером 50 000 000.
+generate_h_ranges() {
+    local range_size=50000000
+    local max_uint32=4294967295
+    local zone_size=$(( (max_uint32 - 5) / 4 ))
+
+    for zone in 0 1 2 3; do
+        local zone_start=$(( 5 + zone * zone_size ))
+        local zone_end=$(( zone_start + zone_size - 1 ))
+        local max_start=$(( zone_end - range_size ))
+        # RANDOM даёт 0..32767; для больших диапазонов комбинируем
+        local start=$(( zone_start + ( (RANDOM * 32768 + RANDOM) % (max_start - zone_start + 1) ) ))
+        local end=$(( start + range_size ))
+        echo "${start}-${end}"
+    done
 }
 
 # Создание конфигурации AWG сервера
@@ -4839,12 +5298,12 @@ create_awg_server_config() {
     local version=$1
     local port=$2
     local config_path=$3
-    
+
     echo -e "${YELLOW}📝 Создание конфигурации для ${version}...${NC}"
-    
+
     # Создаём директорию
     mkdir -p "$config_path"
-    
+
     # Параметры для v1
     local jc=6
     local jmin=10
@@ -4856,20 +5315,25 @@ create_awg_server_config() {
     local h3=1955843234
     local h4=1872536766
     local config_file="wg0.conf"
-    
-    # Параметры для v2 (отличаются)
+
+    # Параметры для v2 (отличаются) — H1-H4 генерируем случайно
     if [ "$version" = "v2" ]; then
+        jc=6
+        jmin=10
+        jmax=50
         s1=103
         s2=79
-        local s3=31
-        local s4=9
-        h1="1726271876-1813116022"
-        h2="1831845225-2080655774"
-        h3="2099907137-2143693563"
-        h4="2146332087-2147440200"
+        local s3=64
+        local s4=4
+        # Генерируем 4 непересекающихся диапазона H1-H4
+        mapfile -t h_ranges < <(generate_h_ranges)
+        h1="${h_ranges[0]}"
+        h2="${h_ranges[1]}"
+        h3="${h_ranges[2]}"
+        h4="${h_ranges[3]}"
         config_file="awg0.conf"
     fi
-    
+
     # Создаём конфигурационный файл
     cat > "$config_path/$config_file" <<EOF
 [Interface]
@@ -4882,7 +5346,7 @@ Jmax = $jmax
 S1 = $s1
 S2 = $s2
 EOF
-    
+
     # Для v2 добавляем дополнительные параметры
     if [ "$version" = "v2" ]; then
         cat >> "$config_path/$config_file" <<EOF
@@ -4890,7 +5354,7 @@ S3 = $s3
 S4 = $s4
 EOF
     fi
-    
+
     # Добавляем H-параметры
     cat >> "$config_path/$config_file" <<EOF
 H1 = $h1
@@ -4899,6 +5363,42 @@ H3 = $h3
 H4 = $h4
 EOF
     
+    # Для v2 генерируем и добавляем I1-I5 параметры (CPS-мимикрия трафика)
+    # Формат: I1=<hex>, I2=<hex>, I3=<hex>, I4=<hex>, I5=<hex>
+    # Используем openssl для генерации случайных байт, если node недоступен
+    if [ "$version" = "v2" ]; then
+        echo -e "${YELLOW}📝 Генерация I1-I5 параметров для AWG v2...${NC}"
+        local i_params=""
+        if command -v node &>/dev/null && [ -f "src/awg/generator.js" ]; then
+            # Используем генератор Node.js
+            i_params=$(STANDALONE_MODE=true node --input-type=module <<'NODESCRIPT' 2>/dev/null
+import { generate } from './src/awg/generator.js';
+const p = generate({ profile: 'random', intensity: 'medium' });
+console.log(`I1=${p.I1}\nI2=${p.I2}\nI3=${p.I3}\nI4=${p.I4}\nI5=${p.I5}`);
+NODESCRIPT
+)
+        fi
+        if [ -n "$i_params" ]; then
+            echo "$i_params" >> "$config_path/$config_file"
+            echo -e "${GREEN}✅ I1-I5 параметры добавлены (Node.js генератор)${NC}"
+        else
+            # Fallback: генерируем случайные hex-строки через openssl
+            local i1=$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | xxd -p | tr -d '\n')
+            local i2=$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | xxd -p | tr -d '\n')
+            local i3=$(openssl rand -hex 16 2>/dev/null || head -c 16 /dev/urandom | xxd -p | tr -d '\n')
+            local i4=$(openssl rand -hex 16 2>/dev/null || head -c 16 /dev/urandom | xxd -p | tr -d '\n')
+            local i5=$(openssl rand -hex 16 2>/dev/null || head -c 16 /dev/urandom | xxd -p | tr -d '\n')
+            cat >> "$config_path/$config_file" <<EOF
+I1 = $i1
+I2 = $i2
+I3 = $i3
+I4 = $i4
+I5 = $i5
+EOF
+            echo -e "${GREEN}✅ I1-I5 параметры добавлены (fallback генератор)${NC}"
+        fi
+    fi
+
     # Сохраняем ключи
     echo "$AWG_PRIVATE_KEY" > "$config_path/wireguard_server_private_key.key"
     echo "$AWG_PUBLIC_KEY" > "$config_path/wireguard_server_public_key.key"
@@ -5069,7 +5569,7 @@ install_awg_standalone() {
     fi
     
     echo -e "${BLUE}📦 Standalone установка AWG $version${NC}"
-    
+
     # Шаг 1: Проверка порта
     echo -e "${YELLOW}🔍 Проверка порта $port...${NC}"
     if netstat -tuln 2>/dev/null | grep -q ":${port} " || ss -tuln 2>/dev/null | grep -q ":${port} "; then
@@ -5077,9 +5577,9 @@ install_awg_standalone() {
         return 1
     fi
     echo -e "${GREEN}✅ Порт $port свободен${NC}"
-    
-    # Шаг 2: Генерация ключей
-    if ! generate_awg_keys; then
+
+    # Шаг 2: Генерация ключей (передаём версию — v2 использует awg бинарник)
+    if ! generate_awg_keys "$version"; then
         return 1
     fi
     
@@ -5124,24 +5624,28 @@ install_awg_standalone() {
     # Шаг 7: Запуск AWG интерфейса
     echo -e "${YELLOW}🚀 Запуск AWG интерфейса...${NC}"
     local interface_name="wg0"
+    local quick_bin="wg-quick"
+    local show_bin="wg"
     if [ "$version" = "v2" ]; then
         interface_name="awg0"
+        quick_bin="awg-quick"
+        show_bin="awg"
     fi
-    
-    if docker exec "$container_name" wg-quick up "$interface_name" 2>&1 | grep -q "interface:"; then
+
+    if docker exec "$container_name" $quick_bin up "$interface_name" 2>&1 | grep -q "interface:"; then
         echo -e "${GREEN}✅ AWG интерфейс запущен${NC}"
     else
         echo -e "${YELLOW}⚠️  Попытка запуска AWG интерфейса...${NC}"
-        docker exec "$container_name" wg-quick up "$interface_name" 2>&1 || true
+        docker exec "$container_name" $quick_bin up "$interface_name" 2>&1 || true
     fi
-    
+
     # Проверка что интерфейс запущен
     sleep 2
-    if docker exec "$container_name" wg show 2>/dev/null | grep -q "interface:"; then
+    if docker exec "$container_name" $show_bin show 2>/dev/null | grep -q "interface:"; then
         echo -e "${GREEN}✅ AWG интерфейс работает${NC}"
     else
         echo -e "${YELLOW}⚠️  AWG интерфейс не запущен. Запустите вручную:${NC}"
-        echo -e "${BLUE}docker exec $container_name wg-quick up $interface_name${NC}"
+        echo -e "${BLUE}docker exec $container_name $quick_bin up $interface_name${NC}"
     fi
     
     # Шаг 7: Настройка NAT и маршрутизации
@@ -5592,45 +6096,257 @@ stop_awg_v2() {
 }
 
 
+# Вспомогательная функция: выполнить с синхронизацией репозитория
+run_with_sync() {
+    sync_repository
+    if [ $? -ne 0 ]; then
+        read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " _sync_choice
+        if [[ "$_sync_choice" == "0" ]]; then
+            echo -e "${YELLOW}Операция отменена${NC}"
+            return 1
+        fi
+    fi
+    return 0
+}
+
+# ── Подменю: 3X-UI ──────────────────────────────────────────
+menu_3xui() {
+    while true; do
+        echo -e "\n${BLUE}========================================${NC}"
+        echo -e "${BLUE}   3X-UI${NC}"
+        echo -e "${BLUE}========================================${NC}"
+        echo -e "${GREEN}1)${NC} Установка 3x-ui Panel v2.9.4"
+        echo -e "${GREEN}2)${NC} Установка 3x-ui Panel v3.x.x"
+        echo -e "${GREEN}3)${NC} Удаление 3x-ui Panel"
+        echo -e "${GREEN}0)${NC} Назад"
+        echo -e "${BLUE}========================================${NC}"
+        read -p "Введите номер: " sub
+        case $sub in
+            1) run_with_sync && install_3xui_v294 ;;
+            2) run_with_sync && install_3xui_v3 ;;
+            3) run_with_sync && remove_3xui ;;
+            0) return ;;
+            *) echo -e "${RED}❌ Неверный выбор${NC}" ;;
+        esac
+        echo -e "\n${YELLOW}Нажмите Enter для продолжения...${NC}"; read
+    done
+}
+
+# ── Подменю: CASCADE WEB UI ──────────────────────────────────
+menu_cascade() {
+    while true; do
+        echo -e "\n${BLUE}========================================${NC}"
+        echo -e "${BLUE}   CASCADE WEB UI${NC}"
+        echo -e "${BLUE}========================================${NC}"
+        echo -e "${GREEN}1)${NC} Установка Cascade Web UI"
+        echo -e "${GREEN}2)${NC} Логи Cascade"
+        echo -e "${GREEN}3)${NC} Пересборка Cascade"
+        echo -e "${GREEN}4)${NC} Удаление Cascade"
+        echo -e "${GREEN}0)${NC} Назад"
+        echo -e "${BLUE}========================================${NC}"
+        read -p "Введите номер: " sub
+        case $sub in
+            1) run_with_sync && install_cascade ;;
+            2) show_cascade_logs ;;
+            3) run_with_sync && update_cascade ;;
+            4) remove_cascade ;;
+            0) return ;;
+            *) echo -e "${RED}❌ Неверный выбор${NC}" ;;
+        esac
+        echo -e "\n${YELLOW}Нажмите Enter для продолжения...${NC}"; read
+    done
+}
+
+# ── Подменю: AWG ─────────────────────────────────────────────
+menu_awg() {
+    while true; do
+        echo -e "\n${BLUE}========================================${NC}"
+        echo -e "${BLUE}   AWG${NC}"
+        echo -e "${BLUE}========================================${NC}"
+        echo -e "${GREEN}1)${NC} Установка AWG"
+        echo -e "${GREEN}2)${NC} Удаление AWG"
+        echo -e "${GREEN}3)${NC} Сформировать конфигурацию AWG v1"
+        echo -e "${GREEN}4)${NC} Сформировать конфигурацию AWG v2"
+        echo -e "${GREEN}5)${NC} Запустить AWG v1"
+        echo -e "${GREEN}6)${NC} Запустить AWG v2"
+        echo -e "${GREEN}7)${NC} Остановить AWG v1"
+        echo -e "${GREEN}8)${NC} Остановить AWG v2"
+        echo -e "${GREEN}0)${NC} Назад"
+        echo -e "${BLUE}========================================${NC}"
+        read -p "Введите номер: " sub
+        case $sub in
+            1) run_with_sync && install_awg ;;
+            2) run_with_sync && remove_awg ;;
+            3) run_with_sync && generate_awg_config "v1" ;;
+            4) run_with_sync && generate_awg_config "v2" ;;
+            5) run_with_sync && start_awg_v1 ;;
+            6) run_with_sync && start_awg_v2 ;;
+            7) run_with_sync && stop_awg_v1 ;;
+            8) run_with_sync && stop_awg_v2 ;;
+            0) return ;;
+            *) echo -e "${RED}❌ Неверный выбор${NC}" ;;
+        esac
+        echo -e "\n${YELLOW}Нажмите Enter для продолжения...${NC}"; read
+    done
+}
+
+# ── Подменю: XUIBOT ──────────────────────────────────────────
+menu_xuibot() {
+    while true; do
+        echo -e "\n${BLUE}========================================${NC}"
+        echo -e "${BLUE}   XUIBOT${NC}"
+        echo -e "${BLUE}========================================${NC}"
+        echo -e "${GREEN}1)${NC} Установка XUIBOT"
+        echo -e "${GREEN}2)${NC} Логи XUIBOT"
+        echo -e "${GREEN}3)${NC} Пересборка XUIBOT"
+        echo -e "${GREEN}4)${NC} Удаление XUIBOT"
+        echo -e "${GREEN}0)${NC} Назад"
+        echo -e "${BLUE}========================================${NC}"
+        read -p "Введите номер: " sub
+        case $sub in
+            1) run_with_sync && install_xuibot ;;
+            2) run_with_sync && show_xuibot_logs ;;
+            3) run_with_sync && update_xuibot ;;
+            4) run_with_sync && remove_xuibot ;;
+            0) return ;;
+            *) echo -e "${RED}❌ Неверный выбор${NC}" ;;
+        esac
+        echo -e "\n${YELLOW}Нажмите Enter для продолжения...${NC}"; read
+    done
+}
+
+# ── Подменю: AWGBOT ──────────────────────────────────────────
+menu_awgbot() {
+    while true; do
+        echo -e "\n${BLUE}========================================${NC}"
+        echo -e "${BLUE}   AWGBOT${NC}"
+        echo -e "${BLUE}========================================${NC}"
+        echo -e "${GREEN}1)${NC} Установка AWGBOT"
+        echo -e "${GREEN}2)${NC} Логи AWGBOT"
+        echo -e "${GREEN}3)${NC} Пересборка AWGBOT"
+        echo -e "${GREEN}4)${NC} Удаление AWGBOT"
+        echo -e "${GREEN}0)${NC} Назад"
+        echo -e "${BLUE}========================================${NC}"
+        read -p "Введите номер: " sub
+        case $sub in
+            1) run_with_sync && install_awgbot ;;
+            2) run_with_sync && show_awgbot_logs ;;
+            3) run_with_sync && update_awgbot ;;
+            4) run_with_sync && remove_awgbot ;;
+            0) return ;;
+            *) echo -e "${RED}❌ Неверный выбор${NC}" ;;
+        esac
+        echo -e "\n${YELLOW}Нажмите Enter для продолжения...${NC}"; read
+    done
+}
+
+# ── Безопасная очистка (встроенная копия из disk_analyzer.sh) ──
+safe_cleanup_inline() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   БЕЗОПАСНАЯ ОЧИСТКА${NC}"
+    echo -e "${BLUE}========================================${NC}"
+    echo -e "${YELLOW}ВНИМАНИЕ! Эта очистка безопасна и не удалит важные данные.${NC}\n"
+    read -p "Выполнить безопасную очистку? (y/n): " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo -e "${YELLOW}Очистка отменена${NC}"
+        return
+    fi
+
+    # 1. Docker
+    if command -v docker &>/dev/null && docker info &>/dev/null; then
+        echo -e "${YELLOW}Очистка Docker...${NC}"
+        docker system prune -a -f --volumes 2>/dev/null
+        docker builder prune -a -f 2>/dev/null
+        echo -e "${GREEN}✔ Docker очищен${NC}"
+    fi
+
+    # 2. Логи
+    echo -e "${YELLOW}Очистка логов...${NC}"
+    journalctl --vacuum-size=200M 2>/dev/null
+    find /var/log -name "*.log" -type f -exec truncate -s 0 {} \; 2>/dev/null
+    find /var/log -name "*.gz" -delete 2>/dev/null
+    find /var/log -name "*.1" -delete 2>/dev/null
+    find /var/log -name "*.old" -delete 2>/dev/null
+    echo -e "${GREEN}✔ Логи очищены${NC}"
+
+    # 3. apt
+    echo -e "${YELLOW}Очистка apt кеша...${NC}"
+    apt clean 2>/dev/null
+    apt autoremove -y 2>/dev/null
+    rm -rf /var/lib/apt/lists/* 2>/dev/null
+    rm -rf /var/cache/apt/archives/*.deb 2>/dev/null
+    echo -e "${GREEN}✔ Apt кеш очищен${NC}"
+
+    # 4. Временные файлы
+    echo -e "${YELLOW}Очистка временных файлов...${NC}"
+    rm -rf /tmp/* 2>/dev/null
+    rm -rf /var/tmp/* 2>/dev/null
+    echo -e "${GREEN}✔ Временные файлы удалены${NC}"
+
+    # 5. Кеши
+    echo -e "${YELLOW}Очистка кешей...${NC}"
+    rm -rf ~/.cache/* 2>/dev/null
+    echo -e "${GREEN}✔ Кеши очищены${NC}"
+
+    echo -e "\n${GREEN}✔ Очистка завершена!${NC}"
+    echo -e "\n${BLUE}Результат после очистки:${NC}"
+    df -h / | awk 'NR==2 {printf "   Использовано: %s (%s)\n   Свободно: %s\n", $3, $5, $4}'
+}
+
+# ── Подменю: Обслуживание ─────────────────────────────────────
+menu_maintenance() {
+    while true; do
+        echo -e "\n${BLUE}========================================${NC}"
+        echo -e "${BLUE}   Обслуживание${NC}"
+        echo -e "${BLUE}========================================${NC}"
+        echo -e "${GREEN}1)${NC} Анализ диска и памяти"
+        echo -e "${GREEN}2)${NC} Безопасная очистка (автоматическая)"
+        echo -e "${GREEN}3)${NC} Настройка обратного каскада 3x-ui"
+        echo -e "${RED}99)${NC} Удалить ВСЁ (AWG + Боты + 3x-ui + Cascade)"
+        echo -e "${GREEN}0)${NC} Назад"
+        echo -e "${BLUE}========================================${NC}"
+        read -p "Введите номер: " sub
+        case $sub in
+            1)
+                if [ -f "disk_analyzer.sh" ]; then
+                    bash disk_analyzer.sh
+                else
+                    echo -e "${RED}❌ Файл disk_analyzer.sh не найден!${NC}"
+                fi
+                ;;
+            2) safe_cleanup_inline ;;
+            3)
+                if [ -f "${WORK_DIR}/setup_reverse_cascade.sh" ]; then
+                    bash "${WORK_DIR}/setup_reverse_cascade.sh"
+                elif [ -f "setup_reverse_cascade.sh" ]; then
+                    bash setup_reverse_cascade.sh
+                else
+                    echo -e "${RED}❌ Файл setup_reverse_cascade.sh не найден!${NC}"
+                    echo -e "${YELLOW}Ожидается: ${WORK_DIR}/setup_reverse_cascade.sh${NC}"
+                fi
+                ;;
+            99) run_with_sync && remove_all ;;
+            0) return ;;
+            *) echo -e "${RED}❌ Неверный выбор${NC}" ;;
+        esac
+        echo -e "\n${YELLOW}Нажмите Enter для продолжения...${NC}"; read
+    done
+}
+
 # Главное меню
 show_menu() {
     echo -e "\n${BLUE}========================================${NC}"
-    echo -e "${BLUE}   Выберите действие:${NC}"
+    echo -e "${BLUE}   AWGXUI install:${NC}"
     echo -e "${BLUE}========================================${NC}"
     echo -e "${GREEN}1)${NC} Показать статус системы"
-    echo -e "${BLUE}---${NC}"
-    echo -e "${YELLOW}3X-UI:${NC}"
-    echo -e "${GREEN}2)${NC} Установка 3x-ui Panel v2.9.4"
-    echo -e "${GREEN}3)${NC} Установка 3x-ui Panel v3.x.x"
-    echo -e "${GREEN}4)${NC} Удаление 3x-ui Panel"
-    echo -e "${BLUE}---${NC}"
-    echo -e "${YELLOW}AWG:${NC}"
-    echo -e "${GREEN}5)${NC} Установка AWG"
-    echo -e "${GREEN}6)${NC} Удаление AWG"
-    echo -e "${GREEN}7)${NC} Сформировать конфигурацию AWG v1"
-    echo -e "${GREEN}8)${NC} Сформировать конфигурацию AWG v2"
-    echo -e "${GREEN}9)${NC} Запустить AWG v1"
-    echo -e "${GREEN}10)${NC} Запустить AWG v2"
-    echo -e "${GREEN}11)${NC} Остановить AWG v1"
-    echo -e "${GREEN}12)${NC} Остановить AWG v2"
-    echo -e "${BLUE}---${NC}"
-    echo -e "${YELLOW}XUIBOT:${NC}"
-    echo -e "${GREEN}13)${NC} Установка XUIBOT"
-    echo -e "${GREEN}14)${NC} Логи XUIBOT"
-    echo -e "${GREEN}15)${NC} Пересборка XUIBOT"
-    echo -e "${GREEN}16)${NC} Удаление XUIBOT"
-    echo -e "${BLUE}---${NC}"
-    echo -e "${YELLOW}AWGBOT:${NC}"
-    echo -e "${GREEN}17)${NC} Установка AWGBOT"
-    echo -e "${GREEN}18)${NC} Логи AWGBOT"
-    echo -e "${GREEN}19)${NC} Пересборка AWGBOT"
-    echo -e "${GREEN}20)${NC} Удаление AWGBOT"
-    echo -e "${BLUE}---${NC}"
-    echo -e "${YELLOW}Системные утилиты:${NC}"
-    echo -e "${GREEN}21)${NC} Анализ диска и памяти"
-    echo -e "${BLUE}---${NC}"
-    echo -e "${RED}99)${NC} Удалить ВСЁ (AWG + Боты + 3x-ui)"
-    echo -e "${GREEN}0)${NC} Выход"
+    echo -e "${GREEN}2)${NC} 3X-UI"
+    echo -e "${GREEN}3)${NC} CASCADE WEB UI"
+    echo -e "${GREEN}4)${NC} AWG"
+    echo -e "${GREEN}5)${NC} XUIBOT"
+    echo -e "${GREEN}6)${NC} AWGBOT"
+    echo -e "${GREEN}7)${NC} Обслуживание"
+    echo -e "${RED}0)${NC} Выход"
     echo -e "${BLUE}========================================${NC}"
 }
 
@@ -5642,274 +6358,32 @@ create_directories
 while true; do
     show_menu
     read -p "Введите номер: " choice
-    
+
     case $choice in
         1)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            show_status
+            run_with_sync && show_status
+            echo -e "\n${YELLOW}Нажмите Enter для продолжения...${NC}"; read
             ;;
-        2)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            NONINTERACTIVE=1; install_3xui_v294; unset NONINTERACTIVE
-            ;;
-        3)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            install_3xui_v3
-            ;;
-        4)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            remove_3xui
-            ;;
-        5)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            install_awg
-            ;;
-        6)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            remove_awg
-            ;;
-        7)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            generate_awg_config "v1"
-            ;;
-        8)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            generate_awg_config "v2"
-            ;;
-        9)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            start_awg_v1
-            ;;
-        10)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            start_awg_v2
-            ;;
-        11)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            stop_awg_v1
-            ;;
-        12)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            stop_awg_v2
-            ;;
-        13)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            install_xuibot
-            ;;
-        14)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            show_xuibot_logs
-            ;;
-        15)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            update_xuibot
-            ;;
-        16)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            remove_xuibot
-            ;;
-        17)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            install_awgbot
-            ;;
-        18)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            show_awgbot_logs
-            ;;
-        19)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            update_awgbot
-            ;;
-        20)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            remove_awgbot
-            ;;
-        21)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            if [ -f "disk_analyzer.sh" ]; then
-                bash disk_analyzer.sh
-            else
-                echo -e "${RED}❌ Файл disk_analyzer.sh не найден!${NC}"
-            fi
-            ;;
-        99)
-            sync_repository
-            if [ $? -ne 0 ]; then
-                read -p "Продолжить без синхронизации? (Enter - да, 0 - отмена): " continue_choice
-                if [[ "$continue_choice" == "0" ]]; then
-                    echo -e "${YELLOW}Операция отменена${NC}"
-                    continue
-                fi
-            fi
-            remove_all
-            ;;
+        2) menu_3xui ;;
+        3) menu_cascade ;;
+        4) menu_awg ;;
+        5) menu_xuibot ;;
+        6) menu_awgbot ;;
+        7) menu_maintenance ;;
         0)
             echo -e "\n${YELLOW}Переустановка скрипта:${NC}"
-            echo -e "${GREEN}git clone https://github.com/4539617/awgxuibot.git /opt/awgxuibot${NC}"
-            echo -e "${GREEN}cd /opt/awgxuibot${NC}"
-            echo -e "${GREEN}bash install.sh${NC}"
+            echo -e "  git clone https://github.com/4539617/awgxuibot.git /opt/awgxuibot"
+            echo -e "  cd /opt/awgxuibot"
+            echo -e "  bash install.sh"
             echo -e "\n${BLUE}========================================${NC}"
             echo -e "${GREEN}👋 До свидания!${NC}"
             echo -e "${BLUE}========================================${NC}"
-            cd ..
             exit 0
             ;;
         *)
             echo -e "${RED}❌ Неверный выбор. Попробуйте снова.${NC}"
             ;;
     esac
-    
-    if [ -z "$NONINTERACTIVE" ]; then
-        echo -e "\n${YELLOW}Нажмите Enter для продолжения...${NC}"
-        read
-    fi
 done
 
 # ============================================

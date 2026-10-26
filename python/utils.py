@@ -1057,17 +1057,21 @@ class XUIClient:
             return []
     
     async def has_active_keys(self, username: str) -> bool:
-        """Проверка наличия активных ключей у пользователя"""
+        """Проверка наличия активных ключей у пользователя.
+        Временные ключи (email начинается с 'temp_') не учитываются —
+        наличие только temp-ключей не даёт право на автодобавление.
+        """
         try:
             user_clients = await self.get_user_clients_by_username(username)
-            
-            # Проверяем есть ли хотя бы один активный ключ
+
+            # Проверяем есть ли хотя бы один активный НЕ-временный ключ
             for client in user_clients:
-                if client['status'] == 'active':
+                email = client.get('email', '').lower()
+                if client['status'] == 'active' and not email.startswith('temp_'):
                     return True
-            
+
             return False
-            
+
         except Exception as e:
             logger.error(f"Ошибка проверки активных ключей для {username}: {e}")
             return False

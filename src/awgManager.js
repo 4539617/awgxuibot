@@ -506,67 +506,78 @@ export class AWGManager {
   }
 
   /**
-   * Сгенерировать пару ключей WireGuard
+   * Сгенерировать пару ключей WireGuard/AmneziaWG.
+   *
+   * Для AWG v2 используем бинарник «awg» (внутри контейнера amnezia-awg2),
+   * для v1 — «wg».  Ключи Curve25519 технически одинаковы, но важно чтобы
+   * PrivateKey был создан именно тем бинарником, которым управляется интерфейс.
+   *
+   * @param {string|null} containerName  — имя контейнера (передаётся из generateClientConfig)
    */
   async generateKeys(containerName = null) {
+    // Определяем правильный бинарник по имени контейнера или первому доступному
+    let wgBin = 'wg';
+    let resolvedContainer = containerName;
+
+    // Если нет явного containerName — берём первый доступный
+    if (!resolvedContainer && this.availableContainers.length) {
+      resolvedContainer = this.availableContainers[0].name;
+    }
+
+    // Если контейнер amnezia-awg2 (v2) — используем awg бинарник
+    if (resolvedContainer && resolvedContainer.includes('awg2')) {
+      wgBin = 'awg';
+    } else {
+      // Ищем в зарегистрированных контейнерах
+      const ct = this.availableContainers.find(c => c.name === resolvedContainer);
+      if (ct && ct.version === 'v2') wgBin = 'awg';
+    }
+
     try {
-      // Пробуем использовать wg на хосте
+      // 1. Пробуем бинарник на хосте
       try {
-        const { stdout: privateKey } = await execAsync('wg genkey');
+        const { stdout: privateKey } = await execAsync(`${wgBin} genkey`);
         const privKey = privateKey.trim();
-        const { stdout: publicKey } = await execAsync(`echo "${privKey}" | wg pubkey`);
-        const pubKey = publicKey.trim();
-        
-        return {
-          privateKey: privKey,
-          publicKey: pubKey
-        };
+        const { stdout: publicKey } = await execAsync(`echo "${privKey}" | ${wgBin} pubkey`);
+        return { privateKey: privKey, publicKey: publicKey.trim() };
       } catch (hostError) {
-        // Если на хосте нет wg, используем из контейнера
-        logger.info('wg not found on host, using container...');
-        
-        // Если передан конкретный контейнер, используем его
-        let targetContainer = containerName;
-        
-        // Если контейнер не указан, ищем любой доступный
-        if (!targetContainer) {
-          if (!this.availableContainers.length) {
-            // Пробуем найти любой запущенный amnezia контейнер
-            try {
-              const { stdout } = await execAsync('docker ps --filter "name=amnezia" --format "{{.Names}}" | head -n 1');
-              targetContainer = stdout.trim();
-              if (!targetContainer) {
-                throw new Error('No running AWG containers found');
-              }
-              logger.info(`Found running container: ${targetContainer}`);
-            } catch (findError) {
-              throw new Error('No AWG containers available and wg not installed on host');
-            }
-          } else {
-            targetContainer = this.availableContainers[0].name;
+        // 2. Хостовый бинарник недоступен — генерируем внутри контейнера
+        logger.info(`${wgBin} not found on host, using container ${resolvedContainer}...`);
+
+        if (!resolvedContainer) {
+          // Ищем любой запущенный amnezia контейнер
+          try {
+            const { stdout } = await execAsync(
+              'docker ps --filter "name=amnezia" --format "{{.Names}}" | head -n 1'
+            );
+            resolvedContainer = stdout.trim();
+            if (!resolvedContainer) throw new Error('No running AWG containers found');
+            // Обновляем бинарник для только что найденного контейнера
+            if (resolvedContainer.includes('awg2')) wgBin = 'awg';
+            logger.info(`Found running container: ${resolvedContainer}`);
+          } catch (findError) {
+            throw new Error('No AWG containers available and wg/awg not installed on host');
           }
         }
-        
-        // Генерируем ключи через контейнер
-        logger.info(`Generating keys using container: ${targetContainer}`);
+
+        // Генерируем ключи через контейнер нужным бинарником
+        logger.info(`Generating keys using ${wgBin} in container: ${resolvedContainer}`);
         const { stdout: privateKey } = await execAsync(
-          `docker exec ${targetContainer} wg genkey`
+          `docker exec ${resolvedContainer} ${wgBin} genkey`
         );
         const privKey = privateKey.trim();
-        
+
         const { stdout: publicKey } = await execAsync(
-          `docker exec ${targetContainer} sh -c "echo '${privKey}' | wg pubkey"`
+          `docker exec ${resolvedContainer} sh -c "echo '${privKey}' | ${wgBin} pubkey"`
         );
-        const pubKey = publicKey.trim();
-        
-        return {
-          privateKey: privKey,
-          publicKey: pubKey
-        };
+
+        return { privateKey: privKey, publicKey: publicKey.trim() };
       }
     } catch (error) {
       logger.error('Error generating WireGuard keys:', error);
-      throw new Error('Failed to generate keys. Install wireguard-tools or ensure AWG container is running.');
+      throw new Error(
+        `Failed to generate keys (${wgBin}). Install wireguard-tools/amneziawg-tools or ensure AWG container is running.`
+      );
     }
   }
 
@@ -626,52 +637,46 @@ AllowedIPs = ${ip}/32
   /**
    * Создать клиентский конфиг.
    *
-   * Для AWG v2:
-   *   H1-H4, S3/S4     — берём с сервера (ДОЛЖНЫ совпадать на обеих сторонах).
-   *   Jc/Jmin/Jmax/S1/S2 — берём с сервера.
-   *   I1-I5             — генерируем свежие через generator.js (CPS-мимикрия),
-   *                       т.к. в серверном конфиге их обычно нет, и они не
-   *                       должны совпадать — каждый клиент получает свой профиль.
+   * Порядок полей [Interface] соответствует reference peer.go:generateCompleteConfig():
+   *   PrivateKey → Address → DNS → (AWG-params)
    *
-   * Для AWG v1: только Jc/Jmin/Jmax/S1/S2/H1-H4.
+   * AWG v2:
+   *   Jc/Jmin/Jmax, S1-S4, H1-H4 — ОБЯЗАТЕЛЬНО с сервера (должны совпадать).
+   *   I1-I5 — генерируем свежие (CPS-мимикрия), если сервер не содержит I-params.
+   *
+   * AWG v1: Jc/Jmin/Jmax/S1/S2/H1-H4 с сервера.
    */
   createClientConfig(container, privateKey, ip) {
     const params = container.params;
     // params хранит строки из парсера конфига; проверяем через has()
     const has = (v) => v !== undefined && v !== null && String(v).trim() !== '';
 
+    // Заголовок — порядок как в reference peer.go:520-545
     let configContent = `[Interface]
-Address = ${ip}/32
-DNS = 1.1.1.1, 1.0.0.1
 PrivateKey = ${privateKey}
+Address = ${ip}/24
+DNS = 1.1.1.1, 8.8.8.8
 `;
 
-    // Junk параметры
-    if (has(params.Jc)) configContent += `Jc = ${params.Jc}\n`;
-    if (has(params.Jmin)) configContent += `Jmin = ${params.Jmin}\n`;
-    if (has(params.Jmax)) configContent += `Jmax = ${params.Jmax}\n`;
-
-    // S параметры
-    if (has(params.S1)) configContent += `S1 = ${params.S1}\n`;
-    if (has(params.S2)) configContent += `S2 = ${params.S2}\n`;
-
     if (container.version === 'v2') {
-      // S3/S4 — с сервера
-      if (has(params.S3)) configContent += `S3 = ${params.S3}\n`;
-      if (has(params.S4)) configContent += `S4 = ${params.S4}\n`;
+      // AWG v2 — все обфускационные параметры с сервера (ДОЛЖНЫ совпадать)
+      if (has(params.Jc))   configContent += `Jc = ${params.Jc}\n`;
+      if (has(params.Jmin)) configContent += `Jmin = ${params.Jmin}\n`;
+      if (has(params.Jmax)) configContent += `Jmax = ${params.Jmax}\n`;
+      if (has(params.S1))   configContent += `S1 = ${params.S1}\n`;
+      if (has(params.S2))   configContent += `S2 = ${params.S2}\n`;
+      if (has(params.S3))   configContent += `S3 = ${params.S3}\n`;
+      if (has(params.S4))   configContent += `S4 = ${params.S4}\n`;
+      if (has(params.H1))   configContent += `H1 = ${params.H1}\n`;
+      if (has(params.H2))   configContent += `H2 = ${params.H2}\n`;
+      if (has(params.H3))   configContent += `H3 = ${params.H3}\n`;
+      if (has(params.H4))   configContent += `H4 = ${params.H4}\n`;
 
-      // H1-H4 — ОБЯЗАТЕЛЬНО с сервера, клиент и сервер должны совпадать
-      if (has(params.H1)) configContent += `H1 = ${params.H1}\n`;
-      if (has(params.H2)) configContent += `H2 = ${params.H2}\n`;
-      if (has(params.H3)) configContent += `H3 = ${params.H3}\n`;
-      if (has(params.H4)) configContent += `H4 = ${params.H4}\n`;
-
-      // I1-I5 — генерируем свежие (CPS-мимикрия трафика, уникальная на каждый конфиг)
-      // Если на сервере есть I-параметры — используем их, иначе генерируем
+      // I1-I5: если сервер содержит I-параметры — берём их напрямую.
+      // Иначе генерируем уникальные CPS-параметры для каждого клиента.
       const hasServerI = has(params.I1) || has(params.I2);
       if (hasServerI) {
-        // Серверные I-параметры присутствуют — берём как есть
-        if (!params.removeI1 && has(params.I1)) configContent += `I1 = ${params.I1}\n`;
+        if (has(params.I1)) configContent += `I1 = ${params.I1}\n`;
         if (has(params.I2)) configContent += `I2 = ${params.I2}\n`;
         if (has(params.I3)) configContent += `I3 = ${params.I3}\n`;
         if (has(params.I4)) configContent += `I4 = ${params.I4}\n`;
@@ -679,7 +684,7 @@ PrivateKey = ${privateKey}
       } else {
         // Генерируем свежие I-параметры через полноценный генератор
         const fresh = generate({ profile: 'random', intensity: 'medium' });
-        if (!params.removeI1) configContent += `I1 = ${fresh.I1}\n`;
+        configContent += `I1 = ${fresh.I1}\n`;
         configContent += `I2 = ${fresh.I2}\n`;
         configContent += `I3 = ${fresh.I3}\n`;
         configContent += `I4 = ${fresh.I4}\n`;
@@ -687,11 +692,16 @@ PrivateKey = ${privateKey}
         logger.debug(`Generated fresh CPS params for v2 client (profile: ${fresh.profile})`);
       }
     } else {
-      // v1: фиксированные H-значения
-      if (has(params.H1)) configContent += `H1 = ${params.H1}\n`;
-      if (has(params.H2)) configContent += `H2 = ${params.H2}\n`;
-      if (has(params.H3)) configContent += `H3 = ${params.H3}\n`;
-      if (has(params.H4)) configContent += `H4 = ${params.H4}\n`;
+      // AWG v1 — Junk + S1/S2 + H1-H4
+      if (has(params.Jc))   configContent += `Jc = ${params.Jc}\n`;
+      if (has(params.Jmin)) configContent += `Jmin = ${params.Jmin}\n`;
+      if (has(params.Jmax)) configContent += `Jmax = ${params.Jmax}\n`;
+      if (has(params.S1))   configContent += `S1 = ${params.S1}\n`;
+      if (has(params.S2))   configContent += `S2 = ${params.S2}\n`;
+      if (has(params.H1))   configContent += `H1 = ${params.H1}\n`;
+      if (has(params.H2))   configContent += `H2 = ${params.H2}\n`;
+      if (has(params.H3))   configContent += `H3 = ${params.H3}\n`;
+      if (has(params.H4))   configContent += `H4 = ${params.H4}\n`;
     }
 
     configContent += `

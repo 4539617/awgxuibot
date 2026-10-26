@@ -15,6 +15,7 @@ const execAsync = promisify(exec);
 import { processBatFile } from './batFileProcessor.js';
 import { processAwgConfig } from './awgConverter.js';
 import { AWGManager } from './awgManager.js';
+import { AWGManagerCascade } from './awgManagerCascade.js';
 import { logger } from './logger.js';
 import fs from 'fs';
 import path from 'path';
@@ -26,8 +27,14 @@ export class RouteBot {
     // Anti-flood: max 5 requests per minute
     this.antiFlood = new AntiFlood(10, 60000);
     this.antiFlood.startCleanup();
-    // AWG Manager
-    this.awgManager = new AWGManager();
+    // AWG Manager: Cascade API если настроен, иначе прямой docker exec
+    if (config.cascadeEnabled) {
+      this.awgManager = new AWGManagerCascade(config.cascadeServers);
+      logger.info(`RouteBot: using Cascade API mode (${config.cascadeServers.length} server(s))`);
+    } else {
+      this.awgManager = new AWGManager();
+      logger.info('RouteBot: using direct docker exec mode');
+    }
     // VPS label sessions storage
     this.vpsLabelSessions = new Map();
     // Message ID storage for editing instead of sending new messages
@@ -243,6 +250,29 @@ export class RouteBot {
         } else if (mode === 'by' && parts[2] === 'number') {
           const ipNumber = parseInt(parts[3]);
           await this.generateAwgConfigByNumber(chatId, version, ipNumber, config.serverLabel, null);
+        }
+      }
+      // Download app callbacks
+      else if (data.startsWith('app_')) {
+        await this.bot.answerCallbackQuery(query.id);
+
+        if (!this.isAdmin(userId)) {
+          logger.warn(`Unauthorized app callback from user ${userId}`);
+          return;
+        }
+
+        if (data === 'app_download') {
+          await this.showDownloadMenu(chatId);
+        } else if (data === 'app_android') {
+          await this.showDownloadSubMenu(chatId, 'android');
+        } else if (data === 'app_ios') {
+          await this.showDownloadSubMenu(chatId, 'ios');
+        } else if (data === 'app_windows') {
+          await this.showDownloadSubMenu(chatId, 'windows');
+        } else if (data === 'app_apk') {
+          await this.showDownloadSubMenu(chatId, 'apk');
+        } else if (data === 'app_cloud') {
+          await this.showCloudMenu(chatId);
         }
       }
     });
@@ -1365,7 +1395,12 @@ export class RouteBot {
 
       // Send config file with status info
       await this.bot.sendDocument(chatId, result.filepath);
-      
+
+      // Send QR code if available (Cascade mode)
+      if (result.qrSvgPath) {
+        await this.bot.sendDocument(chatId, result.qrSvgPath, { caption: '📱 QR-код для импорта в AmneziaWG' });
+      }
+
       // Send status message if health check was performed
       if (result.healthStatus) {
         const health = result.healthStatus;
@@ -1436,7 +1471,12 @@ export class RouteBot {
 
       // Send config file with status info
       await this.bot.sendDocument(chatId, result.filepath);
-      
+
+      // Send QR code if available (Cascade mode)
+      if (result.qrSvgPath) {
+        await this.bot.sendDocument(chatId, result.qrSvgPath, { caption: '📱 QR-код для импорта в AmneziaWG' });
+      }
+
       // Send status message if health check was performed
       if (result.healthStatus) {
         const health = result.healthStatus;
@@ -1523,97 +1563,111 @@ export class RouteBot {
 
       const stats = await this.awgManager.getStats();
 
-      // Создаем карту найденных контейнеров по версиям
-      const statsMap = new Map();
-      stats.forEach(container => {
-        statsMap.set(container.version, container);
-      });
+      // Группируем контейнеры по serverLabel
+      const byServer = new Map();
+      for (const container of stats) {
+        const label = container.serverLabel || config.serverLabel || this.getServerIp();
+        if (!byServer.has(label)) byServer.set(label, []);
+        byServer.get(label).push(container);
+      }
 
-      // Получаем server_label из конфига или используем server_ip
-      const serverLabel = config.serverLabel || this.getServerIp();
-      let statsMessage = `*Сервер:* \`${serverLabel}\`\n\n`;
-      
-      // Показываем статус для обеих версий
-      const versions = ['v1', 'v2'];
-      
-      for (const version of versions) {
-        const container = statsMap.get(version);
-        
-        if (container) {
-          // Получаем клиентов с их статусами
-          let clientsWithStatus = [];
-          let activeClients = 0;
-          
-          if (container.running) {
-            try {
-              clientsWithStatus = await this.awgManager.getClientsWithStatus(
-                container.name,
-                version
-              );
-              activeClients = clientsWithStatus.filter(c => c.active).length;
-              
-              // Получаем имена пиров
-              const peerNames = await this.awgManager.getPeerNames(container.name);
-              
-              // Получаем статистику handshake
-              const clientsStats = await this.getClientsStats(container.name, version);
-              
-              // Обогащаем данные клиентов именами и временем handshake
-              clientsWithStatus = clientsWithStatus.map(client => ({
-                ...client,
-                name: peerNames[client.ip] || null,
-                lastHandshake: clientsStats[client.ip]?.lastHandshake || null
-              }));
-              
-              // Сортируем только по IP (численно)
-              clientsWithStatus.sort((a, b) => {
-                // Сравниваем IP адреса численно
-                const aParts = a.ip.split('.').map(Number);
-                const bParts = b.ip.split('.').map(Number);
-                
-                for (let i = 0; i < 4; i++) {
-                  if (aParts[i] !== bParts[i]) {
-                    return aParts[i] - bParts[i];
+      // Если cascade не включён — показываем как раньше (один сервер)
+      if (!config.cascadeEnabled) {
+        const serverLabel = config.serverLabel || this.getServerIp();
+        byServer.clear();
+        byServer.set(serverLabel, stats);
+      }
+
+      let statsMessage = '';
+
+      for (const [serverLabel, containers] of byServer) {
+        statsMessage += `🖥 *Сервер:* \`${serverLabel}\`\n\n`;
+
+        // Строим карту version → container для этого сервера
+        const statsMap = new Map();
+        containers.forEach(c => statsMap.set(c.version, c));
+
+        // Для cascade-режима показываем все версии этого сервера,
+        // для docker-режима — стандартные v1/v2
+        const versions = config.cascadeEnabled
+          ? containers.map(c => c.version)
+          : ['v1', 'v2'];
+
+        for (const version of versions) {
+          const container = statsMap.get(version);
+
+          if (container) {
+            // Получаем клиентов с их статусами
+            let clientsWithStatus = [];
+            let activeClients = 0;
+
+            if (container.running) {
+              try {
+                clientsWithStatus = await this.awgManager.getClientsWithStatus(
+                  container.name,
+                  version
+                );
+                activeClients = clientsWithStatus.filter(c => c.active).length;
+
+                // Получаем имена пиров
+                const peerNames = await this.awgManager.getPeerNames(container.name);
+
+                // Получаем статистику handshake
+                const clientsStats = await this.getClientsStats(container.name, version);
+
+                // Обогащаем данные клиентов именами и временем handshake
+                clientsWithStatus = clientsWithStatus.map(client => ({
+                  ...client,
+                  name: peerNames[client.ip] || null,
+                  lastHandshake: clientsStats[client.ip]?.lastHandshake || null
+                }));
+
+                // Сортируем по IP (численно)
+                clientsWithStatus.sort((a, b) => {
+                  const aParts = a.ip.split('.').map(Number);
+                  const bParts = b.ip.split('.').map(Number);
+                  for (let i = 0; i < 4; i++) {
+                    if (aParts[i] !== bParts[i]) return aParts[i] - bParts[i];
                   }
-                }
-                return 0;
-              });
-            } catch (error) {
-              logger.warn(`Failed to get clients details for ${container.name}: ${error.message}`);
+                  return 0;
+                });
+              } catch (error) {
+                logger.warn(`Failed to get clients details for ${container.name}: ${error.message}`);
+              }
             }
-          }
-          
-          // Контейнер найден - показываем реальный статус
-          statsMessage += `📋 *AWG ${version.toUpperCase()}*\n`;
-          
-          // Определяем статус контейнера
-          if (container.restarting) {
-            statsMessage += `🔄 Перезапускается...\n`;
-          } else if (container.running) {
-            statsMessage += `✅ Запущен\n`;
-          } else if (container.stopped) {
-            statsMessage += `⚠️ Остановлен\n`;
-          } else {
-            statsMessage += `❓ Неизвестно\n`;
-          }
-          
-          statsMessage += `🔌 Порт: ${container.port}\n`;
-          statsMessage += `👥 Клиентов: ${container.clients}\n`;
-          statsMessage += `👤 Активных: ${activeClients}\n\n`;
-          
-          // Показываем список всех клиентов (формат: IP статус имя)
-          if (container.running && clientsWithStatus.length > 0) {
-            for (const client of clientsWithStatus) {
-              const name = client.name ? ` ${client.name}` : '';
-              const statusIcon = client.active ? '✅' : '❌';
-              statsMessage += `${client.ip} ${statusIcon}${name}\n`;
+
+            // Показываем название интерфейса — используем name (interfaceName) если есть, иначе version
+            const ifaceLabel = container.name || version.toUpperCase();
+            statsMessage += `📋 *${ifaceLabel}*\n`;
+
+            if (container.restarting) {
+              statsMessage += `🔄 Перезапускается...\n`;
+            } else if (container.running) {
+              statsMessage += `✅ Запущен\n`;
+            } else if (container.stopped) {
+              statsMessage += `⚠️ Остановлен\n`;
+            } else {
+              statsMessage += `❓ Неизвестно\n`;
             }
-            statsMessage += '\n';
+
+            statsMessage += `🔌 Порт: ${container.port}\n`;
+            statsMessage += `👥 Клиентов: ${container.clients}\n`;
+            statsMessage += `👤 Активных: ${activeClients}\n\n`;
+
+            // Список пиров
+            if (container.running && clientsWithStatus.length > 0) {
+              for (const client of clientsWithStatus) {
+                const name = client.name ? ` ${client.name}` : '';
+                const statusIcon = client.active ? '✅' : '❌';
+                statsMessage += `${client.ip} ${statusIcon}${name}\n`;
+              }
+              statsMessage += '\n';
+            }
+          } else if (!config.cascadeEnabled) {
+            // docker-режим: показываем "не установлен" для отсутствующих версий
+            statsMessage += `📋 *AWG ${version.toUpperCase()}*\n`;
+            statsMessage += `❌ Не установлен\n\n`;
           }
-        } else {
-          // Контейнер не найден
-          statsMessage += `📋 *AWG ${version.toUpperCase()}*\n`;
-          statsMessage += `❌ Не установлен\n\n`;
         }
       }
 
@@ -1622,6 +1676,109 @@ export class RouteBot {
     } catch (error) {
       logger.error(`Error getting stats for chat ${chatId}:`, error);
       throw error;
+    }
+  }
+
+  async showDownloadMenu(chatId) {
+    try {
+      const keyboard = {
+        inline_keyboard: [
+          [{ text: '🤖 Android', callback_data: 'app_android' }],
+          [{ text: '🍎 Apple iOS', callback_data: 'app_ios' }],
+          [{ text: '🖥 Windows', callback_data: 'app_windows' }],
+          [{ text: '📦 APK', callback_data: 'app_apk' }],
+          [{ text: '☁️ Облако', callback_data: 'app_cloud' }],
+          [{ text: '🔙 Назад', callback_data: 'main_menu' }]
+        ]
+      };
+      await this.sendNewMessage(
+        chatId,
+        '📱 *Скачать приложение*\n\nВыберите платформу:',
+        { parse_mode: 'Markdown', reply_markup: keyboard }
+      );
+    } catch (error) {
+      logger.error(`Error showing download menu for chat ${chatId}:`, error);
+      this.bot.sendMessage(chatId, `❌ Ошибка: ${error.message}`);
+    }
+  }
+
+  async showDownloadSubMenu(chatId, platform) {
+    const menus = {
+      android: {
+        title: '🤖 *Android — выберите приложение:*',
+        buttons: [
+          [{ text: 'INCY (VLESS, AWG) 🚀', url: 'https://play.google.com/store/apps/details?id=llc.itdev.incy' }],
+          [{ text: 'V2RAYTun (VLESS)', url: 'https://play.google.com/store/apps/details?id=com.v2raytun.android' }],
+          [{ text: 'HAPP (VLESS)', url: 'https://play.google.com/store/apps/details?id=com.happproxy' }],
+          [{ text: 'HIDDIFY (VLESS)', url: 'https://play.google.com/store/apps/details?id=app.hiddify.com' }],
+          [{ text: 'AMNEZIA (AWG)', url: 'https://play.google.com/store/apps/details?id=org.amnezia.vpn&utm_source=amnezia.org&utm_campaign=organic&utm_medium=referral' }],
+          [{ text: '🔙 Назад', callback_data: 'app_download' }]
+        ]
+      },
+      ios: {
+        title: '🍎 *Apple iOS — выберите приложение:*',
+        buttons: [
+          [{ text: 'INCY (VLESS, AWG) 🚀', url: 'https://apps.apple.com/ru/app/incy/id6756943388' }],
+          [{ text: 'HAPP (VLESS)', url: 'https://apps.apple.com/us/app/happ-proxy-utility/id6504287215' }],
+          [{ text: 'HIDDIFY (VLESS)', url: 'https://apps.apple.com/us/app/hiddify-proxy-vpn/id6596777532' }],
+          [{ text: 'AMNEZIA (AWG)', url: 'https://apps.apple.com/us/app/amneziavpn/id1600529900' }],
+          [{ text: '🔙 Назад', callback_data: 'app_download' }]
+        ]
+      },
+      windows: {
+        title: '🖥 *Windows — выберите приложение:*',
+        buttons: [
+          [{ text: 'INCY (VLESS, AWG) 🚀', url: 'https://github.com/INCY-DEV/incy-platforms/releases/latest/download/incy-windows-setup.exe' }],
+          [{ text: 'V2RAYTun (VLESS)', url: 'https://storage.v2raytun.com/v2RayTun_Setup.exe' }],
+          [{ text: 'HAPP (VLESS)', url: 'https://github.com/Happ-proxy/happ-desktop/releases/latest/download/setup-Happ.x64.exe' }],
+          [{ text: 'HIDDIFY (VLESS)', url: 'https://github.com/hiddify/hiddify-app/releases/download/v4.1.1/Hiddify-Windows-Setup-x64.exe' }],
+          [{ text: 'AMNEZIA (AWG)', url: 'https://github.com/amnezia-vpn/amnezia-client/releases/download/5.0.3.0/AmneziaVPN_5.0.3.0_windows_x64.exe' }],
+          [{ text: '🔙 Назад', callback_data: 'app_download' }]
+        ]
+      },
+      apk: {
+        title: '📦 *APK — выберите приложение:*',
+        buttons: [
+          [{ text: 'INCY (VLESS, AWG) 🚀', url: 'https://github.com/INCY-DEV/incy-platforms/releases/latest/download/Incy.apk' }],
+          [{ text: 'HAPP (VLESS)', url: 'https://github.com/Happ-proxy/happ-android/releases/latest/download/Happ.apk' }],
+          [{ text: 'AMNEZIA (AWG)', url: 'https://github.com/amnezia-vpn/amnezia-client/releases/download/5.0.3.0/AmneziaVPN_5.0.3.0_android11+_arm64-v8a.apk' }],
+          [{ text: '🔙 Назад', callback_data: 'app_download' }]
+        ]
+      }
+    };
+
+    const menu = menus[platform];
+    if (!menu) return;
+
+    try {
+      await this.sendNewMessage(
+        chatId,
+        menu.title,
+        { parse_mode: 'Markdown', reply_markup: { inline_keyboard: menu.buttons } }
+      );
+    } catch (error) {
+      logger.error(`Error showing download sub-menu (${platform}) for chat ${chatId}:`, error);
+      this.bot.sendMessage(chatId, `❌ Ошибка: ${error.message}`);
+    }
+  }
+
+  async showCloudMenu(chatId) {
+    try {
+      const keyboard = {
+        inline_keyboard: [
+          [{ text: '📦 APK', callback_data: 'app_apk' }],
+          [{ text: '🖥 Windows', callback_data: 'app_windows' }],
+          [{ text: '🔙 Назад', callback_data: 'app_download' }]
+        ]
+      };
+      await this.sendNewMessage(
+        chatId,
+        '☁️ *Облако — выберите платформу:*',
+        { parse_mode: 'Markdown', reply_markup: keyboard }
+      );
+    } catch (error) {
+      logger.error(`Error showing cloud menu for chat ${chatId}:`, error);
+      this.bot.sendMessage(chatId, `❌ Ошибка: ${error.message}`);
     }
   }
 
@@ -1649,7 +1806,7 @@ export class RouteBot {
             { text: 'AWG V2', callback_data: 'awg_select_v2' }
           ],
           [
-            { text: '🔄 Обновить', callback_data: 'refresh_main_menu' }
+            { text: '📱 Скачать приложение', callback_data: 'app_download' }
           ]
         ]
       };
@@ -1726,25 +1883,31 @@ export class RouteBot {
       let interfaceMessage = '';
       
       if (containerStatus.running) {
-        try {
-          await execAsync(`docker exec ${container.name} wg show ${configFile} 2>&1`);
+        if (config.cascadeEnabled) {
+          // В Cascade-режиме интерфейс уже проверен через checkContainer → getInterface
           interfaceStatus = 'ready';
           interfaceMessage = '\n✅ *Статус интерфейса:* Работает\n';
-        } catch (error) {
-          const errorMsg = error.message || error.toString();
-          
-          if (errorMsg.includes('does not exist') || errorMsg.includes('No such device')) {
-            interfaceStatus = 'starting';
-            interfaceMessage = '\n⏳ *Статус интерфейса:* Запускается\n';
-            serverStatusEmoji = '⏳';
-          } else if (errorMsg.includes('Unable to access interface')) {
-            interfaceStatus = 'error';
-            interfaceMessage = '\n⚠️ *Статус интерфейса:* Ошибка\n';
-            serverStatusEmoji = '⚠️';
-          } else {
-            interfaceStatus = 'unknown';
-            interfaceMessage = '\n❓ *Статус интерфейса:* Неизвестно\n';
-            serverStatusEmoji = '❓';
+        } else {
+          try {
+            await execAsync(`docker exec ${container.name} wg show ${configFile} 2>&1`);
+            interfaceStatus = 'ready';
+            interfaceMessage = '\n✅ *Статус интерфейса:* Работает\n';
+          } catch (error) {
+            const errorMsg = error.message || error.toString();
+            
+            if (errorMsg.includes('does not exist') || errorMsg.includes('No such device')) {
+              interfaceStatus = 'starting';
+              interfaceMessage = '\n⏳ *Статус интерфейса:* Запускается\n';
+              serverStatusEmoji = '⏳';
+            } else if (errorMsg.includes('Unable to access interface')) {
+              interfaceStatus = 'error';
+              interfaceMessage = '\n⚠️ *Статус интерфейса:* Ошибка\n';
+              serverStatusEmoji = '⚠️';
+            } else {
+              interfaceStatus = 'unknown';
+              interfaceMessage = '\n❓ *Статус интерфейса:* Неизвестно\n';
+              serverStatusEmoji = '❓';
+            }
           }
         }
       }
@@ -1902,6 +2065,31 @@ export class RouteBot {
   }
 
   async getClientsStats(containerName, version) {
+    // Cascade-режим: получаем handshake из listPeers (latestHandshakeAt)
+    if (config.cascadeEnabled) {
+      try {
+        const clients = await this.awgManager.getClientsWithStatus(containerName, version);
+        const stats = {};
+        for (const c of clients) {
+          if (c.ip) {
+            const handshake = c.lastHandshake
+              ? this.formatHandshakeTime(new Date(c.lastHandshake).toLocaleString('ru-RU'))
+              : null;
+            stats[c.ip] = {
+              ip: c.ip,
+              lastHandshake: handshake,
+              transfer: null,
+            };
+          }
+        }
+        return stats;
+      } catch (error) {
+        logger.error(`Error getting clients stats (cascade):`, error);
+        return {};
+      }
+    }
+
+    // docker exec режим
     try {
       const interfaceName = version === 'v2' ? 'awg0' : 'wg0';
       
@@ -2012,6 +2200,12 @@ export class RouteBot {
       
       // Send config file
       await this.bot.sendDocument(chatId, result.filepath);
+
+      // Send QR code if available (Cascade mode)
+      if (result.qrSvgPath) {
+        await this.bot.sendDocument(chatId, result.qrSvgPath, { caption: '📱 QR-код для импорта в AmneziaWG' });
+      }
+
       logger.info(`Resent config to chat ${chatId}: ${result.filename}`);
       
     } catch (error) {
@@ -2092,52 +2286,57 @@ export class RouteBot {
       }
       
       // Delete peer from server config
-      const configPath = container.configPath;
       const configFile = version === 'v2' ? 'awg0.conf' : 'wg0.conf';
       
       // Remove peer section for this IP
       await this.bot.deleteMessage(chatId, processingMsg.message_id);
       
       try {
-        // Read current config
-        const { stdout: currentConfig } = await execAsync(
-          `docker exec ${container.name} cat ${configPath}`
-        );
-        
-        // Remove peer section for this IP
-        // Используем regex который захватывает комментарий перед [Peer] и всю секцию до следующего [Peer] или конца файла
-        const escapedIP = ip.replace(/\./g, '\\.');
-        const peerSectionRegex = new RegExp(
-          `(#[^\\n]*\\n)?\\[Peer\\]\\n([^\\[]*)AllowedIPs\\s*=\\s*${escapedIP}\\/32[^\\[]*`,
-          'g'
-        );
-        
-        // Удаляем найденную секцию пира
-        const newConfig = currentConfig.replace(peerSectionRegex, '');
-        
-        // Write new config
-        const tempFile = `/tmp/awg_config_${Date.now()}.conf`;
-        await execAsync(`echo '${newConfig.replace(/'/g, "'\\''")}' > ${tempFile}`);
-        await execAsync(`docker cp ${tempFile} ${container.name}:${configPath}`);
-        await execAsync(`rm ${tempFile}`);
-        
-        // Restart WireGuard interface
-        const configName = configFile.replace('.conf', '');
-        const fullConfigPath = `/etc/amnezia/amneziawg/${configFile}`;
-        
-        logger.info(`Restarting WireGuard interface ${configName}...`);
-        await execAsync(`docker exec ${container.name} wg-quick down ${fullConfigPath} || true`);
-        await execAsync(`docker exec ${container.name} wg-quick up ${fullConfigPath}`);
-        
-        logger.info(`Successfully deleted client ${ip} from ${container.name}`);
-        
-        // Используем новую функцию полной проверки здоровья сервера
-        logger.info(`Starting comprehensive health check...`);
-        const healthStatus = await this.awgManager.checkServerHealthAfterChange(
-          container.name,
-          15,  // maxAttempts
-          1000 // delayMs
-        );
+        let healthStatus;
+
+        if (config.cascadeEnabled) {
+          // Cascade-режим: удаляем через REST API
+          await this.awgManager.deletePeer(container.name, ip);
+          logger.info(`Successfully deleted client ${ip} via Cascade API`);
+          healthStatus = await this.awgManager.checkServerHealthAfterChange(container.name);
+        } else {
+          // docker exec режим
+          const configPath = container.configPath;
+
+          // Read current config
+          const { stdout: currentConfig } = await execAsync(
+            `docker exec ${container.name} cat ${configPath}`
+          );
+          
+          // Remove peer section for this IP
+          const escapedIP = ip.replace(/\./g, '\\.');
+          const peerSectionRegex = new RegExp(
+            `(#[^\\n]*\\n)?\\[Peer\\]\\n([^\\[]*)AllowedIPs\\s*=\\s*${escapedIP}\\/32[^\\[]*`,
+            'g'
+          );
+          const newConfig = currentConfig.replace(peerSectionRegex, '');
+          
+          // Write new config
+          const tempFile = `/tmp/awg_config_${Date.now()}.conf`;
+          await execAsync(`echo '${newConfig.replace(/'/g, "'\\''")}' > ${tempFile}`);
+          await execAsync(`docker cp ${tempFile} ${container.name}:${configPath}`);
+          await execAsync(`rm ${tempFile}`);
+          
+          // Restart WireGuard interface
+          const fullConfigPath = `/etc/amnezia/amneziawg/${configFile}`;
+          logger.info(`Restarting WireGuard interface...`);
+          await execAsync(`docker exec ${container.name} wg-quick down ${fullConfigPath} || true`);
+          await execAsync(`docker exec ${container.name} wg-quick up ${fullConfigPath}`);
+          logger.info(`Successfully deleted client ${ip} from ${container.name}`);
+          
+          // Проверяем здоровье сервера после перезапуска
+          logger.info(`Starting comprehensive health check...`);
+          healthStatus = await this.awgManager.checkServerHealthAfterChange(
+            container.name,
+            15,  // maxAttempts
+            1000 // delayMs
+          );
+        }
         
         // Создаем кнопки для перехода к списку клиентов и главному меню
         const keyboard = {
