@@ -6336,7 +6336,7 @@ menu_maintenance() {
                 read -p "  URL панели (напр. https://1.2.3.4:2053 или https://1.2.3.4:2053/mypath): " _ru_url
                 read -p "  Есть API токен? (y/n) [n]: " _ru_has_token
                 if [[ "${_ru_has_token,,}" == "y" ]]; then
-                    read -s -p "  API токен: " _ru_token; echo
+                    read -p "  API токен: " _ru_token
                     _ru_user="" _ru_pass=""
                 else
                     _ru_token=""
@@ -6348,7 +6348,7 @@ menu_maintenance() {
                 read -p "  URL панели (напр. https://5.6.7.8:2053 или https://5.6.7.8:2053/mypath): " _vps_url
                 read -p "  Есть API токен? (y/n) [n]: " _vps_has_token
                 if [[ "${_vps_has_token,,}" == "y" ]]; then
-                    read -s -p "  API токен: " _vps_token; echo
+                    read -p "  API токен: " _vps_token
                     _vps_user="" _vps_pass=""
                 else
                     _vps_token=""
