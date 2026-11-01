@@ -6345,11 +6345,13 @@ menu_maintenance() {
                         echo -e "  ${RED}❌ Сервер недоступен (нет ответа за 5 сек). Проверьте URL и попробуйте снова.${NC}"
                     fi
                 done
-                read -p "  Есть API токен? (y/n) [n]: " _ru_has_token
-                if [[ "${_ru_has_token,,}" == "y" ]]; then
+                read -p "  Есть API токен? (1 - да / 0 - нет) [0]: " _ru_has_token
+                if [[ "$_ru_has_token" == "1" ]]; then
+                    echo -e "  ${GREEN}→ Используем токен${NC}"
                     read -p "  API токен: " _ru_token
                     _ru_user="" _ru_pass=""
                 else
+                    echo -e "  ${GREEN}→ Используем логин/пароль${NC}"
                     _ru_token=""
                     read -p "  Логин панели [admin]: " _ru_user
                     _ru_user="${_ru_user:-admin}"
@@ -6368,11 +6370,13 @@ menu_maintenance() {
                         echo -e "  ${RED}❌ Сервер недоступен (нет ответа за 5 сек). Проверьте URL и попробуйте снова.${NC}"
                     fi
                 done
-                read -p "  Есть API токен? (y/n) [n]: " _vps_has_token
-                if [[ "${_vps_has_token,,}" == "y" ]]; then
+                read -p "  Есть API токен? (1 - да / 0 - нет) [0]: " _vps_has_token
+                if [[ "$_vps_has_token" == "1" ]]; then
+                    echo -e "  ${GREEN}→ Используем токен${NC}"
                     read -p "  API токен: " _vps_token
                     _vps_user="" _vps_pass=""
                 else
+                    echo -e "  ${GREEN}→ Используем логин/пароль${NC}"
                     _vps_token=""
                     read -p "  Логин панели [admin]: " _vps_user
                     _vps_user="${_vps_user:-admin}"
