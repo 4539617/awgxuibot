@@ -31,11 +31,11 @@ CAMOUFLAGE_TARGET="${CAMOUFLAGE_TARGET:-melsu.ru:443}" # реальная TLS-ц
 OUTBOUND_TAG="torus_${NEW_EMAIL}"                     # тег исходящего на VPS
 FINGERPRINT="${FINGERPRINT:-edge}"
 
-# Убираем trailing slash и /panel суффикс из URL если пользователь вставил адрес панели
+# Убираем trailing slash и всё начиная с /panel (пользователь мог вставить полный адрес страницы)
 RU_URL="${RU_URL%/}"
-RU_URL="${RU_URL%/panel}"
+RU_URL="${RU_URL%%/panel*}"
 VPS_URL="${VPS_URL%/}"
-VPS_URL="${VPS_URL%/panel}"
+VPS_URL="${VPS_URL%%/panel*}"
 
 # Правила маршрутизации которые направляются в новый outbound
 ROUTE_DOMAINS='["ext:geosite_RU.dat:ru-available-only-inside","regexp:.*\\.ru$","regexp:.*\\.su$","regexp:.*\\.xn--p1ai$"]'
