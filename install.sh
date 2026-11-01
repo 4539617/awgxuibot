@@ -6331,12 +6331,12 @@ menu_maintenance() {
                 echo -e "${BLUE}   Настройка обратного каскада 3x-ui${NC}"
                 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
                 echo -e "${YELLOW}Российский сервер (входящее):${NC}"
-                read -p "  URL панели (напр. https://1.2.3.4:2053): " _ru_url
+                read -p "  URL панели (напр. https://1.2.3.4:2053 или https://1.2.3.4:2053/mypath): " _ru_url
                 read -p "  Логин панели [admin]: " _ru_user
                 _ru_user="${_ru_user:-admin}"
                 read -s -p "  Пароль панели: " _ru_pass; echo
                 echo -e "\n${YELLOW}VPS сервер (исходящее, этот сервер):${NC}"
-                read -p "  URL панели (напр. https://5.6.7.8:2053): " _vps_url
+                read -p "  URL панели (напр. https://5.6.7.8:2053 или https://5.6.7.8:2053/mypath): " _vps_url
                 read -p "  Логин панели [admin]: " _vps_user
                 _vps_user="${_vps_user:-admin}"
                 read -s -p "  Пароль панели: " _vps_pass; echo

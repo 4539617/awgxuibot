@@ -29,6 +29,10 @@ CAMOUFLAGE_TARGET="${CAMOUFLAGE_TARGET:-melsu.ru:443}" # реальная TLS-ц
 OUTBOUND_TAG="torus_${NEW_EMAIL}"                    # тег исходящего на VPS
 FINGERPRINT="${FINGERPRINT:-edge}"
 
+# Убираем trailing slash из URL (чтобы https://host/path/ работало так же, как https://host/path)
+RU_URL="${RU_URL%/}"
+VPS_URL="${VPS_URL%/}"
+
 # Если SERVER_NAME совпадает с CAMOUFLAGE_TARGET (как у nicegoods: оба melsu.ru),
 # то в serverNames НЕ нужно дублировать — скрипт определяет автоматически.
 # Если SERVER_NAME отличается (как у websrvinfo: nvidia.com vs melsu.ru),
