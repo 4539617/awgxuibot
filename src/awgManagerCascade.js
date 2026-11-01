@@ -113,7 +113,40 @@ export class AWGManagerCascade {
         const remotes = await client.listRemotes();
         logger.info(`[CascadeManager] Found ${remotes.length} remote(s) on ${srv.label}`);
 
-        for (const remote of remotes) {
+        // ── Авто-регистрация серверов из config.yaml как Remote ───────────────
+        // Сравниваем по URL: если сервер из config.yaml ещё не зарегистрирован
+        // как Remote в Cascade UI — добавляем его.
+        const normalize = u => u.replace(/\/+$/, '').toLowerCase();
+        const existingUrls = new Set(remotes.map(r => normalize(r.url)));
+
+        for (const other of this.servers) {
+          if (!other.url) continue;
+          if (normalize(other.url) === normalize(srv.url)) continue; // пропускаем себя
+          if (existingUrls.has(normalize(other.url))) continue;      // уже есть
+
+          try {
+            if (other.token) {
+              await client.addRemote(other.label, other.url, other.token);
+            } else if (other.username && other.password) {
+              await client.addRemoteLogin(other.label, other.url, other.username, other.password);
+            } else {
+              logger.warn(`[CascadeManager] Cannot add remote "${other.label}" to ${srv.label}: no token or password`);
+              continue;
+            }
+            logger.info(`[CascadeManager] Auto-added remote "${other.label}" (${other.url}) to ${srv.label}`);
+            existingUrls.add(normalize(other.url));
+          } catch (err) {
+            logger.warn(`[CascadeManager] Failed to auto-add remote "${other.label}" to ${srv.label}: ${err.message}`);
+          }
+        }
+
+        // Если были добавлены новые remotes — перезапрашиваем актуальный список
+        // чтобы обнаружить интерфейсы только что зарегистрированных серверов.
+        const allRemotes = existingUrls.size > remotes.length
+          ? await client.listRemotes()
+          : remotes;
+
+        for (const remote of allRemotes) {
           const remoteLabel = remote.name || remote.id;
           try {
             // Получаем прокси-клиент для этого remote
