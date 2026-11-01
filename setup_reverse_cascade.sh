@@ -240,6 +240,23 @@ ru_create_inbound() {
     echo "$resp" | jq -e '.success == true' &>/dev/null \
         || die "Не удалось создать входящее: $resp"
     log "  ✓ Входящее создано"
+
+    # Получаем ID нового inbound и привязываем клиента
+    local inbound_id
+    inbound_id=$(ru_get "/panel/api/inbounds/list" \
+        | jq --argjson p "$port" '.obj[] | select(.port == $p) | .id')
+    if [[ -n "$inbound_id" ]]; then
+        log "  Привязка клиента к входящему (ID $inbound_id) ..."
+        local attach_resp
+        attach_resp=$(curl "${CURL_BASE[@]}" "${RU_AUTH_HEADER[@]}" \
+            -X POST "$RU_URL/panel/api/clients/$NEW_EMAIL/attach" \
+            -H "Content-Type: application/json" \
+            -H "Accept: application/json" \
+            -d "{\"inboundIds\":[$inbound_id]}")
+        echo "$attach_resp" | jq -e '.success == true' &>/dev/null \
+            && log "  ✓ Клиент привязан к входящему" \
+            || log "  ⚠ Привязка клиента не удалась: $attach_resp"
+    fi
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
