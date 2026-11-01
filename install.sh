@@ -6332,14 +6332,28 @@ menu_maintenance() {
                 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
                 echo -e "${YELLOW}Российский сервер (входящее):${NC}"
                 read -p "  URL панели (напр. https://1.2.3.4:2053 или https://1.2.3.4:2053/mypath): " _ru_url
-                read -p "  Логин панели [admin]: " _ru_user
-                _ru_user="${_ru_user:-admin}"
-                read -s -p "  Пароль панели: " _ru_pass; echo
+                read -p "  Есть API токен? (y/n) [n]: " _ru_has_token
+                if [[ "${_ru_has_token,,}" == "y" ]]; then
+                    read -s -p "  API токен: " _ru_token; echo
+                    _ru_user="" _ru_pass=""
+                else
+                    _ru_token=""
+                    read -p "  Логин панели [admin]: " _ru_user
+                    _ru_user="${_ru_user:-admin}"
+                    read -s -p "  Пароль панели: " _ru_pass; echo
+                fi
                 echo -e "\n${YELLOW}VPS сервер (исходящее, этот сервер):${NC}"
                 read -p "  URL панели (напр. https://5.6.7.8:2053 или https://5.6.7.8:2053/mypath): " _vps_url
-                read -p "  Логин панели [admin]: " _vps_user
-                _vps_user="${_vps_user:-admin}"
-                read -s -p "  Пароль панели: " _vps_pass; echo
+                read -p "  Есть API токен? (y/n) [n]: " _vps_has_token
+                if [[ "${_vps_has_token,,}" == "y" ]]; then
+                    read -s -p "  API токен: " _vps_token; echo
+                    _vps_user="" _vps_pass=""
+                else
+                    _vps_token=""
+                    read -p "  Логин панели [admin]: " _vps_user
+                    _vps_user="${_vps_user:-admin}"
+                    read -s -p "  Пароль панели: " _vps_pass; echo
+                fi
                 echo -e "\n${YELLOW}Параметры клиента:${NC}"
                 read -p "  Имя клиента на российском сервере (видно в панели → Входящие) [newclient]: " _email
                 _email="${_email:-newclient}"
@@ -6350,9 +6364,11 @@ menu_maintenance() {
                 echo ""
 
                 RU_URL="$_ru_url" \
+                RU_TOKEN="$_ru_token" \
                 RU_USER="$_ru_user" \
                 RU_PASS="$_ru_pass" \
                 VPS_URL="$_vps_url" \
+                VPS_TOKEN="$_vps_token" \
                 VPS_USER="$_vps_user" \
                 VPS_PASS="$_vps_pass" \
                 NEW_EMAIL="$_email" \
