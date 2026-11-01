@@ -6332,8 +6332,19 @@ menu_maintenance() {
                 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
                 echo -e "${YELLOW}⚠️  Только для 3x-ui версии 3.x!${NC}"
                 echo -e "${YELLOW}   На панелях 2.x скрипт работать не будет.${NC}\n"
+                # ── Российский сервер ──────────────────────────────
                 echo -e "${YELLOW}Российский сервер (входящее):${NC}"
-                read -p "  URL панели (напр. https://1.2.3.4:2053 или https://1.2.3.4:2053/mypath): " _ru_url
+                while true; do
+                    read -p "  URL панели (напр. https://1.2.3.4:2053 или https://1.2.3.4:2053/mypath): " _ru_url
+                    _ru_url="${_ru_url%/}"
+                    echo -e "  ${YELLOW}🔍 Проверка доступности...${NC}"
+                    if curl -sk --max-time 5 "$_ru_url/login" -o /dev/null; then
+                        echo -e "  ${GREEN}✅ Сервер доступен${NC}"
+                        break
+                    else
+                        echo -e "  ${RED}❌ Сервер недоступен (нет ответа за 5 сек). Проверьте URL и попробуйте снова.${NC}"
+                    fi
+                done
                 read -p "  Есть API токен? (y/n) [n]: " _ru_has_token
                 if [[ "${_ru_has_token,,}" == "y" ]]; then
                     read -p "  API токен: " _ru_token
@@ -6344,8 +6355,19 @@ menu_maintenance() {
                     _ru_user="${_ru_user:-admin}"
                     read -s -p "  Пароль панели: " _ru_pass; echo
                 fi
+                # ── VPS сервер ─────────────────────────────────────
                 echo -e "\n${YELLOW}VPS сервер (исходящее, этот сервер):${NC}"
-                read -p "  URL панели (напр. https://5.6.7.8:2053 или https://5.6.7.8:2053/mypath): " _vps_url
+                while true; do
+                    read -p "  URL панели (напр. https://5.6.7.8:2053 или https://5.6.7.8:2053/mypath): " _vps_url
+                    _vps_url="${_vps_url%/}"
+                    echo -e "  ${YELLOW}🔍 Проверка доступности...${NC}"
+                    if curl -sk --max-time 5 "$_vps_url/login" -o /dev/null; then
+                        echo -e "  ${GREEN}✅ Сервер доступен${NC}"
+                        break
+                    else
+                        echo -e "  ${RED}❌ Сервер недоступен (нет ответа за 5 сек). Проверьте URL и попробуйте снова.${NC}"
+                    fi
+                done
                 read -p "  Есть API токен? (y/n) [n]: " _vps_has_token
                 if [[ "${_vps_has_token,,}" == "y" ]]; then
                     read -p "  API токен: " _vps_token
