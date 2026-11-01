@@ -1878,9 +1878,8 @@ install_awgbot() {
         echo -e "\n${RED}❌ AWG сервер не установлен!${NC}"
         echo -e "${YELLOW}⚠️  AWGBOT требует установленный AWG сервер для работы.${NC}"
         echo -e "${YELLOW}Сначала установите AWG сервер (пункт 3 в меню).${NC}\n"
-        read -p "Хотите установить AWG сервер сейчас? (y/n): " install_now
-        
-        if [ "$install_now" = "y" ]; then
+        read -p "Хотите установить AWG сервер сейчас? (1 - да / 0 - нет) [0]: " install_now
+        if [ "$install_now" = "1" ]; then
             install_awg
             # Проверяем снова после установки
             if ! docker ps -a --format '{{.Names}}' | grep -qE "^amnezia-awg2?$"; then
@@ -2105,8 +2104,8 @@ install_cascade() {
     # Проверяем, установлен ли уже Cascade
     if docker ps -a --format '{{.Names}}' | grep -q "^cascade$"; then
         echo -e "${YELLOW}⚠️  Cascade уже установлен.${NC}"
-        read -p "Переустановить? (y/n): " reinstall
-        if [ "$reinstall" != "y" ]; then
+        read -p "Переустановить? (1 - да / 0 - нет) [0]: " reinstall
+        if [ "$reinstall" != "1" ]; then
             return 0
         fi
         echo -e "${YELLOW}🗑️  Остановка старого контейнера...${NC}"
@@ -2225,8 +2224,8 @@ install_caddy() {
     # Если Caddy уже запущен — предлагаем пересоздать
     if docker ps --format '{{.Names}}' | grep -q "^cascade-caddy$"; then
         echo -e "${YELLOW}⚠️  Caddy уже запущен.${NC}"
-        read -p "Переустановить? (y/n): " reinstall
-        if [ "$reinstall" != "y" ]; then
+        read -p "Переустановить? (1 - да / 0 - нет) [0]: " reinstall
+        if [ "$reinstall" != "1" ]; then
             return 0
         fi
         docker compose -f docker-compose.caddy.yml down 2>/dev/null || true
@@ -5814,8 +5813,8 @@ install_awg_version() {
             docker stop $container_name 2>/dev/null || true
             docker rm $container_name 2>/dev/null || true
         else
-            read -p "Переустановить? (y/n): " reinstall
-            if [ "$reinstall" != "y" ]; then
+            read -p "Переустановить? (1 - да / 0 - нет) [0]: " reinstall
+            if [ "$reinstall" != "1" ]; then
                 return 0
             fi
             echo -e "${YELLOW}🗑️  Удаление старого контейнера...${NC}"
@@ -5859,9 +5858,8 @@ generate_awg_config() {
         echo -e "${RED}❌ Node.js не установлен!${NC}"
         echo -e "${YELLOW}Для генерации конфигураций требуется Node.js${NC}"
         echo -e ""
-        read -p "Установить Node.js сейчас? (y/n): " install_choice
-        
-        if [[ "$install_choice" =~ ^[Yy]$ ]]; then
+        read -p "Установить Node.js сейчас? (1 - да / 0 - нет) [0]: " install_choice
+        if [[ "$install_choice" == "1" ]]; then
             install_nodejs
             if [ $? -ne 0 ]; then
                 echo -e "${RED}❌ Не удалось установить Node.js${NC}"
@@ -6245,9 +6243,8 @@ safe_cleanup_inline() {
     echo -e "${BLUE}   БЕЗОПАСНАЯ ОЧИСТКА${NC}"
     echo -e "${BLUE}========================================${NC}"
     echo -e "${YELLOW}ВНИМАНИЕ! Эта очистка безопасна и не удалит важные данные.${NC}\n"
-    read -p "Выполнить безопасную очистку? (y/n): " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    read -p "Выполнить безопасную очистку? (1 - да / 0 - нет) [0]: " REPLY
+    if [[ "$REPLY" != "1" ]]; then
         echo -e "${YELLOW}Очистка отменена${NC}"
         return
     fi
