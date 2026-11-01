@@ -134,26 +134,24 @@ ru_gen_keypair() {
     local resp
     resp=$(ru_get "/panel/api/server/getNewX25519Cert")
     local priv pub
-    priv=$(echo "$resp" | jq -r '.obj.privateKey // empty')
-    pub=$(echo  "$resp" | jq -r '.obj.publicKey  // empty')
+    priv=$(echo "$resp" | jq -r '.obj.privateKey // empty' 2>/dev/null || true)
+    pub=$(echo  "$resp" | jq -r '.obj.publicKey  // empty' 2>/dev/null || true)
+    # Убираем пробелы/переносы на случай артефактов
+    priv=$(echo "$priv" | tr -d '[:space:]')
+    pub=$(echo  "$pub"  | tr -d '[:space:]')
+    log "  API ключи: priv=${priv:0:10}... pub=${pub:0:10}..."
     if [[ -z "$priv" || -z "$pub" ]]; then
-        log "  API getNewX25519Cert недоступен, генерируем локально..."
+        log "  API getNewX25519Cert недоступен, генерируем через xray..."
         if command -v xray &>/dev/null; then
             local kp
             kp=$(xray x25519)
-            priv=$(echo "$kp" | grep -i private | awk '{print $NF}')
-            pub=$(echo  "$kp" | grep -i public  | awk '{print $NF}')
+            priv=$(echo "$kp" | grep -i private | awk '{print $NF}' | tr -d '[:space:]')
+            pub=$(echo  "$kp" | grep -i public  | awk '{print $NF}' | tr -d '[:space:]')
         else
-            priv=$(openssl genpkey -algorithm X25519 2>/dev/null \
-                   | openssl pkey -outform DER 2>/dev/null \
-                   | tail -c 32 | base64 | tr '+/' '-_' | tr -d '=')
-            pub=$(openssl pkey -algorithm X25519 \
-                   -key <(openssl genpkey -algorithm X25519 2>/dev/null) \
-                   -pubout -outform DER 2>/dev/null \
-                   | tail -c 32 | base64 | tr '+/' '-_' | tr -d '=')
+            die "xray не найден и API ключей недоступен. Установите xray или проверьте токен."
         fi
     fi
-    echo "${priv}:${pub}"
+    printf '%s:%s' "$priv" "$pub"
 }
 
 # Создать входящее на российском сервере
