@@ -80,9 +80,11 @@ VPS_AUTH_HEADER=()
 ru_auth() {
     if [[ -n "$RU_TOKEN" ]]; then
         log "Авторизация на российском сервере по токену ..."
+        log "  URL: $RU_URL/panel/api/inbounds/list"
         RU_AUTH_HEADER=(-H "Authorization: Bearer $RU_TOKEN")
         local resp
         resp=$(curl "${CURL_BASE[@]}" "${RU_AUTH_HEADER[@]}" "$RU_URL/panel/api/inbounds/list" -H "Accept: application/json")
+        log "  Ответ сервера: ${resp:0:120}"
         echo "$resp" | jq -e '.success == true' &>/dev/null \
             || die "Токен российского сервера не принят: $resp"
         log "  ✓ Авторизован по токену"
