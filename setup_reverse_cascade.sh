@@ -454,11 +454,16 @@ main() {
     log "  ShortId  : $SHORT_ID"
     log "  SpiderX  : $SPIDER_X"
 
-    # Генерируем Reality keypair
-    KEYPAIR=$(ru_gen_keypair)
-    PRIV_KEY="${KEYPAIR%%:*}"
-    PUB_KEY="${KEYPAIR##*:}"
-    log "  PrivKey  : $PRIV_KEY"
+    # Генерируем Reality keypair (через файл чтобы избежать проблем с subshell)
+    local _kp_file
+    _kp_file=$(mktemp)
+    ru_gen_keypair > "$_kp_file"
+    local _kp
+    _kp=$(cat "$_kp_file")
+    rm -f "$_kp_file"
+    PRIV_KEY="${_kp%%:*}"
+    PUB_KEY="${_kp##*:}"
+    log "  PrivKey  : ${PRIV_KEY:0:10}..."
     log "  PubKey   : $PUB_KEY"
 
     # Шаг 1: входящее на российском сервере
