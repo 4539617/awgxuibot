@@ -6316,14 +6316,49 @@ menu_maintenance() {
                 ;;
             2) safe_cleanup_inline ;;
             3)
+                local _cascade_script=""
                 if [ -f "${WORK_DIR}/setup_reverse_cascade.sh" ]; then
-                    bash "${WORK_DIR}/setup_reverse_cascade.sh"
+                    _cascade_script="${WORK_DIR}/setup_reverse_cascade.sh"
                 elif [ -f "setup_reverse_cascade.sh" ]; then
-                    bash setup_reverse_cascade.sh
+                    _cascade_script="setup_reverse_cascade.sh"
                 else
                     echo -e "${RED}❌ Файл setup_reverse_cascade.sh не найден!${NC}"
                     echo -e "${YELLOW}Ожидается: ${WORK_DIR}/setup_reverse_cascade.sh${NC}"
+                    break
                 fi
+
+                echo -e "\n${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+                echo -e "${BLUE}   Настройка обратного каскада 3x-ui${NC}"
+                echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+                echo -e "${YELLOW}Российский сервер (входящее):${NC}"
+                read -p "  URL панели (напр. https://1.2.3.4:2053): " _ru_url
+                read -p "  Логин панели [admin]: " _ru_user
+                _ru_user="${_ru_user:-admin}"
+                read -s -p "  Пароль панели: " _ru_pass; echo
+                echo -e "\n${YELLOW}VPS сервер (исходящее, этот сервер):${NC}"
+                read -p "  URL панели (напр. https://5.6.7.8:2053): " _vps_url
+                read -p "  Логин панели [admin]: " _vps_user
+                _vps_user="${_vps_user:-admin}"
+                read -s -p "  Пароль панели: " _vps_pass; echo
+                echo -e "\n${YELLOW}Параметры клиента:${NC}"
+                read -p "  Email клиента [newclient]: " _email
+                _email="${_email:-newclient}"
+                read -p "  ServerName (SNI, напр. nvidia.com) [nvidia.com]: " _sname
+                _sname="${_sname:-nvidia.com}"
+                read -p "  Camouflage target (напр. melsu.ru:443) [melsu.ru:443]: " _camouf
+                _camouf="${_camouf:-melsu.ru:443}"
+                echo ""
+
+                RU_URL="$_ru_url" \
+                RU_USER="$_ru_user" \
+                RU_PASS="$_ru_pass" \
+                VPS_URL="$_vps_url" \
+                VPS_USER="$_vps_user" \
+                VPS_PASS="$_vps_pass" \
+                NEW_EMAIL="$_email" \
+                SERVER_NAME="$_sname" \
+                CAMOUFLAGE_TARGET="$_camouf" \
+                bash "$_cascade_script"
                 ;;
             99) run_with_sync && remove_all ;;
             0) return ;;

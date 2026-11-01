@@ -12,22 +12,22 @@ set -euo pipefail
 # НАСТРОЙКИ — заполни перед запуском
 # ─────────────────────────────────────────────────────────────────────────────
 
-RU_URL="https://157.22.173.47:2053"      # адрес панели российского сервера
-RU_TOKEN=""                               # API токен (рекомендуется)
-RU_USER="admin"                           # логин (если токен не задан)
-RU_PASS="password"                        # пароль (если токен не задан)
+RU_URL="${RU_URL:-https://157.22.173.47:2053}"      # адрес панели российского сервера
+RU_TOKEN="${RU_TOKEN:-}"                              # API токен (рекомендуется)
+RU_USER="${RU_USER:-admin}"                           # логин (если токен не задан)
+RU_PASS="${RU_PASS:-password}"                        # пароль (если токен не задан)
 
-VPS_URL="https://VPS_IP:2053"            # адрес панели VPS
-VPS_TOKEN=""                              # API токен (рекомендуется)
-VPS_USER="admin"
-VPS_PASS="password"
+VPS_URL="${VPS_URL:-https://VPS_IP:2053}"            # адрес панели VPS
+VPS_TOKEN="${VPS_TOKEN:-}"                            # API токен (рекомендуется)
+VPS_USER="${VPS_USER:-admin}"
+VPS_PASS="${VPS_PASS:-password}"
 
-NEW_EMAIL="newclient"                     # email нового клиента (уникальный)
-NEW_PORT=0                                # порт входящего; 0 = выбрать случайный
-SERVER_NAME="nvidia.com"                  # camouflage serverName (для Reality)
-CAMOUFLAGE_TARGET="melsu.ru:443"          # реальная TLS-цель
-OUTBOUND_TAG="torus_${NEW_EMAIL}"         # тег исходящего на VPS
-FINGERPRINT="edge"
+NEW_EMAIL="${NEW_EMAIL:-newclient}"                   # email нового клиента (уникальный)
+NEW_PORT="${NEW_PORT:-0}"                             # порт входящего; 0 = выбрать случайный
+SERVER_NAME="${SERVER_NAME:-nvidia.com}"              # camouflage serverName (для Reality)
+CAMOUFLAGE_TARGET="${CAMOUFLAGE_TARGET:-melsu.ru:443}" # реальная TLS-цель
+OUTBOUND_TAG="torus_${NEW_EMAIL}"                    # тег исходящего на VPS
+FINGERPRINT="${FINGERPRINT:-edge}"
 
 # Если SERVER_NAME совпадает с CAMOUFLAGE_TARGET (как у nicegoods: оба melsu.ru),
 # то в serverNames НЕ нужно дублировать — скрипт определяет автоматически.
