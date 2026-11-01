@@ -1231,7 +1231,7 @@ check_and_create_inbound_if_needed() {
                 echo -e "\n${BLUE}========================================${NC}"
                 echo -e "${BLUE}   Выберите тип подключения${NC}"
                 echo -e "${BLUE}========================================${NC}"
-                echo -e "${GREEN}1${NC} - XHTTP Reality (рекомендуется)"
+                echo -e "${GREEN}1${NC} - XHTTP Reality"
                 echo -e "${GREEN}2${NC} - TCP Reality"
                 echo -e "${GREEN}0${NC} - Вернуться в главное меню"
                 echo -e "${BLUE}========================================${NC}"
@@ -2884,7 +2884,6 @@ show_status() {
         echo -e "  ${YELLOW}Запустите: docker start cascade${NC}"
     else
         echo -e "  Cascade: ${RED}❌ Не установлен${NC}"
-        echo -e "  ${BLUE}Установите через пункт меню 22${NC}"
     fi
 
     echo -e "\n${BLUE}========================================${NC}"
@@ -4392,7 +4391,7 @@ post_install_menu() {
             echo -e "\n${BLUE}========================================${NC}"
             echo -e "${BLUE}   Выберите тип подключения${NC}"
             echo -e "${BLUE}========================================${NC}"
-            echo -e "${GREEN}1${NC} - XHTTP Reality (рекомендуется)"
+            echo -e "${GREEN}1${NC} - XHTTP Reality"
             echo -e "${GREEN}2${NC} - TCP Reality"
             echo -e "${GREEN}0${NC} - Вернуться в главное меню"
             echo -e "${BLUE}========================================${NC}"
