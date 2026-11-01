@@ -6341,7 +6341,7 @@ menu_maintenance() {
                 _vps_user="${_vps_user:-admin}"
                 read -s -p "  Пароль панели: " _vps_pass; echo
                 echo -e "\n${YELLOW}Параметры клиента:${NC}"
-                read -p "  Email клиента [newclient]: " _email
+                read -p "  Имя клиента на российском сервере (видно в панели → Входящие) [newclient]: " _email
                 _email="${_email:-newclient}"
                 read -p "  ServerName (SNI, напр. nvidia.com) [nvidia.com]: " _sname
                 _sname="${_sname:-nvidia.com}"
