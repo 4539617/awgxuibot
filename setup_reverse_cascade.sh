@@ -197,7 +197,8 @@ ru_create_inbound() {
                     reset: 0
                 }],
                 decryption: "none",
-                encryption: "none"
+                encryption: "none",
+                testseed: [900, 500, 900, 256]
             },
             sniffing: { enabled: false },
             streamSettings: {
