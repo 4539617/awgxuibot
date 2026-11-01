@@ -161,6 +161,10 @@ ru_create_inbound() {
     log "Создание входящего на российском сервере (порт $port) ..."
 
     local camouflage_host="${CAMOUFLAGE_TARGET%%:*}"
+    local sub_id password auth
+    sub_id=$(openssl rand -hex 8)
+    password=$(openssl rand -hex 8)
+    auth=$(openssl rand -hex 8)
 
     local body
     body=$(jq -n \
@@ -174,6 +178,9 @@ ru_create_inbound() {
         --arg  sname            "$SERVER_NAME" \
         --arg  target           "$CAMOUFLAGE_TARGET" \
         --arg  camouflage_host  "$camouflage_host" \
+        --arg  sub_id           "$sub_id" \
+        --arg  password         "$password" \
+        --arg  auth             "$auth" \
         '{
             enable: true,
             remark: $email,
@@ -186,13 +193,16 @@ ru_create_inbound() {
                 clients: [{
                     id: $uuid,
                     email: $email,
+                    security: "auto",
                     flow: "xtls-rprx-vision",
+                    password: $password,
+                    auth: $auth,
                     limitIp: 0,
                     totalGB: 0,
                     expiryTime: 0,
                     enable: true,
                     tgId: 0,
-                    subId: "",
+                    subId: $sub_id,
                     comment: "",
                     reset: 0
                 }],
