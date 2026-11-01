@@ -288,8 +288,8 @@ vps_get_xray_config() {
     resp=$(curl "${CURL_BASE[@]}" "${VPS_AUTH_HEADER[@]}" -X POST "$VPS_URL/panel/api/xray/" -H "Accept: application/json")
     echo "$resp" | jq -e '.success == true' &>/dev/null \
         || die "Не удалось получить xray конфиг VPS: $resp"
-    # xraySetting — строка содержащая JSON, парсим её
-    echo "$resp" | jq -r '.obj.xraySetting'
+    # obj — JSON-строка, внутри неё поле xraySetting тоже JSON-строка
+    echo "$resp" | jq -r '.obj | fromjson | .xraySetting | fromjson'
 }
 
 # Добавить outbound + routing в xray конфиг VPS и сохранить
