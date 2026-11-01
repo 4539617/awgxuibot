@@ -473,6 +473,26 @@ main() {
     # Шаг 2 + 3: исходящее и маршрутизация на VPS (через xray config)
     vps_update_xray "$RU_IP" "$PORT" "$UUID" "$SHORT_ID" "$PUB_KEY" "$SPIDER_X"
 
+    # Шаг 4: перезапуск xray на российском сервере
+    log "Перезапуск xray на российском сервере ..."
+    local ru_restart_resp
+    ru_restart_resp=$(curl "${CURL_BASE[@]}" "${RU_AUTH_HEADER[@]}" \
+        -X POST "$RU_URL/panel/api/server/restartXrayService" \
+        -H "Accept: application/json")
+    echo "$ru_restart_resp" | jq -e '.success == true' &>/dev/null \
+        && log "  ✓ Xray на российском сервере перезапущен" \
+        || log "  ⚠ Не удалось перезапустить xray: $ru_restart_resp"
+
+    # Шаг 5: перезапуск xray на VPS
+    log "Перезапуск xray на VPS ..."
+    local vps_restart_resp
+    vps_restart_resp=$(curl "${CURL_BASE[@]}" "${VPS_AUTH_HEADER[@]}" \
+        -X POST "$VPS_URL/panel/api/server/restartXrayService" \
+        -H "Accept: application/json")
+    echo "$vps_restart_resp" | jq -e '.success == true' &>/dev/null \
+        && log "  ✓ Xray на VPS перезапущен" \
+        || log "  ⚠ Не удалось перезапустить xray на VPS: $vps_restart_resp"
+
     # Итог
     log "======================================================"
     log "  ✅ Готово!"
@@ -480,9 +500,6 @@ main() {
     log "  Входящее  : $RU_URL (порт $PORT)"
     log "  Исходящее : tag=$OUTBOUND_TAG → $RU_IP:$PORT"
     log "  Клиент    : $NEW_EMAIL / UUID=$UUID"
-    log "======================================================"
-    log ""
-    log "  Перезапусти xray на обоих серверах в панели 3x-ui"
     log "======================================================"
 }
 
