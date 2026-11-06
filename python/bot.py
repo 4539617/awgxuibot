@@ -188,17 +188,14 @@ def _build_panels_block_admin() -> str:
         is_current = panel_id == current_panel_id
         panel_icon = "✅" if is_current else "⏸️"
         location = p.location_label or ''
-        location_str = f"  |  📍 {location}" if location else ""
-        transport = (getattr(p, 'transport', '') or '—').upper()
-        security = (getattr(p, 'security', '') or '—').upper()
+        location_str = f" ({location})" if location else ""
         url = getattr(p, 'xui_url', '') or ''
         panel_id_str = (
             f"<a href=\"{url}\">{panel_id}</a>" if url else f"<code>{panel_id}</code>"
         )
         line = (
-            f"{panel_icon} <b>{p.alias}</b>  <code>v{p.xui_version}</code>{location_str}\n"
-            f"   {online_icon}  |  🆔 {panel_id_str}\n"
-            f"   🔌 <code>{transport}</code> · <code>{security}</code>"
+            f"{panel_icon} <b>{p.alias}</b>{location_str}\n"
+            f"   {online_icon}  |  🆔 {panel_id_str}"
         )
         lines.append(line)
     return "\n".join(lines) + "\n\n"
@@ -4436,8 +4433,8 @@ async def show_status_servers(callback_query: types.CallbackQuery):
     if is_admin(user_id):
         panels_block = _build_panels_block_admin()
         cascade_block = _build_cascade_block_admin()
-        xui_header = "3X-UI:\n" if panels_block else ""
-        cascade_header = "CASCADE:\n" if cascade_block else ""
+        xui_header = "VLESS:\n" if panels_block else ""
+        cascade_header = "AMNEZIA:\n" if cascade_block else ""
         text = (
             f"{xui_header}{panels_block}"
             f"{cascade_header}{cascade_block}"
@@ -5026,18 +5023,15 @@ async def show_panels_list(callback_query: types.CallbackQuery, state: FSMContex
             online_icon = "🟢 Онлайн" if is_online else "🔴 Оффлайн"
 
             location = getattr(panel_config, 'location_label', '')
-            location_str = f"  |  📍 {location}" if location else ""
+            location_str = f" ({location})" if location else ""
 
-            transport = (getattr(panel_config, 'transport', '') or '—').upper()
-            security = (getattr(panel_config, 'security', '') or '—').upper()
             url = panel_config.xui_url or ''
             panel_id_str = (
                 f"<a href=\"{url}\">{panel_id}</a>" if url else f"<code>{panel_id}</code>"
             )
 
-            text += f"{panel_icon} <b>{alias}</b>  <code>v{version}</code>{location_str}\n"
+            text += f"{panel_icon} <b>{alias}</b>{location_str}\n"
             text += f"   {online_icon}  |  🆔 {panel_id_str}\n"
-            text += f"   🔌 <code>{transport}</code> · <code>{security}</code>\n"
             text += "\n"
         
         # Кнопки управления
