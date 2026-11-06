@@ -1638,21 +1638,45 @@ install_xuibot() {
 }
 
 # Функция показа логов XUI бота
-show_xuibot_logs() {
+show_xuibot_status() {
     echo -e "\n${BLUE}========================================${NC}"
-    echo -e "${BLUE}   Логи XUI Бота${NC}"
+    echo -e "${BLUE}   Статус XUIBOT${NC}"
     echo -e "${BLUE}========================================${NC}\n"
-    
+
+    echo -e "${YELLOW}🔍 Статус контейнера:${NC}"
+    docker ps -a --filter name=xuibot --format "  Имя: {{.Names}}\n  Образ: {{.Image}}\n  Статус: {{.Status}}\n  Порты: {{.Ports}}" 2>/dev/null \
+        || echo -e "${RED}  Docker недоступен${NC}"
+
+    echo -e "\n${YELLOW}📋 Логи XUIBOT (последние 50 строк):${NC}"
+    docker logs --tail=50 xuibot 2>&1 || echo -e "${RED}  Контейнер xuibot не найден${NC}"
+
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Команды управления XUIBOT${NC}"
+    echo -e "${BLUE}========================================${NC}"
+    echo -e "${GREEN}▶  Запуск:${NC}"
+    echo -e "   docker compose -f /opt/awgxuibot/docker-compose.xuibot.yml up -d"
+    echo -e "${RED}■  Остановка:${NC}"
+    echo -e "   docker compose -f /opt/awgxuibot/docker-compose.xuibot.yml down"
+    echo -e "${YELLOW}🔄 Перезапуск:${NC}"
+    echo -e "   docker restart xuibot"
+    echo -e "${YELLOW}📋 Логи в реальном времени:${NC}"
+    echo -e "   docker logs -f xuibot"
+}
+
+# Функция остановки XUIBOT
+stop_xuibot() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Остановка XUIBOT${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+
     if ! docker ps --filter name=xuibot --format "{{.Names}}" | grep -q xuibot; then
-        echo -e "${RED}❌ Контейнер xuibot не запущен${NC}"
+        echo -e "${YELLOW}⚠️  Контейнер xuibot уже остановлен или не существует${NC}"
         return
     fi
-    
-    echo -e "${YELLOW}📋 Логи XUI бота (последние 50 строк):${NC}"
-    docker logs --tail=50 xuibot 2>&1
-    
-    echo -e "\n${YELLOW}Для просмотра в реальном времени:${NC}"
-    echo -e "${BLUE}docker logs -f xuibot${NC}"
+
+    echo -e "${YELLOW}🛑 Остановка XUIBOT...${NC}"
+    $DOCKER_COMPOSE_CMD -f docker-compose.xuibot.yml down
+    echo -e "${GREEN}✅ XUIBOT остановлен${NC}"
 }
 
 # Функция обновления XUI бота
@@ -1979,21 +2003,45 @@ install_awgbot() {
 }
 
 # Функция показа логов AWG бота
-show_awgbot_logs() {
+show_awgbot_status() {
     echo -e "\n${BLUE}========================================${NC}"
-    echo -e "${BLUE}   Логи AWG Бота${NC}"
+    echo -e "${BLUE}   Статус AWGBOT${NC}"
     echo -e "${BLUE}========================================${NC}\n"
-    
+
+    echo -e "${YELLOW}🔍 Статус контейнера:${NC}"
+    docker ps -a --filter name=awgbot --format "  Имя: {{.Names}}\n  Образ: {{.Image}}\n  Статус: {{.Status}}\n  Порты: {{.Ports}}" 2>/dev/null \
+        || echo -e "${RED}  Docker недоступен${NC}"
+
+    echo -e "\n${YELLOW}📋 Логи AWGBOT (последние 50 строк):${NC}"
+    docker logs --tail=50 awgbot 2>&1 || echo -e "${RED}  Контейнер awgbot не найден${NC}"
+
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Команды управления AWGBOT${NC}"
+    echo -e "${BLUE}========================================${NC}"
+    echo -e "${GREEN}▶  Запуск:${NC}"
+    echo -e "   docker compose -f /opt/awgxuibot/docker-compose.awgbot.yml up -d"
+    echo -e "${RED}■  Остановка:${NC}"
+    echo -e "   docker compose -f /opt/awgxuibot/docker-compose.awgbot.yml down"
+    echo -e "${YELLOW}🔄 Перезапуск:${NC}"
+    echo -e "   docker restart awgbot"
+    echo -e "${YELLOW}📋 Логи в реальном времени:${NC}"
+    echo -e "   docker logs -f awgbot"
+}
+
+# Функция остановки AWGBOT
+stop_awgbot() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Остановка AWGBOT${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+
     if ! docker ps --filter name=awgbot --format "{{.Names}}" | grep -q awgbot; then
-        echo -e "${RED}❌ Контейнер awgbot не запущен${NC}"
+        echo -e "${YELLOW}⚠️  Контейнер awgbot уже остановлен или не существует${NC}"
         return
     fi
-    
-    echo -e "${YELLOW}📋 Логи AWG бота (последние 50 строк):${NC}"
-    docker logs --tail=50 awgbot 2>&1
-    
-    echo -e "\n${YELLOW}Для просмотра в реальном времени:${NC}"
-    echo -e "${BLUE}docker logs -f awgbot${NC}"
+
+    echo -e "${YELLOW}🛑 Остановка AWGBOT...${NC}"
+    $DOCKER_COMPOSE_CMD -f docker-compose.awgbot.yml down
+    echo -e "${GREEN}✅ AWGBOT остановлен${NC}"
 }
 
 # Функция обновления AWG бота
@@ -2148,18 +2196,45 @@ install_cascade() {
     fi
 }
 
-show_cascade_logs() {
+show_cascade_status() {
     echo -e "\n${BLUE}========================================${NC}"
-    echo -e "${BLUE}   Логи Cascade Web UI${NC}"
-    echo -e "${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Статус Cascade Web UI${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
 
-    if ! docker ps -a --format '{{.Names}}' | grep -q "^cascade$"; then
-        echo -e "${RED}❌ Контейнер cascade не найден${NC}"
-        return 1
+    echo -e "${YELLOW}🔍 Статус контейнера:${NC}"
+    docker ps -a --filter name=cascade --format "  Имя: {{.Names}}\n  Образ: {{.Image}}\n  Статус: {{.Status}}\n  Порты: {{.Ports}}" 2>/dev/null \
+        || echo -e "${RED}  Docker недоступен${NC}"
+
+    echo -e "\n${YELLOW}📋 Логи Cascade (последние 50 строк):${NC}"
+    docker logs --tail=50 cascade 2>&1 || echo -e "${RED}  Контейнер cascade не найден${NC}"
+
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Команды управления Cascade${NC}"
+    echo -e "${BLUE}========================================${NC}"
+    echo -e "${GREEN}▶  Запуск:${NC}"
+    echo -e "   docker compose -f /opt/awgxuibot/docker-compose.cascade.yml up -d"
+    echo -e "${RED}■  Остановка:${NC}"
+    echo -e "   docker compose -f /opt/awgxuibot/docker-compose.cascade.yml down"
+    echo -e "${YELLOW}🔄 Перезапуск:${NC}"
+    echo -e "   docker restart cascade"
+    echo -e "${YELLOW}📋 Логи в реальном времени:${NC}"
+    echo -e "   docker logs -f cascade"
+}
+
+# Функция остановки Cascade
+stop_cascade() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Остановка Cascade Web UI${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+
+    if ! docker ps --filter name=cascade --format "{{.Names}}" | grep -q cascade; then
+        echo -e "${YELLOW}⚠️  Контейнер cascade уже остановлен или не существует${NC}"
+        return
     fi
 
-    echo -e "${YELLOW}Последние 100 строк логов (Ctrl+C для выхода):${NC}\n"
-    docker logs --tail=100 -f cascade 2>&1
+    echo -e "${YELLOW}🛑 Остановка Cascade...${NC}"
+    docker compose -f docker-compose.cascade.yml down
+    echo -e "${GREEN}✅ Cascade остановлен${NC}"
 }
 
 update_cascade() {
@@ -6106,6 +6181,44 @@ run_with_sync() {
     return 0
 }
 
+# Функция статуса 3X-UI (systemd)
+show_3xui_status() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Статус 3X-UI${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+
+    echo -e "${YELLOW}🔍 Статус сервиса x-ui:${NC}"
+    systemctl status x-ui --no-pager 2>/dev/null || echo -e "${RED}  Сервис x-ui не найден${NC}"
+
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Команды управления 3X-UI${NC}"
+    echo -e "${BLUE}========================================${NC}"
+    echo -e "${GREEN}▶  Запуск:${NC}"
+    echo -e "   systemctl start x-ui"
+    echo -e "${RED}■  Остановка:${NC}"
+    echo -e "   systemctl stop x-ui"
+    echo -e "${YELLOW}🔄 Перезапуск:${NC}"
+    echo -e "   systemctl restart x-ui"
+    echo -e "${YELLOW}📋 Логи в реальном времени:${NC}"
+    echo -e "   journalctl -u x-ui -f"
+}
+
+# Функция остановки 3X-UI (systemd)
+stop_3xui() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Остановка 3X-UI${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+
+    if ! systemctl is-active --quiet x-ui 2>/dev/null; then
+        echo -e "${YELLOW}⚠️  Сервис x-ui уже остановлен или не установлен${NC}"
+        return
+    fi
+
+    echo -e "${YELLOW}🛑 Остановка x-ui...${NC}"
+    systemctl stop x-ui
+    echo -e "${GREEN}✅ 3X-UI остановлен${NC}"
+}
+
 # ── Подменю: 3X-UI ──────────────────────────────────────────
 menu_3xui() {
     while true; do
@@ -6114,14 +6227,18 @@ menu_3xui() {
         echo -e "${BLUE}========================================${NC}"
         echo -e "${GREEN}1)${NC} Установка 3x-ui Panel v2.9.4"
         echo -e "${GREEN}2)${NC} Установка 3x-ui Panel v3.x.x"
-        echo -e "${GREEN}3)${NC} Удаление 3x-ui Panel"
+        echo -e "${GREEN}3)${NC} Статус 3X-UI"
+        echo -e "${GREEN}4)${NC} Остановка 3X-UI"
+        echo -e "${GREEN}5)${NC} Удаление 3x-ui Panel"
         echo -e "${GREEN}0)${NC} Назад"
         echo -e "${BLUE}========================================${NC}"
         read -p "Введите номер: " sub
         case $sub in
             1) run_with_sync && install_3xui_v294 ;;
             2) run_with_sync && install_3xui_v3 ;;
-            3) run_with_sync && remove_3xui ;;
+            3) show_3xui_status ;;
+            4) stop_3xui ;;
+            5) run_with_sync && remove_3xui ;;
             0) return ;;
             *) echo -e "${RED}❌ Неверный выбор${NC}" ;;
         esac
@@ -6136,17 +6253,19 @@ menu_cascade() {
         echo -e "${BLUE}   CASCADE WEB UI${NC}"
         echo -e "${BLUE}========================================${NC}"
         echo -e "${GREEN}1)${NC} Установка Cascade Web UI"
-        echo -e "${GREEN}2)${NC} Логи Cascade"
+        echo -e "${GREEN}2)${NC} Статус Cascade"
         echo -e "${GREEN}3)${NC} Пересборка Cascade"
-        echo -e "${GREEN}4)${NC} Удаление Cascade"
+        echo -e "${GREEN}4)${NC} Остановка Cascade"
+        echo -e "${GREEN}5)${NC} Удаление Cascade"
         echo -e "${GREEN}0)${NC} Назад"
         echo -e "${BLUE}========================================${NC}"
         read -p "Введите номер: " sub
         case $sub in
             1) run_with_sync && install_cascade ;;
-            2) show_cascade_logs ;;
+            2) show_cascade_status ;;
             3) run_with_sync && update_cascade ;;
-            4) remove_cascade ;;
+            4) stop_cascade ;;
+            5) remove_cascade ;;
             0) return ;;
             *) echo -e "${RED}❌ Неверный выбор${NC}" ;;
         esac
@@ -6194,17 +6313,19 @@ menu_xuibot() {
         echo -e "${BLUE}   XUIBOT${NC}"
         echo -e "${BLUE}========================================${NC}"
         echo -e "${GREEN}1)${NC} Установка XUIBOT"
-        echo -e "${GREEN}2)${NC} Логи XUIBOT"
+        echo -e "${GREEN}2)${NC} Статус XUIBOT"
         echo -e "${GREEN}3)${NC} Пересборка XUIBOT"
-        echo -e "${GREEN}4)${NC} Удаление XUIBOT"
+        echo -e "${GREEN}4)${NC} Остановка XUIBOT"
+        echo -e "${GREEN}5)${NC} Удаление XUIBOT"
         echo -e "${GREEN}0)${NC} Назад"
         echo -e "${BLUE}========================================${NC}"
         read -p "Введите номер: " sub
         case $sub in
             1) run_with_sync && install_xuibot ;;
-            2) run_with_sync && show_xuibot_logs ;;
+            2) show_xuibot_status ;;
             3) run_with_sync && update_xuibot ;;
-            4) run_with_sync && remove_xuibot ;;
+            4) stop_xuibot ;;
+            5) run_with_sync && remove_xuibot ;;
             0) return ;;
             *) echo -e "${RED}❌ Неверный выбор${NC}" ;;
         esac
@@ -6219,17 +6340,19 @@ menu_awgbot() {
         echo -e "${BLUE}   AWGBOT${NC}"
         echo -e "${BLUE}========================================${NC}"
         echo -e "${GREEN}1)${NC} Установка AWGBOT"
-        echo -e "${GREEN}2)${NC} Логи AWGBOT"
+        echo -e "${GREEN}2)${NC} Статус AWGBOT"
         echo -e "${GREEN}3)${NC} Пересборка AWGBOT"
-        echo -e "${GREEN}4)${NC} Удаление AWGBOT"
+        echo -e "${GREEN}4)${NC} Остановка AWGBOT"
+        echo -e "${GREEN}5)${NC} Удаление AWGBOT"
         echo -e "${GREEN}0)${NC} Назад"
         echo -e "${BLUE}========================================${NC}"
         read -p "Введите номер: " sub
         case $sub in
             1) run_with_sync && install_awgbot ;;
-            2) run_with_sync && show_awgbot_logs ;;
+            2) show_awgbot_status ;;
             3) run_with_sync && update_awgbot ;;
-            4) run_with_sync && remove_awgbot ;;
+            4) stop_awgbot ;;
+            5) run_with_sync && remove_awgbot ;;
             0) return ;;
             *) echo -e "${RED}❌ Неверный выбор${NC}" ;;
         esac
