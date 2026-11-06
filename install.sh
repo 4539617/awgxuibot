@@ -1659,6 +1659,8 @@ show_xuibot_status() {
     echo -e "   docker compose -f /opt/awgxuibot/docker-compose.xuibot.yml down"
     echo -e "${YELLOW}🔄 Перезапуск:${NC}"
     echo -e "   docker restart xuibot"
+    echo -e "${YELLOW}🔨 Пересборка:${NC}"
+    echo -e "   docker compose -f /opt/awgxuibot/docker-compose.xuibot.yml up -d --build"
     echo -e "${YELLOW}📋 Логи в реальном времени:${NC}"
     echo -e "   docker logs -f xuibot"
 }
@@ -2024,6 +2026,8 @@ show_awgbot_status() {
     echo -e "   docker compose -f /opt/awgxuibot/docker-compose.awgbot.yml down"
     echo -e "${YELLOW}🔄 Перезапуск:${NC}"
     echo -e "   docker restart awgbot"
+    echo -e "${YELLOW}🔨 Пересборка:${NC}"
+    echo -e "   docker compose -f /opt/awgxuibot/docker-compose.awgbot.yml up -d --build"
     echo -e "${YELLOW}📋 Логи в реальном времени:${NC}"
     echo -e "   docker logs -f awgbot"
 }
@@ -2217,6 +2221,8 @@ show_cascade_status() {
     echo -e "   docker compose -f /opt/awgxuibot/docker-compose.cascade.yml down"
     echo -e "${YELLOW}🔄 Перезапуск:${NC}"
     echo -e "   docker restart cascade"
+    echo -e "${YELLOW}🔨 Пересборка:${NC}"
+    echo -e "   docker compose -f /opt/awgxuibot/docker-compose.cascade.yml up -d --build"
     echo -e "${YELLOW}📋 Логи в реальном времени:${NC}"
     echo -e "   docker logs -f cascade"
 }
@@ -6199,6 +6205,8 @@ show_3xui_status() {
     echo -e "   systemctl stop x-ui"
     echo -e "${YELLOW}🔄 Перезапуск:${NC}"
     echo -e "   systemctl restart x-ui"
+    echo -e "${YELLOW}🔨 Переустановка (обновление):${NC}"
+    echo -e "   x-ui"
     echo -e "${YELLOW}📋 Логи в реальном времени:${NC}"
     echo -e "   journalctl -u x-ui -f"
 }
