@@ -6225,18 +6225,18 @@ menu_3xui() {
         echo -e "\n${BLUE}========================================${NC}"
         echo -e "${BLUE}   3X-UI${NC}"
         echo -e "${BLUE}========================================${NC}"
-        echo -e "${GREEN}1)${NC} Установка 3x-ui Panel v2.9.4"
-        echo -e "${GREEN}2)${NC} Установка 3x-ui Panel v3.x.x"
-        echo -e "${GREEN}3)${NC} Статус 3X-UI"
+        echo -e "${GREEN}1)${NC} Статус 3X-UI"
+        echo -e "${GREEN}2)${NC} Установка 3x-ui Panel v2.9.4"
+        echo -e "${GREEN}3)${NC} Установка 3x-ui Panel v3.x.x"
         echo -e "${GREEN}4)${NC} Остановка 3X-UI"
         echo -e "${GREEN}5)${NC} Удаление 3x-ui Panel"
         echo -e "${GREEN}0)${NC} Назад"
         echo -e "${BLUE}========================================${NC}"
         read -p "Введите номер: " sub
         case $sub in
-            1) run_with_sync && install_3xui_v294 ;;
-            2) run_with_sync && install_3xui_v3 ;;
-            3) show_3xui_status ;;
+            1) show_3xui_status ;;
+            2) run_with_sync && install_3xui_v294 ;;
+            3) run_with_sync && install_3xui_v3 ;;
             4) stop_3xui ;;
             5) run_with_sync && remove_3xui ;;
             0) return ;;
@@ -6252,8 +6252,8 @@ menu_cascade() {
         echo -e "\n${BLUE}========================================${NC}"
         echo -e "${BLUE}   CASCADE WEB UI${NC}"
         echo -e "${BLUE}========================================${NC}"
-        echo -e "${GREEN}1)${NC} Установка Cascade Web UI"
-        echo -e "${GREEN}2)${NC} Статус Cascade"
+        echo -e "${GREEN}1)${NC} Статус Cascade"
+        echo -e "${GREEN}2)${NC} Установка Cascade Web UI"
         echo -e "${GREEN}3)${NC} Пересборка Cascade"
         echo -e "${GREEN}4)${NC} Остановка Cascade"
         echo -e "${GREEN}5)${NC} Удаление Cascade"
@@ -6261,8 +6261,8 @@ menu_cascade() {
         echo -e "${BLUE}========================================${NC}"
         read -p "Введите номер: " sub
         case $sub in
-            1) run_with_sync && install_cascade ;;
-            2) show_cascade_status ;;
+            1) show_cascade_status ;;
+            2) run_with_sync && install_cascade ;;
             3) run_with_sync && update_cascade ;;
             4) stop_cascade ;;
             5) remove_cascade ;;
@@ -6312,8 +6312,8 @@ menu_xuibot() {
         echo -e "\n${BLUE}========================================${NC}"
         echo -e "${BLUE}   XUIBOT${NC}"
         echo -e "${BLUE}========================================${NC}"
-        echo -e "${GREEN}1)${NC} Установка XUIBOT"
-        echo -e "${GREEN}2)${NC} Статус XUIBOT"
+        echo -e "${GREEN}1)${NC} Статус XUIBOT"
+        echo -e "${GREEN}2)${NC} Установка XUIBOT"
         echo -e "${GREEN}3)${NC} Пересборка XUIBOT"
         echo -e "${GREEN}4)${NC} Остановка XUIBOT"
         echo -e "${GREEN}5)${NC} Удаление XUIBOT"
@@ -6321,8 +6321,8 @@ menu_xuibot() {
         echo -e "${BLUE}========================================${NC}"
         read -p "Введите номер: " sub
         case $sub in
-            1) run_with_sync && install_xuibot ;;
-            2) show_xuibot_status ;;
+            1) show_xuibot_status ;;
+            2) run_with_sync && install_xuibot ;;
             3) run_with_sync && update_xuibot ;;
             4) stop_xuibot ;;
             5) run_with_sync && remove_xuibot ;;
@@ -6339,8 +6339,8 @@ menu_awgbot() {
         echo -e "\n${BLUE}========================================${NC}"
         echo -e "${BLUE}   AWGBOT${NC}"
         echo -e "${BLUE}========================================${NC}"
-        echo -e "${GREEN}1)${NC} Установка AWGBOT"
-        echo -e "${GREEN}2)${NC} Статус AWGBOT"
+        echo -e "${GREEN}1)${NC} Статус AWGBOT"
+        echo -e "${GREEN}2)${NC} Установка AWGBOT"
         echo -e "${GREEN}3)${NC} Пересборка AWGBOT"
         echo -e "${GREEN}4)${NC} Остановка AWGBOT"
         echo -e "${GREEN}5)${NC} Удаление AWGBOT"
@@ -6348,8 +6348,8 @@ menu_awgbot() {
         echo -e "${BLUE}========================================${NC}"
         read -p "Введите номер: " sub
         case $sub in
-            1) run_with_sync && install_awgbot ;;
-            2) show_awgbot_status ;;
+            1) show_awgbot_status ;;
+            2) run_with_sync && install_awgbot ;;
             3) run_with_sync && update_awgbot ;;
             4) stop_awgbot ;;
             5) run_with_sync && remove_awgbot ;;
