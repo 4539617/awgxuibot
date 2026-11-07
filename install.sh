@@ -6534,21 +6534,35 @@ menu_maintenance() {
                 bash "$_cascade_script"
                 ;;
             4)
+                # Ищем скрипт: сначала в PATH, затем рядом с install.sh
                 local _cf_script=""
                 if command -v cascade &>/dev/null; then
                     _cf_script="cascade"
                 elif [ -f "${WORK_DIR}/cascade-forwarder-main/cascade.sh" ]; then
-                    _cf_script="bash ${WORK_DIR}/cascade-forwarder-main/cascade.sh"
+                    _cf_script="${WORK_DIR}/cascade-forwarder-main/cascade.sh"
                 elif [ -f "$(dirname "${BASH_SOURCE[0]}")/cascade-forwarder-main/cascade.sh" ]; then
-                    _cf_script="bash $(dirname "${BASH_SOURCE[0]}")/cascade-forwarder-main/cascade.sh"
-                else
-                    echo -e "${RED}❌ CASCADE Forwarder не найден!${NC}"
-                    echo -e "${YELLOW}Установите его командой:${NC}"
-                    echo -e "  wget -O /usr/local/bin/cascade https://raw.githubusercontent.com/4539617/cascade-forwarder/main/cascade.sh"
-                    echo -e "  chmod +x /usr/local/bin/cascade"
-                    break
+                    _cf_script="$(dirname "${BASH_SOURCE[0]}")/cascade-forwarder-main/cascade.sh"
                 fi
-                eval "$_cf_script"
+
+                # Если не нашли — скачиваем автоматически
+                if [ -z "$_cf_script" ]; then
+                    echo -e "${YELLOW}📦 CASCADE Forwarder не установлен. Устанавливаем...${NC}"
+                    if wget -q --timeout=15 \
+                            "https://raw.githubusercontent.com/4539617/cascade-forwarder/main/cascade.sh" \
+                            -O /usr/local/bin/cascade 2>/dev/null \
+                        && chmod +x /usr/local/bin/cascade; then
+                        echo -e "${GREEN}✅ CASCADE Forwarder установлен${NC}"
+                        _cf_script="cascade"
+                    else
+                        echo -e "${RED}❌ Не удалось скачать CASCADE Forwarder${NC}"
+                        echo -e "${YELLOW}Проверьте соединение и установите вручную:${NC}"
+                        echo -e "  wget -O /usr/local/bin/cascade https://raw.githubusercontent.com/4539617/cascade-forwarder/main/cascade.sh"
+                        echo -e "  chmod +x /usr/local/bin/cascade"
+                        break
+                    fi
+                fi
+
+                bash "$_cf_script"
                 ;;
             99) run_with_sync && remove_all ;;
             0) return ;;
