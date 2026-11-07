@@ -3216,6 +3216,10 @@ async def process_threshold_value(message: types.Message, state: FSMContext):
 # FSM-состояние ожидания файла импорта apps.yaml
 # ВАЖНО: класс и хендлер должны быть зарегистрированы ДО catch-all @dp.message(),
 # иначе aiogram 3.x перехватит сообщение раньше FSM-фильтра.
+class UsersImportState(StatesGroup):
+    waiting_for_file = State()
+
+
 class AppsImportState(StatesGroup):
     waiting_for_file = State()
 
@@ -4033,6 +4037,9 @@ async def show_users_list(callback_query: types.CallbackQuery, state: FSMContext
                 callback_data="show_pending_requests"
             )])
 
+        buttons.append([
+            InlineKeyboardButton(text="📥 Импорт пользователей", callback_data="import_users_db")
+        ])
         buttons.append([
             InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_users"),
             InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_server_status")
@@ -4912,6 +4919,70 @@ async def process_doremove_user(callback_query: types.CallbackQuery, state: FSMC
     except Exception as e:
         logger.error(f"Ошибка удаления пользователя: {e}")
         await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
+
+
+@dp.callback_query(lambda c: c.data == "import_users_db")
+async def start_import_users_db(callback_query: types.CallbackQuery, state: FSMContext):
+    """Запросить файл bot_users.db для импорта пользователей."""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
+        return
+    await callback_query.answer()
+    await state.set_state(UsersImportState.waiting_for_file)
+    await callback_query.message.answer(
+        "📥 <b>Импорт пользователей</b>\n\n"
+        "Отправьте файл <code>bot_users.db</code> (SQLite-база другого бота).\n"
+        "Существующие пользователи <b>не будут перезаписаны</b> — только добавлены новые.\n\n"
+        "Для отмены нажмите /start",
+        parse_mode="HTML"
+    )
+
+
+@dp.message(UsersImportState.waiting_for_file)
+async def process_import_users_db(message: Message, state: FSMContext):
+    """Принимает .db файл и импортирует пользователей (слияние)."""
+    if not is_admin(message.from_user.id):
+        return
+    if not message.document:
+        await message.answer("❌ Нужно отправить файл. Для отмены нажмите /start")
+        return
+    if not message.document.file_name.endswith(".db"):
+        await message.answer("❌ Файл должен быть .db (SQLite). Для отмены нажмите /start")
+        return
+    import tempfile, os as _os
+    tmp_path = None
+    try:
+        file = await bot.get_file(message.document.file_id)
+        buf = BytesIO()
+        await bot.download_file(file.file_path, buf)
+        # Сохраняем во временный файл — sqlite3 требует путь
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+            tmp.write(buf.getvalue())
+            tmp_path = tmp.name
+        res = config.users_db.import_users_from_db(tmp_path)
+        await state.clear()
+        lines = [
+            "✅ <b>Импорт завершён</b>\n",
+            f"👤 Добавлено пользователей: <b>{res['users_added']}</b>",
+            f"⏭ Пропущено (уже есть): <b>{res['users_skipped']}</b>",
+            f"🔗 Добавлено клиентов VPN: <b>{res['clients_added']}</b>",
+        ]
+        if res['errors']:
+            lines.append("\n⚠️ Предупреждения:\n" + "\n".join(f"• {e}" for e in res['errors']))
+        await message.answer(
+            "\n".join(lines),
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="👥 К списку пользователей", callback_data="show_users")]
+            ])
+        )
+    except Exception as e:
+        logger.error(f"Ошибка импорта bot_users.db: {e}")
+        await state.clear()
+        await message.answer(f"❌ Ошибка при импорте: {e}\n\nФайл не принят.")
+    finally:
+        if tmp_path and _os.path.exists(tmp_path):
+            _os.unlink(tmp_path)
 
 
 # ============================================
