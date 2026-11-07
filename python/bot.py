@@ -3480,7 +3480,7 @@ async def show_server_status(callback_query: types.CallbackQuery, state: FSMCont
         # Добавляем кнопки в два ряда
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [
-                InlineKeyboardButton(text="💾 Бэкап", callback_data="create_backup")
+                InlineKeyboardButton(text="💾 Бэкап", callback_data="backup_menu")
             ],
             [
                 InlineKeyboardButton(text="🔔 Уведомления", callback_data="notification_settings"),
@@ -3590,7 +3590,163 @@ async def export_json_config(callback_query: types.CallbackQuery, state: FSMCont
         await callback_query.message.answer(f"❌ Ошибка: {str(e)}")
 
 
-@dp.callback_query(lambda c: c.data == "create_backup")
+@dp.callback_query(lambda c: c.data == "backup_menu")
+async def backup_menu(callback_query: types.CallbackQuery, state: FSMContext):
+    """Открыть меню выбора типа бэкапа."""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
+        return
+
+    await callback_query.answer()
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🖥️ Бэкап системы",  callback_data="backup_system"),
+            InlineKeyboardButton(text="📊 Бэкап 3x-ui",    callback_data="backup_3xui"),
+        ],
+        [
+            InlineKeyboardButton(text="🔗 Бэкап Cascade",  callback_data="backup_cascade"),
+            InlineKeyboardButton(text="📦 Полный бэкап",   callback_data="backup_full"),
+        ],
+        [
+            InlineKeyboardButton(text="🔙 Назад",          callback_data="admin_menu"),
+        ],
+    ])
+
+    await callback_query.message.answer(
+        "💾 <b>Выберите тип бэкапа:</b>\n\n"
+        "• <b>Система</b> — config.yaml, bot_users.db, apps.yaml\n"
+        "• <b>3x-ui</b> — базы и конфиги всех панелей\n"
+        "• <b>Cascade</b> — интерфейсы, пиры и настройки AWG\n"
+        "• <b>Полный</b> — всё вместе",
+        parse_mode="HTML",
+        reply_markup=keyboard,
+    )
+
+
+async def _send_backup_result(
+    message,
+    zip_path,
+    summary: dict,
+    caption_title: str,
+    section_keys: dict,
+) -> None:
+    """Отправляет ZIP + подробный отчёт с разбивкой по секциям."""
+    from datetime import datetime
+
+    zip_size_kb = zip_path.stat().st_size // 1024 + 1
+    caption = (
+        f"✅ <b>{caption_title}</b>\n"
+        f"📅 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        f"💾 Размер: {zip_size_kb} КБ"
+    )
+
+    lines = [f"<b>📦 Содержимое бэкапа:</b>"]
+    for section_title, keys_subset in section_keys.items():
+        if not keys_subset:
+            continue
+        lines.append("")
+        lines.append(f"<b>{section_title}</b>")
+        for label, status in keys_subset.items():
+            lines.append(f"  • {label}: {status}")
+
+    zip_bytes = zip_path.read_bytes()
+    await message.answer_document(
+        types.BufferedInputFile(zip_bytes, filename=zip_path.name),
+        caption=caption,
+        parse_mode="HTML",
+    )
+    await message.answer("\n".join(lines), parse_mode="HTML")
+
+
+@dp.callback_query(lambda c: c.data == "backup_system")
+async def do_backup_system(callback_query: types.CallbackQuery, state: FSMContext):
+    """Бэкап только системных файлов."""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
+        return
+    await callback_query.answer()
+
+    progress_msg = await callback_query.message.answer(
+        "⏳ <b>Создаю бэкап системы...</b>", parse_mode="HTML"
+    )
+    try:
+        from backup_manager import run_backup_system
+        zip_path, summary = await run_backup_system(config.common)
+        await _send_backup_result(
+            callback_query.message, zip_path, summary,
+            "Бэкап системы создан",
+            {"🖥 Система": summary},
+        )
+    except Exception as e:
+        logger.error(f"[backup_system] ошибка: {e}", exc_info=True)
+        await callback_query.message.answer(f"❌ Ошибка при создании бэкапа системы: {e}")
+    finally:
+        try:
+            await progress_msg.delete()
+        except Exception:
+            pass
+
+
+@dp.callback_query(lambda c: c.data == "backup_3xui")
+async def do_backup_3xui(callback_query: types.CallbackQuery, state: FSMContext):
+    """Бэкап только панелей 3x-ui."""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
+        return
+    await callback_query.answer()
+
+    progress_msg = await callback_query.message.answer(
+        "⏳ <b>Создаю бэкап 3x-ui панелей...</b>", parse_mode="HTML"
+    )
+    try:
+        from backup_manager import run_backup_panels
+        zip_path, summary = await run_backup_panels(config.panel_manager)
+        await _send_backup_result(
+            callback_query.message, zip_path, summary,
+            "Бэкап 3x-ui создан",
+            {"📊 3X-UI": summary},
+        )
+    except Exception as e:
+        logger.error(f"[backup_3xui] ошибка: {e}", exc_info=True)
+        await callback_query.message.answer(f"❌ Ошибка при создании бэкапа 3x-ui: {e}")
+    finally:
+        try:
+            await progress_msg.delete()
+        except Exception:
+            pass
+
+
+@dp.callback_query(lambda c: c.data == "backup_cascade")
+async def do_backup_cascade(callback_query: types.CallbackQuery, state: FSMContext):
+    """Бэкап только Cascade серверов."""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
+        return
+    await callback_query.answer()
+
+    progress_msg = await callback_query.message.answer(
+        "⏳ <b>Создаю бэкап Cascade...</b>", parse_mode="HTML"
+    )
+    try:
+        from backup_manager import run_backup_cascade
+        zip_path, summary = await run_backup_cascade(config.panel_manager)
+        await _send_backup_result(
+            callback_query.message, zip_path, summary,
+            "Бэкап Cascade создан",
+            {"🔗 CASCADE": summary},
+        )
+    except Exception as e:
+        logger.error(f"[backup_cascade] ошибка: {e}", exc_info=True)
+        await callback_query.message.answer(f"❌ Ошибка при создании бэкапа Cascade: {e}")
+    finally:
+        try:
+            await progress_msg.delete()
+        except Exception:
+            pass
+
+
+@dp.callback_query(lambda c: c.data == "backup_full")
 async def create_backup(callback_query: types.CallbackQuery, state: FSMContext):
     """Создать полный бэкап системы — только для администратора."""
     # ── Проверка прав: только главный администратор ────────────────────────────
