@@ -6430,6 +6430,7 @@ menu_maintenance() {
         echo -e "${GREEN}1)${NC} Анализ диска и памяти"
         echo -e "${GREEN}2)${NC} Безопасная очистка (автоматическая)"
         echo -e "${GREEN}3)${NC} Настройка обратного каскада 3x-ui"
+        echo -e "${GREEN}4)${NC} CASCADE Forwarder (iptables проброс портов)"
         echo -e "${RED}99)${NC} Удалить ВСЁ (AWG + Боты + 3x-ui + Cascade)"
         echo -e "${GREEN}0)${NC} Назад"
         echo -e "${BLUE}========================================${NC}"
@@ -6531,6 +6532,23 @@ menu_maintenance() {
                 SERVER_NAME="$_sname" \
                 CAMOUFLAGE_TARGET="$_camouf" \
                 bash "$_cascade_script"
+                ;;
+            4)
+                local _cf_script=""
+                if command -v cascade &>/dev/null; then
+                    _cf_script="cascade"
+                elif [ -f "${WORK_DIR}/cascade-forwarder-main/cascade.sh" ]; then
+                    _cf_script="bash ${WORK_DIR}/cascade-forwarder-main/cascade.sh"
+                elif [ -f "$(dirname "${BASH_SOURCE[0]}")/cascade-forwarder-main/cascade.sh" ]; then
+                    _cf_script="bash $(dirname "${BASH_SOURCE[0]}")/cascade-forwarder-main/cascade.sh"
+                else
+                    echo -e "${RED}❌ CASCADE Forwarder не найден!${NC}"
+                    echo -e "${YELLOW}Установите его командой:${NC}"
+                    echo -e "  wget -O /usr/local/bin/cascade https://raw.githubusercontent.com/4539617/cascade-forwarder/main/cascade.sh"
+                    echo -e "  chmod +x /usr/local/bin/cascade"
+                    break
+                fi
+                eval "$_cf_script"
                 ;;
             99) run_with_sync && remove_all ;;
             0) return ;;
