@@ -3256,6 +3256,53 @@ async def process_apps_import(message: Message, state: FSMContext):
         await message.answer(f"❌ Ошибка при импорте: {e}\n\nФайл не сохранён.")
 
 
+@dp.message(UsersImportState.waiting_for_file)
+async def process_import_users_db(message: Message, state: FSMContext):
+    """Принимает .db файл и импортирует пользователей (слияние)."""
+    if not is_admin(message.from_user.id):
+        return
+    if not message.document:
+        await message.answer("❌ Нужно отправить файл. Для отмены нажмите /start")
+        return
+    if not message.document.file_name.endswith(".db"):
+        await message.answer("❌ Файл должен быть .db (SQLite). Для отмены нажмите /start")
+        return
+    import tempfile, os as _os
+    tmp_path = None
+    try:
+        file = await bot.get_file(message.document.file_id)
+        buf = BytesIO()
+        await bot.download_file(file.file_path, buf)
+        # Сохраняем во временный файл — sqlite3 требует путь
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+            tmp.write(buf.getvalue())
+            tmp_path = tmp.name
+        res = config.users_db.import_users_from_db(tmp_path)
+        await state.clear()
+        lines = [
+            "✅ <b>Импорт завершён</b>\n",
+            f"👤 Добавлено пользователей: <b>{res['users_added']}</b>",
+            f"⏭ Пропущено (уже есть): <b>{res['users_skipped']}</b>",
+            f"🔗 Добавлено клиентов VPN: <b>{res['clients_added']}</b>",
+        ]
+        if res['errors']:
+            lines.append("\n⚠️ Предупреждения:\n" + "\n".join(f"• {e}" for e in res['errors']))
+        await message.answer(
+            "\n".join(lines),
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="👥 К списку пользователей", callback_data="show_users")]
+            ])
+        )
+    except Exception as e:
+        logger.error(f"Ошибка импорта bot_users.db: {e}")
+        await state.clear()
+        await message.answer(f"❌ Ошибка при импорте: {e}\n\nФайл не принят.")
+    finally:
+        if tmp_path and _os.path.exists(tmp_path):
+            _os.unlink(tmp_path)
+
+
 @dp.message(SetPriceState.waiting_for_price)
 async def process_set_price_input(message: types.Message, state: FSMContext):
     """Сохраняет введённую цену и показывает обновлённый экран расценок."""
@@ -5092,53 +5139,6 @@ async def start_import_users_db(callback_query: types.CallbackQuery, state: FSMC
         "Для отмены нажмите /start",
         parse_mode="HTML"
     )
-
-
-@dp.message(UsersImportState.waiting_for_file)
-async def process_import_users_db(message: Message, state: FSMContext):
-    """Принимает .db файл и импортирует пользователей (слияние)."""
-    if not is_admin(message.from_user.id):
-        return
-    if not message.document:
-        await message.answer("❌ Нужно отправить файл. Для отмены нажмите /start")
-        return
-    if not message.document.file_name.endswith(".db"):
-        await message.answer("❌ Файл должен быть .db (SQLite). Для отмены нажмите /start")
-        return
-    import tempfile, os as _os
-    tmp_path = None
-    try:
-        file = await bot.get_file(message.document.file_id)
-        buf = BytesIO()
-        await bot.download_file(file.file_path, buf)
-        # Сохраняем во временный файл — sqlite3 требует путь
-        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
-            tmp.write(buf.getvalue())
-            tmp_path = tmp.name
-        res = config.users_db.import_users_from_db(tmp_path)
-        await state.clear()
-        lines = [
-            "✅ <b>Импорт завершён</b>\n",
-            f"👤 Добавлено пользователей: <b>{res['users_added']}</b>",
-            f"⏭ Пропущено (уже есть): <b>{res['users_skipped']}</b>",
-            f"🔗 Добавлено клиентов VPN: <b>{res['clients_added']}</b>",
-        ]
-        if res['errors']:
-            lines.append("\n⚠️ Предупреждения:\n" + "\n".join(f"• {e}" for e in res['errors']))
-        await message.answer(
-            "\n".join(lines),
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="👥 К списку пользователей", callback_data="show_users")]
-            ])
-        )
-    except Exception as e:
-        logger.error(f"Ошибка импорта bot_users.db: {e}")
-        await state.clear()
-        await message.answer(f"❌ Ошибка при импорте: {e}\n\nФайл не принят.")
-    finally:
-        if tmp_path and _os.path.exists(tmp_path):
-            _os.unlink(tmp_path)
 
 
 # ============================================
