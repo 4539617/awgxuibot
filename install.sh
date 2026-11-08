@@ -2279,6 +2279,315 @@ update_cascade() {
     fi
 }
 
+# Функция настройки HTTPS для Cascade через существующие TLS-сертификаты
+# (как у 3x-ui — без Caddy, без Cloudflare Tunnel)
+setup_cascade_https() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Настройка HTTPS для Cascade (домен)${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+
+    # Проверяем что Cascade установлен
+    if ! docker ps -a --format '{{.Names}}' | grep -q "^cascade$"; then
+        echo -e "${RED}❌ Cascade не установлен! Сначала установите Cascade (пункт 2)${NC}"
+        return 1
+    fi
+
+    local compose_file="docker-compose.cascade.yml"
+    if [ ! -f "$compose_file" ]; then
+        echo -e "${RED}❌ Файл $compose_file не найден!${NC}"
+        return 1
+    fi
+
+    # ── Текущие настройки ──────────────────────────────────────────────────────
+    local cur_cert cur_key cur_port
+    cur_cert=$(grep '^\s*-\s*TLS_CERT=' "$compose_file" 2>/dev/null | sed 's/.*TLS_CERT=//' | tr -d ' ')
+    cur_key=$(grep  '^\s*-\s*TLS_KEY='  "$compose_file" 2>/dev/null | sed 's/.*TLS_KEY=//'  | tr -d ' ')
+    cur_port=$(grep '^\s*-\s*PORT='     "$compose_file" 2>/dev/null | sed 's/.*PORT=//'     | tr -d ' ')
+    [ -z "$cur_port" ] && cur_port="51821"
+
+    echo -e "${YELLOW}Текущая конфигурация:${NC}"
+    echo -e "  PORT     : ${cur_port}"
+    echo -e "  TLS_CERT : ${cur_cert:-<не задан>}"
+    echo -e "  TLS_KEY  : ${cur_key:-<не задан>}"
+    echo ""
+
+    # ── Домен ─────────────────────────────────────────────────────────────────
+    echo -e "${YELLOW}💡 Укажите домен и пути к TLS-сертификатам.${NC}"
+    echo -e "${YELLOW}   Сертификаты обычно выдаются через acme.sh, certbot или панель.${NC}"
+    echo -e "${YELLOW}   Примеры путей:${NC}"
+    echo -e "     acme.sh  : /root/.acme.sh/example.com_ecc/fullchain.cer  +  /root/.acme.sh/example.com_ecc/example.com.key"
+    echo -e "     certbot  : /etc/letsencrypt/live/example.com/fullchain.pem  +  privkey.pem"
+    echo -e "     вручную  : /root/cert/example.com/fullchain.pem  +  privkey.pem"
+    echo ""
+
+    local domain
+    read -p "Домен (например: example.com): " domain
+    if [ -z "$domain" ]; then
+        echo -e "${RED}❌ Домен не указан${NC}"
+        return 1
+    fi
+
+    # ── Попытка автоопределения путей по домену ────────────────────────────────
+    local auto_cert="" auto_key=""
+
+    # acme.sh (ECC)
+    if [ -f "/root/.acme.sh/${domain}_ecc/fullchain.cer" ]; then
+        auto_cert="/root/.acme.sh/${domain}_ecc/fullchain.cer"
+        auto_key="/root/.acme.sh/${domain}_ecc/${domain}.key"
+    # acme.sh (RSA)
+    elif [ -f "/root/.acme.sh/${domain}/fullchain.cer" ]; then
+        auto_cert="/root/.acme.sh/${domain}/fullchain.cer"
+        auto_key="/root/.acme.sh/${domain}/${domain}.key"
+    # certbot
+    elif [ -f "/etc/letsencrypt/live/${domain}/fullchain.pem" ]; then
+        auto_cert="/etc/letsencrypt/live/${domain}/fullchain.pem"
+        auto_key="/etc/letsencrypt/live/${domain}/privkey.pem"
+    # вручную /root/cert/
+    elif [ -f "/root/cert/${domain}/fullchain.pem" ]; then
+        auto_cert="/root/cert/${domain}/fullchain.pem"
+        auto_key="/root/cert/${domain}/privkey.pem"
+    fi
+
+    if [ -n "$auto_cert" ]; then
+        echo -e "${GREEN}✅ Сертификаты найдены автоматически:${NC}"
+        echo -e "  Публичный : ${auto_cert}"
+        echo -e "  Приватный : ${auto_key}"
+    fi
+
+    # ── Путь к публичному сертификату ─────────────────────────────────────────
+    local cert_path
+    read -p "Путь к fullchain/публичному сертификату${auto_cert:+ [${auto_cert}]}: " cert_path
+    cert_path="${cert_path:-$auto_cert}"
+
+    if [ -z "$cert_path" ]; then
+        echo -e "${RED}❌ Путь к сертификату не указан${NC}"
+        return 1
+    fi
+    if [ ! -f "$cert_path" ]; then
+        echo -e "${RED}❌ Файл не найден: $cert_path${NC}"
+        return 1
+    fi
+
+    # ── Путь к приватному ключу ────────────────────────────────────────────────
+    local key_path
+    read -p "Путь к приватному ключу${auto_key:+ [${auto_key}]}: " key_path
+    key_path="${key_path:-$auto_key}"
+
+    if [ -z "$key_path" ]; then
+        echo -e "${RED}❌ Путь к приватному ключу не указан${NC}"
+        return 1
+    fi
+    if [ ! -f "$key_path" ]; then
+        echo -e "${RED}❌ Файл не найден: $key_path${NC}"
+        return 1
+    fi
+
+    # ── Порт ───────────────────────────────────────────────────────────────────
+    local https_port
+    read -p "HTTPS порт для Cascade [29211]: " https_port
+    https_port="${https_port:-29211}"
+
+    if ! [[ "$https_port" =~ ^[0-9]+$ ]] || [ "$https_port" -lt 1 ] || [ "$https_port" -gt 65535 ]; then
+        echo -e "${RED}❌ Неверный порт: $https_port${NC}"
+        return 1
+    fi
+
+    # ── Проверяем что сертификат совпадает с приватным ключом ─────────────────
+    local cert_modulus key_modulus
+    cert_modulus=$(openssl x509 -noout -modulus -in "$cert_path" 2>/dev/null | md5sum 2>/dev/null || true)
+    key_modulus=$(openssl pkey -noout -modulus  -in "$key_path"  2>/dev/null | md5sum 2>/dev/null || true)
+    if [ -n "$cert_modulus" ] && [ -n "$key_modulus" ] && [ "$cert_modulus" != "$key_modulus" ]; then
+        echo -e "${RED}❌ Сертификат и приватный ключ не совпадают!${NC}"
+        echo -e "${YELLOW}   Проверьте что fullchain.pem и privkey.pem от одного домена.${NC}"
+        return 1
+    fi
+
+    # ── Определяем директорию для монтирования ────────────────────────────────
+    local cert_dir cert_filename key_dir key_filename
+    cert_dir=$(dirname "$cert_path")
+    cert_filename=$(basename "$cert_path")
+    key_dir=$(dirname "$key_path")
+    key_filename=$(basename "$key_path")
+
+    # Если сертификат и ключ в разных папках — монтируем папку сертификата,
+    # ключ копируем туда временно (или предупреждаем)
+    local mount_dir="$cert_dir"
+    if [ "$cert_dir" != "$key_dir" ]; then
+        echo -e "${YELLOW}⚠️  Сертификат и ключ находятся в разных директориях:${NC}"
+        echo -e "  Сертификат: $cert_dir"
+        echo -e "  Ключ:       $key_dir"
+        echo -e "${YELLOW}   Будут смонтированы обе директории (/certs для cert, /certs-key для key)${NC}"
+    fi
+
+    # ── Обновляем docker-compose.cascade.yml ──────────────────────────────────
+    echo -e "\n${YELLOW}📝 Обновление $compose_file...${NC}"
+
+    # 1. Порт
+    sed -i "s|^\(\s*\)- PORT=.*|\1- PORT=${https_port}|" "$compose_file"
+
+    # 2. TLS_CERT и TLS_KEY
+    if [ "$cert_dir" = "$key_dir" ]; then
+        # Одна директория — всё монтируется в /certs
+        sed -i "s|^\(\s*\)- TLS_CERT=.*|\1- TLS_CERT=/certs/${cert_filename}|" "$compose_file"
+        sed -i "s|^\(\s*\)- TLS_KEY=.*|\1- TLS_KEY=/certs/${key_filename}|"   "$compose_file"
+
+        # Volume /certs
+        if grep -q '^\s*- .*:/certs:ro' "$compose_file"; then
+            sed -i "s|^\(\s*\)- .*:/certs:ro|\1- ${cert_dir}:/certs:ro|" "$compose_file"
+        elif grep -q '#.*:/certs:ro' "$compose_file"; then
+            sed -i "s|#.*:/certs:ro.*|      - ${cert_dir}:/certs:ro|" "$compose_file"
+        else
+            sed -i "/\/host_hostname:ro/a\\      - ${cert_dir}:/certs:ro" "$compose_file"
+        fi
+    else
+        # Разные директории — /certs для cert, /certs-key для key
+        sed -i "s|^\(\s*\)- TLS_CERT=.*|\1- TLS_CERT=/certs/${cert_filename}|"     "$compose_file"
+        sed -i "s|^\(\s*\)- TLS_KEY=.*|\1- TLS_KEY=/certs-key/${key_filename}|"    "$compose_file"
+
+        # Volume /certs
+        if grep -q '^\s*- .*:/certs:ro' "$compose_file"; then
+            sed -i "s|^\(\s*\)- .*:/certs:ro|\1- ${cert_dir}:/certs:ro|" "$compose_file"
+        elif grep -q '#.*:/certs:ro' "$compose_file"; then
+            sed -i "s|#.*:/certs:ro.*|      - ${cert_dir}:/certs:ro|" "$compose_file"
+        else
+            sed -i "/\/host_hostname:ro/a\\      - ${cert_dir}:/certs:ro" "$compose_file"
+        fi
+        # Volume /certs-key (добавляем после /certs)
+        if ! grep -q ':/certs-key:ro' "$compose_file"; then
+            sed -i "/:/certs:ro/a\\      - ${key_dir}:/certs-key:ro" "$compose_file"
+        else
+            sed -i "s|^\(\s*\)- .*:/certs-key:ro|\1- ${key_dir}:/certs-key:ro|" "$compose_file"
+        fi
+    fi
+
+    echo -e "${GREEN}✅ Конфигурация обновлена${NC}"
+    echo -e "  Домен    : ${domain}"
+    echo -e "  PORT     : ${https_port}"
+    echo -e "  TLS_CERT : ${cert_path}"
+    echo -e "  TLS_KEY  : ${key_path}"
+
+    # ── Открыть порт в ufw если активен ───────────────────────────────────────
+    if command -v ufw &>/dev/null && ufw status 2>/dev/null | grep -q "^Status: active"; then
+        echo -e "\n${YELLOW}🔓 Открытие порта ${https_port}/tcp в ufw...${NC}"
+        ufw allow "${https_port}/tcp" >/dev/null 2>&1 && \
+            echo -e "${GREEN}✅ Порт ${https_port}/tcp открыт в ufw${NC}" || \
+            echo -e "${YELLOW}⚠️  Не удалось открыть порт в ufw — сделайте вручную: ufw allow ${https_port}/tcp${NC}"
+    fi
+
+    # ── Перезапускаем Cascade ─────────────────────────────────────────────────
+    echo -e "\n${YELLOW}🔄 Перезапуск Cascade...${NC}"
+    docker compose -f "$compose_file" down 2>/dev/null || true
+    docker compose -f "$compose_file" up -d
+
+    sleep 3
+    local status
+    status=$(docker ps --filter name="^cascade$" --format "{{.Status}}" 2>/dev/null)
+    if [[ "$status" == *"Up"* ]]; then
+        echo -e "\n${GREEN}✅ Cascade запущен с HTTPS!${NC}"
+        echo -e "${BLUE}========================================${NC}"
+        echo -e "${GREEN}🌐 Веб-интерфейс: ${YELLOW}https://${domain}:${https_port}/${NC}"
+        echo -e "${BLUE}========================================${NC}"
+        if [ "$cur_port" != "$https_port" ]; then
+            echo -e "${YELLOW}💡 Старый HTTP-порт можно закрыть:${NC}"
+            echo -e "   iptables -A INPUT ! -i lo -p tcp --dport ${cur_port} -j DROP"
+        fi
+    else
+        echo -e "${RED}❌ Cascade не запустился. Проверьте логи:${NC}"
+        docker logs cascade 2>&1 | tail -20
+        return 1
+    fi
+}
+
+# Функция отключения HTTPS — возврат к HTTP (сброс TLS настроек)
+disable_cascade_https() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Отключение HTTPS (возврат к HTTP)${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+
+    local compose_file="docker-compose.cascade.yml"
+    if [ ! -f "$compose_file" ]; then
+        echo -e "${RED}❌ Файл $compose_file не найден!${NC}"
+        return 1
+    fi
+
+    # ── Показываем текущие TLS настройки ──────────────────────────────────────
+    local cur_cert cur_key cur_port
+    cur_cert=$(grep '^\s*-\s*TLS_CERT=' "$compose_file" 2>/dev/null | sed 's/.*TLS_CERT=//' | tr -d ' ')
+    cur_key=$(grep  '^\s*-\s*TLS_KEY='  "$compose_file" 2>/dev/null | sed 's/.*TLS_KEY=//'  | tr -d ' ')
+    cur_port=$(grep '^\s*-\s*PORT='     "$compose_file" 2>/dev/null | sed 's/.*PORT=//'     | tr -d ' ')
+    [ -z "$cur_port" ] && cur_port="51821"
+
+    if [ -z "$cur_cert" ] && [ -z "$cur_key" ]; then
+        echo -e "${YELLOW}ℹ️  HTTPS уже отключён — TLS_CERT и TLS_KEY не заданы.${NC}"
+        return 0
+    fi
+
+    echo -e "${YELLOW}Текущая конфигурация:${NC}"
+    echo -e "  PORT     : ${cur_port}"
+    echo -e "  TLS_CERT : ${cur_cert}"
+    echo -e "  TLS_KEY  : ${cur_key}"
+    echo ""
+
+    read -p "Отключить HTTPS и вернуться к HTTP? (1 - да / 0 - нет) [0]: " confirm
+    [ "$confirm" != "1" ] && { echo -e "${YELLOW}Отменено${NC}"; return 0; }
+
+    # ── Новый порт ─────────────────────────────────────────────────────────────
+    local http_port
+    read -p "HTTP порт для Cascade [51821]: " http_port
+    http_port="${http_port:-51821}"
+
+    if ! [[ "$http_port" =~ ^[0-9]+$ ]] || [ "$http_port" -lt 1 ] || [ "$http_port" -gt 65535 ]; then
+        echo -e "${RED}❌ Неверный порт: $http_port${NC}"
+        return 1
+    fi
+
+    echo -e "\n${YELLOW}📝 Сброс TLS настроек в $compose_file...${NC}"
+
+    # 1. Сброс порта
+    sed -i "s|^\(\s*\)- PORT=.*|\1- PORT=${http_port}|" "$compose_file"
+
+    # 2. Сброс TLS_CERT и TLS_KEY в пустые значения
+    sed -i "s|^\(\s*\)- TLS_CERT=.*|\1- TLS_CERT=|" "$compose_file"
+    sed -i "s|^\(\s*\)- TLS_KEY=.*|\1- TLS_KEY=|"   "$compose_file"
+
+    # 3. Закомментировать volume /certs и /certs-key
+    sed -i "s|^\(\s*\)\(- .*:/certs:ro\)|\1# \2|"     "$compose_file"
+    sed -i "s|^\(\s*\)\(- .*:/certs-key:ro\)|\1# \2|" "$compose_file"
+
+    echo -e "${GREEN}✅ HTTPS отключён${NC}"
+    echo -e "  TLS_CERT : <пусто>"
+    echo -e "  TLS_KEY  : <пусто>"
+    echo -e "  PORT     : ${http_port}"
+
+    # ── Открыть порт в ufw если активен ───────────────────────────────────────
+    if command -v ufw &>/dev/null && ufw status 2>/dev/null | grep -q "^Status: active"; then
+        echo -e "\n${YELLOW}🔓 Открытие порта ${http_port}/tcp в ufw...${NC}"
+        ufw allow "${http_port}/tcp" >/dev/null 2>&1 && \
+            echo -e "${GREEN}✅ Порт ${http_port}/tcp открыт в ufw${NC}" || true
+    fi
+
+    # ── Перезапускаем Cascade ─────────────────────────────────────────────────
+    echo -e "\n${YELLOW}🔄 Перезапуск Cascade...${NC}"
+    docker compose -f "$compose_file" down 2>/dev/null || true
+    docker compose -f "$compose_file" up -d
+
+    sleep 3
+    local status
+    status=$(docker ps --filter name="^cascade$" --format "{{.Status}}" 2>/dev/null)
+    if [[ "$status" == *"Up"* ]]; then
+        local server_ip
+        server_ip=$(curl -4 -s --max-time 3 ifconfig.me 2>/dev/null || echo "YOUR_SERVER_IP")
+        echo -e "\n${GREEN}✅ Cascade запущен в режиме HTTP!${NC}"
+        echo -e "${BLUE}========================================${NC}"
+        echo -e "${GREEN}🌐 Веб-интерфейс: ${YELLOW}http://${server_ip}:${http_port}/${NC}"
+        echo -e "${BLUE}========================================${NC}"
+    else
+        echo -e "${RED}❌ Cascade не запустился. Проверьте логи:${NC}"
+        docker logs cascade 2>&1 | tail -20
+        return 1
+    fi
+}
+
 install_caddy() {
     echo -e "\n${BLUE}========================================${NC}"
     echo -e "${BLUE}   Установка Caddy (HTTPS для Cascade)${NC}"
@@ -6265,6 +6574,8 @@ menu_cascade() {
         echo -e "${GREEN}3)${NC} Пересборка Cascade"
         echo -e "${GREEN}4)${NC} Остановка Cascade"
         echo -e "${GREEN}5)${NC} Удаление Cascade"
+        echo -e "${GREEN}6)${NC} 🔒 Настроить HTTPS (маскировка под домен)"
+        echo -e "${GREEN}7)${NC} 🔓 Отключить HTTPS (вернуть HTTP)"
         echo -e "${GREEN}0)${NC} Назад"
         echo -e "${BLUE}========================================${NC}"
         read -p "Введите номер: " sub
@@ -6274,6 +6585,8 @@ menu_cascade() {
             3) run_with_sync && update_cascade ;;
             4) stop_cascade ;;
             5) remove_cascade ;;
+            6) setup_cascade_https ;;
+            7) disable_cascade_https ;;
             0) return ;;
             *) echo -e "${RED}❌ Неверный выбор${NC}" ;;
         esac
