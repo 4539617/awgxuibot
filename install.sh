@@ -2425,42 +2425,99 @@ setup_cascade_https() {
     # ── Обновляем docker-compose.cascade.yml ──────────────────────────────────
     echo -e "\n${YELLOW}📝 Обновление $compose_file...${NC}"
 
-    # 1. Порт
-    sed -i "s|^\(\s*\)- PORT=.*|\1- PORT=${https_port}|" "$compose_file"
+    # Используем Python для надёжного редактирования — sed ломается на путях
+    # с '/' внутри значений и на закомментированных строках с произвольными отступами.
+    python3 - "$compose_file" "$https_port" "$cert_dir" "$cert_filename" "$key_dir" "$key_filename" << 'PYEOF'
+import sys, re
 
-    # 2. TLS_CERT и TLS_KEY
-    if [ "$cert_dir" = "$key_dir" ]; then
-        # Одна директория — всё монтируется в /certs
-        sed -i "s|^\(\s*\)- TLS_CERT=.*|\1- TLS_CERT=/certs/${cert_filename}|" "$compose_file"
-        sed -i "s|^\(\s*\)- TLS_KEY=.*|\1- TLS_KEY=/certs/${key_filename}|"   "$compose_file"
+compose_file = sys.argv[1]
+https_port   = sys.argv[2]
+cert_dir     = sys.argv[3]
+cert_fname   = sys.argv[4]
+key_dir      = sys.argv[5]
+key_fname    = sys.argv[6]
 
-        # Volume /certs
-        if grep -q '^\s*- .*:/certs:ro' "$compose_file"; then
-            sed -i "s|^\(\s*\)- .*:/certs:ro|\1- ${cert_dir}:/certs:ro|" "$compose_file"
-        elif grep -q '#.*:/certs:ro' "$compose_file"; then
-            sed -i "s|#.*:/certs:ro.*|      - ${cert_dir}:/certs:ro|" "$compose_file"
-        else
-            sed -i "/\/host_hostname:ro/a\\      - ${cert_dir}:/certs:ro" "$compose_file"
-        fi
-    else
-        # Разные директории — /certs для cert, /certs-key для key
-        sed -i "s|^\(\s*\)- TLS_CERT=.*|\1- TLS_CERT=/certs/${cert_filename}|"     "$compose_file"
-        sed -i "s|^\(\s*\)- TLS_KEY=.*|\1- TLS_KEY=/certs-key/${key_filename}|"    "$compose_file"
+same_dir = (cert_dir == key_dir)
 
-        # Volume /certs
-        if grep -q '^\s*- .*:/certs:ro' "$compose_file"; then
-            sed -i "s|^\(\s*\)- .*:/certs:ro|\1- ${cert_dir}:/certs:ro|" "$compose_file"
-        elif grep -q '#.*:/certs:ro' "$compose_file"; then
-            sed -i "s|#.*:/certs:ro.*|      - ${cert_dir}:/certs:ro|" "$compose_file"
-        else
-            sed -i "/\/host_hostname:ro/a\\      - ${cert_dir}:/certs:ro" "$compose_file"
-        fi
-        # Volume /certs-key (добавляем после /certs)
-        if ! grep -q ':/certs-key:ro' "$compose_file"; then
-            sed -i "/:/certs:ro/a\\      - ${key_dir}:/certs-key:ro" "$compose_file"
-        else
-            sed -i "s|^\(\s*\)- .*:/certs-key:ro|\1- ${key_dir}:/certs-key:ro|" "$compose_file"
-        fi
+with open(compose_file, 'r') as f:
+    lines = f.readlines()
+
+# Флаги — были ли volume строки уже добавлены/обновлены
+certs_done    = False
+certs_key_done = False
+# Индекс строки с /host_hostname:ro — после неё вставим volume если не найдём
+hostname_idx  = None
+
+new_lines = []
+for i, line in enumerate(lines):
+    stripped = line.rstrip()
+
+    # PORT
+    if re.match(r'\s*- PORT=', stripped):
+        indent = len(line) - len(line.lstrip())
+        line = ' ' * indent + '- PORT=' + https_port + '\n'
+
+    # TLS_CERT
+    elif re.match(r'\s*- TLS_CERT=', stripped):
+        indent = len(line) - len(line.lstrip())
+        if same_dir:
+            line = ' ' * indent + '- TLS_CERT=/certs/' + cert_fname + '\n'
+        else:
+            line = ' ' * indent + '- TLS_CERT=/certs/' + cert_fname + '\n'
+
+    # TLS_KEY
+    elif re.match(r'\s*- TLS_KEY=', stripped):
+        indent = len(line) - len(line.lstrip())
+        if same_dir:
+            line = ' ' * indent + '- TLS_KEY=/certs/' + key_fname + '\n'
+        else:
+            line = ' ' * indent + '- TLS_KEY=/certs-key/' + key_fname + '\n'
+
+    # Volume /certs — раскомментировать или обновить существующую
+    elif re.search(r':/certs:ro', stripped):
+        indent = len(line) - len(line.lstrip())
+        # Убираем ведущий # если закомментировано
+        line = ' ' * indent + '- ' + cert_dir + ':/certs:ro\n'
+        certs_done = True
+
+    # Volume /certs-key — раскомментировать или обновить
+    elif re.search(r':/certs-key:ro', stripped):
+        indent = len(line) - len(line.lstrip())
+        line = ' ' * indent + '- ' + key_dir + ':/certs-key:ro\n'
+        certs_key_done = True
+
+    # Запоминаем позицию /host_hostname:ro для вставки после неё
+    if '/host_hostname:ro' in stripped:
+        hostname_idx = len(new_lines)
+
+    new_lines.append(line)
+
+# Если volume /certs не нашли — вставляем после /host_hostname:ro
+if not certs_done and hostname_idx is not None:
+    insert_after = hostname_idx + 1
+    indent = '      '
+    new_lines.insert(insert_after, indent + '- ' + cert_dir + ':/certs:ro\n')
+    if not same_dir:
+        new_lines.insert(insert_after + 1, indent + '- ' + key_dir + ':/certs-key:ro\n')
+        certs_key_done = True
+
+# Если разные директории и /certs-key не нашли — вставляем после /certs
+if not same_dir and not certs_key_done:
+    for i, line in enumerate(new_lines):
+        if ':/certs:ro' in line:
+            indent = '      '
+            new_lines.insert(i + 1, indent + '- ' + key_dir + ':/certs-key:ro\n')
+            break
+
+with open(compose_file, 'w') as f:
+    f.writelines(new_lines)
+
+print('ok')
+PYEOF
+
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}❌ Ошибка обновления $compose_file${NC}"
+        return 1
     fi
 
     echo -e "${GREEN}✅ Конфигурация обновлена${NC}"
@@ -2546,16 +2603,36 @@ disable_cascade_https() {
 
     echo -e "\n${YELLOW}📝 Сброс TLS настроек в $compose_file...${NC}"
 
-    # 1. Сброс порта
-    sed -i "s|^\(\s*\)- PORT=.*|\1- PORT=${http_port}|" "$compose_file"
-
-    # 2. Сброс TLS_CERT и TLS_KEY в пустые значения
-    sed -i "s|^\(\s*\)- TLS_CERT=.*|\1- TLS_CERT=|" "$compose_file"
-    sed -i "s|^\(\s*\)- TLS_KEY=.*|\1- TLS_KEY=|"   "$compose_file"
-
-    # 3. Закомментировать volume /certs и /certs-key
-    sed -i "s|^\(\s*\)\(- .*:/certs:ro\)|\1# \2|"     "$compose_file"
-    sed -i "s|^\(\s*\)\(- .*:/certs-key:ro\)|\1# \2|" "$compose_file"
+    python3 - "$compose_file" "$http_port" << 'PYEOF'
+import sys, re
+compose_file = sys.argv[1]
+http_port    = sys.argv[2]
+with open(compose_file, 'r') as f:
+    lines = f.readlines()
+new_lines = []
+for line in lines:
+    stripped = line.rstrip()
+    # PORT
+    if re.match(r'\s*- PORT=', stripped):
+        indent = len(line) - len(line.lstrip())
+        line = ' ' * indent + '- PORT=' + http_port + '\n'
+    # TLS_CERT — сбросить в пустое
+    elif re.match(r'\s*- TLS_CERT=', stripped):
+        indent = len(line) - len(line.lstrip())
+        line = ' ' * indent + '- TLS_CERT=\n'
+    # TLS_KEY — сбросить в пустое
+    elif re.match(r'\s*- TLS_KEY=', stripped):
+        indent = len(line) - len(line.lstrip())
+        line = ' ' * indent + '- TLS_KEY=\n'
+    # Volume /certs или /certs-key — закомментировать
+    elif re.search(r'- .+:/certs(-key)?:ro', stripped):
+        indent = len(line) - len(line.lstrip())
+        line = ' ' * indent + '# ' + stripped.lstrip() + '\n'
+    new_lines.append(line)
+with open(compose_file, 'w') as f:
+    f.writelines(new_lines)
+print('ok')
+PYEOF
 
     echo -e "${GREEN}✅ HTTPS отключён${NC}"
     echo -e "  TLS_CERT : <пусто>"
