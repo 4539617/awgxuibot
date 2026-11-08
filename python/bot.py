@@ -3656,7 +3656,7 @@ async def backup_menu(callback_query: types.CallbackQuery, state: FSMContext):
             InlineKeyboardButton(text="📦 Полный бэкап",   callback_data="backup_full"),
         ],
         [
-            InlineKeyboardButton(text="🔙 Назад",          callback_data="admin_menu"),
+            InlineKeyboardButton(text="🔙 Назад",          callback_data="server_status"),
         ],
     ])
 
