@@ -2393,10 +2393,13 @@ setup_cascade_https() {
     fi
 
     # ── Проверяем что сертификат совпадает с приватным ключом ─────────────────
-    local cert_modulus key_modulus
-    cert_modulus=$(openssl x509 -noout -modulus -in "$cert_path" 2>/dev/null | md5sum 2>/dev/null || true)
-    key_modulus=$(openssl pkey -noout -modulus  -in "$key_path"  2>/dev/null | md5sum 2>/dev/null || true)
-    if [ -n "$cert_modulus" ] && [ -n "$key_modulus" ] && [ "$cert_modulus" != "$key_modulus" ]; then
+    # Используем openssl verify — работает для RSA и ECDSA одинаково.
+    # Создаём временный self-signed CA из самого сертификата не нужен —
+    # достаточно сравнить pubkey сертификата и pubkey из приватного ключа.
+    local cert_pub key_pub
+    cert_pub=$(openssl x509 -noout -pubkey -in "$cert_path" 2>/dev/null | md5sum 2>/dev/null || true)
+    key_pub=$(openssl pkey  -pubout         -in "$key_path"  2>/dev/null | md5sum 2>/dev/null || true)
+    if [ -n "$cert_pub" ] && [ -n "$key_pub" ] && [ "$cert_pub" != "$key_pub" ]; then
         echo -e "${RED}❌ Сертификат и приватный ключ не совпадают!${NC}"
         echo -e "${YELLOW}   Проверьте что fullchain.pem и privkey.pem от одного домена.${NC}"
         return 1
