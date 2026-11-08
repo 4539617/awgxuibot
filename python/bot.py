@@ -222,18 +222,29 @@ def _build_cascade_block_admin() -> str:
     return "\n".join(lines) + "\n\n"
 
 
-async def send_panel_select(chat_id: int, header: str, back_callback: str, key_type: str):
+async def send_panel_select(
+    chat_id: int,
+    header: str,
+    back_callback: str,
+    key_type: str,
+    loading_msg=None,
+):
     """Отправляет экран выбора панели.
     key_type: 'new' | 'temp'
+    loading_msg: уже отправленное сообщение-заглушка (будет отредактировано вместо нового).
+    Refresh панелей должен быть выполнен вызывающей стороной до вызова этой функции.
     """
-    # Живая проверка доступности всех панелей перед показом списка выбора
-    await _refresh_panel_states_now()
-
     current_panel_id = config.panel_manager.get_current_panel_id()
     available = get_available_panels()
 
+    async def _edit_or_send(text, reply_markup=None):
+        if loading_msg is not None:
+            await loading_msg.edit_text(text, parse_mode="HTML", reply_markup=reply_markup)
+        else:
+            await bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=reply_markup)
+
     if not available:
-        await bot.send_message(chat_id, "❌ Нет доступных панелей для создания ключей.")
+        await _edit_or_send("❌ Нет доступных панелей для создания ключей.")
         return
 
     buttons = []
@@ -264,10 +275,8 @@ async def send_panel_select(chat_id: int, header: str, back_callback: str, key_t
             ])
 
     if online_count == 0:
-        await bot.send_message(
-            chat_id,
+        await _edit_or_send(
             "❌ <b>Все панели сейчас недоступны.</b>\n\nПопробуйте позже.",
-            parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="🔙 Назад", callback_data=back_callback)]
             ])
@@ -276,7 +285,7 @@ async def send_panel_select(chat_id: int, header: str, back_callback: str, key_t
 
     buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data=back_callback)])
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
-    await bot.send_message(chat_id, header, reply_markup=keyboard, parse_mode="HTML")
+    await _edit_or_send(header, reply_markup=keyboard)
 
 
 
@@ -436,7 +445,12 @@ async def on_key_proto_awg(callback_query: types.CallbackQuery, state: FSMContex
     await state.update_data(awg_duration_type=duration_type)
     await state.set_state(AwgKeyState.waiting_for_cascade_server)
 
-    # Обновляем статусы Cascade перед показом списка
+    # Показываем заглушку и обновляем статусы Cascade
+    loading_msg = await bot.send_message(
+        callback_query.message.chat.id,
+        "⏳ <b>Проверяем доступность серверов...</b>",
+        parse_mode="HTML",
+    )
     await _refresh_panel_states_now()
 
     label = "♾ Бессрочный" if duration_type == "key_duration_new" else "⏱ Временный"
@@ -464,8 +478,7 @@ async def on_key_proto_awg(callback_query: types.CallbackQuery, state: FSMContex
             ])
 
     if online_count == 0:
-        await bot.send_message(
-            callback_query.message.chat.id,
+        await loading_msg.edit_text(
             "🔴 <b>Все Cascade-серверы сейчас недоступны.</b>\n\nСоздание AWG ключей временно невозможно. Попробуйте позже.",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -476,8 +489,7 @@ async def on_key_proto_awg(callback_query: types.CallbackQuery, state: FSMContex
         return
 
     buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data=f"key_duration_{duration_type.split('_')[-1]}")])
-    await bot.send_message(
-        callback_query.message.chat.id,
+    await loading_msg.edit_text(
         f"🔒 <b>AWG 3.0 ключ</b> · {label}\n\nВыберите сервер:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
         parse_mode="HTML",
@@ -1002,6 +1014,11 @@ async def on_key_proto_vless(callback_query: types.CallbackQuery, state: FSMCont
     duration_type = callback_query.data.split(":", 1)[1]  # key_duration_new | key_duration_temp
 
     chat_id = callback_query.message.chat.id
+    loading_msg = await bot.send_message(
+        chat_id,
+        "⏳ <b>Проверяем доступность серверов...</b>",
+        parse_mode="HTML",
+    )
     await _refresh_panel_states_now()
     available = get_available_panels()
     online_available = [(pid, pcfg) for pid, pcfg in available if get_panel_online_status(pid)]
@@ -1009,8 +1026,7 @@ async def on_key_proto_vless(callback_query: types.CallbackQuery, state: FSMCont
     if duration_type == "key_duration_new":
         # ── Бессрочный ключ ──
         if len(online_available) == 0:
-            await bot.send_message(
-                chat_id,
+            await loading_msg.edit_text(
                 "🔴 <b>Все серверы сейчас недоступны.</b>\n\nПопробуйте позже.",
                 parse_mode="HTML",
             )
@@ -1021,18 +1037,19 @@ async def on_key_proto_vless(callback_query: types.CallbackQuery, state: FSMCont
             await state.update_data(selected_panel_id=panel_id)
             location = getattr(panel_cfg, 'location_label', '')
             loc_str = f" [{location}]" if location else ""
+            await loading_msg.delete()
             await _send_comment_choice(chat_id, state, "new", f"📡 Панель: <b>{panel_cfg.alias}{loc_str}</b>")
             return
         await send_panel_select(
             chat_id,
             "🔑 <b>Создание бессрочного ключа</b>\n\nВыберите сервер:",
             "create_key", "new",
+            loading_msg=loading_msg,
         )
     else:
         # ── Временный ключ ──
         if len(online_available) == 0:
-            await bot.send_message(
-                chat_id,
+            await loading_msg.edit_text(
                 "🔴 <b>Все серверы сейчас недоступны.</b>\n\nПопробуйте позже.",
                 parse_mode="HTML",
             )
@@ -1042,12 +1059,14 @@ async def on_key_proto_vless(callback_query: types.CallbackQuery, state: FSMCont
             panel_id, panel_cfg = online_available[0]
             await state.update_data(selected_panel_id=panel_id)
             await state.set_state(TempKeyState.waiting_for_duration)
+            await loading_msg.delete()
             await _send_duration_select(chat_id, panel_cfg.alias)
             return
         await send_panel_select(
             chat_id,
             "⏰ <b>Создание временного ключа</b>\n\nВыберите сервер:",
             "create_key", "temp",
+            loading_msg=loading_msg,
         )
 
 
@@ -1334,25 +1353,31 @@ async def cmd_new(message: Message, state: FSMContext):
         await message.answer("⛔ Вы заблокированы.")
         return
     await state.set_state(NewClientState.waiting_for_panel)
+    loading_msg = await message.answer(
+        "⏳ <b>Проверяем доступность серверов...</b>",
+        parse_mode="HTML",
+    )
     await _refresh_panel_states_now()
     available = get_available_panels()
     online_available = [(pid, pcfg) for pid, pcfg in available if get_panel_online_status(pid)]
     if len(online_available) == 0:
-        await message.answer(
+        await loading_msg.edit_text(
             "🔴 <b>Все серверы сейчас недоступны.</b>\n\nСоздание ключей временно невозможно. Попробуйте позже.",
-            parse_mode="HTML"
+            parse_mode="HTML",
         )
         await state.clear()
         return
     if len(online_available) == 1:
         panel_id, panel_cfg = online_available[0]
         await state.update_data(selected_panel_id=panel_id)
+        await loading_msg.delete()
         await _send_comment_choice(message.chat.id, state, "new", f"📡 Панель: <b>{panel_cfg.alias}</b>")
         return
     await send_panel_select(
         message.chat.id,
         "🔑 <b>Создание бессрочного ключа</b>\n\nВыберите сервер:",
-        "back_to_start", "new"
+        "back_to_start", "new",
+        loading_msg=loading_msg,
     )
 
 
@@ -1449,13 +1474,17 @@ async def cmd_temp_key(message: Message, state: FSMContext):
         await message.answer("⛔ Вы заблокированы администратором.")
         return
     await state.set_state(TempKeyState.waiting_for_panel)
+    loading_msg = await message.answer(
+        "⏳ <b>Проверяем доступность серверов...</b>",
+        parse_mode="HTML",
+    )
     await _refresh_panel_states_now()
     available = get_available_panels()
     online_available = [(pid, pcfg) for pid, pcfg in available if get_panel_online_status(pid)]
     if len(online_available) == 0:
-        await message.answer(
+        await loading_msg.edit_text(
             "🔴 <b>Все серверы сейчас недоступны.</b>\n\nСоздание ключей временно невозможно. Попробуйте позже.",
-            parse_mode="HTML"
+            parse_mode="HTML",
         )
         await state.clear()
         return
@@ -1463,12 +1492,14 @@ async def cmd_temp_key(message: Message, state: FSMContext):
         panel_id, panel_cfg = online_available[0]
         await state.update_data(selected_panel_id=panel_id)
         await state.set_state(TempKeyState.waiting_for_duration)
+        await loading_msg.delete()
         await _send_duration_select(message.chat.id, panel_cfg.alias)
         return
     await send_panel_select(
         message.chat.id,
         "⏰ <b>Создание временного ключа</b>\n\nВыберите сервер:",
-        "back_to_start", "temp"
+        "back_to_start", "temp",
+        loading_msg=loading_msg,
     )
 
 
@@ -4678,13 +4709,17 @@ async def callback_cmd_new(callback_query: types.CallbackQuery, state: FSMContex
         return
     await callback_query.answer()
     await state.set_state(NewClientState.waiting_for_panel)
+    loading_msg = await bot.send_message(
+        callback_query.message.chat.id,
+        "⏳ <b>Проверяем доступность серверов...</b>",
+        parse_mode="HTML",
+    )
     await _refresh_panel_states_now()
     available = get_available_panels()
     online_available = [(pid, pcfg) for pid, pcfg in available if get_panel_online_status(pid)]
     if len(online_available) == 0:
         # Все панели недоступны
-        await bot.send_message(
-            callback_query.message.chat.id,
+        await loading_msg.edit_text(
             "🔴 <b>Все серверы сейчас недоступны.</b>\n\nСоздание ключей временно невозможно. Попробуйте позже.",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -4696,12 +4731,14 @@ async def callback_cmd_new(callback_query: types.CallbackQuery, state: FSMContex
     if len(online_available) == 1:
         panel_id, panel_cfg = online_available[0]
         await state.update_data(selected_panel_id=panel_id)
+        await loading_msg.delete()
         await _send_comment_choice(callback_query.message.chat.id, state, "new", f"📡 Панель: <b>{panel_cfg.alias}</b>")
         return
     await send_panel_select(
         callback_query.message.chat.id,
         "🔑 <b>Создание бессрочного ключа</b>\n\nВыберите сервер:",
-        "back_to_start", "new"
+        "back_to_start", "new",
+        loading_msg=loading_msg,
     )
 
 
@@ -4720,13 +4757,17 @@ async def callback_cmd_tempkey(callback_query: types.CallbackQuery, state: FSMCo
         return
     await callback_query.answer()
     await state.set_state(TempKeyState.waiting_for_panel)
+    loading_msg = await bot.send_message(
+        callback_query.message.chat.id,
+        "⏳ <b>Проверяем доступность серверов...</b>",
+        parse_mode="HTML",
+    )
     await _refresh_panel_states_now()
     available = get_available_panels()
     online_available = [(pid, pcfg) for pid, pcfg in available if get_panel_online_status(pid)]
     if len(online_available) == 0:
         # Все панели недоступны
-        await bot.send_message(
-            callback_query.message.chat.id,
+        await loading_msg.edit_text(
             "🔴 <b>Все серверы сейчас недоступны.</b>\n\nСоздание ключей временно невозможно. Попробуйте позже.",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -4739,12 +4780,14 @@ async def callback_cmd_tempkey(callback_query: types.CallbackQuery, state: FSMCo
         panel_id, panel_cfg = online_available[0]
         await state.update_data(selected_panel_id=panel_id)
         await state.set_state(TempKeyState.waiting_for_duration)
+        await loading_msg.delete()
         await _send_duration_select(callback_query.message.chat.id, panel_cfg.alias)
         return
     await send_panel_select(
         callback_query.message.chat.id,
         "⏰ <b>Создание временного ключа</b>\n\nВыберите сервер:",
-        "back_to_start", "temp"
+        "back_to_start", "temp",
+        loading_msg=loading_msg,
     )
 
 @dp.callback_query(lambda c: c.data == "cmd_myclients")
