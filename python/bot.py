@@ -3688,6 +3688,9 @@ async def backup_menu(callback_query: types.CallbackQuery, state: FSMContext):
             InlineKeyboardButton(text="📦 Полный бэкап",   callback_data="backup_full"),
         ],
         [
+            InlineKeyboardButton(text="📄 Показать config.yaml", callback_data="show_config_yaml"),
+        ],
+        [
             InlineKeyboardButton(text="🔙 Назад",          callback_data="server_status"),
         ],
     ])
@@ -3701,6 +3704,46 @@ async def backup_menu(callback_query: types.CallbackQuery, state: FSMContext):
         parse_mode="HTML",
         reply_markup=keyboard,
     )
+
+
+@dp.callback_query(lambda c: c.data == "show_config_yaml")
+async def show_config_yaml(callback_query: types.CallbackQuery):
+    """Показать содержимое config.yaml администратору в текстовом виде."""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
+        return
+
+    await callback_query.answer()
+
+    config_path = config.config_manager.config_path
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            content = f.read()
+    except Exception as e:
+        await callback_query.message.answer(
+            f"❌ Не удалось прочитать config.yaml:\n<code>{e}</code>",
+            parse_mode="HTML",
+        )
+        return
+
+    # Telegram ограничивает длину сообщения ~4096 символов — разбиваем при необходимости
+    header = f"📄 <b>config.yaml</b> (<code>{config_path.name}</code>)\n\n"
+    text = header + f"<pre>{content}</pre>"
+
+    if len(text) <= 4096:
+        await callback_query.message.answer(text, parse_mode="HTML")
+    else:
+        # Отправляем файлом, если содержимое слишком большое
+        await callback_query.message.answer_document(
+            document=types.BufferedInputFile(
+                content.encode("utf-8"),
+                filename="config.yaml",
+            ),
+            caption="📄 <b>config.yaml</b> — содержимое слишком большое для сообщения, отправлен файлом.",
+            parse_mode="HTML",
+        )
+
+
 
 
 async def _send_backup_result(
@@ -6847,9 +6890,6 @@ async def show_download_menu(callback_query: types.CallbackQuery):
     """Меню выбора платформы для скачивания приложения."""
     user_id = callback_query.from_user.id
     logger.info(f"[app_download] user={user_id}, allowed={is_allowed(user_id)}, msg_has_photo={bool(callback_query.message.photo)}")
-    if not is_allowed(user_id):
-        await callback_query.answer("⛔ Нет доступа", show_alert=True)
-        return
     await callback_query.answer()
     rows = [
         [InlineKeyboardButton(text=p["name"], callback_data=p.get("callback", f"app_platform_{i}"))]
@@ -6876,8 +6916,6 @@ async def show_download_menu(callback_query: types.CallbackQuery):
 ))
 async def show_download_platform(callback_query: types.CallbackQuery):
     """Показывает список приложений выбранной платформы."""
-    if not is_allowed(callback_query.from_user.id):
-        return
     await callback_query.answer()
 
     data = callback_query.data
