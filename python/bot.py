@@ -7023,21 +7023,38 @@ async def main():
                     continue
                 if panel_cfg.reality_public_key and panel_cfg.reality_short_id:
                     continue  # ключи уже есть
-                logger.info(f"🔄 Автозаполнение Reality-ключей для панели {panel_id} ({panel_cfg.alias})...")
+                panel_addr = panel_cfg.xui_url or panel_cfg.server_address or panel_cfg.server_ip or '?'
+                logger.info(f"🔄 Автозаполнение Reality-ключей для панели {panel_id} ({panel_cfg.alias}) [{panel_addr}]...")
                 try:
                     tmp_client = make_panel_client(panel_id)
                     try:
                         if await tmp_client.login():
                             if await config.panel_manager.fetch_and_update_panel_settings(panel_id, tmp_client):
-                                logger.info(f"✅ Reality-ключи для панели {panel_id} обновлены")
+                                logger.info(
+                                    f"✅ Reality-ключи для панели {panel_id} ({panel_cfg.alias}) обновлены: "
+                                    f"public_key={panel_cfg.reality_public_key[:16]}... "
+                                    f"short_id={panel_cfg.reality_short_id}"
+                                )
                             else:
-                                logger.warning(f"⚠️ Не удалось получить Reality-ключи для панели {panel_id}")
+                                logger.warning(
+                                    f"⚠️ Панель {panel_id} ({panel_cfg.alias}) [{panel_addr}]: "
+                                    f"API вернул неуспешный ответ — Reality-ключи не обновлены, "
+                                    f"ключи в config.yaml остались пустыми"
+                                )
                         else:
-                            logger.warning(f"⚠️ Не удалось авторизоваться на панели {panel_id} для получения Reality-ключей")
+                            logger.warning(
+                                f"⚠️ Панель {panel_id} ({panel_cfg.alias}) [{panel_addr}]: "
+                                f"авторизация не удалась — Reality-ключи не обновлены, "
+                                f"ключи в config.yaml остались пустыми"
+                            )
                     finally:
                         await tmp_client.close()
                 except Exception as e_panel:
-                    logger.error(f"❌ Ошибка автозаполнения Reality-ключей панели {panel_id}: {e_panel}")
+                    logger.error(
+                        f"❌ Панель {panel_id} ({panel_cfg.alias}) [{panel_addr}] недоступна: "
+                        f"{type(e_panel).__name__}: {e_panel} — "
+                        f"Reality-ключи не обновлены, ключи в config.yaml остались пустыми"
+                    )
         except Exception as e:
             logger.error(f"❌ Ошибка цикла автозаполнения Reality-ключей: {e}")
         
