@@ -4538,7 +4538,7 @@ async def process_set_price(callback_query: types.CallbackQuery, state: FSMConte
 
 @dp.callback_query(lambda c: c.data and c.data.startswith('user_card_'))
 async def show_user_card(callback_query: types.CallbackQuery, state: FSMContext):
-    """Показать карточку пользователя с кнопками управления"""
+    """Показать карточку пользователя с кнопками управления и списком его ключей"""
     if not is_admin(callback_query.from_user.id):
         await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
         return
@@ -4558,13 +4558,44 @@ async def show_user_card(callback_query: types.CallbackQuery, state: FSMContext)
         display_name = f"@{username}" if username else f"ID: {target_user_id}"
         status_text = "🔒 Заблокирован" if is_blocked else "✅ Активен"
 
+        # ── Собираем ключи пользователя со всех панелей ───────────────────────
+        all_keys = []
+        if username:
+            panels = config.panel_manager.get_all_panels()
+            for panel_id, panel_cfg in panels.items():
+                try:
+                    async with make_panel_client(panel_id) as panel_client:
+                        panel_keys = await panel_client.get_user_clients_by_username(username)
+                        loc = getattr(panel_cfg, 'location_label', '') or ''
+                        for k in panel_keys:
+                            k['_panel_alias'] = panel_cfg.alias or panel_id
+                            k['_panel_location'] = loc
+                        all_keys.extend(panel_keys)
+                except Exception as pe:
+                    logger.warning(f"Не удалось получить ключи с панели {panel_id} для {username}: {pe}")
+
+        # ── Формируем текст ────────────────────────────────────────────────────
         text = (
             f"👤 <b>Пользователь:</b> {display_name}\n"
             f"🆔 ID: <code>{target_user_id}</code>\n"
             f"📅 Добавлен: {added_at}\n"
-            f"Статус: {status_text}"
+            f"Статус: {status_text}\n"
         )
 
+        if all_keys:
+            active_cnt   = sum(1 for k in all_keys if k.get('status') == 'active')
+            inactive_cnt = sum(1 for k in all_keys if k.get('status') == 'inactive')
+            expired_cnt  = sum(1 for k in all_keys if k.get('status') == 'expired')
+            text += (
+                f"\n🔑 <b>Ключей:</b> {len(all_keys)}"
+                f"  (✅{active_cnt} ⏸️{inactive_cnt} ⏰{expired_cnt})\n"
+            )
+        elif username:
+            text += "\n🔑 <b>Ключей:</b> нет\n"
+        else:
+            text += "\n⚠️ Username не задан — ключи недоступны\n"
+
+        # ── Кнопки управления пользователем ───────────────────────────────────
         buttons = []
         if not is_main_admin:
             if is_blocked:
@@ -4572,6 +4603,45 @@ async def show_user_card(callback_query: types.CallbackQuery, state: FSMContext)
             else:
                 buttons.append([InlineKeyboardButton(text="🔒 Заблокировать", callback_data=f"doblock_{target_user_id}")])
             buttons.append([InlineKeyboardButton(text="🗑 Удалить", callback_data=f"doremove_{target_user_id}")])
+
+        # ── Кнопка для каждого ключа: [📋 Инфо] [⏸️ Выкл / ✅ Вкл] ──────────
+        for key in all_keys:
+            uuid  = key.get('uuid') or key.get('id', '')
+            email = key.get('email', '')
+            comment = (key.get('comment') or '').replace('Временный ', '')
+            label = (comment or email)[:22]
+            panel_alias = key.get('_panel_alias', '')
+            panel_loc   = key.get('_panel_location', '')
+            panel_part  = f"[{panel_loc or panel_alias}] " if (panel_loc or panel_alias) else ""
+
+            status = key.get('status', '')
+            enabled = key.get('enable', True)
+
+            if status == 'active':
+                st_icon = "✅"
+            elif status == 'inactive':
+                st_icon = "⏸️"
+            else:
+                st_icon = "⏰"
+
+            row = [
+                InlineKeyboardButton(
+                    text=f"📋 {panel_part}{st_icon} {label}",
+                    callback_data=f"allclient_{uuid}"
+                )
+            ]
+            # Кнопка включить / выключить
+            if enabled:
+                row.append(InlineKeyboardButton(
+                    text="⏸️ Выкл",
+                    callback_data=f"disable_{uuid}"
+                ))
+            else:
+                row.append(InlineKeyboardButton(
+                    text="✅ Вкл",
+                    callback_data=f"enable_{uuid}"
+                ))
+            buttons.append(row)
 
         buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="show_users")])
 
