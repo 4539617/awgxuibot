@@ -586,7 +586,11 @@ class ConfigManager:
                     logger.info(f"   Public Key: {public_key[:20]}...")
                 
                 # Short ID из shortIds
-                short_id = reality_config.get('shortIds', [''])[0] if reality_config.get('shortIds') else ''
+                # В v3 формате shortIds может быть в realitySettings.settings.shortIds
+                short_ids_root = reality_config.get('shortIds') or []
+                short_ids_nested = settings_obj.get('shortIds') if isinstance(settings_obj, dict) else []
+                short_ids = short_ids_root or short_ids_nested or []
+                short_id = short_ids[0] if short_ids else ''
                 if short_id:
                     panel.reality_short_id = short_id
                     logger.info(f"   Short ID: {short_id}")

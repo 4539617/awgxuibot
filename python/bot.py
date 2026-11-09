@@ -138,6 +138,7 @@ def make_panel_client(panel_id: str) -> XUIClient:
         reality_public_key=panel_cfg.reality_public_key,
         reality_short_id=panel_cfg.reality_short_id,
         xhttp_mode=config.common.xhttp_mode,
+        xui_db_path=panel_cfg.xui_db_path,
     )
 
     tmp_config = _types.SimpleNamespace(
