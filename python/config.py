@@ -285,9 +285,9 @@ class ConfigManager:
                     tls_fingerprint=panel_data.get('tls_fingerprint', 'chrome'),
                     reality_sni=panel_data.get('reality_sni', ''),
                     reality_fingerprint=panel_data.get('reality_fingerprint', 'chrome'),
-                    reality_public_key=panel_data.get('reality_public_key', ''),
-                    reality_private_key=panel_data.get('reality_private_key', ''),
-                    reality_short_id=panel_data.get('reality_short_id', '')
+                    reality_public_key=panel_data.get('reality_public_key') or '',
+                    reality_private_key=panel_data.get('reality_private_key') or '',
+                    reality_short_id=panel_data.get('reality_short_id') or ''
                 )
             
             # Загружаем панель по умолчанию
@@ -698,9 +698,9 @@ class ConfigManager:
                     'tls_fingerprint': panel.tls_fingerprint,
                     'reality_sni': panel.reality_sni,
                     'reality_fingerprint': panel.reality_fingerprint,
-                    'reality_public_key': panel.reality_public_key,
-                    'reality_private_key': panel.reality_private_key,
-                    'reality_short_id': panel.reality_short_id
+                    'reality_public_key': panel.reality_public_key or '',
+                    'reality_private_key': panel.reality_private_key or '',
+                    'reality_short_id': panel.reality_short_id or ''
                 }
             
             # Сохраняем секцию cascades: из существующего файла без изменений

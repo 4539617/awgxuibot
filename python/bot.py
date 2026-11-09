@@ -7011,6 +7011,35 @@ async def main():
                     logger.warning(f"⚠️ Не удалось обновить параметры панели {current_panel_id}")
         except Exception as e:
             logger.error(f"❌ Ошибка обновления параметров панели при запуске: {e}")
+
+        # Автоматически заполняем Reality-ключи для всех панелей у которых они пусты
+        try:
+            all_panels = config.panel_manager.get_all_panels()
+            current_panel_id = config.panel_manager.get_current_panel_id()
+            for panel_id, panel_cfg in all_panels.items():
+                if panel_id == current_panel_id:
+                    continue  # уже обновлена выше
+                if panel_cfg.security != 'reality':
+                    continue
+                if panel_cfg.reality_public_key and panel_cfg.reality_short_id:
+                    continue  # ключи уже есть
+                logger.info(f"🔄 Автозаполнение Reality-ключей для панели {panel_id} ({panel_cfg.alias})...")
+                try:
+                    tmp_client = make_panel_client(panel_id)
+                    try:
+                        if await tmp_client.login():
+                            if await config.panel_manager.fetch_and_update_panel_settings(panel_id, tmp_client):
+                                logger.info(f"✅ Reality-ключи для панели {panel_id} обновлены")
+                            else:
+                                logger.warning(f"⚠️ Не удалось получить Reality-ключи для панели {panel_id}")
+                        else:
+                            logger.warning(f"⚠️ Не удалось авторизоваться на панели {panel_id} для получения Reality-ключей")
+                    finally:
+                        await tmp_client.close()
+                except Exception as e_panel:
+                    logger.error(f"❌ Ошибка автозаполнения Reality-ключей панели {panel_id}: {e_panel}")
+        except Exception as e:
+            logger.error(f"❌ Ошибка цикла автозаполнения Reality-ключей: {e}")
         
         # ── Уведомление администратору о состоянии Cascade ───────────────────
         if cascade_stubs and not cascade_servers:
