@@ -820,7 +820,7 @@ async def on_comment_choice_skip(callback_query: types.CallbackQuery, state: FSM
         panel_cfg = config.panel_manager.get_panel(panel_id)
         username = callback_query.from_user.username
         if not username:
-            username = (callback_query.from_user.first_name or "user").lower().replace(" ", "_")
+            username = str(callback_query.from_user.id)
         panel_prefix = (panel_cfg.alias[:5].lower() if panel_cfg and panel_cfg.alias else "panel")
         random_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
         email = f"{panel_prefix}_{username}_{random_suffix}"
@@ -1423,7 +1423,7 @@ async def process_new_comment(message: Message, state: FSMContext):
 
     username = message.from_user.username
     if not username:
-        username = message.from_user.first_name.lower().replace(" ", "_")
+        username = str(message.from_user.id)
 
     panel_prefix = (panel_cfg.alias[:5].lower() if panel_cfg and panel_cfg.alias else "panel")
     random_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
@@ -1573,7 +1573,7 @@ async def process_tempkey_comment(message: Message, state: FSMContext):
 
     username = message.from_user.username
     if not username:
-        username = message.from_user.first_name.lower().replace(" ", "_")
+        username = str(message.from_user.id)
 
     random_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
     email = f"temp_{username}_{random_suffix}"
