@@ -4551,6 +4551,8 @@ async def show_user_card(callback_query: types.CallbackQuery, state: FSMContext)
         user_row = next((r for r in users if r[0] == target_user_id), None)
 
         username = user_row[1] if user_row else None
+        # Если username не задан — используем str(user_id) как поисковый псевдоним
+        search_name = username if username else str(target_user_id)
         added_at = user_row[2][:10] if user_row else "—"
         is_blocked = config.users_db.is_blocked_by_admin(target_user_id)
         is_main_admin = (target_user_id == config.users_db.get_main_admin())
@@ -4573,8 +4575,7 @@ async def show_user_card(callback_query: types.CallbackQuery, state: FSMContext)
                 buttons.append([InlineKeyboardButton(text="🔒 Заблокировать", callback_data=f"doblock_{target_user_id}")])
             buttons.append([InlineKeyboardButton(text="🗑 Удалить", callback_data=f"doremove_{target_user_id}")])
 
-        if username:
-            buttons.append([InlineKeyboardButton(text="🔑 Ключи пользователя", callback_data=f"user_keys_{target_user_id}")])
+        buttons.append([InlineKeyboardButton(text="🔑 Ключи пользователя", callback_data=f"user_keys_{target_user_id}")])
 
         buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="show_users")])
 
@@ -4621,9 +4622,11 @@ async def show_user_keys_list(callback_query: types.CallbackQuery):
         users = config.users_db.list_users()
         user_row = next((r for r in users if r[0] == target_user_id), None)
         username = user_row[1] if user_row else None
+        # Если username не задан — используем str(user_id) как поисковый псевдоним
+        search_name = username if username else str(target_user_id)
         display_name = f"@{username}" if username else f"ID: {target_user_id}"
 
-        all_keys = await _get_user_keys_all_panels(username) if username else []
+        all_keys = await _get_user_keys_all_panels(search_name)
 
         if not all_keys:
             text = f"🔑 <b>Ключи пользователя {display_name}</b>\n\nКлючей не найдено."
