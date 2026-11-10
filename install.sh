@@ -1638,21 +1638,47 @@ install_xuibot() {
 }
 
 # Функция показа логов XUI бота
-show_xuibot_logs() {
+show_xuibot_status() {
     echo -e "\n${BLUE}========================================${NC}"
-    echo -e "${BLUE}   Логи XUI Бота${NC}"
+    echo -e "${BLUE}   Статус XUIBOT${NC}"
     echo -e "${BLUE}========================================${NC}\n"
-    
+
+    echo -e "${YELLOW}🔍 Статус контейнера:${NC}"
+    docker ps -a --filter name=xuibot --format "  Имя: {{.Names}}\n  Образ: {{.Image}}\n  Статус: {{.Status}}\n  Порты: {{.Ports}}" 2>/dev/null \
+        || echo -e "${RED}  Docker недоступен${NC}"
+
+    echo -e "\n${YELLOW}📋 Логи XUIBOT (последние 50 строк):${NC}"
+    docker logs --tail=50 xuibot 2>&1 || echo -e "${RED}  Контейнер xuibot не найден${NC}"
+
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Команды управления XUIBOT${NC}"
+    echo -e "${BLUE}========================================${NC}"
+    echo -e "${GREEN}▶  Запуск:${NC}"
+    echo -e "   docker compose -f /opt/awgxuibot/docker-compose.xuibot.yml up -d"
+    echo -e "${RED}■  Остановка:${NC}"
+    echo -e "   docker compose -f /opt/awgxuibot/docker-compose.xuibot.yml down"
+    echo -e "${YELLOW}🔄 Перезапуск:${NC}"
+    echo -e "   docker restart xuibot"
+    echo -e "${YELLOW}🔨 Пересборка:${NC}"
+    echo -e "   docker compose -f /opt/awgxuibot/docker-compose.xuibot.yml up -d --build"
+    echo -e "${YELLOW}📋 Логи в реальном времени:${NC}"
+    echo -e "   docker logs -f xuibot"
+}
+
+# Функция остановки XUIBOT
+stop_xuibot() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Остановка XUIBOT${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+
     if ! docker ps --filter name=xuibot --format "{{.Names}}" | grep -q xuibot; then
-        echo -e "${RED}❌ Контейнер xuibot не запущен${NC}"
+        echo -e "${YELLOW}⚠️  Контейнер xuibot уже остановлен или не существует${NC}"
         return
     fi
-    
-    echo -e "${YELLOW}📋 Логи XUI бота (последние 50 строк):${NC}"
-    docker logs --tail=50 xuibot 2>&1
-    
-    echo -e "\n${YELLOW}Для просмотра в реальном времени:${NC}"
-    echo -e "${BLUE}docker logs -f xuibot${NC}"
+
+    echo -e "${YELLOW}🛑 Остановка XUIBOT...${NC}"
+    $DOCKER_COMPOSE_CMD -f docker-compose.xuibot.yml down
+    echo -e "${GREEN}✅ XUIBOT остановлен${NC}"
 }
 
 # Функция обновления XUI бота
@@ -1878,9 +1904,8 @@ install_awgbot() {
         echo -e "\n${RED}❌ AWG сервер не установлен!${NC}"
         echo -e "${YELLOW}⚠️  AWGBOT требует установленный AWG сервер для работы.${NC}"
         echo -e "${YELLOW}Сначала установите AWG сервер (пункт 3 в меню).${NC}\n"
-        read -p "Хотите установить AWG сервер сейчас? (y/n): " install_now
-        
-        if [ "$install_now" = "y" ]; then
+        read -p "Хотите установить AWG сервер сейчас? (1 - да / 0 - нет) [0]: " install_now
+        if [ "$install_now" = "1" ]; then
             install_awg
             # Проверяем снова после установки
             if ! docker ps -a --format '{{.Names}}' | grep -qE "^amnezia-awg2?$"; then
@@ -1980,21 +2005,47 @@ install_awgbot() {
 }
 
 # Функция показа логов AWG бота
-show_awgbot_logs() {
+show_awgbot_status() {
     echo -e "\n${BLUE}========================================${NC}"
-    echo -e "${BLUE}   Логи AWG Бота${NC}"
+    echo -e "${BLUE}   Статус AWGBOT${NC}"
     echo -e "${BLUE}========================================${NC}\n"
-    
+
+    echo -e "${YELLOW}🔍 Статус контейнера:${NC}"
+    docker ps -a --filter name=awgbot --format "  Имя: {{.Names}}\n  Образ: {{.Image}}\n  Статус: {{.Status}}\n  Порты: {{.Ports}}" 2>/dev/null \
+        || echo -e "${RED}  Docker недоступен${NC}"
+
+    echo -e "\n${YELLOW}📋 Логи AWGBOT (последние 50 строк):${NC}"
+    docker logs --tail=50 awgbot 2>&1 || echo -e "${RED}  Контейнер awgbot не найден${NC}"
+
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Команды управления AWGBOT${NC}"
+    echo -e "${BLUE}========================================${NC}"
+    echo -e "${GREEN}▶  Запуск:${NC}"
+    echo -e "   docker compose -f /opt/awgxuibot/docker-compose.awgbot.yml up -d"
+    echo -e "${RED}■  Остановка:${NC}"
+    echo -e "   docker compose -f /opt/awgxuibot/docker-compose.awgbot.yml down"
+    echo -e "${YELLOW}🔄 Перезапуск:${NC}"
+    echo -e "   docker restart awgbot"
+    echo -e "${YELLOW}🔨 Пересборка:${NC}"
+    echo -e "   docker compose -f /opt/awgxuibot/docker-compose.awgbot.yml up -d --build"
+    echo -e "${YELLOW}📋 Логи в реальном времени:${NC}"
+    echo -e "   docker logs -f awgbot"
+}
+
+# Функция остановки AWGBOT
+stop_awgbot() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Остановка AWGBOT${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+
     if ! docker ps --filter name=awgbot --format "{{.Names}}" | grep -q awgbot; then
-        echo -e "${RED}❌ Контейнер awgbot не запущен${NC}"
+        echo -e "${YELLOW}⚠️  Контейнер awgbot уже остановлен или не существует${NC}"
         return
     fi
-    
-    echo -e "${YELLOW}📋 Логи AWG бота (последние 50 строк):${NC}"
-    docker logs --tail=50 awgbot 2>&1
-    
-    echo -e "\n${YELLOW}Для просмотра в реальном времени:${NC}"
-    echo -e "${BLUE}docker logs -f awgbot${NC}"
+
+    echo -e "${YELLOW}🛑 Остановка AWGBOT...${NC}"
+    $DOCKER_COMPOSE_CMD -f docker-compose.awgbot.yml down
+    echo -e "${GREEN}✅ AWGBOT остановлен${NC}"
 }
 
 # Функция обновления AWG бота
@@ -2105,8 +2156,8 @@ install_cascade() {
     # Проверяем, установлен ли уже Cascade
     if docker ps -a --format '{{.Names}}' | grep -q "^cascade$"; then
         echo -e "${YELLOW}⚠️  Cascade уже установлен.${NC}"
-        read -p "Переустановить? (y/n): " reinstall
-        if [ "$reinstall" != "y" ]; then
+        read -p "Переустановить? (1 - да / 0 - нет) [0]: " reinstall
+        if [ "$reinstall" != "1" ]; then
             return 0
         fi
         echo -e "${YELLOW}🗑️  Остановка старого контейнера...${NC}"
@@ -2149,18 +2200,47 @@ install_cascade() {
     fi
 }
 
-show_cascade_logs() {
+show_cascade_status() {
     echo -e "\n${BLUE}========================================${NC}"
-    echo -e "${BLUE}   Логи Cascade Web UI${NC}"
-    echo -e "${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Статус Cascade Web UI${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
 
-    if ! docker ps -a --format '{{.Names}}' | grep -q "^cascade$"; then
-        echo -e "${RED}❌ Контейнер cascade не найден${NC}"
-        return 1
+    echo -e "${YELLOW}🔍 Статус контейнера:${NC}"
+    docker ps -a --filter name=cascade --format "  Имя: {{.Names}}\n  Образ: {{.Image}}\n  Статус: {{.Status}}\n  Порты: {{.Ports}}" 2>/dev/null \
+        || echo -e "${RED}  Docker недоступен${NC}"
+
+    echo -e "\n${YELLOW}📋 Логи Cascade (последние 50 строк):${NC}"
+    docker logs --tail=50 cascade 2>&1 || echo -e "${RED}  Контейнер cascade не найден${NC}"
+
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Команды управления Cascade${NC}"
+    echo -e "${BLUE}========================================${NC}"
+    echo -e "${GREEN}▶  Запуск:${NC}"
+    echo -e "   docker compose -f /opt/awgxuibot/docker-compose.cascade.yml up -d"
+    echo -e "${RED}■  Остановка:${NC}"
+    echo -e "   docker compose -f /opt/awgxuibot/docker-compose.cascade.yml down"
+    echo -e "${YELLOW}🔄 Перезапуск:${NC}"
+    echo -e "   docker restart cascade"
+    echo -e "${YELLOW}🔨 Пересборка:${NC}"
+    echo -e "   docker compose -f /opt/awgxuibot/docker-compose.cascade.yml up -d --build"
+    echo -e "${YELLOW}📋 Логи в реальном времени:${NC}"
+    echo -e "   docker logs -f cascade"
+}
+
+# Функция остановки Cascade
+stop_cascade() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Остановка Cascade Web UI${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+
+    if ! docker ps --filter name=cascade --format "{{.Names}}" | grep -q cascade; then
+        echo -e "${YELLOW}⚠️  Контейнер cascade уже остановлен или не существует${NC}"
+        return
     fi
 
-    echo -e "${YELLOW}Последние 100 строк логов (Ctrl+C для выхода):${NC}\n"
-    docker logs --tail=100 -f cascade 2>&1
+    echo -e "${YELLOW}🛑 Остановка Cascade...${NC}"
+    docker compose -f docker-compose.cascade.yml down
+    echo -e "${GREEN}✅ Cascade остановлен${NC}"
 }
 
 update_cascade() {
@@ -2199,6 +2279,395 @@ update_cascade() {
     fi
 }
 
+# Функция настройки HTTPS для Cascade через существующие TLS-сертификаты
+# (как у 3x-ui — без Caddy, без Cloudflare Tunnel)
+setup_cascade_https() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Настройка HTTPS для Cascade (домен)${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+
+    # Проверяем что Cascade установлен
+    if ! docker ps -a --format '{{.Names}}' | grep -q "^cascade$"; then
+        echo -e "${RED}❌ Cascade не установлен! Сначала установите Cascade (пункт 2)${NC}"
+        return 1
+    fi
+
+    local compose_file="docker-compose.cascade.yml"
+    if [ ! -f "$compose_file" ]; then
+        echo -e "${RED}❌ Файл $compose_file не найден!${NC}"
+        return 1
+    fi
+
+    # ── Текущие настройки ──────────────────────────────────────────────────────
+    local cur_cert cur_key cur_port
+    cur_cert=$(grep '^\s*-\s*TLS_CERT=' "$compose_file" 2>/dev/null | sed 's/.*TLS_CERT=//' | tr -d ' ')
+    cur_key=$(grep  '^\s*-\s*TLS_KEY='  "$compose_file" 2>/dev/null | sed 's/.*TLS_KEY=//'  | tr -d ' ')
+    cur_port=$(grep '^\s*-\s*PORT='     "$compose_file" 2>/dev/null | sed 's/.*PORT=//'     | tr -d ' ')
+    [ -z "$cur_port" ] && cur_port="51821"
+
+    echo -e "${YELLOW}Текущая конфигурация:${NC}"
+    echo -e "  PORT     : ${cur_port}"
+    echo -e "  TLS_CERT : ${cur_cert:-<не задан>}"
+    echo -e "  TLS_KEY  : ${cur_key:-<не задан>}"
+    echo ""
+
+    # ── Домен ─────────────────────────────────────────────────────────────────
+    echo -e "${YELLOW}💡 Укажите домен и пути к TLS-сертификатам.${NC}"
+    echo -e "${YELLOW}   Сертификаты обычно выдаются через acme.sh, certbot или панель.${NC}"
+    echo -e "${YELLOW}   Примеры путей:${NC}"
+    echo -e "     acme.sh  : /root/.acme.sh/example.com_ecc/fullchain.cer  +  /root/.acme.sh/example.com_ecc/example.com.key"
+    echo -e "     certbot  : /etc/letsencrypt/live/example.com/fullchain.pem  +  privkey.pem"
+    echo -e "     вручную  : /root/cert/example.com/fullchain.pem  +  privkey.pem"
+    echo ""
+
+    local domain
+    read -p "Домен (например: example.com): " domain
+    if [ -z "$domain" ]; then
+        echo -e "${RED}❌ Домен не указан${NC}"
+        return 1
+    fi
+
+    # ── Попытка автоопределения путей по домену ────────────────────────────────
+    local auto_cert="" auto_key=""
+
+    # acme.sh (ECC)
+    if [ -f "/root/.acme.sh/${domain}_ecc/fullchain.cer" ]; then
+        auto_cert="/root/.acme.sh/${domain}_ecc/fullchain.cer"
+        auto_key="/root/.acme.sh/${domain}_ecc/${domain}.key"
+    # acme.sh (RSA)
+    elif [ -f "/root/.acme.sh/${domain}/fullchain.cer" ]; then
+        auto_cert="/root/.acme.sh/${domain}/fullchain.cer"
+        auto_key="/root/.acme.sh/${domain}/${domain}.key"
+    # certbot
+    elif [ -f "/etc/letsencrypt/live/${domain}/fullchain.pem" ]; then
+        auto_cert="/etc/letsencrypt/live/${domain}/fullchain.pem"
+        auto_key="/etc/letsencrypt/live/${domain}/privkey.pem"
+    # вручную /root/cert/
+    elif [ -f "/root/cert/${domain}/fullchain.pem" ]; then
+        auto_cert="/root/cert/${domain}/fullchain.pem"
+        auto_key="/root/cert/${domain}/privkey.pem"
+    fi
+
+    if [ -n "$auto_cert" ]; then
+        echo -e "${GREEN}✅ Сертификаты найдены автоматически:${NC}"
+        echo -e "  Публичный : ${auto_cert}"
+        echo -e "  Приватный : ${auto_key}"
+    fi
+
+    # ── Путь к публичному сертификату ─────────────────────────────────────────
+    local cert_path
+    read -p "Путь к fullchain/публичному сертификату${auto_cert:+ [${auto_cert}]}: " cert_path
+    cert_path="${cert_path:-$auto_cert}"
+
+    if [ -z "$cert_path" ]; then
+        echo -e "${RED}❌ Путь к сертификату не указан${NC}"
+        return 1
+    fi
+    if [ ! -f "$cert_path" ]; then
+        echo -e "${RED}❌ Файл не найден: $cert_path${NC}"
+        return 1
+    fi
+
+    # ── Путь к приватному ключу ────────────────────────────────────────────────
+    local key_path
+    read -p "Путь к приватному ключу${auto_key:+ [${auto_key}]}: " key_path
+    key_path="${key_path:-$auto_key}"
+
+    if [ -z "$key_path" ]; then
+        echo -e "${RED}❌ Путь к приватному ключу не указан${NC}"
+        return 1
+    fi
+    if [ ! -f "$key_path" ]; then
+        echo -e "${RED}❌ Файл не найден: $key_path${NC}"
+        return 1
+    fi
+
+    # ── Порт ───────────────────────────────────────────────────────────────────
+    local https_port
+    read -p "HTTPS порт для Cascade [29211]: " https_port
+    https_port="${https_port:-29211}"
+
+    if ! [[ "$https_port" =~ ^[0-9]+$ ]] || [ "$https_port" -lt 1 ] || [ "$https_port" -gt 65535 ]; then
+        echo -e "${RED}❌ Неверный порт: $https_port${NC}"
+        return 1
+    fi
+
+    # ── Проверяем что сертификат совпадает с приватным ключом ─────────────────
+    # Используем openssl verify — работает для RSA и ECDSA одинаково.
+    # Создаём временный self-signed CA из самого сертификата не нужен —
+    # достаточно сравнить pubkey сертификата и pubkey из приватного ключа.
+    local cert_pub key_pub
+    cert_pub=$(openssl x509 -noout -pubkey -in "$cert_path" 2>/dev/null | md5sum 2>/dev/null || true)
+    key_pub=$(openssl pkey  -pubout         -in "$key_path"  2>/dev/null | md5sum 2>/dev/null || true)
+    if [ -n "$cert_pub" ] && [ -n "$key_pub" ] && [ "$cert_pub" != "$key_pub" ]; then
+        echo -e "${RED}❌ Сертификат и приватный ключ не совпадают!${NC}"
+        echo -e "${YELLOW}   Проверьте что fullchain.pem и privkey.pem от одного домена.${NC}"
+        return 1
+    fi
+
+    # ── Определяем директорию для монтирования ────────────────────────────────
+    local cert_dir cert_filename key_dir key_filename
+    cert_dir=$(dirname "$cert_path")
+    cert_filename=$(basename "$cert_path")
+    key_dir=$(dirname "$key_path")
+    key_filename=$(basename "$key_path")
+
+    # Если сертификат и ключ в разных папках — монтируем папку сертификата,
+    # ключ копируем туда временно (или предупреждаем)
+    local mount_dir="$cert_dir"
+    if [ "$cert_dir" != "$key_dir" ]; then
+        echo -e "${YELLOW}⚠️  Сертификат и ключ находятся в разных директориях:${NC}"
+        echo -e "  Сертификат: $cert_dir"
+        echo -e "  Ключ:       $key_dir"
+        echo -e "${YELLOW}   Будут смонтированы обе директории (/certs для cert, /certs-key для key)${NC}"
+    fi
+
+    # ── Обновляем docker-compose.cascade.yml ──────────────────────────────────
+    echo -e "\n${YELLOW}📝 Обновление $compose_file...${NC}"
+
+    # Используем Python для надёжного редактирования — sed ломается на путях
+    # с '/' внутри значений и на закомментированных строках с произвольными отступами.
+    python3 - "$compose_file" "$https_port" "$cert_dir" "$cert_filename" "$key_dir" "$key_filename" << 'PYEOF'
+import sys, re
+
+compose_file = sys.argv[1]
+https_port   = sys.argv[2]
+cert_dir     = sys.argv[3]
+cert_fname   = sys.argv[4]
+key_dir      = sys.argv[5]
+key_fname    = sys.argv[6]
+
+same_dir = (cert_dir == key_dir)
+
+with open(compose_file, 'r') as f:
+    lines = f.readlines()
+
+# Флаги — были ли volume строки уже добавлены/обновлены
+certs_done    = False
+certs_key_done = False
+# Индекс строки с /host_hostname:ro — после неё вставим volume если не найдём
+hostname_idx  = None
+
+new_lines = []
+for i, line in enumerate(lines):
+    stripped = line.rstrip()
+
+    # PORT
+    if re.match(r'\s*- PORT=', stripped):
+        indent = len(line) - len(line.lstrip())
+        line = ' ' * indent + '- PORT=' + https_port + '\n'
+
+    # TLS_CERT
+    elif re.match(r'\s*- TLS_CERT=', stripped):
+        indent = len(line) - len(line.lstrip())
+        if same_dir:
+            line = ' ' * indent + '- TLS_CERT=/certs/' + cert_fname + '\n'
+        else:
+            line = ' ' * indent + '- TLS_CERT=/certs/' + cert_fname + '\n'
+
+    # TLS_KEY
+    elif re.match(r'\s*- TLS_KEY=', stripped):
+        indent = len(line) - len(line.lstrip())
+        if same_dir:
+            line = ' ' * indent + '- TLS_KEY=/certs/' + key_fname + '\n'
+        else:
+            line = ' ' * indent + '- TLS_KEY=/certs-key/' + key_fname + '\n'
+
+    # Volume /certs — раскомментировать или обновить существующую
+    elif re.search(r':/certs:ro', stripped):
+        indent = len(line) - len(line.lstrip())
+        # Убираем ведущий # если закомментировано
+        line = ' ' * indent + '- ' + cert_dir + ':/certs:ro\n'
+        certs_done = True
+
+    # Volume /certs-key — раскомментировать или обновить
+    elif re.search(r':/certs-key:ro', stripped):
+        indent = len(line) - len(line.lstrip())
+        line = ' ' * indent + '- ' + key_dir + ':/certs-key:ro\n'
+        certs_key_done = True
+
+    # Запоминаем позицию /host_hostname:ro для вставки после неё
+    if '/host_hostname:ro' in stripped:
+        hostname_idx = len(new_lines)
+
+    new_lines.append(line)
+
+# Если volume /certs не нашли — вставляем после /host_hostname:ro
+if not certs_done and hostname_idx is not None:
+    insert_after = hostname_idx + 1
+    indent = '      '
+    new_lines.insert(insert_after, indent + '- ' + cert_dir + ':/certs:ro\n')
+    if not same_dir:
+        new_lines.insert(insert_after + 1, indent + '- ' + key_dir + ':/certs-key:ro\n')
+        certs_key_done = True
+
+# Если разные директории и /certs-key не нашли — вставляем после /certs
+if not same_dir and not certs_key_done:
+    for i, line in enumerate(new_lines):
+        if ':/certs:ro' in line:
+            indent = '      '
+            new_lines.insert(i + 1, indent + '- ' + key_dir + ':/certs-key:ro\n')
+            break
+
+with open(compose_file, 'w') as f:
+    f.writelines(new_lines)
+
+print('ok')
+PYEOF
+
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}❌ Ошибка обновления $compose_file${NC}"
+        return 1
+    fi
+
+    echo -e "${GREEN}✅ Конфигурация обновлена${NC}"
+    echo -e "  Домен    : ${domain}"
+    echo -e "  PORT     : ${https_port}"
+    echo -e "  TLS_CERT : ${cert_path}"
+    echo -e "  TLS_KEY  : ${key_path}"
+
+    # ── Открыть порт в ufw если активен ───────────────────────────────────────
+    if command -v ufw &>/dev/null && ufw status 2>/dev/null | grep -q "^Status: active"; then
+        echo -e "\n${YELLOW}🔓 Открытие порта ${https_port}/tcp в ufw...${NC}"
+        ufw allow "${https_port}/tcp" >/dev/null 2>&1 && \
+            echo -e "${GREEN}✅ Порт ${https_port}/tcp открыт в ufw${NC}" || \
+            echo -e "${YELLOW}⚠️  Не удалось открыть порт в ufw — сделайте вручную: ufw allow ${https_port}/tcp${NC}"
+    fi
+
+    # ── Перезапускаем Cascade ─────────────────────────────────────────────────
+    echo -e "\n${YELLOW}🔄 Перезапуск Cascade...${NC}"
+    docker compose -f "$compose_file" down 2>/dev/null || true
+    docker compose -f "$compose_file" up -d
+
+    sleep 3
+    local status
+    status=$(docker ps --filter name="^cascade$" --format "{{.Status}}" 2>/dev/null)
+    if [[ "$status" == *"Up"* ]]; then
+        echo -e "\n${GREEN}✅ Cascade запущен с HTTPS!${NC}"
+        echo -e "${BLUE}========================================${NC}"
+        echo -e "${GREEN}🌐 Веб-интерфейс: ${YELLOW}https://${domain}:${https_port}/${NC}"
+        echo -e "${BLUE}========================================${NC}"
+        if [ "$cur_port" != "$https_port" ]; then
+            echo -e "${YELLOW}💡 Старый HTTP-порт можно закрыть:${NC}"
+            echo -e "   iptables -A INPUT ! -i lo -p tcp --dport ${cur_port} -j DROP"
+        fi
+    else
+        echo -e "${RED}❌ Cascade не запустился. Проверьте логи:${NC}"
+        docker logs cascade 2>&1 | tail -20
+        return 1
+    fi
+}
+
+# Функция отключения HTTPS — возврат к HTTP (сброс TLS настроек)
+disable_cascade_https() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Отключение HTTPS (возврат к HTTP)${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+
+    local compose_file="docker-compose.cascade.yml"
+    if [ ! -f "$compose_file" ]; then
+        echo -e "${RED}❌ Файл $compose_file не найден!${NC}"
+        return 1
+    fi
+
+    # ── Показываем текущие TLS настройки ──────────────────────────────────────
+    local cur_cert cur_key cur_port
+    cur_cert=$(grep '^\s*-\s*TLS_CERT=' "$compose_file" 2>/dev/null | sed 's/.*TLS_CERT=//' | tr -d ' ')
+    cur_key=$(grep  '^\s*-\s*TLS_KEY='  "$compose_file" 2>/dev/null | sed 's/.*TLS_KEY=//'  | tr -d ' ')
+    cur_port=$(grep '^\s*-\s*PORT='     "$compose_file" 2>/dev/null | sed 's/.*PORT=//'     | tr -d ' ')
+    [ -z "$cur_port" ] && cur_port="51821"
+
+    if [ -z "$cur_cert" ] && [ -z "$cur_key" ]; then
+        echo -e "${YELLOW}ℹ️  HTTPS уже отключён — TLS_CERT и TLS_KEY не заданы.${NC}"
+        return 0
+    fi
+
+    echo -e "${YELLOW}Текущая конфигурация:${NC}"
+    echo -e "  PORT     : ${cur_port}"
+    echo -e "  TLS_CERT : ${cur_cert}"
+    echo -e "  TLS_KEY  : ${cur_key}"
+    echo ""
+
+    read -p "Отключить HTTPS и вернуться к HTTP? (1 - да / 0 - нет) [0]: " confirm
+    [ "$confirm" != "1" ] && { echo -e "${YELLOW}Отменено${NC}"; return 0; }
+
+    # ── Новый порт ─────────────────────────────────────────────────────────────
+    local http_port
+    read -p "HTTP порт для Cascade [51821]: " http_port
+    http_port="${http_port:-51821}"
+
+    if ! [[ "$http_port" =~ ^[0-9]+$ ]] || [ "$http_port" -lt 1 ] || [ "$http_port" -gt 65535 ]; then
+        echo -e "${RED}❌ Неверный порт: $http_port${NC}"
+        return 1
+    fi
+
+    echo -e "\n${YELLOW}📝 Сброс TLS настроек в $compose_file...${NC}"
+
+    python3 - "$compose_file" "$http_port" << 'PYEOF'
+import sys, re
+compose_file = sys.argv[1]
+http_port    = sys.argv[2]
+with open(compose_file, 'r') as f:
+    lines = f.readlines()
+new_lines = []
+for line in lines:
+    stripped = line.rstrip()
+    # PORT
+    if re.match(r'\s*- PORT=', stripped):
+        indent = len(line) - len(line.lstrip())
+        line = ' ' * indent + '- PORT=' + http_port + '\n'
+    # TLS_CERT — сбросить в пустое
+    elif re.match(r'\s*- TLS_CERT=', stripped):
+        indent = len(line) - len(line.lstrip())
+        line = ' ' * indent + '- TLS_CERT=\n'
+    # TLS_KEY — сбросить в пустое
+    elif re.match(r'\s*- TLS_KEY=', stripped):
+        indent = len(line) - len(line.lstrip())
+        line = ' ' * indent + '- TLS_KEY=\n'
+    # Volume /certs или /certs-key — закомментировать
+    elif re.search(r'- .+:/certs(-key)?:ro', stripped):
+        indent = len(line) - len(line.lstrip())
+        line = ' ' * indent + '# ' + stripped.lstrip() + '\n'
+    new_lines.append(line)
+with open(compose_file, 'w') as f:
+    f.writelines(new_lines)
+print('ok')
+PYEOF
+
+    echo -e "${GREEN}✅ HTTPS отключён${NC}"
+    echo -e "  TLS_CERT : <пусто>"
+    echo -e "  TLS_KEY  : <пусто>"
+    echo -e "  PORT     : ${http_port}"
+
+    # ── Открыть порт в ufw если активен ───────────────────────────────────────
+    if command -v ufw &>/dev/null && ufw status 2>/dev/null | grep -q "^Status: active"; then
+        echo -e "\n${YELLOW}🔓 Открытие порта ${http_port}/tcp в ufw...${NC}"
+        ufw allow "${http_port}/tcp" >/dev/null 2>&1 && \
+            echo -e "${GREEN}✅ Порт ${http_port}/tcp открыт в ufw${NC}" || true
+    fi
+
+    # ── Перезапускаем Cascade ─────────────────────────────────────────────────
+    echo -e "\n${YELLOW}🔄 Перезапуск Cascade...${NC}"
+    docker compose -f "$compose_file" down 2>/dev/null || true
+    docker compose -f "$compose_file" up -d
+
+    sleep 3
+    local status
+    status=$(docker ps --filter name="^cascade$" --format "{{.Status}}" 2>/dev/null)
+    if [[ "$status" == *"Up"* ]]; then
+        local server_ip
+        server_ip=$(curl -4 -s --max-time 3 ifconfig.me 2>/dev/null || echo "YOUR_SERVER_IP")
+        echo -e "\n${GREEN}✅ Cascade запущен в режиме HTTP!${NC}"
+        echo -e "${BLUE}========================================${NC}"
+        echo -e "${GREEN}🌐 Веб-интерфейс: ${YELLOW}http://${server_ip}:${http_port}/${NC}"
+        echo -e "${BLUE}========================================${NC}"
+    else
+        echo -e "${RED}❌ Cascade не запустился. Проверьте логи:${NC}"
+        docker logs cascade 2>&1 | tail -20
+        return 1
+    fi
+}
+
 install_caddy() {
     echo -e "\n${BLUE}========================================${NC}"
     echo -e "${BLUE}   Установка Caddy (HTTPS для Cascade)${NC}"
@@ -2225,8 +2694,8 @@ install_caddy() {
     # Если Caddy уже запущен — предлагаем пересоздать
     if docker ps --format '{{.Names}}' | grep -q "^cascade-caddy$"; then
         echo -e "${YELLOW}⚠️  Caddy уже запущен.${NC}"
-        read -p "Переустановить? (y/n): " reinstall
-        if [ "$reinstall" != "y" ]; then
+        read -p "Переустановить? (1 - да / 0 - нет) [0]: " reinstall
+        if [ "$reinstall" != "1" ]; then
             return 0
         fi
         docker compose -f docker-compose.caddy.yml down 2>/dev/null || true
@@ -5814,8 +6283,8 @@ install_awg_version() {
             docker stop $container_name 2>/dev/null || true
             docker rm $container_name 2>/dev/null || true
         else
-            read -p "Переустановить? (y/n): " reinstall
-            if [ "$reinstall" != "y" ]; then
+            read -p "Переустановить? (1 - да / 0 - нет) [0]: " reinstall
+            if [ "$reinstall" != "1" ]; then
                 return 0
             fi
             echo -e "${YELLOW}🗑️  Удаление старого контейнера...${NC}"
@@ -5859,9 +6328,8 @@ generate_awg_config() {
         echo -e "${RED}❌ Node.js не установлен!${NC}"
         echo -e "${YELLOW}Для генерации конфигураций требуется Node.js${NC}"
         echo -e ""
-        read -p "Установить Node.js сейчас? (y/n): " install_choice
-        
-        if [[ "$install_choice" =~ ^[Yy]$ ]]; then
+        read -p "Установить Node.js сейчас? (1 - да / 0 - нет) [0]: " install_choice
+        if [[ "$install_choice" == "1" ]]; then
             install_nodejs
             if [ $? -ne 0 ]; then
                 echo -e "${RED}❌ Не удалось установить Node.js${NC}"
@@ -6108,22 +6576,66 @@ run_with_sync() {
     return 0
 }
 
+# Функция статуса 3X-UI (systemd)
+show_3xui_status() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Статус 3X-UI${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+
+    echo -e "${YELLOW}🔍 Статус сервиса x-ui:${NC}"
+    systemctl status x-ui --no-pager 2>/dev/null || echo -e "${RED}  Сервис x-ui не найден${NC}"
+
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Команды управления 3X-UI${NC}"
+    echo -e "${BLUE}========================================${NC}"
+    echo -e "${GREEN}▶  Запуск:${NC}"
+    echo -e "   systemctl start x-ui"
+    echo -e "${RED}■  Остановка:${NC}"
+    echo -e "   systemctl stop x-ui"
+    echo -e "${YELLOW}🔄 Перезапуск:${NC}"
+    echo -e "   systemctl restart x-ui"
+    echo -e "${YELLOW}🔨 Переустановка (обновление):${NC}"
+    echo -e "   x-ui"
+    echo -e "${YELLOW}📋 Логи в реальном времени:${NC}"
+    echo -e "   journalctl -u x-ui -f"
+}
+
+# Функция остановки 3X-UI (systemd)
+stop_3xui() {
+    echo -e "\n${BLUE}========================================${NC}"
+    echo -e "${BLUE}   Остановка 3X-UI${NC}"
+    echo -e "${BLUE}========================================${NC}\n"
+
+    if ! systemctl is-active --quiet x-ui 2>/dev/null; then
+        echo -e "${YELLOW}⚠️  Сервис x-ui уже остановлен или не установлен${NC}"
+        return
+    fi
+
+    echo -e "${YELLOW}🛑 Остановка x-ui...${NC}"
+    systemctl stop x-ui
+    echo -e "${GREEN}✅ 3X-UI остановлен${NC}"
+}
+
 # ── Подменю: 3X-UI ──────────────────────────────────────────
 menu_3xui() {
     while true; do
         echo -e "\n${BLUE}========================================${NC}"
         echo -e "${BLUE}   3X-UI${NC}"
         echo -e "${BLUE}========================================${NC}"
-        echo -e "${GREEN}1)${NC} Установка 3x-ui Panel v2.9.4"
-        echo -e "${GREEN}2)${NC} Установка 3x-ui Panel v3.x.x"
-        echo -e "${GREEN}3)${NC} Удаление 3x-ui Panel"
+        echo -e "${GREEN}1)${NC} Статус 3X-UI"
+        echo -e "${GREEN}2)${NC} Установка 3x-ui Panel v2.9.4"
+        echo -e "${GREEN}3)${NC} Установка 3x-ui Panel v3.x.x"
+        echo -e "${GREEN}4)${NC} Остановка 3X-UI"
+        echo -e "${GREEN}5)${NC} Удаление 3x-ui Panel"
         echo -e "${GREEN}0)${NC} Назад"
         echo -e "${BLUE}========================================${NC}"
         read -p "Введите номер: " sub
         case $sub in
-            1) run_with_sync && install_3xui_v294 ;;
-            2) run_with_sync && install_3xui_v3 ;;
-            3) run_with_sync && remove_3xui ;;
+            1) show_3xui_status ;;
+            2) run_with_sync && install_3xui_v294 ;;
+            3) run_with_sync && install_3xui_v3 ;;
+            4) stop_3xui ;;
+            5) run_with_sync && remove_3xui ;;
             0) return ;;
             *) echo -e "${RED}❌ Неверный выбор${NC}" ;;
         esac
@@ -6137,18 +6649,24 @@ menu_cascade() {
         echo -e "\n${BLUE}========================================${NC}"
         echo -e "${BLUE}   CASCADE WEB UI${NC}"
         echo -e "${BLUE}========================================${NC}"
-        echo -e "${GREEN}1)${NC} Установка Cascade Web UI"
-        echo -e "${GREEN}2)${NC} Логи Cascade"
+        echo -e "${GREEN}1)${NC} Статус Cascade"
+        echo -e "${GREEN}2)${NC} Установка Cascade Web UI"
         echo -e "${GREEN}3)${NC} Пересборка Cascade"
-        echo -e "${GREEN}4)${NC} Удаление Cascade"
+        echo -e "${GREEN}4)${NC} Остановка Cascade"
+        echo -e "${GREEN}5)${NC} Удаление Cascade"
+        echo -e "${GREEN}6)${NC} 🔒 Настроить HTTPS (маскировка под домен)"
+        echo -e "${GREEN}7)${NC} 🔓 Отключить HTTPS (вернуть HTTP)"
         echo -e "${GREEN}0)${NC} Назад"
         echo -e "${BLUE}========================================${NC}"
         read -p "Введите номер: " sub
         case $sub in
-            1) run_with_sync && install_cascade ;;
-            2) show_cascade_logs ;;
+            1) show_cascade_status ;;
+            2) run_with_sync && install_cascade ;;
             3) run_with_sync && update_cascade ;;
-            4) remove_cascade ;;
+            4) stop_cascade ;;
+            5) remove_cascade ;;
+            6) setup_cascade_https ;;
+            7) disable_cascade_https ;;
             0) return ;;
             *) echo -e "${RED}❌ Неверный выбор${NC}" ;;
         esac
@@ -6195,18 +6713,20 @@ menu_xuibot() {
         echo -e "\n${BLUE}========================================${NC}"
         echo -e "${BLUE}   XUIBOT${NC}"
         echo -e "${BLUE}========================================${NC}"
-        echo -e "${GREEN}1)${NC} Установка XUIBOT"
-        echo -e "${GREEN}2)${NC} Логи XUIBOT"
+        echo -e "${GREEN}1)${NC} Статус XUIBOT"
+        echo -e "${GREEN}2)${NC} Установка XUIBOT"
         echo -e "${GREEN}3)${NC} Пересборка XUIBOT"
-        echo -e "${GREEN}4)${NC} Удаление XUIBOT"
+        echo -e "${GREEN}4)${NC} Остановка XUIBOT"
+        echo -e "${GREEN}5)${NC} Удаление XUIBOT"
         echo -e "${GREEN}0)${NC} Назад"
         echo -e "${BLUE}========================================${NC}"
         read -p "Введите номер: " sub
         case $sub in
-            1) run_with_sync && install_xuibot ;;
-            2) run_with_sync && show_xuibot_logs ;;
+            1) show_xuibot_status ;;
+            2) run_with_sync && install_xuibot ;;
             3) run_with_sync && update_xuibot ;;
-            4) run_with_sync && remove_xuibot ;;
+            4) stop_xuibot ;;
+            5) run_with_sync && remove_xuibot ;;
             0) return ;;
             *) echo -e "${RED}❌ Неверный выбор${NC}" ;;
         esac
@@ -6220,18 +6740,20 @@ menu_awgbot() {
         echo -e "\n${BLUE}========================================${NC}"
         echo -e "${BLUE}   AWGBOT${NC}"
         echo -e "${BLUE}========================================${NC}"
-        echo -e "${GREEN}1)${NC} Установка AWGBOT"
-        echo -e "${GREEN}2)${NC} Логи AWGBOT"
+        echo -e "${GREEN}1)${NC} Статус AWGBOT"
+        echo -e "${GREEN}2)${NC} Установка AWGBOT"
         echo -e "${GREEN}3)${NC} Пересборка AWGBOT"
-        echo -e "${GREEN}4)${NC} Удаление AWGBOT"
+        echo -e "${GREEN}4)${NC} Остановка AWGBOT"
+        echo -e "${GREEN}5)${NC} Удаление AWGBOT"
         echo -e "${GREEN}0)${NC} Назад"
         echo -e "${BLUE}========================================${NC}"
         read -p "Введите номер: " sub
         case $sub in
-            1) run_with_sync && install_awgbot ;;
-            2) run_with_sync && show_awgbot_logs ;;
+            1) show_awgbot_status ;;
+            2) run_with_sync && install_awgbot ;;
             3) run_with_sync && update_awgbot ;;
-            4) run_with_sync && remove_awgbot ;;
+            4) stop_awgbot ;;
+            5) run_with_sync && remove_awgbot ;;
             0) return ;;
             *) echo -e "${RED}❌ Неверный выбор${NC}" ;;
         esac
@@ -6245,9 +6767,8 @@ safe_cleanup_inline() {
     echo -e "${BLUE}   БЕЗОПАСНАЯ ОЧИСТКА${NC}"
     echo -e "${BLUE}========================================${NC}"
     echo -e "${YELLOW}ВНИМАНИЕ! Эта очистка безопасна и не удалит важные данные.${NC}\n"
-    read -p "Выполнить безопасную очистку? (y/n): " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    read -p "Выполнить безопасную очистку? (1 - да / 0 - нет) [0]: " REPLY
+    if [[ "$REPLY" != "1" ]]; then
         echo -e "${YELLOW}Очистка отменена${NC}"
         return
     fi
@@ -6302,6 +6823,7 @@ menu_maintenance() {
         echo -e "${GREEN}1)${NC} Анализ диска и памяти"
         echo -e "${GREEN}2)${NC} Безопасная очистка (автоматическая)"
         echo -e "${GREEN}3)${NC} Настройка обратного каскада 3x-ui"
+        echo -e "${GREEN}4)${NC} CASCADE Forwarder (iptables проброс портов)"
         echo -e "${RED}99)${NC} Удалить ВСЁ (AWG + Боты + 3x-ui + Cascade)"
         echo -e "${GREEN}0)${NC} Назад"
         echo -e "${BLUE}========================================${NC}"
@@ -6316,14 +6838,124 @@ menu_maintenance() {
                 ;;
             2) safe_cleanup_inline ;;
             3)
+                local _cascade_script=""
                 if [ -f "${WORK_DIR}/setup_reverse_cascade.sh" ]; then
-                    bash "${WORK_DIR}/setup_reverse_cascade.sh"
+                    _cascade_script="${WORK_DIR}/setup_reverse_cascade.sh"
                 elif [ -f "setup_reverse_cascade.sh" ]; then
-                    bash setup_reverse_cascade.sh
+                    _cascade_script="setup_reverse_cascade.sh"
                 else
                     echo -e "${RED}❌ Файл setup_reverse_cascade.sh не найден!${NC}"
                     echo -e "${YELLOW}Ожидается: ${WORK_DIR}/setup_reverse_cascade.sh${NC}"
+                    break
                 fi
+
+                echo -e "\n${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+                echo -e "${BLUE}   Настройка обратного каскада 3x-ui${NC}"
+                echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+                echo -e "${YELLOW}⚠️  Только для 3x-ui версии 3.x!${NC}"
+                echo -e "${YELLOW}   На панелях 2.x скрипт работать не будет.${NC}\n"
+                # ── Российский сервер ──────────────────────────────
+                echo -e "${YELLOW}Российский сервер (входящее):${NC}"
+                while true; do
+                    read -p "  URL панели (напр. https://1.2.3.4:2053 или https://1.2.3.4:2053/mypath): " _ru_url
+                    _ru_url="${_ru_url%/}"
+                    echo -e "  ${YELLOW}🔍 Проверка доступности...${NC}"
+                    if curl -sk --max-time 5 "$_ru_url/login" -o /dev/null; then
+                        echo -e "  ${GREEN}✅ Сервер доступен${NC}"
+                        break
+                    else
+                        echo -e "  ${RED}❌ Сервер недоступен (нет ответа за 5 сек). Проверьте URL и попробуйте снова.${NC}"
+                    fi
+                done
+                read -p "  Есть API токен? (1 - да / 0 - нет) [0]: " _ru_has_token
+                if [[ "$_ru_has_token" == "1" ]]; then
+                    echo -e "  ${GREEN}→ Используем токен${NC}"
+                    read -p "  API токен: " _ru_token
+                    _ru_user="" _ru_pass=""
+                else
+                    echo -e "  ${GREEN}→ Используем логин/пароль${NC}"
+                    _ru_token=""
+                    read -p "  Логин панели [admin]: " _ru_user
+                    _ru_user="${_ru_user:-admin}"
+                    read -s -p "  Пароль панели: " _ru_pass; echo
+                fi
+                # ── VPS сервер ─────────────────────────────────────
+                echo -e "\n${YELLOW}VPS сервер (исходящее, этот сервер):${NC}"
+                while true; do
+                    read -p "  URL панели (напр. https://5.6.7.8:2053 или https://5.6.7.8:2053/mypath): " _vps_url
+                    _vps_url="${_vps_url%/}"
+                    echo -e "  ${YELLOW}🔍 Проверка доступности...${NC}"
+                    if curl -sk --max-time 5 "$_vps_url/login" -o /dev/null; then
+                        echo -e "  ${GREEN}✅ Сервер доступен${NC}"
+                        break
+                    else
+                        echo -e "  ${RED}❌ Сервер недоступен (нет ответа за 5 сек). Проверьте URL и попробуйте снова.${NC}"
+                    fi
+                done
+                read -p "  Есть API токен? (1 - да / 0 - нет) [0]: " _vps_has_token
+                if [[ "$_vps_has_token" == "1" ]]; then
+                    echo -e "  ${GREEN}→ Используем токен${NC}"
+                    read -p "  API токен: " _vps_token
+                    _vps_user="" _vps_pass=""
+                else
+                    echo -e "  ${GREEN}→ Используем логин/пароль${NC}"
+                    _vps_token=""
+                    read -p "  Логин панели [admin]: " _vps_user
+                    _vps_user="${_vps_user:-admin}"
+                    read -s -p "  Пароль панели: " _vps_pass; echo
+                fi
+                echo -e "\n${YELLOW}Параметры клиента:${NC}"
+                read -p "  Имя клиента на российском сервере (видно в панели → Входящие) [newclient]: " _email
+                _email="${_email:-newclient}"
+                read -p "  ServerName (SNI, напр. nvidia.com) [nvidia.com]: " _sname
+                _sname="${_sname:-nvidia.com}"
+                read -p "  Camouflage target (напр. melsu.ru:443) [melsu.ru:443]: " _camouf
+                _camouf="${_camouf:-melsu.ru:443}"
+                echo ""
+
+                RU_URL="$_ru_url" \
+                RU_TOKEN="$_ru_token" \
+                RU_USER="$_ru_user" \
+                RU_PASS="$_ru_pass" \
+                VPS_URL="$_vps_url" \
+                VPS_TOKEN="$_vps_token" \
+                VPS_USER="$_vps_user" \
+                VPS_PASS="$_vps_pass" \
+                NEW_EMAIL="$_email" \
+                SERVER_NAME="$_sname" \
+                CAMOUFLAGE_TARGET="$_camouf" \
+                bash "$_cascade_script"
+                ;;
+            4)
+                # Ищем скрипт: сначала в PATH, затем рядом с install.sh
+                local _cf_script=""
+                if command -v cascade &>/dev/null; then
+                    _cf_script="cascade"
+                elif [ -f "${WORK_DIR}/cascade-forwarder-main/cascade.sh" ]; then
+                    _cf_script="${WORK_DIR}/cascade-forwarder-main/cascade.sh"
+                elif [ -f "$(dirname "${BASH_SOURCE[0]}")/cascade-forwarder-main/cascade.sh" ]; then
+                    _cf_script="$(dirname "${BASH_SOURCE[0]}")/cascade-forwarder-main/cascade.sh"
+                fi
+
+                # Если не нашли — скачиваем автоматически
+                if [ -z "$_cf_script" ]; then
+                    echo -e "${YELLOW}📦 CASCADE Forwarder не установлен. Устанавливаем...${NC}"
+                    if wget -q --timeout=15 \
+                            "https://raw.githubusercontent.com/4539617/cascade-forwarder/main/cascade.sh" \
+                            -O /usr/local/bin/cascade 2>/dev/null \
+                        && chmod +x /usr/local/bin/cascade; then
+                        echo -e "${GREEN}✅ CASCADE Forwarder установлен${NC}"
+                        _cf_script="cascade"
+                    else
+                        echo -e "${RED}❌ Не удалось скачать CASCADE Forwarder${NC}"
+                        echo -e "${YELLOW}Проверьте соединение и установите вручную:${NC}"
+                        echo -e "  wget -O /usr/local/bin/cascade https://raw.githubusercontent.com/4539617/cascade-forwarder/main/cascade.sh"
+                        echo -e "  chmod +x /usr/local/bin/cascade"
+                        break
+                    fi
+                fi
+
+                bash "$_cf_script"
                 ;;
             99) run_with_sync && remove_all ;;
             0) return ;;

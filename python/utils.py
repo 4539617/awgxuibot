@@ -76,7 +76,11 @@ def get_inbound_reality_settings(db_path: str, inbound_id: int) -> Dict:
                 reality_settings['public_key'] = reality_config.get('publicKey', '')
             
             # Short ID из shortIds
-            reality_settings['short_id'] = reality_config.get('shortIds', [''])[0] if reality_config.get('shortIds') else ''
+            # В v3 формате shortIds может быть в realitySettings.settings.shortIds
+            short_ids_root = reality_config.get('shortIds') or []
+            short_ids_nested = settings_obj.get('shortIds') if isinstance(settings_obj, dict) else []
+            short_ids = short_ids_root or short_ids_nested or []
+            reality_settings['short_id'] = short_ids[0] if short_ids else ''
             
             logger.info(f"Извлечены параметры Reality из inbound {inbound_id}: SNI={reality_settings['sni']}, FP={reality_settings['fingerprint']}, PBK={reality_settings['public_key'][:20]}..., SID={reality_settings['short_id']}")
         
