@@ -61,6 +61,26 @@ _panel_monitor = None
 _remote_monitor = None  # RemoteMonitor — мониторинг удалённых панелей
 _cascade_online: dict = {}  # cascade_id -> bool, кэш последней проверки доступности
 
+# ─── Кэш для коротких ID кнопок (обход лимита 64 байта в callback_data) ──────
+_uk_store: dict = {}   # int -> (panel_id, client_uuid, user_id)
+_uk_store_rev: dict = {}  # (panel_id, client_uuid, user_id) -> int
+_uk_store_counter: int = 0
+
+def _uk_get_or_create(panel_id: str, client_uuid: str, user_id: int) -> int:
+    """Возвращает короткий числовой ключ для тройки (panel_id, uuid, user_id)."""
+    global _uk_store_counter
+    key = (panel_id, client_uuid, user_id)
+    if key in _uk_store_rev:
+        return _uk_store_rev[key]
+    _uk_store_counter += 1
+    _uk_store[_uk_store_counter] = key
+    _uk_store_rev[key] = _uk_store_counter
+    return _uk_store_counter
+
+def _uk_resolve(idx: int):
+    """Возвращает (panel_id, client_uuid, user_id) по короткому ключу или None."""
+    return _uk_store.get(idx)
+
 
 # ─── SQLite-хранилище имён AWG-пиров (только peer_name для отображения) ──────
 # Срок действия хранится в самом Cascade (поле expiredAt) — бот его не дублирует.
@@ -4664,11 +4684,11 @@ async def show_user_keys_list(callback_query: types.CallbackQuery):
             else:
                 st_icon = "⏰"
 
-            # callback: user_key_detail_{panel_id}:{uuid}_{user_id}
-            cb = f"user_key_detail_{panel_id}:{uuid}_{target_user_id}"
+            # короткий ключ вместо длинного callback_data
+            idx = _uk_get_or_create(panel_id, uuid, target_user_id)
             buttons.append([InlineKeyboardButton(
                 text=f"{st_icon} {loc_part}{label}",
-                callback_data=cb
+                callback_data=f"ukd_{idx}"
             )])
 
         buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data=f"user_card_{target_user_id}")])
@@ -4684,22 +4704,19 @@ async def show_user_keys_list(callback_query: types.CallbackQuery):
         await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
 
 
-@dp.callback_query(lambda c: c.data and c.data.startswith('user_key_detail_'))
+@dp.callback_query(lambda c: c.data and c.data.startswith('ukd_'))
 async def show_user_key_detail(callback_query: types.CallbackQuery):
     """Окно с информацией о конкретном ключе пользователя"""
     if not is_admin(callback_query.from_user.id):
         await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
         return
 
-    # формат: user_key_detail_{panel_id}:{uuid}_{user_id}
-    raw = callback_query.data[len('user_key_detail_'):]
-    colon_idx = raw.index(':')
-    panel_id  = raw[:colon_idx]
-    rest      = raw[colon_idx + 1:]
-    # rest = {uuid}_{user_id}  — uuid может содержать дефисы, user_id последний через _
-    last_under = rest.rfind('_')
-    client_uuid   = rest[:last_under]
-    target_user_id = int(rest[last_under + 1:])
+    idx = int(callback_query.data[4:])
+    entry = _uk_resolve(idx)
+    if not entry:
+        await callback_query.answer("❌ Сессия устарела, откройте ключи заново", show_alert=True)
+        return
+    panel_id, client_uuid, target_user_id = entry
 
     await callback_query.answer()
 
@@ -4712,11 +4729,11 @@ async def show_user_key_detail(callback_query: types.CallbackQuery):
             await callback_query.answer("❌ Ключ не найден!", show_alert=True)
             return
 
-        panel_cfg  = config.panel_manager.get_panel(panel_id)
-        loc        = getattr(panel_cfg, 'location_label', '') or (panel_cfg.alias if panel_cfg else panel_id)
-        loc_text   = f" · {loc}" if loc else ""
+        panel_cfg = config.panel_manager.get_panel(panel_id)
+        loc       = getattr(panel_cfg, 'location_label', '') or (panel_cfg.alias if panel_cfg else panel_id)
+        loc_text  = f" · {loc}" if loc else ""
 
-        status = client.get('status', '')
+        status  = client.get('status', '')
         enabled = client.get('enable', True)
         if status == 'active':
             status_text = "✅ Активен"
@@ -4726,17 +4743,16 @@ async def show_user_key_detail(callback_query: types.CallbackQuery):
             status_text = "⏰ Просрочен"
 
         expiry_time = client.get('expiryTime', 0)
-        if expiry_time and expiry_time > 0:
-            expiry_text = datetime.fromtimestamp(expiry_time / 1000).strftime("%Y-%m-%d %H:%M")
-        else:
-            expiry_text = "Бессрочно"
+        expiry_text = (
+            datetime.fromtimestamp(expiry_time / 1000).strftime("%Y-%m-%d %H:%M")
+            if expiry_time and expiry_time > 0 else "Бессрочно"
+        )
 
-        up   = client.get('up', 0)
-        down = client.get('down', 0)
-        def fmt_traffic(b):
-            if b < 1024:        return f"{b} B"
-            if b < 1024**2:     return f"{b/1024:.1f} KB"
-            if b < 1024**3:     return f"{b/1024**2:.2f} MB"
+        up, down = client.get('up', 0), client.get('down', 0)
+        def fmt(b):
+            if b < 1024:    return f"{b} B"
+            if b < 1024**2: return f"{b/1024:.1f} KB"
+            if b < 1024**3: return f"{b/1024**2:.2f} MB"
             return f"{b/1024**3:.2f} GB"
 
         comment = (client.get('comment') or '').replace('Временный ', '') or '—'
@@ -4746,18 +4762,14 @@ async def show_user_key_detail(callback_query: types.CallbackQuery):
             f"{status_text}\n"
             f"📧 <b>Имя:</b> <code>{client['email']}</code>\n"
             f"💬 <b>Комментарий:</b> {comment}\n"
-            f"📤 <b>↑</b> {fmt_traffic(up)}  <b>↓</b> {fmt_traffic(down)}\n"
+            f"📤 <b>↑</b> {fmt(up)}  <b>↓</b> {fmt(down)}\n"
             f"📅 <b>Срок:</b> {expiry_text}\n"
         )
 
-        # cb для показа ключа/QR: uk_show_{panel_id}:{uuid}_{user_id}
-        cb_show = f"uk_show_{panel_id}:{client_uuid}_{target_user_id}"
-        # cb для вкл/выкл: uk_enable/uk_disable_{panel_id}:{uuid}_{user_id}
-        cb_toggle = (
-            f"uk_disable_{panel_id}:{client_uuid}_{target_user_id}" if enabled
-            else f"uk_enable_{panel_id}:{client_uuid}_{target_user_id}"
-        )
         toggle_text = "⏸️ Выключить ключ" if enabled else "✅ Включить ключ"
+        # uks_ = show, uke_ = enable, ukn_ = disable  (все ≤ 10 байт + idx)
+        cb_show   = f"uks_{idx}"
+        cb_toggle = f"ukn_{idx}" if enabled else f"uke_{idx}"
 
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔑 Показать ключ и QR", callback_data=cb_show)],
@@ -4775,31 +4787,78 @@ async def show_user_key_detail(callback_query: types.CallbackQuery):
         await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
 
 
-@dp.callback_query(lambda c: c.data and (c.data.startswith('uk_show_') or c.data.startswith('uk_enable_') or c.data.startswith('uk_disable_')))
+def _build_key_detail_text_and_keyboard(client, panel_id, panel_cfg, idx):
+    """Строит текст и клавиатуру окна деталей ключа."""
+    loc      = getattr(panel_cfg, 'location_label', '') or (panel_cfg.alias if panel_cfg else panel_id)
+    loc_text = f" · {loc}" if loc else ""
+
+    status  = client.get('status', '')
+    enabled = client.get('enable', True)
+    if status == 'active':
+        status_text = "✅ Активен"
+    elif status == 'inactive':
+        status_text = "⏸️ Неактивен (выключен)"
+    else:
+        status_text = "⏰ Просрочен"
+
+    expiry_time = client.get('expiryTime', 0)
+    expiry_text = (
+        datetime.fromtimestamp(expiry_time / 1000).strftime("%Y-%m-%d %H:%M")
+        if expiry_time and expiry_time > 0 else "Бессрочно"
+    )
+
+    up, down = client.get('up', 0), client.get('down', 0)
+    def fmt(b):
+        if b < 1024:    return f"{b} B"
+        if b < 1024**2: return f"{b/1024:.1f} KB"
+        if b < 1024**3: return f"{b/1024**2:.2f} MB"
+        return f"{b/1024**3:.2f} GB"
+
+    comment = (client.get('comment') or '').replace('Временный ', '') or '—'
+    _, _, target_user_id = _uk_resolve(idx)
+
+    text = (
+        f"📋 <b>Информация о ключе</b>{loc_text}\n\n"
+        f"{status_text}\n"
+        f"📧 <b>Имя:</b> <code>{client['email']}</code>\n"
+        f"💬 <b>Комментарий:</b> {comment}\n"
+        f"📤 <b>↑</b> {fmt(up)}  <b>↓</b> {fmt(down)}\n"
+        f"📅 <b>Срок:</b> {expiry_text}\n"
+    )
+    toggle_text = "⏸️ Выключить ключ" if enabled else "✅ Включить ключ"
+    cb_toggle   = f"ukn_{idx}" if enabled else f"uke_{idx}"
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔑 Показать ключ и QR", callback_data=f"uks_{idx}")],
+        [InlineKeyboardButton(text=toggle_text, callback_data=cb_toggle)],
+        [InlineKeyboardButton(text="🔙 Назад к ключам", callback_data=f"user_keys_{target_user_id}")]
+    ])
+    return text, keyboard
+
+
+@dp.callback_query(lambda c: c.data and (c.data.startswith('uks_') or c.data.startswith('uke_') or c.data.startswith('ukn_')))
 async def handle_user_key_action(callback_query: types.CallbackQuery):
-    """Действия с ключом пользователя: показать / включить / выключить"""
+    """Действия с ключом пользователя: показать QR / включить / выключить"""
     if not is_admin(callback_query.from_user.id):
         await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
         return
 
     data = callback_query.data
-    if data.startswith('uk_show_'):
+    if data.startswith('uks_'):
         action = 'show'
-        raw = data[len('uk_show_'):]
-    elif data.startswith('uk_enable_'):
+        idx = int(data[4:])
+    elif data.startswith('uke_'):
         action = 'enable'
-        raw = data[len('uk_enable_'):]
+        idx = int(data[4:])
     else:
         action = 'disable'
-        raw = data[len('uk_disable_'):]
+        idx = int(data[4:])
 
-    # raw = {panel_id}:{uuid}_{user_id}
-    colon_idx = raw.index(':')
-    panel_id  = raw[:colon_idx]
-    rest      = raw[colon_idx + 1:]
-    last_under = rest.rfind('_')
-    client_uuid    = rest[:last_under]
-    target_user_id = int(rest[last_under + 1:])
+    entry = _uk_resolve(idx)
+    if not entry:
+        await callback_query.answer("❌ Сессия устарела, откройте ключи заново", show_alert=True)
+        return
+    panel_id, client_uuid, target_user_id = entry
 
     try:
         pc = make_panel_client(panel_id)
@@ -4811,11 +4870,9 @@ async def handle_user_key_action(callback_query: types.CallbackQuery):
             return
 
         if action == 'show':
-            # Показываем ключ + QR (без проверки статуса — показываем любой)
             panel_cfg  = config.panel_manager.get_panel(panel_id)
             inbound_id = panel_cfg.inbound_id if panel_cfg else config.xui.inbound_id
-            vpn_cfg    = pc.config.vpn
-            vless_link = await get_client_link(pc, client['email'], client_uuid, vpn_cfg, inbound_id)
+            vless_link = await get_client_link(pc, client['email'], client_uuid, pc.config.vpn, inbound_id)
             await pc.close()
 
             if not vless_link:
@@ -4827,113 +4884,48 @@ async def handle_user_key_action(callback_query: types.CallbackQuery):
             qr = qrcode.QRCode(box_size=5, border=2)
             qr.add_data(vless_link)
             qr.make()
-            qr_img = qr.make_image(fill_color="black", back_color="white")
             buf = BytesIO()
-            qr_img.save(buf, format="PNG")
+            qr.make_image(fill_color="black", back_color="white").save(buf, format="PNG")
             buf.seek(0)
 
             comment = (client.get('comment') or '').replace('Временный ', '')
-            caption = (
-                f"📱 <b>{client['email']}</b>\n\n"
-                f"🔑 <b>VLESS-ссылка:</b>\n<code>{vless_link}</code>"
-            )
+            caption = f"📱 <b>{client['email']}</b>\n\n🔑 <b>VLESS-ссылка:</b>\n<code>{vless_link}</code>"
             if comment:
                 caption += f"\n\n💬 {comment}"
-
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(
-                    text="🔙 Назад к ключу",
-                    callback_data=f"user_key_detail_{panel_id}:{client_uuid}_{target_user_id}"
-                )]
-            ])
 
             await callback_query.message.answer_photo(
                 photo=types.BufferedInputFile(buf.getvalue(), filename="key.png"),
                 caption=caption,
                 parse_mode="HTML",
-                reply_markup=keyboard
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="🔙 Назад к ключу", callback_data=f"ukd_{idx}")]
+                ])
             )
 
         else:
-            # Включить / выключить
-            email   = client.get('email')
-            enable  = (action == 'enable')
+            email  = client.get('email')
+            enable = (action == 'enable')
             success = await pc.update_client_status(client_uuid, enable, email)
             await pc.close()
 
-            if success:
-                await callback_query.answer("✅ Ключ включён" if enable else "⏸️ Ключ выключен")
-            else:
+            if not success:
                 await callback_query.answer("❌ Ошибка изменения статуса", show_alert=True)
                 return
 
-            # Обновляем окно деталей ключа
-            # Повторно получаем данные и редактируем сообщение
+            await callback_query.answer("✅ Ключ включён" if enable else "⏸️ Ключ выключен")
+
             pc2 = make_panel_client(panel_id)
             client2 = await pc2.get_client_details(client_uuid)
             await pc2.close()
-
             if not client2:
                 return
 
-            panel_cfg  = config.panel_manager.get_panel(panel_id)
-            loc        = getattr(panel_cfg, 'location_label', '') or (panel_cfg.alias if panel_cfg else panel_id)
-            loc_text   = f" · {loc}" if loc else ""
-
-            status2 = client2.get('status', '')
-            enabled2 = client2.get('enable', True)
-            if status2 == 'active':
-                status_text2 = "✅ Активен"
-            elif status2 == 'inactive':
-                status_text2 = "⏸️ Неактивен (выключен)"
-            else:
-                status_text2 = "⏰ Просрочен"
-
-            expiry_time = client2.get('expiryTime', 0)
-            expiry_text = (
-                datetime.fromtimestamp(expiry_time / 1000).strftime("%Y-%m-%d %H:%M")
-                if expiry_time and expiry_time > 0 else "Бессрочно"
-            )
-
-            up2   = client2.get('up', 0)
-            down2 = client2.get('down', 0)
-            def fmt2(b):
-                if b < 1024:    return f"{b} B"
-                if b < 1024**2: return f"{b/1024:.1f} KB"
-                if b < 1024**3: return f"{b/1024**2:.2f} MB"
-                return f"{b/1024**3:.2f} GB"
-
-            comment2 = (client2.get('comment') or '').replace('Временный ', '') or '—'
-
-            text2 = (
-                f"📋 <b>Информация о ключе</b>{loc_text}\n\n"
-                f"{status_text2}\n"
-                f"📧 <b>Имя:</b> <code>{client2['email']}</code>\n"
-                f"💬 <b>Комментарий:</b> {comment2}\n"
-                f"📤 <b>↑</b> {fmt2(up2)}  <b>↓</b> {fmt2(down2)}\n"
-                f"📅 <b>Срок:</b> {expiry_text}\n"
-            )
-
-            cb_show2   = f"uk_show_{panel_id}:{client_uuid}_{target_user_id}"
-            cb_toggle2 = (
-                f"uk_disable_{panel_id}:{client_uuid}_{target_user_id}" if enabled2
-                else f"uk_enable_{panel_id}:{client_uuid}_{target_user_id}"
-            )
-            toggle_text2 = "⏸️ Выключить ключ" if enabled2 else "✅ Включить ключ"
-
-            keyboard2 = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🔑 Показать ключ и QR", callback_data=cb_show2)],
-                [InlineKeyboardButton(text=toggle_text2, callback_data=cb_toggle2)],
-                [InlineKeyboardButton(text="🔙 Назад к ключам", callback_data=f"user_keys_{target_user_id}")]
-            ])
-
+            panel_cfg = config.panel_manager.get_panel(panel_id)
+            text2, keyboard2 = _build_key_detail_text_and_keyboard(client2, panel_id, panel_cfg, idx)
             try:
                 await callback_query.message.edit_text(text2, parse_mode="HTML", reply_markup=keyboard2)
             except TelegramBadRequest:
-                await bot.send_message(
-                    callback_query.message.chat.id, text2,
-                    parse_mode="HTML", reply_markup=keyboard2
-                )
+                await bot.send_message(callback_query.message.chat.id, text2, parse_mode="HTML", reply_markup=keyboard2)
 
     except Exception as e:
         logger.error(f"Ошибка действия с ключом пользователя: {e}")
