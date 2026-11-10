@@ -508,6 +508,155 @@ def _prune_old_backups():
             logger.warning(f"[backup] не удалось удалить {old}: {e}")
 
 
+# ─── Частичные бэкапы ─────────────────────────────────────────────────────────
+
+async def run_backup_system(common) -> tuple[Path, dict]:
+    """Бэкап только системных файлов: config.yaml, bot_users.db, apps.yaml."""
+    ts       = datetime.now().strftime("%Y%m%d_%H%M%S")
+    work_dir = _BACKUP_ROOT / f"_tmp_{ts}"
+    dir_system = work_dir / "system"
+    dir_system.mkdir(parents=True, exist_ok=True)
+    summary = {}
+
+    local_files = {
+        "config.yaml":  _APP_ROOT / "config.yaml",
+        "bot_users.db": Path(common.db_path),
+        "apps.yaml":    _APP_ROOT / "data" / "apps.yaml",
+    }
+    for name, src in local_files.items():
+        if src.exists():
+            shutil.copy2(src, dir_system / name)
+            size_kb = src.stat().st_size // 1024 + 1
+            summary[name] = f"✅ {size_kb} КБ"
+        else:
+            summary[name] = "⚠️ не найден"
+
+    _BACKUP_ROOT.mkdir(parents=True, exist_ok=True)
+    zip_path = _BACKUP_ROOT / f"awgxuibot_system_{ts}.zip"
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for f in work_dir.rglob("*"):
+            if f.is_file():
+                zf.write(f, arcname=f.relative_to(work_dir))
+    shutil.rmtree(work_dir, ignore_errors=True)
+    _prune_old_backups()
+
+    size_kb = zip_path.stat().st_size // 1024 + 1
+    logger.info(f"[backup] system готов: {zip_path.name} ({size_kb} КБ)")
+    return zip_path, summary
+
+
+async def run_backup_panels(panel_manager) -> tuple[Path, dict]:
+    """Бэкап только 3x-ui панелей."""
+    ts       = datetime.now().strftime("%Y%m%d_%H%M%S")
+    work_dir = _BACKUP_ROOT / f"_tmp_{ts}"
+    dir_panels = work_dir / "panels"
+    dir_panels.mkdir(parents=True, exist_ok=True)
+    summary = {}
+
+    panels = panel_manager.get_all_panels()
+    for panel_id, panel_cfg in panels.items():
+        if not panel_cfg.enabled:
+            continue
+        alias = (panel_cfg.alias or panel_id).strip()
+        safe  = alias.replace("/", "_").replace("\\", "_").replace(" ", "_")
+        panel_dir = dir_panels / safe
+        panel_dir.mkdir(exist_ok=True)
+        p = f"{safe}_3xui"
+
+        db_data = await _fetch_xui_db(panel_cfg)
+        if db_data:
+            (panel_dir / f"{p}_xui.db").write_bytes(db_data)
+            summary[f"{alias} x-ui.db"] = f"✅ {len(db_data) // 1024 + 1} КБ"
+        else:
+            summary[f"{alias} x-ui.db"] = "⚠️ недоступна"
+
+        inbounds = await _fetch_inbounds(panel_cfg)
+        if inbounds is not None:
+            (panel_dir / f"{p}_inbounds.json").write_text(
+                json.dumps(inbounds, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            def _count_clients(ib: dict) -> int:
+                if ib.get("clientStats"):
+                    return len(ib["clientStats"])
+                raw = ib.get("settings") or "{}"
+                if isinstance(raw, str):
+                    try:
+                        raw = json.loads(raw)
+                    except Exception:
+                        raw = {}
+                return len(raw.get("clients") or [])
+            total_clients = sum(_count_clients(ib) for ib in inbounds)
+            summary[f"{alias} inbounds"] = f"✅ {len(inbounds)} инбаундов, {total_clients} клиентов"
+        else:
+            summary[f"{alias} inbounds"] = "⚠️ не удалось получить"
+
+        clients = await _fetch_clients(panel_cfg)
+        if clients is not None:
+            (panel_dir / f"{p}_clients.json").write_text(
+                json.dumps(clients, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            summary[f"{alias} clients"] = f"✅ {len(clients)} клиентов"
+
+        xray_cfg = await _fetch_xray_config(panel_cfg)
+        if xray_cfg is not None:
+            (panel_dir / f"{p}_xray_config.json").write_text(
+                json.dumps(xray_cfg, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            summary[f"{alias} xray_config"] = "✅"
+
+        settings = await _fetch_settings(panel_cfg)
+        if settings is not None:
+            (panel_dir / f"{p}_settings.json").write_text(
+                json.dumps(settings, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            summary[f"{alias} settings"] = "✅"
+
+    _BACKUP_ROOT.mkdir(parents=True, exist_ok=True)
+    zip_path = _BACKUP_ROOT / f"awgxuibot_3xui_{ts}.zip"
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for f in work_dir.rglob("*"):
+            if f.is_file():
+                zf.write(f, arcname=f.relative_to(work_dir))
+    shutil.rmtree(work_dir, ignore_errors=True)
+    _prune_old_backups()
+
+    size_kb = zip_path.stat().st_size // 1024 + 1
+    logger.info(f"[backup] 3xui готов: {zip_path.name} ({size_kb} КБ)")
+    return zip_path, summary
+
+
+async def run_backup_cascade(panel_manager) -> tuple[Path, dict]:
+    """Бэкап только Cascade серверов."""
+    ts       = datetime.now().strftime("%Y%m%d_%H%M%S")
+    work_dir = _BACKUP_ROOT / f"_tmp_{ts}"
+    dir_cascade = work_dir / "cascade"
+    dir_cascade.mkdir(parents=True, exist_ok=True)
+    summary = {}
+
+    cascade_servers = panel_manager.get_cascade_servers()
+    for cascade_cfg in cascade_servers:
+        if not cascade_cfg.enabled:
+            continue
+        label_safe = (cascade_cfg.label or cascade_cfg.cascade_id).replace(
+            "/", "_").replace("\\", "_").replace(" ", "_")
+        cascade_dir = dir_cascade / label_safe
+        cascade_dir.mkdir(exist_ok=True)
+        await _backup_cascade_server(cascade_cfg, cascade_dir, summary)
+
+    _BACKUP_ROOT.mkdir(parents=True, exist_ok=True)
+    zip_path = _BACKUP_ROOT / f"awgxuibot_cascade_{ts}.zip"
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for f in work_dir.rglob("*"):
+            if f.is_file():
+                zf.write(f, arcname=f.relative_to(work_dir))
+    shutil.rmtree(work_dir, ignore_errors=True)
+    _prune_old_backups()
+
+    size_kb = zip_path.stat().st_size // 1024 + 1
+    logger.info(f"[backup] cascade готов: {zip_path.name} ({size_kb} КБ)")
+    return zip_path, summary
+
+
 # ─── Главная функция ──────────────────────────────────────────────────────────
 
 async def run_backup(panel_manager, common) -> tuple[Path, dict]:

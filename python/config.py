@@ -285,9 +285,9 @@ class ConfigManager:
                     tls_fingerprint=panel_data.get('tls_fingerprint', 'chrome'),
                     reality_sni=panel_data.get('reality_sni', ''),
                     reality_fingerprint=panel_data.get('reality_fingerprint', 'chrome'),
-                    reality_public_key=panel_data.get('reality_public_key', ''),
-                    reality_private_key=panel_data.get('reality_private_key', ''),
-                    reality_short_id=panel_data.get('reality_short_id', '')
+                    reality_public_key=panel_data.get('reality_public_key') or '',
+                    reality_private_key=panel_data.get('reality_private_key') or '',
+                    reality_short_id=panel_data.get('reality_short_id') or ''
                 )
             
             # Загружаем панель по умолчанию
@@ -586,7 +586,11 @@ class ConfigManager:
                     logger.info(f"   Public Key: {public_key[:20]}...")
                 
                 # Short ID из shortIds
-                short_id = reality_config.get('shortIds', [''])[0] if reality_config.get('shortIds') else ''
+                # В v3 формате shortIds может быть в realitySettings.settings.shortIds
+                short_ids_root = reality_config.get('shortIds') or []
+                short_ids_nested = settings_obj.get('shortIds') if isinstance(settings_obj, dict) else []
+                short_ids = short_ids_root or short_ids_nested or []
+                short_id = short_ids[0] if short_ids else ''
                 if short_id:
                     panel.reality_short_id = short_id
                     logger.info(f"   Short ID: {short_id}")
@@ -694,9 +698,9 @@ class ConfigManager:
                     'tls_fingerprint': panel.tls_fingerprint,
                     'reality_sni': panel.reality_sni,
                     'reality_fingerprint': panel.reality_fingerprint,
-                    'reality_public_key': panel.reality_public_key,
-                    'reality_private_key': panel.reality_private_key,
-                    'reality_short_id': panel.reality_short_id
+                    'reality_public_key': panel.reality_public_key or '',
+                    'reality_private_key': panel.reality_private_key or '',
+                    'reality_short_id': panel.reality_short_id or ''
                 }
             
             # Сохраняем секцию cascades: из существующего файла без изменений
@@ -1316,6 +1320,79 @@ class UserDatabase:
                 )
         except Exception as e:
             logger.error(f"Ошибка сброса pay_sent для {user_id}: {e}")
+
+    def import_users_from_db(self, source_db_path: str) -> dict:
+        """Импортировать пользователей из другой bot_users.db (слияние).
+
+        Возвращает словарь с результатами:
+          {
+            'users_added': int,   # новых пользователей
+            'users_skipped': int, # уже существовали
+            'clients_added': int, # новых записей user_clients
+            'errors': list[str],  # ошибки (если были)
+          }
+        """
+        result = {'users_added': 0, 'users_skipped': 0, 'clients_added': 0, 'errors': []}
+        try:
+            with sqlite3.connect(source_db_path) as src:
+                # ── allowed_users ────────────────────────────────────────────
+                try:
+                    src_users = src.execute(
+                        "SELECT user_id, username, added_by, added_at FROM allowed_users"
+                    ).fetchall()
+                except Exception as e:
+                    result['errors'].append(f"Чтение allowed_users: {e}")
+                    src_users = []
+
+                main_admin = self.get_main_admin()
+                with sqlite3.connect(self.db_path) as dst:
+                    for user_id, username, added_by, added_at in src_users:
+                        if user_id == main_admin:
+                            result['users_skipped'] += 1
+                            continue
+                        existing = dst.execute(
+                            "SELECT 1 FROM allowed_users WHERE user_id = ?", (user_id,)
+                        ).fetchone()
+                        if existing:
+                            result['users_skipped'] += 1
+                        else:
+                            dst.execute(
+                                "INSERT OR IGNORE INTO allowed_users "
+                                "(user_id, username, added_by, added_at) VALUES (?, ?, ?, ?)",
+                                (user_id, username, added_by or main_admin, added_at)
+                            )
+                            dst.execute(
+                                "INSERT OR IGNORE INTO user_history (user_id) VALUES (?)", (user_id,)
+                            )
+                            result['users_added'] += 1
+
+                # ── user_clients ─────────────────────────────────────────────
+                try:
+                    src_clients = src.execute(
+                        "SELECT user_id, client_email, client_uuid, comment, panel_id, created_at "
+                        "FROM user_clients"
+                    ).fetchall()
+                except Exception as e:
+                    result['errors'].append(f"Чтение user_clients: {e}")
+                    src_clients = []
+
+                with sqlite3.connect(self.db_path) as dst:
+                    for user_id, email, uuid, comment, panel_id, created_at in src_clients:
+                        existing = dst.execute(
+                            "SELECT 1 FROM user_clients WHERE client_uuid = ?", (uuid,)
+                        ).fetchone()
+                        if not existing:
+                            dst.execute(
+                                "INSERT INTO user_clients "
+                                "(user_id, client_email, client_uuid, comment, panel_id, created_at) "
+                                "VALUES (?, ?, ?, ?, ?, ?)",
+                                (user_id, email, uuid, comment, panel_id, created_at)
+                            )
+                            result['clients_added'] += 1
+
+        except Exception as e:
+            result['errors'].append(f"Общая ошибка: {e}")
+        return result
 
 
 class Config:
