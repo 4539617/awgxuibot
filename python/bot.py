@@ -3542,10 +3542,11 @@ async def handle_unknown(message: Message, state: FSMContext):
     if message.text and message.text.startswith('/'):
         return
 
-    # Keenetic .bat: если текст — домены и фича включена — отдаём файл без лишних сообщений
-    if message.text and config.common.allow_user_dns_queries:
-        if await process_domains_to_bat(message):
-            return
+    # Keenetic .bat: для незарегистрированных — всегда, для остальных — если фича включена
+    if message.text:
+        if not is_allowed(user_id) or config.common.allow_user_dns_queries:
+            if await process_domains_to_bat(message):
+                return
 
     if is_allowed(user_id):
         await message.answer(
