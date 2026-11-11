@@ -3462,14 +3462,17 @@ async def _resolve_domain(domain: str) -> list[str]:
     return sorted(ip_set)
 
 
-async def process_domains_to_bat(message: Message) -> bool:
+async def process_domains_to_bat(message: Message, notify_on_fail: bool = False) -> bool:
     """
     Если текст сообщения является валидным доменным запросом — резолвит домены,
     генерирует .bat файл и отправляет его. Возвращает True если файл был отправлен.
+    notify_on_fail=True — сообщать пользователю об ошибке резолвинга.
     """
     text = message.text or ""
     if not is_valid_domain_query(text):
+        logger.info(f"Keenetic: invalid domain query from {message.from_user.id}: {text!r}")
         return False
+    logger.info(f"Keenetic: valid domain query from {message.from_user.id}: {text!r}")
 
     lines = [l.strip() for l in text.strip().splitlines() if l.strip()]
     domains = []
@@ -3488,7 +3491,9 @@ async def process_domains_to_bat(message: Message) -> bool:
             domain_ips[domain] = ips
 
     if not domain_ips:
-        return False  # не удалось разрезолвить — молчим, стандартный ответ
+        if notify_on_fail:
+            await message.answer("❌ Не удалось получить IP-адреса для указанных доменов.")
+        return False  # не удалось разрезолвить
 
     # Генерируем содержимое .bat файла
     bat_lines = []
@@ -3497,6 +3502,8 @@ async def process_domains_to_bat(message: Message) -> bool:
             bat_lines.append(f"route add {ip} mask 255.255.255.255 0.0.0.0 :: rem {domain}")
 
     if not bat_lines:
+        if notify_on_fail:
+            await message.answer("❌ Не удалось получить IP-адреса для указанных доменов.")
         return False
 
     content = "\n".join(bat_lines) + "\n"
@@ -3544,8 +3551,10 @@ async def handle_unknown(message: Message, state: FSMContext):
 
     # Keenetic .bat: для незарегистрированных — всегда, для остальных — если фича включена
     if message.text:
-        if not is_allowed(user_id) or config.common.allow_user_dns_queries:
-            if await process_domains_to_bat(message):
+        _user_allowed = is_allowed(user_id)
+        logger.info(f"Keenetic check: user={user_id} allowed={_user_allowed} allow_dns={config.common.allow_user_dns_queries}")
+        if not _user_allowed or config.common.allow_user_dns_queries:
+            if await process_domains_to_bat(message, notify_on_fail=not _user_allowed):
                 return
 
     if is_allowed(user_id):
