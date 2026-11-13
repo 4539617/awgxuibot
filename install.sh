@@ -2577,15 +2577,24 @@ disable_cascade_https() {
     cur_port=$(grep '^\s*-\s*PORT='     "$compose_file" 2>/dev/null | sed 's/.*PORT=//'     | tr -d ' ')
     [ -z "$cur_port" ] && cur_port="51821"
 
-    if [ -z "$cur_cert" ] && [ -z "$cur_key" ]; then
-        echo -e "${YELLOW}ℹ️  HTTPS уже отключён — TLS_CERT и TLS_KEY не заданы.${NC}"
+    # Проверяем оба варианта HTTPS: встроенный TLS в Cascade и внешний Caddy
+    local caddy_running=false
+    docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^cascade-caddy$" && caddy_running=true
+
+    if [ -z "$cur_cert" ] && [ -z "$cur_key" ] && [ "$caddy_running" = "false" ]; then
+        echo -e "${YELLOW}ℹ️  HTTPS уже отключён — TLS_CERT/TLS_KEY не заданы и Caddy не запущен.${NC}"
         return 0
     fi
 
     echo -e "${YELLOW}Текущая конфигурация:${NC}"
     echo -e "  PORT     : ${cur_port}"
-    echo -e "  TLS_CERT : ${cur_cert}"
-    echo -e "  TLS_KEY  : ${cur_key}"
+    if [ -n "$cur_cert" ] || [ -n "$cur_key" ]; then
+        echo -e "  TLS_CERT : ${cur_cert}"
+        echo -e "  TLS_KEY  : ${cur_key}"
+    fi
+    if [ "$caddy_running" = "true" ]; then
+        echo -e "  Caddy    : ${GREEN}запущен (cascade-caddy)${NC}"
+    fi
     echo ""
 
     read -p "Отключить HTTPS и вернуться к HTTP? (1 - да / 0 - нет) [0]: " confirm
@@ -2638,6 +2647,14 @@ PYEOF
     echo -e "  TLS_CERT : <пусто>"
     echo -e "  TLS_KEY  : <пусто>"
     echo -e "  PORT     : ${http_port}"
+
+    # ── Остановить Caddy если был запущен ─────────────────────────────────────
+    if [ "$caddy_running" = "true" ]; then
+        echo -e "\n${YELLOW}🛑 Остановка Caddy (cascade-caddy)...${NC}"
+        docker compose -f docker-compose.caddy.yml down 2>/dev/null || \
+            docker stop cascade-caddy 2>/dev/null || true
+        echo -e "${GREEN}✅ Caddy остановлен${NC}"
+    fi
 
     # ── Открыть порт в ufw если активен ───────────────────────────────────────
     if command -v ufw &>/dev/null && ufw status 2>/dev/null | grep -q "^Status: active"; then
