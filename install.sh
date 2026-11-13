@@ -2571,29 +2571,38 @@ disable_cascade_https() {
     fi
 
     # ── Показываем текущие TLS настройки ──────────────────────────────────────
+    # Проверяем compose-файл И живой контейнер (контейнер может жить со старыми env)
     local cur_cert cur_key cur_port
     cur_cert=$(grep '^\s*-\s*TLS_CERT=' "$compose_file" 2>/dev/null | sed 's/.*TLS_CERT=//' | tr -d ' ')
     cur_key=$(grep  '^\s*-\s*TLS_KEY='  "$compose_file" 2>/dev/null | sed 's/.*TLS_KEY=//'  | tr -d ' ')
     cur_port=$(grep '^\s*-\s*PORT='     "$compose_file" 2>/dev/null | sed 's/.*PORT=//'     | tr -d ' ')
     [ -z "$cur_port" ] && cur_port="51821"
 
-    # Проверяем оба варианта HTTPS: встроенный TLS в Cascade и внешний Caddy
-    local caddy_running=false
-    docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^cascade-caddy$" && caddy_running=true
+    # Реальные env запущенного контейнера (может отличаться от файла до пересоздания)
+    local live_cert live_key live_port
+    if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^cascade$"; then
+        live_cert=$(docker inspect cascade --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | grep '^TLS_CERT=' | sed 's/TLS_CERT=//')
+        live_key=$(docker  inspect cascade --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | grep '^TLS_KEY='  | sed 's/TLS_KEY=//')
+        live_port=$(docker inspect cascade --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | grep '^PORT='     | sed 's/PORT=//')
+    fi
 
-    if [ -z "$cur_cert" ] && [ -z "$cur_key" ] && [ "$caddy_running" = "false" ]; then
-        echo -e "${YELLOW}ℹ️  HTTPS уже отключён — TLS_CERT/TLS_KEY не заданы и Caddy не запущен.${NC}"
+    # HTTPS активен если хотя бы одно из: файл содержит TLS пути, контейнер запущен с TLS
+    if [ -z "$cur_cert" ] && [ -z "$cur_key" ] && [ -z "$live_cert" ] && [ -z "$live_key" ]; then
+        echo -e "${YELLOW}ℹ️  HTTPS уже отключён — TLS не задан ни в файле, ни в контейнере.${NC}"
         return 0
     fi
 
     echo -e "${YELLOW}Текущая конфигурация:${NC}"
-    echo -e "  PORT     : ${cur_port}"
-    if [ -n "$cur_cert" ] || [ -n "$cur_key" ]; then
+    if [ -n "$live_cert" ] || [ -n "$live_key" ]; then
+        echo -e "  PORT     : ${live_port:-$cur_port}"
+        echo -e "  TLS_CERT : ${live_cert}"
+        echo -e "  TLS_KEY  : ${live_key}"
+        [ -z "$cur_cert" ] && [ -z "$cur_key" ] && \
+            echo -e "${YELLOW}  ⚠️  Compose-файл уже сброшен, но контейнер не пересоздан — будет исправлено.${NC}"
+    else
+        echo -e "  PORT     : ${cur_port}"
         echo -e "  TLS_CERT : ${cur_cert}"
         echo -e "  TLS_KEY  : ${cur_key}"
-    fi
-    if [ "$caddy_running" = "true" ]; then
-        echo -e "  Caddy    : ${GREEN}запущен (cascade-caddy)${NC}"
     fi
     echo ""
 
@@ -2647,14 +2656,6 @@ PYEOF
     echo -e "  TLS_CERT : <пусто>"
     echo -e "  TLS_KEY  : <пусто>"
     echo -e "  PORT     : ${http_port}"
-
-    # ── Остановить Caddy если был запущен ─────────────────────────────────────
-    if [ "$caddy_running" = "true" ]; then
-        echo -e "\n${YELLOW}🛑 Остановка Caddy (cascade-caddy)...${NC}"
-        docker compose -f docker-compose.caddy.yml down 2>/dev/null || \
-            docker stop cascade-caddy 2>/dev/null || true
-        echo -e "${GREEN}✅ Caddy остановлен${NC}"
-    fi
 
     # ── Открыть порт в ufw если активен ───────────────────────────────────────
     if command -v ufw &>/dev/null && ufw status 2>/dev/null | grep -q "^Status: active"; then
