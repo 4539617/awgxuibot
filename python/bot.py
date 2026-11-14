@@ -3525,8 +3525,7 @@ async def process_domains_to_bat(message: Message, notify_on_fail: bool = False)
     else:
         filename = f"{_slug(domains[0])}_and_{len(domains) - 1}_other_keenetic.bat"
 
-    buf = BytesIO(content.encode('utf-8'))
-    buf.name = filename
+    buf = types.BufferedInputFile(content.encode('utf-8'), filename=filename)
     logger.info(f"Keenetic: sending .bat to {message.from_user.id}: {filename} ({len(bat_lines)} routes), content={content!r}")
     try:
         await message.answer_document(buf)
