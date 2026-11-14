@@ -3527,8 +3527,13 @@ async def process_domains_to_bat(message: Message, notify_on_fail: bool = False)
 
     buf = BytesIO(content.encode('utf-8'))
     buf.name = filename
-    await message.answer_document(buf)
-    logger.info(f"Keenetic .bat sent to {message.from_user.id}: {filename} ({len(bat_lines)} routes)")
+    logger.info(f"Keenetic: sending .bat to {message.from_user.id}: {filename} ({len(bat_lines)} routes), content={content!r}")
+    try:
+        await message.answer_document(buf)
+        logger.info(f"Keenetic .bat sent OK to {message.from_user.id}: {filename}")
+    except Exception as e:
+        logger.error(f"Keenetic: answer_document FAILED for user={message.from_user.id}: {e}", exc_info=True)
+        return False
     return True
 
 
@@ -3563,7 +3568,11 @@ async def handle_unknown(message: Message, state: FSMContext):
         logger.info(f"Keenetic check: user={user_id} allowed={_user_allowed} allow_dns={config.common.allow_user_dns_queries} text={message.text!r}")
         if not _user_allowed or config.common.allow_user_dns_queries:
             logger.debug(f"Keenetic: entering process_domains_to_bat for user={user_id}")
-            result = await process_domains_to_bat(message, notify_on_fail=not _user_allowed)
+            try:
+                result = await process_domains_to_bat(message, notify_on_fail=not _user_allowed)
+            except Exception as e:
+                logger.error(f"Keenetic: process_domains_to_bat EXCEPTION for user={user_id}: {e}", exc_info=True)
+                result = False
             logger.info(f"Keenetic: process_domains_to_bat result={result} for user={user_id}")
             if result:
                 return
