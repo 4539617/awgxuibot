@@ -3437,18 +3437,22 @@ async def _resolve_domain(domain: str) -> list[str]:
     # Системный резолвер
     try:
         infos = await loop.getaddrinfo(domain, None, family=socket.AF_INET)
-        for info in infos:
-            ip_set.add(info[4][0])
-    except Exception:
-        pass
+        sys_ips = [info[4][0] for info in infos]
+        ip_set.update(sys_ips)
+        logger.debug(f"DNS[sys] {domain} -> {sys_ips}")
+    except Exception as e:
+        logger.warning(f"DNS[sys] {domain} -> ERROR: {e}")
 
     # Дополнительные DNS-серверы через getaddrinfo в executor с принудительным сервером
     # (простой fallback — используем dns через системный резолвер с разными серверами
     #  недоступен без dnspython; делаем параллельные getaddrinfo запросы)
     def _sync_resolve(host: str) -> list[str]:
         try:
-            return [r[4][0] for r in socket.getaddrinfo(host, None, socket.AF_INET)]
-        except Exception:
+            ips = [r[4][0] for r in socket.getaddrinfo(host, None, socket.AF_INET)]
+            logger.debug(f"DNS[executor] {host} -> {ips}")
+            return ips
+        except Exception as e:
+            logger.warning(f"DNS[executor] {host} -> ERROR: {e}")
             return []
 
     results = await asyncio.gather(
@@ -3459,7 +3463,9 @@ async def _resolve_domain(domain: str) -> list[str]:
         if isinstance(r, list):
             ip_set.update(r)
 
-    return sorted(ip_set)
+    final = sorted(ip_set)
+    logger.info(f"DNS resolved {domain} -> {final if final else 'NO RESULTS'}")
+    return final
 
 
 async def process_domains_to_bat(message: Message, notify_on_fail: bool = False) -> bool:
@@ -3469,6 +3475,7 @@ async def process_domains_to_bat(message: Message, notify_on_fail: bool = False)
     notify_on_fail=True — сообщать пользователю об ошибке резолвинга.
     """
     text = message.text or ""
+    logger.debug(f"Keenetic: process_domains_to_bat called for user={message.from_user.id} text={text!r}")
     if not is_valid_domain_query(text):
         logger.info(f"Keenetic: invalid domain query from {message.from_user.id}: {text!r}")
         return False
@@ -3491,6 +3498,7 @@ async def process_domains_to_bat(message: Message, notify_on_fail: bool = False)
             domain_ips[domain] = ips
 
     if not domain_ips:
+        logger.warning(f"Keenetic: all domains failed to resolve for user={message.from_user.id}: {domains}")
         if notify_on_fail:
             await message.answer("❌ Не удалось получить IP-адреса для указанных доменов.")
         return False  # не удалось разрезолвить
@@ -3552,10 +3560,15 @@ async def handle_unknown(message: Message, state: FSMContext):
     # Keenetic .bat: для незарегистрированных — всегда, для остальных — если фича включена
     if message.text:
         _user_allowed = is_allowed(user_id)
-        logger.info(f"Keenetic check: user={user_id} allowed={_user_allowed} allow_dns={config.common.allow_user_dns_queries}")
+        logger.info(f"Keenetic check: user={user_id} allowed={_user_allowed} allow_dns={config.common.allow_user_dns_queries} text={message.text!r}")
         if not _user_allowed or config.common.allow_user_dns_queries:
-            if await process_domains_to_bat(message, notify_on_fail=not _user_allowed):
+            logger.debug(f"Keenetic: entering process_domains_to_bat for user={user_id}")
+            result = await process_domains_to_bat(message, notify_on_fail=not _user_allowed)
+            logger.info(f"Keenetic: process_domains_to_bat result={result} for user={user_id}")
+            if result:
                 return
+        else:
+            logger.debug(f"Keenetic: skipped for user={user_id} (registered and allow_user_dns_queries=False)")
 
     if is_allowed(user_id):
         await message.answer(
