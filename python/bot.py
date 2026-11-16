@@ -3578,16 +3578,6 @@ async def handle_unknown(message: Message, state: FSMContext):
         else:
             logger.debug(f"Keenetic: skipped for user={user_id} (registered and allow_user_dns_queries=False)")
 
-    if is_allowed(user_id):
-        await message.answer(
-            "❓ Неизвестная команда.\n\nОтправьте /start для списка команд.",
-            parse_mode="HTML"
-        )
-    else:
-        await message.answer(
-            "❓ Для начала работы отправьте /start",
-            parse_mode="HTML"
-        )
 
 
 @dp.callback_query(lambda c: c.data == "server_status")
