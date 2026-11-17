@@ -167,6 +167,7 @@ new Vue({
       { id: 'wizard-simple-vpn', label: 'Simple Client VPN' },
       { id: 'wizard-uplink-vpn', label: 'Cascade via WireGuard Uplink' },
       { id: 'wizard-cascade-s2s', label: 'Cascade ↔ Cascade S2S' },
+      { id: 'wizard-block-ru',   label: '🚫 Block RU Zone' },
     ],
 
     // ── Dashboard ──────────────────────────────────────────────────────────────
@@ -585,6 +586,27 @@ new Vue({
       fatalError: '',
     },
 
+    // ── Wizard: Block RU Zone ─────────────────────────────────────────────────
+    wizardBlockRu: {
+      step: 1,            // 1=configure, 2=apply
+      aliasName: 'ru-zone',
+      blockPrivate: true,
+      blockRuIPs: true,
+      fwRuleNameRu: 'Block RU IP zone',
+      fwRuleNamePrivate: 'Block RFC1918 private',
+      applying: false,
+      steps: [],
+      createdAliasId: '',
+      createdRuRuleId: '',
+      createdPrivateRuleId: '',
+      done: false,
+      fatalError: '',
+      // Update flow
+      updating: false,
+      updateProgress: 0,
+      updateResult: null, // { ok: bool, msg: string }
+    },
+
     showGatewayCreate: false,
     showGatewayEdit:   false,
     showGroupCreate:   false,
@@ -785,6 +807,14 @@ new Vue({
       { value: 'purple',   label: 'Purple',  swatch: '#a855f7' },
     ],
     showFirewallEdit: false,
+    showFirewallImport: false,
+    firewallImport: {
+      json: '',
+      mode: 'append',
+      error: '',
+      result: null,
+      loading: false,
+    },
     firewallCreate: {
       name: '',
       interface: 'any',
@@ -1368,6 +1398,9 @@ new Vue({
       }
       if (pageId === 'wizard-cascade-s2s') {
         this.wizardS2SInit();
+      }
+      if (pageId === 'wizard-block-ru') {
+        this.wizardBlockRuInit();
       }
       if (pageId === 'firewall') {
         this.loadFirewallRules();
@@ -5202,6 +5235,40 @@ new Vue({
       }
     },
 
+    openFirewallImport() {
+      this.firewallImport = { json: '', mode: 'append', error: '', result: null, loading: false };
+      this.showFirewallImport = true;
+    },
+
+    async doImportFirewallRules() {
+      this.firewallImport.error = '';
+      this.firewallImport.result = null;
+      let rules;
+      try {
+        const parsed = JSON.parse(this.firewallImport.json);
+        rules = Array.isArray(parsed) ? parsed : parsed.rules;
+        if (!Array.isArray(rules)) throw new Error('JSON must be an array of rules or { rules: [...] }');
+      } catch (e) {
+        this.firewallImport.error = 'Invalid JSON: ' + e.message;
+        return;
+      }
+      this.firewallImport.loading = true;
+      try {
+        const res = await this.api.importFirewallRules(rules, this.firewallImport.mode);
+        this.firewallImport.result = res;
+        await this.loadFirewallRules();
+        if (res.imported > 0) {
+          this.showToast(`Imported ${res.imported} rule(s)${res.skipped ? ', ' + res.skipped + ' skipped' : ''}`, 'success');
+        } else {
+          this.showToast('No rules imported — check skipped reasons below', 'error');
+        }
+      } catch (err) {
+        this.firewallImport.error = err.message || 'Import failed';
+      } finally {
+        this.firewallImport.loading = false;
+      }
+    },
+
     async loadFirewallInterfaces() {
       try {
         const res = await this.api.getFirewallInterfaces();
@@ -7479,6 +7546,183 @@ new Vue({
         this.wizardS2SStepSet(s10, 'ok', sysIface.name);
       } catch (e) {
         this.wizardS2SStepSet(s10, 'warn', e.message + ' — continuing');
+      }
+
+      w.applying = false;
+      w.done = true;
+    },
+
+    // ── Wizard: Block RU Zone ───────────────────────────────────────────────
+
+    wizardBlockRuInit() {
+      this.wizardBlockRu = {
+        step: 1,
+        aliasName: 'ru-zone',
+        blockPrivate: true,
+        blockRuIPs: true,
+        fwRuleNameRu: 'Block RU IP zone',
+        fwRuleNamePrivate: 'Block RFC1918 private',
+        applying: false,
+        steps: [],
+        createdAliasId: '',
+        createdRuRuleId: '',
+        createdPrivateRuleId: '',
+        done: false,
+        fatalError: '',
+        updating: false,
+        updateProgress: 0,
+        updateResult: null,
+      };
+    },
+
+    async wizardBlockRuUpdate() {
+      const w = this.wizardBlockRu;
+      if (!w.createdAliasId) return;
+      w.updating = true;
+      w.updateProgress = 0;
+      w.updateResult = null;
+      try {
+        const genRes = await this.api.generateAlias({ id: w.createdAliasId, country: 'RU' });
+        const jobId = genRes.jobId;
+        let finished = false;
+        while (!finished) {
+          await new Promise(r => setTimeout(r, 1200));
+          const st = await this.api.getAliasJobStatus({ id: w.createdAliasId, jobId });
+          w.updateProgress = st.progress || 0;
+          if (st.status === 'done') { finished = true; }
+          if (st.status === 'error') throw new Error(st.error || 'Generation failed');
+        }
+        w.updateProgress = 100;
+        w.updateResult = { ok: true, msg: 'RU prefixes updated successfully' };
+      } catch (e) {
+        w.updateResult = { ok: false, msg: e.message || 'Update failed' };
+      } finally {
+        w.updating = false;
+      }
+    },
+
+    _wizardBlockRuStepAdd(label) {
+      this.wizardBlockRu.steps.push({ label, status: 'pending', detail: '' });
+      return this.wizardBlockRu.steps.length - 1;
+    },
+
+    _wizardBlockRuStepSet(idx, status, detail) {
+      this.$set(this.wizardBlockRu.steps, idx, {
+        ...this.wizardBlockRu.steps[idx],
+        status,
+        detail: detail || '',
+      });
+    },
+
+    async wizardBlockRuApply() {
+      const w = this.wizardBlockRu;
+      w.applying = true;
+      w.steps = [];
+      w.fatalError = '';
+      w.createdAliasId = '';
+      w.createdRuRuleId = '';
+      w.createdPrivateRuleId = '';
+
+      // Step 1: Create ipset alias for RU IP list
+      let aliasId = '';
+      if (w.blockRuIPs) {
+        const s0 = this._wizardBlockRuStepAdd('Creating RU IP alias (ipset)');
+        this._wizardBlockRuStepSet(s0, 'running');
+        try {
+          const res = await this.api.createAlias({
+            name: w.aliasName || 'ru-zone',
+            type: 'ipset',
+            description: 'Russian IP address ranges (RIPE NCC)',
+            entries: [],
+          });
+          aliasId = (res.alias || res).id || '';
+          w.createdAliasId = aliasId;
+          this._wizardBlockRuStepSet(s0, 'running', 'Alias created, downloading RU prefixes from RIPE…');
+
+          // Step 2: Fetch RU prefixes
+          const genRes = await this.api.generateAlias({ id: aliasId, country: 'RU' });
+          const jobId = genRes.jobId;
+          let finished = false;
+          while (!finished) {
+            await new Promise(r => setTimeout(r, 1200));
+            const st = await this.api.getAliasJobStatus({ id: aliasId, jobId });
+            this._wizardBlockRuStepSet(s0, 'running', (st.progress || 0) + '% — downloading RU prefixes…');
+            if (st.status === 'done') { finished = true; }
+            if (st.status === 'error') throw new Error(st.error || 'Prefix generation failed');
+          }
+          this._wizardBlockRuStepSet(s0, 'ok', w.aliasName + ' — RU prefixes loaded');
+        } catch (e) {
+          this._wizardBlockRuStepSet(s0, 'error', e.message);
+          w.fatalError = e.message;
+          w.applying = false;
+          w.done = true;
+          return;
+        }
+      }
+
+      // Step 3: Firewall rule — block RU IPs (via alias)
+      if (w.blockRuIPs && aliasId) {
+        const s1 = this._wizardBlockRuStepAdd('Creating firewall rule: Block RU IPs');
+        this._wizardBlockRuStepSet(s1, 'running');
+        try {
+          const res = await this.api.createFirewallRule({
+            name: w.fwRuleNameRu || 'Block RU IP zone',
+            interface: 'any',
+            protocol: 'any',
+            source: { type: 'any' },
+            destination: { type: 'alias', aliasId },
+            action: 'drop',
+            comment: 'Created by Block RU Zone wizard — RIPE NCC RU prefixes',
+          });
+          w.createdRuRuleId = (res.rule || res).id || '';
+          this._wizardBlockRuStepSet(s1, 'ok', w.fwRuleNameRu);
+        } catch (e) {
+          this._wizardBlockRuStepSet(s1, 'warn', e.message + ' — continuing');
+        }
+      }
+
+      // Step 4: Firewall rules — block RFC1918 private ranges
+      if (w.blockPrivate) {
+        const s2 = this._wizardBlockRuStepAdd('Creating firewall rules: Block RFC1918');
+        this._wizardBlockRuStepSet(s2, 'running');
+        const privateCIDRs = [
+          { cidr: '10.0.0.0/8',      name: (w.fwRuleNamePrivate || 'Block RFC1918') + ' — 10/8' },
+          { cidr: '172.16.0.0/12',   name: (w.fwRuleNamePrivate || 'Block RFC1918') + ' — 172.16/12' },
+          { cidr: '192.168.0.0/16',  name: (w.fwRuleNamePrivate || 'Block RFC1918') + ' — 192.168/16' },
+        ];
+        let createdCount = 0;
+        for (const { cidr, name } of privateCIDRs) {
+          try {
+            const res = await this.api.createFirewallRule({
+              name,
+              interface: 'any',
+              protocol: 'any',
+              source: { type: 'any' },
+              destination: { type: 'cidr', value: cidr },
+              action: 'drop',
+              comment: 'Created by Block RU Zone wizard — RFC1918 private range',
+            });
+            if (!w.createdPrivateRuleId) w.createdPrivateRuleId = (res.rule || res).id || '';
+            createdCount++;
+          } catch (e) {
+            // ignore individual failures — log to step
+          }
+        }
+        if (createdCount === privateCIDRs.length) {
+          this._wizardBlockRuStepSet(s2, 'ok', createdCount + ' rules created');
+        } else {
+          this._wizardBlockRuStepSet(s2, 'warn', createdCount + '/' + privateCIDRs.length + ' rules created');
+        }
+      }
+
+      // Step 5: Apply firewall rules
+      const s3 = this._wizardBlockRuStepAdd('Applying firewall rules');
+      this._wizardBlockRuStepSet(s3, 'running');
+      try {
+        await this.api.applyFirewallRules();
+        this._wizardBlockRuStepSet(s3, 'ok', 'Kernel chains updated');
+      } catch (e) {
+        this._wizardBlockRuStepSet(s3, 'warn', e.message);
       }
 
       w.applying = false;
