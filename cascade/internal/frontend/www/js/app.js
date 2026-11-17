@@ -605,6 +605,10 @@ new Vue({
       updating: false,
       updateProgress: 0,
       updateResult: null, // { ok: bool, msg: string }
+      // Rule toggle state
+      ruRuleEnabled: true,
+      privateRulesEnabled: true,
+      toggling: false,
     },
 
     showGatewayCreate: false,
@@ -7572,7 +7576,43 @@ new Vue({
         updating: false,
         updateProgress: 0,
         updateResult: null,
+        ruRuleEnabled: true,
+        privateRulesEnabled: true,
+        toggling: false,
       };
+    },
+
+    // Toggle a created rule by key: 'ru' | 'private'
+    // 'private' toggles all 3 RFC1918 rules; uses createdPrivateRuleId as anchor
+    // to find the other two by name prefix.
+    async wizardBlockRuToggleRule(which) {
+      const w = this.wizardBlockRu;
+      if (w.toggling) return;
+      w.toggling = true;
+      try {
+        if (which === 'ru' && w.createdRuRuleId) {
+          const newEnabled = !w.ruRuleEnabled;
+          await this.api.toggleFirewallRule({ id: w.createdRuRuleId, enabled: newEnabled });
+          w.ruRuleEnabled = newEnabled;
+        } else if (which === 'private' && w.createdPrivateRuleId) {
+          const newEnabled = !w.privateRulesEnabled;
+          // Fetch all rules to find the RFC1918 group by name prefix
+          const all = await this.api.getFirewallRules();
+          const prefix = w.fwRuleNamePrivate || 'Block RFC1918 private';
+          const matches = (Array.isArray(all) ? all : (all.rules || [])).filter(r =>
+            r.name && r.name.startsWith(prefix)
+          );
+          await Promise.all(matches.map(r =>
+            this.api.toggleFirewallRule({ id: r.id, enabled: newEnabled })
+          ));
+          w.privateRulesEnabled = newEnabled;
+        }
+        await this.api.applyFirewallRules();
+      } catch (e) {
+        this.showToast(e.message || 'Toggle failed', 'error');
+      } finally {
+        w.toggling = false;
+      }
     },
 
     async wizardBlockRuUpdate() {

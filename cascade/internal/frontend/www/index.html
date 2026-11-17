@@ -10416,22 +10416,74 @@
               <div style="border-radius:8px; padding:14px 16px; margin-bottom:20px;"
                    :style="{ background: theme==='dark' ? '#1e3a2f' : '#f0fdf4', border: '1px solid ' + (theme==='dark' ? '#166534' : '#bbf7d0') }">
                 <div class="text-sm font-medium" style="color:#16a34a; margin-bottom:10px;">Created objects</div>
-                <div style="display:flex; flex-direction:column; gap:6px; font-size:0.83rem;">
-                  <div v-if="wizardBlockRu.createdAliasId" style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="dark:text-neutral-300">Alias: {{ wizardBlockRu.aliasName }}</span>
+                <div style="display:flex; flex-direction:column; gap:8px; font-size:0.83rem;">
+
+                  <!-- Alias row (no enable/disable — aliases are always active) -->
+                  <div v-if="wizardBlockRu.createdAliasId"
+                       style="display:flex; justify-content:space-between; align-items:center; border-radius:6px; padding:7px 10px;"
+                       :style="{ background: theme==='dark' ? '#1a2a1a' : '#f0fdf4', border: '1px solid ' + (theme==='dark' ? '#166534' : '#bbf7d0') }">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                      <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#16a34a; flex-shrink:0;"></span>
+                      <span class="dark:text-neutral-200">ipset <strong>{{ wizardBlockRu.aliasName }}</strong></span>
+                    </div>
                     <button @click="activePage = 'firewall-aliases'"
                             style="padding:3px 10px; border-radius:5px; border:none; cursor:pointer; font-size:0.78rem; background:#2563eb; color:#fff;">Open</button>
                   </div>
-                  <div v-if="wizardBlockRu.createdRuRuleId" style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="dark:text-neutral-300">Rule: {{ wizardBlockRu.fwRuleNameRu }}</span>
-                    <button @click="activePage = 'firewall'"
-                            style="padding:3px 10px; border-radius:5px; border:none; cursor:pointer; font-size:0.78rem; background:#dc2626; color:#fff;">Open</button>
+
+                  <!-- RU block rule row -->
+                  <div v-if="wizardBlockRu.createdRuRuleId"
+                       style="display:flex; justify-content:space-between; align-items:center; border-radius:6px; padding:7px 10px;"
+                       :style="{ background: theme==='dark' ? '#2a1a1a' : '#fff5f5', border: '1px solid ' + (theme==='dark' ? '#7f1d1d' : '#fecaca') }">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                      <span style="display:inline-block; width:8px; height:8px; border-radius:50%; flex-shrink:0;"
+                            :style="{ background: wizardBlockRu.ruRuleEnabled ? '#dc2626' : '#9ca3af' }"></span>
+                      <span class="dark:text-neutral-200">
+                        DROP <strong>{{ wizardBlockRu.fwRuleNameRu }}</strong>
+                        <span :style="{ color: wizardBlockRu.ruRuleEnabled ? '#dc2626' : '#9ca3af', fontWeight: '600', marginLeft: '6px' }">
+                          {{ wizardBlockRu.ruRuleEnabled ? 'ENABLED' : 'DISABLED' }}
+                        </span>
+                      </span>
+                    </div>
+                    <div style="display:flex; gap:6px;">
+                      <button @click="wizardBlockRuToggleRule('ru')"
+                              :disabled="wizardBlockRu.toggling"
+                              style="padding:3px 10px; border-radius:5px; border:none; cursor:pointer; font-size:0.78rem; font-weight:600;"
+                              :style="wizardBlockRu.toggling ? 'background:#9ca3af; color:#fff; cursor:not-allowed;'
+                                : wizardBlockRu.ruRuleEnabled ? 'background:#fef3c7; color:#92400e;' : 'background:#dcfce7; color:#166534;'">
+                        {{ wizardBlockRu.toggling ? '…' : (wizardBlockRu.ruRuleEnabled ? 'Disable' : 'Enable') }}
+                      </button>
+                      <button @click="activePage = 'firewall'"
+                              style="padding:3px 10px; border-radius:5px; border:none; cursor:pointer; font-size:0.78rem; background:#dc2626; color:#fff;">Open</button>
+                    </div>
                   </div>
-                  <div v-if="wizardBlockRu.createdPrivateRuleId" style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="dark:text-neutral-300">Rules: {{ wizardBlockRu.fwRuleNamePrivate }} (×3)</span>
-                    <button @click="activePage = 'firewall'"
-                            style="padding:3px 10px; border-radius:5px; border:none; cursor:pointer; font-size:0.78rem; background:#dc2626; color:#fff;">Open</button>
+
+                  <!-- RFC1918 rules row -->
+                  <div v-if="wizardBlockRu.createdPrivateRuleId"
+                       style="display:flex; justify-content:space-between; align-items:center; border-radius:6px; padding:7px 10px;"
+                       :style="{ background: theme==='dark' ? '#2a1a1a' : '#fff5f5', border: '1px solid ' + (theme==='dark' ? '#7f1d1d' : '#fecaca') }">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                      <span style="display:inline-block; width:8px; height:8px; border-radius:50%; flex-shrink:0;"
+                            :style="{ background: wizardBlockRu.privateRulesEnabled ? '#dc2626' : '#9ca3af' }"></span>
+                      <span class="dark:text-neutral-200">
+                        DROP <strong>{{ wizardBlockRu.fwRuleNamePrivate }}</strong> (×3)
+                        <span :style="{ color: wizardBlockRu.privateRulesEnabled ? '#dc2626' : '#9ca3af', fontWeight: '600', marginLeft: '6px' }">
+                          {{ wizardBlockRu.privateRulesEnabled ? 'ENABLED' : 'DISABLED' }}
+                        </span>
+                      </span>
+                    </div>
+                    <div style="display:flex; gap:6px;">
+                      <button @click="wizardBlockRuToggleRule('private')"
+                              :disabled="wizardBlockRu.toggling"
+                              style="padding:3px 10px; border-radius:5px; border:none; cursor:pointer; font-size:0.78rem; font-weight:600;"
+                              :style="wizardBlockRu.toggling ? 'background:#9ca3af; color:#fff; cursor:not-allowed;'
+                                : wizardBlockRu.privateRulesEnabled ? 'background:#fef3c7; color:#92400e;' : 'background:#dcfce7; color:#166534;'">
+                        {{ wizardBlockRu.toggling ? '…' : (wizardBlockRu.privateRulesEnabled ? 'Disable' : 'Enable') }}
+                      </button>
+                      <button @click="activePage = 'firewall'"
+                              style="padding:3px 10px; border-radius:5px; border:none; cursor:pointer; font-size:0.78rem; background:#dc2626; color:#fff;">Open</button>
+                    </div>
                   </div>
+
                 </div>
               </div>
 
