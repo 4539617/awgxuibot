@@ -23,6 +23,7 @@ func RegisterFirewall(api fiber.Router) {
 	g.Get("/interfaces", getFirewallInterfaces)
 	g.Get("/rules", getFirewallRules)
 	g.Post("/rules", createFirewallRule)
+	g.Post("/rules/import", importFirewallRules)
 	g.Patch("/rules/:id", updateFirewallRule)
 	g.Delete("/rules/:id", deleteFirewallRule)
 	g.Post("/rules/:id/move", moveFirewallRule)
@@ -205,4 +206,30 @@ func moveFirewallRule(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, err.Error())
 	}
 	return c.SendStatus(fiber.StatusNoContent)
+}
+
+// POST /api/firewall/rules/import
+// Body: { rules: RuleInput[], mode: "append"|"replace" }
+// Imports a batch of rules. mode="append" adds after existing rules (default).
+// mode="replace" deletes all existing rules first, then imports.
+// Returns { imported: N, skipped: N, skippedReasons: [...] }.
+func importFirewallRules(c *fiber.Ctx) error {
+	var body struct {
+		Rules []firewall.RuleInput `json:"rules"`
+		Mode  string               `json:"mode"` // "append" | "replace"
+	}
+	if err := c.BodyParser(&body); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid JSON body")
+	}
+	if body.Mode == "" {
+		body.Mode = "append"
+	}
+	if body.Mode != "append" && body.Mode != "replace" {
+		return fiber.NewError(fiber.StatusBadRequest, `mode must be "append" or "replace"`)
+	}
+	result, err := firewall.Get().ImportRules(body.Rules, body.Mode)
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+	}
+	return c.Status(fiber.StatusOK).JSON(result)
 }

@@ -1,0 +1,192 @@
+[
+  {
+    "name": "Block private/RFC1918 addresses",
+    "enabled": true,
+    "protocol": "any",
+    "interface": "any",
+    "source": { "type": "any" },
+    "destination": { "type": "cidr", "value": "10.0.0.0/8" },
+    "action": "drop",
+    "comment": "RFC1918 private — geoip:private (1/3)"
+  },
+  {
+    "name": "Block private 172.16.0.0/12",
+    "enabled": true,
+    "protocol": "any",
+    "interface": "any",
+    "source": { "type": "any" },
+    "destination": { "type": "cidr", "value": "172.16.0.0/12" },
+    "action": "drop",
+    "comment": "RFC1918 private — geoip:private (2/3)"
+  },
+  {
+    "name": "Block private 192.168.0.0/16",
+    "enabled": true,
+    "protocol": "any",
+    "interface": "any",
+    "source": { "type": "any" },
+    "destination": { "type": "cidr", "value": "192.168.0.0/16" },
+    "action": "drop",
+    "comment": "RFC1918 private — geoip:private (3/3)"
+  },
+  {
+    "name": "Block RU IPs — Rostelecom 5.8.x",
+    "enabled": true,
+    "protocol": "any",
+    "interface": "any",
+    "source": { "type": "any" },
+    "destination": { "type": "cidr", "value": "5.8.0.0/16" },
+    "action": "drop",
+    "comment": "RU ISP block — extend list as needed"
+  },
+  {
+    "name": "Block RU IPs — 77.88.0.0/18 Yandex",
+    "enabled": true,
+    "protocol": "any",
+    "interface": "any",
+    "source": { "type": "any" },
+    "destination": { "type": "cidr", "value": "77.88.0.0/18" },
+    "action": "drop",
+    "comment": "Yandex"
+  },
+  {
+    "name": "Block RU IPs — 95.108.0.0/16 Yandex",
+    "enabled": true,
+    "protocol": "any",
+    "interface": "any",
+    "source": { "type": "any" },
+    "destination": { "type": "cidr", "value": "95.108.0.0/16" },
+    "action": "drop",
+    "comment": "Yandex"
+  },
+  {
+    "name": "Block RU IPs — 213.180.192.0/19 Yandex",
+    "enabled": true,
+    "protocol": "any",
+    "interface": "any",
+    "source": { "type": "any" },
+    "destination": { "type": "cidr", "value": "213.180.192.0/19" },
+    "action": "drop",
+    "comment": "Yandex"
+  },
+  {
+    "name": "Block RU IPs — 93.158.128.0/18 Yandex",
+    "enabled": true,
+    "protocol": "any",
+    "interface": "any",
+    "source": { "type": "any" },
+    "destination": { "type": "cidr", "value": "93.158.128.0/18" },
+    "action": "drop",
+    "comment": "Yandex"
+  },
+  {
+    "name": "Block RU IPs — 87.250.224.0/19 Yandex",
+    "enabled": true,
+    "protocol": "any",
+    "interface": "any",
+    "source": { "type": "any" },
+    "destination": { "type": "cidr", "value": "87.250.224.0/19" },
+    "action": "drop",
+    "comment": "Yandex"
+  },
+  {
+    "name": "Block RU IPs — MTS 85.26.0.0/16",
+    "enabled": true,
+    "protocol": "any",
+    "interface": "any",
+    "source": { "type": "any" },
+    "destination": { "type": "cidr", "value": "85.26.0.0/16" },
+    "action": "drop",
+    "comment": "MTS"
+  },
+  {
+    "name": "Block RU IPs — MTS 83.242.0.0/16",
+    "enabled": true,
+    "protocol": "any",
+    "interface": "any",
+    "source": { "type": "any" },
+    "destination": { "type": "cidr", "value": "83.242.0.0/16" },
+    "action": "drop",
+    "comment": "MTS"
+  },
+  {
+    "name": "Block RU IPs — Megafon 46.228.0.0/14",
+    "enabled": true,
+    "protocol": "any",
+    "interface": "any",
+    "source": { "type": "any" },
+    "destination": { "type": "cidr", "value": "46.228.0.0/14" },
+    "action": "drop",
+    "comment": "Megafon"
+  },
+  {
+    "name": "Block RU IPs — Rostelecom 95.167.0.0/16",
+    "enabled": true,
+    "protocol": "any",
+    "interface": "any",
+    "source": { "type": "any" },
+    "destination": { "type": "cidr", "value": "95.167.0.0/16" },
+    "action": "drop",
+    "comment": "Rostelecom"
+  },
+  {
+    "name": "Block RU IPs — Rostelecom 213.148.0.0/16",
+    "enabled": true,
+    "protocol": "any",
+    "interface": "any",
+    "source": { "type": "any" },
+    "destination": { "type": "cidr", "value": "213.148.0.0/16" },
+    "action": "drop",
+    "comment": "Rostelecom"
+  },
+  {
+    "name": "Block RU IPs — Beeline 213.234.0.0/16",
+    "enabled": true,
+    "protocol": "any",
+    "interface": "any",
+    "source": { "type": "any" },
+    "destination": { "type": "cidr", "value": "213.234.0.0/16" },
+    "action": "drop",
+    "comment": "Beeline/VimpelCom"
+  },
+  {
+    "name": "Block RU IPs — VK/Mail.ru 93.186.224.0/20",
+    "enabled": true,
+    "protocol": "any",
+    "interface": "any",
+    "source": { "type": "any" },
+    "destination": { "type": "cidr", "value": "93.186.224.0/20" },
+    "action": "drop",
+    "comment": "VK/Mail.ru"
+  },
+  {
+    "name": "Block RU IPs — VK/Mail.ru 217.69.128.0/18",
+    "enabled": true,
+    "protocol": "any",
+    "interface": "any",
+    "source": { "type": "any" },
+    "destination": { "type": "cidr", "value": "217.69.128.0/18" },
+    "action": "drop",
+    "comment": "VK/Mail.ru"
+  },
+  {
+    "name": "DISABLED — domain regexp .ru .su (not supported in iptables)",
+    "enabled": false,
+    "protocol": "any",
+    "interface": "any",
+    "source": { "type": "any" },
+    "destination": { "type": "any" },
+    "action": "drop",
+    "comment": "PLACEHOLDER: domain regexp .*\\.ru$ .*\\.su$ .*\\.xn--p1ai$ — Cascade uses iptables (L3/L4 only). To block .ru domains, use DNS-based blocking (e.g. Pi-hole, unbound RPZ) or ipset with a full RU IP list."
+  },
+  {
+    "name": "DISABLED — bittorrent protocol block (not supported in iptables without DPI)",
+    "enabled": false,
+    "protocol": "any",
+    "interface": "any",
+    "source": { "type": "any" },
+    "destination": { "type": "any" },
+    "action": "drop",
+    "comment": "PLACEHOLDER: bittorrent L7 detection requires xt_bittorrent kernel module or DPI. Standard iptables-nft cannot match by application protocol."
+  }
+]
