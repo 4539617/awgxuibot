@@ -7580,6 +7580,59 @@ new Vue({
         privateRulesEnabled: true,
         toggling: false,
       };
+      // Auto-detect existing RU zone setup and jump to management screen
+      this._wizardBlockRuDetect();
+    },
+
+    // Looks for an existing ipset alias with generatorOpts.country=RU and
+    // matching firewall rules — if found, restores the management screen
+    // so the user can Enable/Disable/Update without re-running the wizard.
+    async _wizardBlockRuDetect() {
+      try {
+        // Load aliases if not yet loaded
+        if (!this.aliases || !this.aliases.length) await this.loadAliases();
+        const ruAlias = this.aliases.find(a =>
+          a.type === 'ipset' &&
+          a.generatorOpts &&
+          a.generatorOpts.country &&
+          a.generatorOpts.country.toUpperCase() === 'RU'
+        );
+        if (!ruAlias) return; // fresh install — stay on step 1
+
+        // Load firewall rules to find matching DROP rules
+        const allRules = await this.api.getFirewallRules();
+        const rules = Array.isArray(allRules) ? allRules : (allRules.rules || []);
+
+        const ruRule = rules.find(r =>
+          r.destination && r.destination.type === 'alias' &&
+          r.destination.aliasId === ruAlias.id &&
+          r.action === 'drop'
+        );
+        const privateRule = rules.find(r =>
+          r.destination && r.destination.type === 'cidr' &&
+          (r.destination.value === '10.0.0.0/8' || r.destination.value === '172.16.0.0/12' || r.destination.value === '192.168.0.0/16') &&
+          r.action === 'drop'
+        );
+
+        // Restore management state
+        const w = this.wizardBlockRu;
+        w.aliasName         = ruAlias.name;
+        w.createdAliasId    = ruAlias.id;
+        w.createdRuRuleId   = ruRule ? ruRule.id : '';
+        w.fwRuleNameRu      = ruRule ? ruRule.name : w.fwRuleNameRu;
+        w.createdPrivateRuleId = privateRule ? privateRule.id : '';
+        w.fwRuleNamePrivate = privateRule
+          ? privateRule.name.replace(/ — 10\/8$| — 172\.16\/12$| — 192\.168\/16$/, '')
+          : w.fwRuleNamePrivate;
+        w.ruRuleEnabled      = ruRule ? ruRule.enabled : true;
+        w.privateRulesEnabled = privateRule ? privateRule.enabled : true;
+        w.done = true;
+        w.step = 2;
+        // Synthetic step so progress list is not empty
+        w.steps = [{ label: 'Setup detected from existing configuration', status: 'ok', detail: ruAlias.name + ' — ' + (ruAlias.entryCount || '?') + ' prefixes' }];
+      } catch (_) {
+        // Detection failure is non-fatal — stay on step 1
+      }
     },
 
     // Toggle a created rule by key: 'ru' | 'private'

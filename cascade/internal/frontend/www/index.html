@@ -7282,6 +7282,17 @@
                   </td>
                   <td class="tc">
                     <div class="flex gap-2 justify-end">
+                      <!-- Regenerate button: only for ipset aliases that have generatorOpts -->
+                      <button v-if="alias.type === 'ipset' && alias.generatorOpts"
+                        @click="_startAliasGenerate(alias.id, { source: alias.generatorOpts.country ? 'country' : (alias.generatorOpts.asn ? 'asn' : 'asn-list'), country: alias.generatorOpts.country, asn: alias.generatorOpts.asn, asnList: alias.generatorOpts.asnList })"
+                        :disabled="aliasGeneratingId === alias.id"
+                        class="text-xs rounded px-2 py-1 transition font-semibold"
+                        :style="aliasGeneratingId === alias.id
+                          ? 'background:#e9d5ff;color:#9ca3af;cursor:not-allowed;'
+                          : 'background:#e9d5ff;color:#7c3aed;'"
+                        :title="'Regenerate prefixes (' + (alias.generatorOpts.country || alias.generatorOpts.asn || '') + ')'">
+                        {{ aliasGeneratingId === alias.id ? '⟳ …' : '⟳ Regenerate' }}
+                      </button>
                       <button @click="openAliasEdit(alias)"
                         class="text-xs bg-gray-100 dark:bg-neutral-600 text-gray-700 dark:text-neutral-200 rounded px-2 py-1 transition">
                         Edit
