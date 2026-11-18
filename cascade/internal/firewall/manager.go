@@ -2188,6 +2188,60 @@ func strOr(s, def string) string {
 	return s
 }
 
+
+// ── Batch import ──────────────────────────────────────────────────────────────
+
+// ImportResult is returned by ImportRules.
+type ImportResult struct {
+	Imported       int      `json:"imported"`
+	Skipped        int      `json:"skipped"`
+	SkippedReasons []string `json:"skippedReasons,omitempty"`
+}
+
+// ImportRules adds a batch of rules from a JSON array.
+//   - mode="append"  — appends after existing rules (default).
+//   - mode="replace" — deletes all existing draft rules first, then imports.
+//
+// Rules that fail validation are skipped (counted in Skipped + SkippedReasons).
+// The import does NOT auto-apply; caller must call ApplyRules() separately.
+func (m *Manager) ImportRules(inputs []RuleInput, mode string) (*ImportResult, error) {
+	if len(inputs) == 0 {
+		return &ImportResult{}, nil
+	}
+
+	if mode == "replace" {
+		// Delete all existing draft rules (separators included).
+		if _, err := db.DB().Exec(`DELETE FROM firewall_rules`); err != nil {
+			return nil, fmt.Errorf("import replace: clear draft: %w", err)
+		}
+		log.Printf("firewall: import replace — existing draft cleared")
+	}
+
+	result := &ImportResult{}
+	for i, inp := range inputs {
+		// Provide a default name when missing so validateInput doesn't reject it.
+		if strings.TrimSpace(inp.Name) == "" {
+			inp.Name = fmt.Sprintf("Imported rule %d", i+1)
+		}
+		if err := validateInput(inp); err != nil {
+			result.Skipped++
+			result.SkippedReasons = append(result.SkippedReasons,
+				fmt.Sprintf("rule %d (%q): %v", i+1, inp.Name, err))
+			continue
+		}
+		if _, err := m.AddRule(inp); err != nil {
+			result.Skipped++
+			result.SkippedReasons = append(result.SkippedReasons,
+				fmt.Sprintf("rule %d (%q): %v", i+1, inp.Name, err))
+			continue
+		}
+		result.Imported++
+	}
+
+	log.Printf("firewall: import complete — %d imported, %d skipped", result.Imported, result.Skipped)
+	return result, nil
+}
+
 // ── Singleton accessor ────────────────────────────────────────────────────────
 
 var fwInstance *Manager

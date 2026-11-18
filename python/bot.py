@@ -3437,18 +3437,22 @@ async def _resolve_domain(domain: str) -> list[str]:
     # Системный резолвер
     try:
         infos = await loop.getaddrinfo(domain, None, family=socket.AF_INET)
-        for info in infos:
-            ip_set.add(info[4][0])
-    except Exception:
-        pass
+        sys_ips = [info[4][0] for info in infos]
+        ip_set.update(sys_ips)
+        logger.debug(f"DNS[sys] {domain} -> {sys_ips}")
+    except Exception as e:
+        logger.warning(f"DNS[sys] {domain} -> ERROR: {e}")
 
     # Дополнительные DNS-серверы через getaddrinfo в executor с принудительным сервером
     # (простой fallback — используем dns через системный резолвер с разными серверами
     #  недоступен без dnspython; делаем параллельные getaddrinfo запросы)
     def _sync_resolve(host: str) -> list[str]:
         try:
-            return [r[4][0] for r in socket.getaddrinfo(host, None, socket.AF_INET)]
-        except Exception:
+            ips = [r[4][0] for r in socket.getaddrinfo(host, None, socket.AF_INET)]
+            logger.debug(f"DNS[executor] {host} -> {ips}")
+            return ips
+        except Exception as e:
+            logger.warning(f"DNS[executor] {host} -> ERROR: {e}")
             return []
 
     results = await asyncio.gather(
@@ -3459,17 +3463,23 @@ async def _resolve_domain(domain: str) -> list[str]:
         if isinstance(r, list):
             ip_set.update(r)
 
-    return sorted(ip_set)
+    final = sorted(ip_set)
+    logger.info(f"DNS resolved {domain} -> {final if final else 'NO RESULTS'}")
+    return final
 
 
-async def process_domains_to_bat(message: Message) -> bool:
+async def process_domains_to_bat(message: Message, notify_on_fail: bool = False) -> bool:
     """
     Если текст сообщения является валидным доменным запросом — резолвит домены,
     генерирует .bat файл и отправляет его. Возвращает True если файл был отправлен.
+    notify_on_fail=True — сообщать пользователю об ошибке резолвинга.
     """
     text = message.text or ""
+    logger.debug(f"Keenetic: process_domains_to_bat called for user={message.from_user.id} text={text!r}")
     if not is_valid_domain_query(text):
+        logger.info(f"Keenetic: invalid domain query from {message.from_user.id}: {text!r}")
         return False
+    logger.info(f"Keenetic: valid domain query from {message.from_user.id}: {text!r}")
 
     lines = [l.strip() for l in text.strip().splitlines() if l.strip()]
     domains = []
@@ -3488,7 +3498,10 @@ async def process_domains_to_bat(message: Message) -> bool:
             domain_ips[domain] = ips
 
     if not domain_ips:
-        return False  # не удалось разрезолвить — молчим, стандартный ответ
+        logger.warning(f"Keenetic: all domains failed to resolve for user={message.from_user.id}: {domains}")
+        if notify_on_fail:
+            await message.answer("❌ Не удалось получить IP-адреса для указанных доменов.")
+        return False  # не удалось разрезолвить
 
     # Генерируем содержимое .bat файла
     bat_lines = []
@@ -3497,6 +3510,8 @@ async def process_domains_to_bat(message: Message) -> bool:
             bat_lines.append(f"route add {ip} mask 255.255.255.255 0.0.0.0 :: rem {domain}")
 
     if not bat_lines:
+        if notify_on_fail:
+            await message.answer("❌ Не удалось получить IP-адреса для указанных доменов.")
         return False
 
     content = "\n".join(bat_lines) + "\n"
@@ -3510,10 +3525,14 @@ async def process_domains_to_bat(message: Message) -> bool:
     else:
         filename = f"{_slug(domains[0])}_and_{len(domains) - 1}_other_keenetic.bat"
 
-    buf = BytesIO(content.encode('utf-8'))
-    buf.name = filename
-    await message.answer_document(buf)
-    logger.info(f"Keenetic .bat sent to {message.from_user.id}: {filename} ({len(bat_lines)} routes)")
+    buf = types.BufferedInputFile(content.encode('utf-8'), filename=filename)
+    logger.info(f"Keenetic: sending .bat to {message.from_user.id}: {filename} ({len(bat_lines)} routes), content={content!r}")
+    try:
+        await message.answer_document(buf)
+        logger.info(f"Keenetic .bat sent OK to {message.from_user.id}: {filename}")
+    except Exception as e:
+        logger.error(f"Keenetic: answer_document FAILED for user={message.from_user.id}: {e}", exc_info=True)
+        return False
     return True
 
 
@@ -3542,21 +3561,23 @@ async def handle_unknown(message: Message, state: FSMContext):
     if message.text and message.text.startswith('/'):
         return
 
-    # Keenetic .bat: если текст — домены и фича включена — отдаём файл без лишних сообщений
-    if message.text and config.common.allow_user_dns_queries:
-        if await process_domains_to_bat(message):
-            return
+    # Keenetic .bat: для незарегистрированных — всегда, для остальных — если фича включена
+    if message.text:
+        _user_allowed = is_allowed(user_id)
+        logger.info(f"Keenetic check: user={user_id} allowed={_user_allowed} allow_dns={config.common.allow_user_dns_queries} text={message.text!r}")
+        if not _user_allowed or config.common.allow_user_dns_queries:
+            logger.debug(f"Keenetic: entering process_domains_to_bat for user={user_id}")
+            try:
+                result = await process_domains_to_bat(message, notify_on_fail=not _user_allowed)
+            except Exception as e:
+                logger.error(f"Keenetic: process_domains_to_bat EXCEPTION for user={user_id}: {e}", exc_info=True)
+                result = False
+            logger.info(f"Keenetic: process_domains_to_bat result={result} for user={user_id}")
+            if result:
+                return
+        else:
+            logger.debug(f"Keenetic: skipped for user={user_id} (registered and allow_user_dns_queries=False)")
 
-    if is_allowed(user_id):
-        await message.answer(
-            "❓ Неизвестная команда.\n\nОтправьте /start для списка команд.",
-            parse_mode="HTML"
-        )
-    else:
-        await message.answer(
-            "❓ Для начала работы отправьте /start",
-            parse_mode="HTML"
-        )
 
 
 @dp.callback_query(lambda c: c.data == "server_status")

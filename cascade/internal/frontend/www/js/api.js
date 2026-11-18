@@ -1062,6 +1062,16 @@ class API {
     return this.call({ method: 'post', path: '/firewall/discard' });
   }
 
+  /**
+   * Импортировать правила из JSON-массива.
+   * @param {Array} rules  — массив объектов RuleInput
+   * @param {'append'|'replace'} mode — append (по умолчанию) или replace
+   * @returns {{ imported: number, skipped: number, skippedReasons: string[] }}
+   */
+  async importFirewallRules(rules, mode = 'append') {
+    return this.call({ method: 'post', path: '/firewall/rules/import', body: { rules, mode } });
+  }
+
   // ============================================================
   // Users API — multi-user management
   // ============================================================
