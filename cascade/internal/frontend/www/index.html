@@ -763,7 +763,7 @@
         <!-- Firewall pending changes global banner -->
         <div v-if="firewallPending && activePage !== 'firewall'"
           style="background:#fef9c3; border:1px solid #fde047; border-radius:8px; padding:10px 16px; margin-bottom:12px; display:flex; align-items:center; gap:10px; cursor:pointer;"
-          @click="activePage = 'firewall'">
+          @click="switchPage('firewall')">
           <span style="font-size:1rem;">⚠️</span>
           <span style="font-size:0.85rem; color:#713f12; flex:1;">
             <strong>Unapplied firewall changes</strong> — click to go to Firewall Rules and apply.
@@ -9881,7 +9881,7 @@
                   </div>
                   <div v-if="wizardUplink.createdFwRuleId" style="display:flex; justify-content:space-between; align-items:center;">
                     <span class="dark:text-neutral-300">Firewall rule: {{ wizardUplink.fwRuleName }}</span>
-                    <button @click="activePage = 'firewall'"
+                    <button @click="switchPage('firewall')"
                             style="padding:3px 10px; border-radius:5px; border:none; cursor:pointer; font-size:0.78rem; background:#2563eb; color:#fff;">Open</button>
                   </div>
                   <div v-if="wizardUplink.createdNatRuleId" style="display:flex; justify-content:space-between; align-items:center;">
@@ -10254,7 +10254,7 @@
               </div>
               <div v-if="wizardS2S.createdFwRuleId" style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
                 <span class="text-sm dark:text-neutral-200">PBR rule: {{ wizardS2S.fwRuleName }}</span>
-                <button @click="activePage = 'firewall'"
+                <button @click="switchPage('firewall')"
                         style="padding:5px 14px; border-radius:6px; border:none; cursor:pointer; font-size:0.8rem; font-weight:600; background:#6366f1; color:#fff;">Open</button>
               </div>
             </div>
@@ -10463,7 +10463,7 @@
                                 : wizardBlockRu.ruRuleEnabled ? 'background:#fef3c7; color:#92400e;' : 'background:#dcfce7; color:#166534;'">
                         {{ wizardBlockRu.toggling ? '…' : (wizardBlockRu.ruRuleEnabled ? 'Disable' : 'Enable') }}
                       </button>
-                      <button @click="activePage = 'firewall'"
+                      <button @click="switchPage('firewall')"
                               style="padding:3px 10px; border-radius:5px; border:none; cursor:pointer; font-size:0.78rem; background:#dc2626; color:#fff;">Open</button>
                     </div>
                   </div>
@@ -10490,7 +10490,7 @@
                                 : wizardBlockRu.privateRulesEnabled ? 'background:#fef3c7; color:#92400e;' : 'background:#dcfce7; color:#166534;'">
                         {{ wizardBlockRu.toggling ? '…' : (wizardBlockRu.privateRulesEnabled ? 'Disable' : 'Enable') }}
                       </button>
-                      <button @click="activePage = 'firewall'"
+                      <button @click="switchPage('firewall')"
                               style="padding:3px 10px; border-radius:5px; border:none; cursor:pointer; font-size:0.78rem; background:#dc2626; color:#fff;">Open</button>
                     </div>
                   </div>
@@ -10540,7 +10540,7 @@
                         :style="{ background: theme==='dark' ? '#404040' : '#f3f4f6', color: theme==='dark' ? '#e5e5e5' : '#374151' }">
                   Reset
                 </button>
-                <button @click="activePage = 'firewall'"
+                <button @click="switchPage('firewall')"
                         style="padding:9px 24px; border-radius:7px; border:none; cursor:pointer; font-size:0.9rem; font-weight:600; background:#dc2626; color:#fff;">
                   Go to Firewall Rules
                 </button>
