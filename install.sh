@@ -2188,7 +2188,7 @@ install_cascade() {
                 echo -e "${GREEN}🌐 Веб-интерфейс: ${YELLOW}http://${server_ip}:${inst_cascade_port}${NC}"
             fi
             echo -e "${BLUE}========================================${NC}"
-            echo -e "${YELLOW}💡 Для миграции существующих AWG серверов используйте пункт меню 26${NC}"
+            echo -e "${YELLOW}💡Логи в реальном времени: docker logs -f cascade${NC}"
         else
             echo -e "${RED}❌ Cascade не запустился. Проверьте логи:${NC}"
             docker logs cascade 2>&1 | tail -20

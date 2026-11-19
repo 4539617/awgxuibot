@@ -7558,7 +7558,7 @@ new Vue({
 
     // ── Wizard: Block RU Zone ───────────────────────────────────────────────
 
-    wizardBlockRuInit() {
+    wizardBlockRuInit(skipDetect) {
       this.wizardBlockRu = {
         step: 1,
         aliasName: 'ru-zone',
@@ -7580,8 +7580,9 @@ new Vue({
         privateRulesEnabled: true,
         toggling: false,
       };
-      // Auto-detect existing RU zone setup and jump to management screen
-      this._wizardBlockRuDetect();
+      // Auto-detect existing RU zone setup and jump to management screen.
+      // Skipped when called from Reset button so the user can re-configure.
+      if (!skipDetect) this._wizardBlockRuDetect();
     },
 
     // Looks for an existing ipset alias with generatorOpts.country=RU and
