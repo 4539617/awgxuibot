@@ -4350,7 +4350,8 @@ async def show_users_list(callback_query: types.CallbackQuery, state: FSMContext
                 alias = row[3] if len(row) > 3 else None
                 is_blocked = config.users_db.is_blocked_by_admin(user_id)
                 blocked_status = "🔒 Заблокирован" if is_blocked else "✅ Активен"
-                display_name = f"@{username}" if username else (alias or f"ID: {user_id}")
+                base_name = f"@{username}" if username else f"ID: {user_id}"
+                display_name = f"{base_name} ({alias})" if alias else base_name
                 text += f"• {display_name} — {blocked_status} — добавлен {added_at[:10]}\n"
                 icon = "🔒" if is_blocked else "👤"
                 buttons.append([InlineKeyboardButton(
@@ -4610,12 +4611,13 @@ async def show_user_card(callback_query: types.CallbackQuery, state: FSMContext)
         is_blocked = config.users_db.is_blocked_by_admin(target_user_id)
         is_main_admin = (target_user_id == config.users_db.get_main_admin())
 
-        display_name = f"@{username}" if username else (alias or f"ID: {target_user_id}")
+        base_name   = f"@{username}" if username else f"ID: {target_user_id}"
+        display_name = f"{base_name} ({alias})" if alias else base_name
         status_text = "🔒 Заблокирован" if is_blocked else "✅ Активен"
 
-        alias_line = f"\n✏️ Имя: <b>{alias}</b>" if alias and not username else ""
+        alias_line = f"\n✏️ Имя: <b>{alias}</b>" if alias else ""
         text = (
-            f"👤 <b>Пользователь:</b> {display_name}\n"
+            f"👤 <b>Пользователь:</b> {base_name}\n"
             f"🆔 ID: <code>{target_user_id}</code>\n"
             f"📅 Добавлен: {added_at}\n"
             f"Статус: {status_text}"
