@@ -3545,6 +3545,51 @@ async def process_domains_to_bat(message: Message, notify_on_fail: bool = False)
     return True
 
 
+@dp.message(SetUserAliasState.waiting_for_alias)
+async def set_alias_receive(message: Message, state: FSMContext):
+    """Получаем введённый алиас и сохраняем."""
+    if not is_admin(message.from_user.id):
+        await state.clear()
+        return
+
+    data = await state.get_data()
+    target_user_id = data.get('alias_target_user_id')
+    await state.clear()
+
+    if not target_user_id:
+        return
+
+    text = (message.text or '').strip()
+    if text == '-':
+        config.users_db.set_user_alias(target_user_id, '')
+        await message.answer(
+            f"🗑 Имя пользователя <code>{target_user_id}</code> удалено.",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔙 К карточке", callback_data=f"user_card_{target_user_id}")]
+            ])
+        )
+    elif text:
+        config.users_db.set_user_alias(target_user_id, text)
+        await message.answer(
+            f"✅ Имя <b>{text}</b> сохранено для пользователя <code>{target_user_id}</code>.",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔙 К карточке", callback_data=f"user_card_{target_user_id}")]
+            ])
+        )
+    else:
+        await state.set_state(SetUserAliasState.waiting_for_alias)
+        await state.update_data(alias_target_user_id=target_user_id)
+        await message.answer(
+            "⚠️ Имя не может быть пустым. Отправьте <b>-</b> чтобы удалить.",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="❌ Отмена", callback_data=f"user_card_{target_user_id}")]
+            ])
+        )
+
+
 @dp.message()
 async def handle_unknown(message: Message, state: FSMContext):
     user_id = message.from_user.id
@@ -4669,48 +4714,6 @@ async def set_alias_start(callback_query: types.CallbackQuery, state: FSMContext
             [InlineKeyboardButton(text="❌ Отмена", callback_data=f"user_card_{target_user_id}")]
         ])
     )
-
-
-@dp.message(SetUserAliasState.waiting_for_alias)
-async def set_alias_receive(message: Message, state: FSMContext):
-    """Получаем введённый алиас и сохраняем."""
-    if not is_admin(message.from_user.id):
-        return
-
-    data = await state.get_data()
-    target_user_id = data.get('alias_target_user_id')
-    await state.clear()
-
-    if not target_user_id:
-        return
-
-    text = message.text.strip() if message.text else ''
-    if text == '-':
-        config.users_db.set_user_alias(target_user_id, '')
-        await message.answer(
-            f"🗑 Имя пользователя <code>{target_user_id}</code> удалено.",
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🔙 К карточке", callback_data=f"user_card_{target_user_id}")]
-            ])
-        )
-    elif text:
-        config.users_db.set_user_alias(target_user_id, text)
-        await message.answer(
-            f"✅ Имя <b>{text}</b> сохранено для пользователя <code>{target_user_id}</code>.",
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🔙 К карточке", callback_data=f"user_card_{target_user_id}")]
-            ])
-        )
-    else:
-        await message.answer(
-            "⚠️ Имя не может быть пустым. Отправьте <b>-</b> чтобы удалить.",
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="❌ Отмена", callback_data=f"user_card_{target_user_id}")]
-            ])
-        )
 
 
 async def _get_user_keys_all_panels(username: str) -> list:
