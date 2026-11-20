@@ -3922,7 +3922,7 @@ async def create_backup(callback_query: types.CallbackQuery, state: FSMContext):
     # Прогресс-сообщение
     progress_msg = await callback_query.message.answer(
         "⏳ <b>Создаю полный бэкап...</b>\n\n"
-        "Собираю данные со всех панелей, это займёт несколько секунд.",
+        "Это займёт несколько секунд.",
         parse_mode="HTML",
     )
 
