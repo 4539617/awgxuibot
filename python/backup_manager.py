@@ -379,7 +379,7 @@ async def _cascade_session(cascade_cfg) -> aiohttp.ClientSession:
     if not cascade_cfg.api_key and cascade_cfg.password:
         try:
             async with session.post(
-                f"{cascade_cfg.url}/api/session",
+                f"{cascade_cfg.url.rstrip('/')}/api/session",
                 json={"username": cascade_cfg.username, "password": cascade_cfg.password},
             ) as resp:
                 if resp.status != 200:
@@ -393,7 +393,7 @@ async def _cascade_get(session, cascade_cfg, path: str) -> Optional[dict | list]
     """GET {cascade_url}{path} → распакованный obj (dict или list)."""
     hdrs = _cascade_headers(cascade_cfg)
     try:
-        async with session.get(f"{cascade_cfg.url}{path}", headers=hdrs) as resp:
+        async with session.get(f"{cascade_cfg.url.rstrip('/')}{path}", headers=hdrs) as resp:
             if resp.status == 200:
                 data = await resp.json()
                 # Cascade возвращает именованную обёртку: { peers/interfaces/... : [...] }
@@ -411,7 +411,7 @@ async def _cascade_backup_binary(session, cascade_cfg) -> Optional[bytes]:
     hdrs = _cascade_headers(cascade_cfg)
     try:
         async with session.post(
-            f"{cascade_cfg.url}/api/system/backup",
+            f"{cascade_cfg.url.rstrip('/')}/api/system/backup",
             headers=hdrs,
             json={},
         ) as resp:
