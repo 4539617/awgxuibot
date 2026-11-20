@@ -339,6 +339,9 @@ class PaymentLinkState(StatesGroup):
 class SetPriceState(StatesGroup):
     waiting_for_price = State()
 
+class SetUserAliasState(StatesGroup):
+    waiting_for_alias = State()
+
 
 # ─── Шаг 1: Создать ключ → выбор типа срока ───────────────────────────────
 @dp.callback_query(lambda c: c.data == "create_key")
@@ -4342,10 +4345,12 @@ async def show_users_list(callback_query: types.CallbackQuery, state: FSMContext
 
         if users:
             text += "<b>📋 Пользователи:</b>\n"
-            for user_id, username, added_at in users:
+            for row in users:
+                user_id, username, added_at = row[0], row[1], row[2]
+                alias = row[3] if len(row) > 3 else None
                 is_blocked = config.users_db.is_blocked_by_admin(user_id)
                 blocked_status = "🔒 Заблокирован" if is_blocked else "✅ Активен"
-                display_name = f"@{username}" if username else f"ID: {user_id}"
+                display_name = f"@{username}" if username else (alias or f"ID: {user_id}")
                 text += f"• {display_name} — {blocked_status} — добавлен {added_at[:10]}\n"
                 icon = "🔒" if is_blocked else "👤"
                 buttons.append([InlineKeyboardButton(
@@ -4601,17 +4606,20 @@ async def show_user_card(callback_query: types.CallbackQuery, state: FSMContext)
         # Если username не задан — используем str(user_id) как поисковый псевдоним
         search_name = username if username else str(target_user_id)
         added_at = user_row[2][:10] if user_row else "—"
+        alias = (user_row[3] if user_row and len(user_row) > 3 else None) or ''
         is_blocked = config.users_db.is_blocked_by_admin(target_user_id)
         is_main_admin = (target_user_id == config.users_db.get_main_admin())
 
-        display_name = f"@{username}" if username else f"ID: {target_user_id}"
+        display_name = f"@{username}" if username else (alias or f"ID: {target_user_id}")
         status_text = "🔒 Заблокирован" if is_blocked else "✅ Активен"
 
+        alias_line = f"\n✏️ Имя: <b>{alias}</b>" if alias and not username else ""
         text = (
             f"👤 <b>Пользователь:</b> {display_name}\n"
             f"🆔 ID: <code>{target_user_id}</code>\n"
             f"📅 Добавлен: {added_at}\n"
             f"Статус: {status_text}"
+            + alias_line
         )
 
         buttons = []
@@ -4622,6 +4630,7 @@ async def show_user_card(callback_query: types.CallbackQuery, state: FSMContext)
                 buttons.append([InlineKeyboardButton(text="🔒 Заблокировать", callback_data=f"doblock_{target_user_id}")])
             buttons.append([InlineKeyboardButton(text="🗑 Удалить", callback_data=f"doremove_{target_user_id}")])
 
+        buttons.append([InlineKeyboardButton(text="✏️ Задать имя", callback_data=f"set_alias_{target_user_id}")])
         buttons.append([InlineKeyboardButton(text="🔑 Ключи пользователя", callback_data=f"user_keys_{target_user_id}")])
 
         buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="show_users")])
@@ -4633,6 +4642,73 @@ async def show_user_card(callback_query: types.CallbackQuery, state: FSMContext)
     except Exception as e:
         logger.error(f"Ошибка показа карточки пользователя: {e}")
         await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
+
+
+@dp.callback_query(lambda c: c.data and c.data.startswith('set_alias_'))
+async def set_alias_start(callback_query: types.CallbackQuery, state: FSMContext):
+    """Начало ввода алиаса для пользователя."""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
+        return
+
+    target_user_id = int(callback_query.data[len('set_alias_'):])
+    await state.set_state(SetUserAliasState.waiting_for_alias)
+    await state.update_data(alias_target_user_id=target_user_id)
+    await callback_query.answer()
+
+    current = config.users_db.get_user_alias(target_user_id)
+    hint = f"\n\nТекущее имя: <b>{current}</b>" if current else ""
+    await callback_query.message.answer(
+        f"✏️ Введите имя (псевдоним) для пользователя <code>{target_user_id}</code>."
+        f"{hint}\n\n"
+        f"Отправьте <b>-</b> чтобы удалить текущее имя.",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="❌ Отмена", callback_data=f"user_card_{target_user_id}")]
+        ])
+    )
+
+
+@dp.message(SetUserAliasState.waiting_for_alias)
+async def set_alias_receive(message: Message, state: FSMContext):
+    """Получаем введённый алиас и сохраняем."""
+    if not is_admin(message.from_user.id):
+        return
+
+    data = await state.get_data()
+    target_user_id = data.get('alias_target_user_id')
+    await state.clear()
+
+    if not target_user_id:
+        return
+
+    text = message.text.strip() if message.text else ''
+    if text == '-':
+        config.users_db.set_user_alias(target_user_id, '')
+        await message.answer(
+            f"🗑 Имя пользователя <code>{target_user_id}</code> удалено.",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔙 К карточке", callback_data=f"user_card_{target_user_id}")]
+            ])
+        )
+    elif text:
+        config.users_db.set_user_alias(target_user_id, text)
+        await message.answer(
+            f"✅ Имя <b>{text}</b> сохранено для пользователя <code>{target_user_id}</code>.",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔙 К карточке", callback_data=f"user_card_{target_user_id}")]
+            ])
+        )
+    else:
+        await message.answer(
+            "⚠️ Имя не может быть пустым. Отправьте <b>-</b> чтобы удалить.",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="❌ Отмена", callback_data=f"user_card_{target_user_id}")]
+            ])
+        )
 
 
 async def _get_user_keys_all_panels(username: str) -> list:
