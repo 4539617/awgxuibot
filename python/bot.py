@@ -4649,6 +4649,80 @@ async def _get_user_keys_all_panels(username: str) -> list:
     return all_keys
 
 
+async def _get_user_awg_keys_all_cascades(username: str) -> list:
+    """Собирает AWG-пиры пользователя со всех Cascade-серверов.
+
+    Имя пира создаётся как «{username}_{suffix}» (см. on_awg_select_cascade),
+    поэтому ищем по префиксу «{username}_».
+    Возвращает список dict с полями:
+        _key_type   : "awg"
+        _cascade_id : str
+        _cascade_label : str
+        _iface_id   : str
+        id          : peer_id
+        name        : peer_name (из Cascade)
+        status      : "active" | "expired"
+        expiredAt   : str | None  (RFC3339 из Cascade, None = бессрочный)
+    """
+    cascade_servers = config.get_cascade_servers()
+    if not cascade_servers:
+        return []
+
+    result = []
+    prefix = username.lower() + "_"
+
+    for srv in cascade_servers:
+        try:
+            async with CascadeClient(
+                url=srv.url,
+                api_key=srv.api_key,
+                username=srv.username,
+                password=srv.password,
+                label=srv.label,
+            ) as client:
+                # Только читаем — не создаём интерфейс если его нет
+                ifaces = await client.list_interfaces()
+                iface = next(
+                    (i for i in ifaces if i.get("name") == AWGXUIBOT_IFACE_NAME),
+                    None,
+                )
+                if not iface:
+                    continue
+                iface_id = iface.get("id")
+                if not iface_id:
+                    continue
+                peers = await client.list_peers(iface_id)
+                for peer in peers:
+                    peer_name = (peer.get("name") or "").lower()
+                    if not peer_name.startswith(prefix):
+                        continue
+                    expired_at = peer.get("expiredAt") or peer.get("expired_at") or None
+                    # Определяем статус по полю expiredAt
+                    if expired_at:
+                        try:
+                            from datetime import timezone
+                            exp_dt = datetime.fromisoformat(expired_at.replace("Z", "+00:00"))
+                            is_expired = exp_dt < datetime.now(timezone.utc)
+                        except Exception:
+                            is_expired = False
+                    else:
+                        is_expired = False
+                    result.append({
+                        "_key_type":      "awg",
+                        "_cascade_id":    srv.cascade_id,
+                        "_cascade_label": srv.label,
+                        "_iface_id":      iface_id,
+                        "id":             peer.get("id", ""),
+                        "name":           peer.get("name", ""),
+                        "status":         "expired" if is_expired else "active",
+                        "expiredAt":      expired_at,
+                    })
+        except Exception as ce:
+            logger.warning(f"Не удалось получить AWG-ключи с Cascade {srv.cascade_id} для {username}: {ce}")
+
+    return result
+
+
 @dp.callback_query(lambda c: c.data and c.data.startswith('user_keys_'))
 async def show_user_keys_list(callback_query: types.CallbackQuery):
     """Список всех ключей пользователя (включая неактивные)"""
@@ -4667,7 +4741,9 @@ async def show_user_keys_list(callback_query: types.CallbackQuery):
         search_name = username if username else str(target_user_id)
         display_name = f"@{username}" if username else f"ID: {target_user_id}"
 
-        all_keys = await _get_user_keys_all_panels(search_name)
+        vless_keys = await _get_user_keys_all_panels(search_name)
+        awg_keys   = await _get_user_awg_keys_all_cascades(search_name)
+        all_keys   = vless_keys + awg_keys
 
         if not all_keys:
             text = f"🔑 <b>Ключи пользователя {display_name}</b>\n\nКлючей не найдено."
@@ -4689,24 +4765,34 @@ async def show_user_keys_list(callback_query: types.CallbackQuery):
 
         buttons = []
         for key in all_keys:
-            uuid        = key.get('uuid') or key.get('id', '')
-            panel_id    = key.get('_panel_id', '')
-            email       = key.get('email', '')
-            comment     = (key.get('comment') or '').replace('Временный ', '')
-            label       = (comment or email)[:25]
-            loc         = key.get('_panel_location', '') or key.get('_panel_alias', '')
-            loc_part    = f"[{loc}] " if loc else ""
-            status      = key.get('status', '')
-
-            if status == 'active':
-                st_icon = "✅"
-            elif status == 'inactive':
-                st_icon = "⏸️"
+            is_awg   = key.get('_key_type') == 'awg'
+            if is_awg:
+                peer_id  = key.get('id', '')
+                # Используем виртуальный panel_id "awg:{cascade_id}" чтобы отличить от VLESS
+                virt_panel_id = f"awg:{key['_cascade_id']}"
+                label    = (key.get('name') or peer_id)[:25]
+                loc      = key.get('_cascade_label', key.get('_cascade_id', ''))
+                loc_part = f"[{loc}] " if loc else ""
+                status   = key.get('status', '')
+                st_icon  = "✅" if status == 'active' else "⏰"
+                idx = _uk_get_or_create(virt_panel_id, peer_id, target_user_id)
             else:
-                st_icon = "⏰"
+                uuid        = key.get('uuid') or key.get('id', '')
+                panel_id    = key.get('_panel_id', '')
+                email       = key.get('email', '')
+                comment     = (key.get('comment') or '').replace('Временный ', '')
+                label       = (comment or email)[:25]
+                loc         = key.get('_panel_location', '') or key.get('_panel_alias', '')
+                loc_part    = f"[{loc}] " if loc else ""
+                status      = key.get('status', '')
+                if status == 'active':
+                    st_icon = "✅"
+                elif status == 'inactive':
+                    st_icon = "⏸️"
+                else:
+                    st_icon = "⏰"
+                idx = _uk_get_or_create(panel_id, uuid, target_user_id)
 
-            # короткий ключ вместо длинного callback_data
-            idx = _uk_get_or_create(panel_id, uuid, target_user_id)
             buttons.append([InlineKeyboardButton(
                 text=f"{st_icon} {loc_part}{label}",
                 callback_data=f"ukd_{idx}"
@@ -4741,6 +4827,74 @@ async def show_user_key_detail(callback_query: types.CallbackQuery):
 
     await callback_query.answer()
 
+    # ── AWG-ключ (virtual panel_id = "awg:{cascade_id}") ──────────────────────
+    if panel_id.startswith("awg:"):
+        try:
+            cascade_id = panel_id[4:]
+            peer_id    = client_uuid
+            srv_list   = config.get_cascade_servers()
+            srv        = next((s for s in srv_list if s.cascade_id == cascade_id), None)
+            if not srv:
+                await callback_query.answer("❌ Cascade-сервер не найден", show_alert=True)
+                return
+
+            async with CascadeClient(
+                url=srv.url, api_key=srv.api_key,
+                username=srv.username, password=srv.password, label=srv.label,
+            ) as client:
+                ifaces   = await client.list_interfaces()
+                iface    = next(
+                    (i for i in ifaces if i.get("name") == AWGXUIBOT_IFACE_NAME),
+                    None,
+                )
+                if not iface:
+                    await callback_query.answer("❌ Интерфейс AWGXUIBOT не найден на сервере", show_alert=True)
+                    return
+                iface_id = iface.get("id", "")
+                peer     = await client.get_peer(iface_id, peer_id)
+
+            peer_name  = peer.get("name") or _awg_peer_get_name(peer_id) or peer_id
+            expired_at = peer.get("expiredAt") or peer.get("expired_at") or None
+            if expired_at:
+                try:
+                    from datetime import timezone
+                    exp_dt     = datetime.fromisoformat(expired_at.replace("Z", "+00:00"))
+                    is_expired = exp_dt < datetime.now(timezone.utc)
+                    expiry_text = exp_dt.strftime("%Y-%m-%d %H:%M")
+                except Exception:
+                    is_expired  = False
+                    expiry_text = expired_at
+            else:
+                is_expired  = False
+                expiry_text = "Бессрочно"
+
+            status_text = "⏰ Просрочен" if is_expired else "✅ Активен"
+            loc_text    = f" · {srv.label}" if srv.label else ""
+
+            text = (
+                f"📋 <b>Информация о AWG-ключе</b>{loc_text}\n\n"
+                f"{status_text}\n"
+                f"👤 <b>Имя:</b> <code>{peer_name}</code>\n"
+                f"📅 <b>Срок:</b> {expiry_text}\n"
+            )
+
+            # awg_showqr:{cascade_id}:{iface_id}:{peer_id}
+            cb_qr = f"awg_showqr:{cascade_id}:{iface_id}:{peer_id}"
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔑 Показать ключ и QR", callback_data=cb_qr)],
+                [InlineKeyboardButton(text="🔙 Назад к ключам", callback_data=f"user_keys_{target_user_id}")]
+            ])
+
+            await bot.send_message(
+                callback_query.message.chat.id, text,
+                parse_mode="HTML", reply_markup=keyboard
+            )
+        except Exception as e:
+            logger.error(f"Ошибка показа AWG-ключа пользователя: {e}")
+            await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
+        return
+
+    # ── VLESS-ключ ─────────────────────────────────────────────────────────────
     try:
         pc = make_panel_client(panel_id)
         client = await pc.get_client_details(client_uuid)
@@ -4880,6 +5034,11 @@ async def handle_user_key_action(callback_query: types.CallbackQuery):
         await callback_query.answer("❌ Сессия устарела, откройте ключи заново", show_alert=True)
         return
     panel_id, client_uuid, target_user_id = entry
+
+    # AWG-ключи не поддерживают uks_/uke_/ukn_ — они используют awg_showqr напрямую
+    if panel_id.startswith("awg:"):
+        await callback_query.answer("ℹ️ Используйте кнопку показа ключа в карточке AWG-ключа", show_alert=True)
+        return
 
     try:
         pc = make_panel_client(panel_id)
@@ -5265,10 +5424,16 @@ async def callback_cmd_myclients(callback_query: types.CallbackQuery, state: FSM
                 offline_panels.append(panel_cfg.alias or panel_id)
                 logger.warning(f"Не удалось получить ключи с панели {panel_id}: {pe}")
 
+        # AWG-ключи со всех Cascade-серверов
+        awg_clients = await _get_user_awg_keys_all_cascades(username)
+
         # Статистика и панели
         active_count = sum(1 for c in all_clients if c['status'] == 'active')
         inactive_count = sum(1 for c in all_clients if c['status'] == 'inactive')
         expired_count = sum(1 for c in all_clients if c['status'] == 'expired')
+        active_count   += sum(1 for c in awg_clients if c.get('status') == 'active')
+        expired_count  += sum(1 for c in awg_clients if c.get('status') == 'expired')
+        total_count = len(all_clients) + len(awg_clients)
         # panel_names с локацией: "rus [Москва], yun [Германия]"
         seen_panels = {}
         for c in all_clients:
@@ -5283,7 +5448,7 @@ async def callback_cmd_myclients(callback_query: types.CallbackQuery, state: FSM
             if offline_panels else ""
         )
 
-        if not all_clients:
+        if not all_clients and not awg_clients:
             text = f"🔑 <b>Мои ключи (0)</b>\n\n"
             text += f"✅ Активных: 0\n⏸️ Неактивных: 0\n⏰ Просроченных: 0\n\n"
             text += "📭 <i>У вас пока нет ключей.</i>"
@@ -5312,12 +5477,21 @@ async def callback_cmd_myclients(callback_query: types.CallbackQuery, state: FSM
             cb = f"showqr_{pid}:{client['uuid']}" if pid else f"showqr_{client['uuid']}"
             buttons.append([InlineKeyboardButton(text=label, callback_data=cb)])
 
+        for awg in awg_clients:
+            status = awg.get('status', 'active')
+            icon   = "✅" if status == 'active' else "⏰"
+            name   = (awg.get('name') or awg.get('id', ''))[:20]
+            label_tag = awg.get('_cascade_label') or awg.get('_cascade_id', '')
+            label  = f"{icon} {name} · {label_tag}" if label_tag else f"{icon} {name}"
+            cb     = f"awg_showqr:{awg['_cascade_id']}:{awg['_iface_id']}:{awg['id']}"
+            buttons.append([InlineKeyboardButton(text=label, callback_data=cb)])
+
         buttons.append([
             InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_myclients"),
             InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")
         ])
 
-        text = f"🔑 <b>Мои ключи ({len(all_clients)})</b>\n"
+        text = f"🔑 <b>Мои ключи ({total_count})</b>\n"
         text += f"📡 {panel_names}\n\n"
         text += f"✅ Активных: {active_count}\n"
         text += f"⏸️ Неактивных: {inactive_count}\n"
@@ -5393,9 +5567,15 @@ async def refresh_myclients(callback_query: types.CallbackQuery, state: FSMConte
                 offline_panels.append(panel_cfg.alias or panel_id)
                 logger.warning(f"Не удалось получить ключи с панели {panel_id}: {pe}")
 
+        # AWG-ключи со всех Cascade-серверов
+        awg_clients = await _get_user_awg_keys_all_cascades(username)
+
         active_count = sum(1 for c in all_clients if c['status'] == 'active')
         inactive_count = sum(1 for c in all_clients if c['status'] == 'inactive')
         expired_count = sum(1 for c in all_clients if c['status'] == 'expired')
+        active_count  += sum(1 for c in awg_clients if c.get('status') == 'active')
+        expired_count += sum(1 for c in awg_clients if c.get('status') == 'expired')
+        total_count = len(all_clients) + len(awg_clients)
         offline_warn = (
             f"\n⚠️ <i>Недоступны: {', '.join(offline_panels)} — ключи не загружены</i>"
             if offline_panels else ""
@@ -5409,7 +5589,7 @@ async def refresh_myclients(callback_query: types.CallbackQuery, state: FSMConte
                 seen_panels[pid] = f"{alias} [{loc}]" if loc else alias
         panel_names = ", ".join(seen_panels.values()) if seen_panels else "—"
 
-        if not all_clients:
+        if not all_clients and not awg_clients:
             text = f"🔑 <b>Мои ключи (0)</b>\n\n"
             text += f"✅ Активных: 0\n⏸️ Неактивных: 0\n⏰ Просроченных: 0\n\n"
             text += "📭 <i>У вас пока нет ключей.</i>"
@@ -5439,12 +5619,21 @@ async def refresh_myclients(callback_query: types.CallbackQuery, state: FSMConte
             cb = f"showqr_{pid}:{client['uuid']}" if pid else f"showqr_{client['uuid']}"
             buttons.append([InlineKeyboardButton(text=label, callback_data=cb)])
 
+        for awg in awg_clients:
+            status = awg.get('status', 'active')
+            icon   = "✅" if status == 'active' else "⏰"
+            name   = (awg.get('name') or awg.get('id', ''))[:20]
+            label_tag = awg.get('_cascade_label') or awg.get('_cascade_id', '')
+            label  = f"{icon} {name} · {label_tag}" if label_tag else f"{icon} {name}"
+            cb     = f"awg_showqr:{awg['_cascade_id']}:{awg['_iface_id']}:{awg['id']}"
+            buttons.append([InlineKeyboardButton(text=label, callback_data=cb)])
+
         buttons.append([
             InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_myclients"),
             InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")
         ])
 
-        text = f"🔑 <b>Мои ключи ({len(all_clients)})</b>\n"
+        text = f"🔑 <b>Мои ключи ({total_count})</b>\n"
         text += f"📡 {panel_names}\n\n"
         text += f"✅ Активных: {active_count}\n"
         text += f"⏸️ Неактивных: {inactive_count}\n"
