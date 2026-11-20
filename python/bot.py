@@ -1834,6 +1834,12 @@ async def cmd_list_users(message: Message):
 # Кеш для списка клиентов
 allclients_cache = {}
 
+# Кеш для "Мои ключи" / "Ключи пользователя": хранит (vless_keys, awg_keys) на время сессии
+# user_id -> {'vless': [...], 'awg': [...]}
+_myclients_cache: dict = {}
+# admin: target_user_id -> {'vless': [...], 'awg': [...]}
+_ukeys_cache: dict = {}
+
 @dp.message(Command("allclients"))
 async def cmd_all_clients(message: Message):
     if not is_admin(message.from_user.id):
@@ -4725,90 +4731,190 @@ async def _get_user_awg_keys_all_cascades(username: str) -> list:
 
 @dp.callback_query(lambda c: c.data and c.data.startswith('user_keys_'))
 async def show_user_keys_list(callback_query: types.CallbackQuery):
-    """Список всех ключей пользователя (включая неактивные)"""
+    """Список всех ключей пользователя (включая неактивные) — категорийный выбор."""
     if not is_admin(callback_query.from_user.id):
         await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
         return
 
     target_user_id = int(callback_query.data.split('_')[2])
-    await callback_query.answer("⏳ Загружаю ключи...")
+
+    # Отправляем сообщение-заглушку
+    wait_msg = await bot.send_message(
+        callback_query.message.chat.id,
+        "⏳ <i>Формирую список ключей...</i>",
+        parse_mode="HTML"
+    )
+    await callback_query.answer()
 
     try:
         users = config.users_db.list_users()
         user_row = next((r for r in users if r[0] == target_user_id), None)
         username = user_row[1] if user_row else None
-        # Если username не задан — используем str(user_id) как поисковый псевдоним
-        search_name = username if username else str(target_user_id)
+        search_name  = username if username else str(target_user_id)
         display_name = f"@{username}" if username else f"ID: {target_user_id}"
 
         vless_keys = await _get_user_keys_all_panels(search_name)
         awg_keys   = await _get_user_awg_keys_all_cascades(search_name)
-        all_keys   = vless_keys + awg_keys
 
-        if not all_keys:
-            text = f"🔑 <b>Ключи пользователя {display_name}</b>\n\nКлючей не найдено."
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🔙 Назад", callback_data=f"user_card_{target_user_id}")]
-            ])
-            await bot.send_message(callback_query.message.chat.id, text, parse_mode="HTML", reply_markup=keyboard)
-            return
+        # Сохраняем в кеш
+        _ukeys_cache[target_user_id] = {
+            'vless':        vless_keys,
+            'awg':          awg_keys,
+            'display_name': display_name,
+        }
 
-        active_cnt   = sum(1 for k in all_keys if k.get('status') == 'active')
-        inactive_cnt = sum(1 for k in all_keys if k.get('status') == 'inactive')
-        expired_cnt  = sum(1 for k in all_keys if k.get('status') == 'expired')
+        await bot.delete_message(callback_query.message.chat.id, wait_msg.message_id)
+        await _send_ukeys_category(callback_query.message.chat.id, target_user_id)
 
-        text = (
-            f"🔑 <b>Ключи пользователя {display_name}</b>\n\n"
-            f"Всего: {len(all_keys)}  (✅{active_cnt} ⏸️{inactive_cnt} ⏰{expired_cnt})\n\n"
-            f"Выберите ключ:"
-        )
+    except Exception as e:
+        logger.error(f"Ошибка загрузки ключей пользователя {target_user_id}: {e}")
+        try:
+            await bot.delete_message(callback_query.message.chat.id, wait_msg.message_id)
+        except Exception:
+            pass
+        await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
 
+
+async def _send_ukeys_category(chat_id: int, target_user_id: int, edit_message=None):
+    """Отправляет (или редактирует) сообщение с категориями ключей для админа."""
+    cached = _ukeys_cache.get(target_user_id, {})
+    vless  = cached.get('vless', [])
+    awg    = cached.get('awg', [])
+    display_name = cached.get('display_name', f"ID: {target_user_id}")
+
+    total = len(vless) + len(awg)
+    if total == 0:
+        text = f"🔑 <b>Ключи пользователя {display_name}</b>\n\nКлючей не найдено."
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Назад", callback_data=f"user_card_{target_user_id}")]
+        ])
+        if edit_message:
+            await edit_message.edit_text(text, parse_mode="HTML", reply_markup=kb)
+        else:
+            await bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=kb)
+        return
+
+    active_v = sum(1 for k in vless if k.get('status') == 'active')
+    inactive_v = sum(1 for k in vless if k.get('status') == 'inactive')
+    active_a = sum(1 for k in awg  if k.get('status') == 'active')
+
+    text = (
+        f"🔑 <b>Ключи пользователя {display_name}</b>\n\n"
+        f"Всего: {total}\n\nВыберите категорию:"
+    )
+    kb_rows = []
+    if vless:
+        kb_rows.append([InlineKeyboardButton(
+            text=f"🌐 VLESS ({len(vless)}, ✅{active_v} ⏸️{inactive_v})",
+            callback_data=f"ukeys_vless_{target_user_id}"
+        )])
+    if awg:
+        kb_rows.append([InlineKeyboardButton(
+            text=f"🛡 AWG ({len(awg)}, ✅{active_a})",
+            callback_data=f"ukeys_awg_{target_user_id}"
+        )])
+    kb_rows.append([InlineKeyboardButton(text="🔙 Назад", callback_data=f"user_card_{target_user_id}")])
+
+    kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
+    if edit_message:
+        await edit_message.edit_text(text, parse_mode="HTML", reply_markup=kb)
+    else:
+        await bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=kb)
+
+
+@dp.callback_query(lambda c: c.data and (
+    c.data.startswith('ukeys_vless_') or c.data.startswith('ukeys_awg_')
+))
+async def show_ukeys_category(callback_query: types.CallbackQuery):
+    """Показывает список ключей выбранной категории для конкретного пользователя (админ)."""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
+        return
+
+    data = callback_query.data
+    if data.startswith('ukeys_vless_'):
+        category       = 'vless'
+        target_user_id = int(data[len('ukeys_vless_'):])
+    else:
+        category       = 'awg'
+        target_user_id = int(data[len('ukeys_awg_'):])
+
+    cached = _ukeys_cache.get(target_user_id)
+    if not cached:
+        await callback_query.answer("⏳ Сессия устарела — откройте ключи заново", show_alert=True)
+        return
+
+    await callback_query.answer()
+
+    if category == 'vless':
+        keys  = cached.get('vless', [])
+        title = "🌐 VLESS ключи"
         buttons = []
-        for key in all_keys:
-            is_awg   = key.get('_key_type') == 'awg'
-            if is_awg:
-                peer_id  = key.get('id', '')
-                # Используем виртуальный panel_id "awg:{cascade_id}" чтобы отличить от VLESS
-                virt_panel_id = f"awg:{key['_cascade_id']}"
-                label    = (key.get('name') or peer_id)[:25]
-                loc      = key.get('_cascade_label', key.get('_cascade_id', ''))
-                loc_part = f"[{loc}] " if loc else ""
-                status   = key.get('status', '')
-                st_icon  = "✅" if status == 'active' else "⏰"
-                idx = _uk_get_or_create(virt_panel_id, peer_id, target_user_id)
+        for key in keys:
+            uuid     = key.get('uuid') or key.get('id', '')
+            panel_id = key.get('_panel_id', '')
+            email    = key.get('email', '')
+            comment  = (key.get('comment') or '').replace('Временный ', '')
+            label    = (comment or email)[:25]
+            loc      = key.get('_panel_location', '') or key.get('_panel_alias', '')
+            loc_part = f"[{loc}] " if loc else ""
+            status   = key.get('status', '')
+            if status == 'active':
+                st_icon = "✅"
+            elif status == 'inactive':
+                st_icon = "⏸️"
             else:
-                uuid        = key.get('uuid') or key.get('id', '')
-                panel_id    = key.get('_panel_id', '')
-                email       = key.get('email', '')
-                comment     = (key.get('comment') or '').replace('Временный ', '')
-                label       = (comment or email)[:25]
-                loc         = key.get('_panel_location', '') or key.get('_panel_alias', '')
-                loc_part    = f"[{loc}] " if loc else ""
-                status      = key.get('status', '')
-                if status == 'active':
-                    st_icon = "✅"
-                elif status == 'inactive':
-                    st_icon = "⏸️"
-                else:
-                    st_icon = "⏰"
-                idx = _uk_get_or_create(panel_id, uuid, target_user_id)
-
+                st_icon = "⏰"
+            idx = _uk_get_or_create(panel_id, uuid, target_user_id)
+            buttons.append([InlineKeyboardButton(
+                text=f"{st_icon} {loc_part}{label}",
+                callback_data=f"ukd_{idx}"
+            )])
+    else:
+        keys  = cached.get('awg', [])
+        title = "🛡 AWG ключи"
+        buttons = []
+        for key in keys:
+            peer_id       = key.get('id', '')
+            virt_panel_id = f"awg:{key['_cascade_id']}"
+            label         = (key.get('name') or peer_id)[:25]
+            loc           = key.get('_cascade_label', key.get('_cascade_id', ''))
+            loc_part      = f"[{loc}] " if loc else ""
+            status        = key.get('status', '')
+            st_icon       = "✅" if status == 'active' else "⏰"
+            idx = _uk_get_or_create(virt_panel_id, peer_id, target_user_id)
             buttons.append([InlineKeyboardButton(
                 text=f"{st_icon} {loc_part}{label}",
                 callback_data=f"ukd_{idx}"
             )])
 
-        buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data=f"user_card_{target_user_id}")])
+    if not keys:
+        await callback_query.answer("Ключей этой категории нет", show_alert=True)
+        return
 
-        await bot.send_message(
-            callback_query.message.chat.id, text,
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
-        )
+    buttons.append([InlineKeyboardButton(
+        text="🔙 Назад к категориям",
+        callback_data=f"ukeys_back_{target_user_id}"
+    )])
 
-    except Exception as e:
-        logger.error(f"Ошибка загрузки ключей пользователя {target_user_id}: {e}")
-        await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
+    display_name = cached.get('display_name', f"ID: {target_user_id}")
+    text = f"🔑 <b>{title} — {display_name} ({len(keys)})</b>\n\nВыберите ключ:"
+    await bot.send_message(
+        callback_query.message.chat.id, text,
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+    )
+
+
+@dp.callback_query(lambda c: c.data and c.data.startswith('ukeys_back_'))
+async def ukeys_back_to_category(callback_query: types.CallbackQuery):
+    """Возврат к выбору категории для пользователя (админ, без перезагрузки)."""
+    if not is_admin(callback_query.from_user.id):
+        await callback_query.answer("⛔ Отказано в доступе", show_alert=True)
+        return
+    target_user_id = int(callback_query.data[len('ukeys_back_'):])
+    await callback_query.answer()
+    await _send_ukeys_category(callback_query.message.chat.id, target_user_id)
 
 
 @dp.callback_query(lambda c: c.data and c.data.startswith('ukd_'))
@@ -5386,6 +5492,13 @@ async def callback_cmd_myclients(callback_query: types.CallbackQuery, state: FSM
         await callback_query.answer("⛔ Вы заблокированы администратором", show_alert=True)
         return
     
+    # Отправляем сообщение-заглушку пока идёт загрузка
+    wait_msg = await bot.send_message(
+        callback_query.message.chat.id,
+        "⏳ <i>Формирую список ключей...</i>",
+        parse_mode="HTML"
+    )
+
     await callback_query.answer()
 
     # Живая проверка перед сбором ключей
@@ -5395,6 +5508,7 @@ async def callback_cmd_myclients(callback_query: types.CallbackQuery, state: FSM
     try:
         username = callback_query.from_user.username
         if not username:
+            await bot.delete_message(callback_query.message.chat.id, wait_msg.message_id)
             await bot.send_message(
                 callback_query.message.chat.id,
                 "❌ У вас не установлен username в Telegram.\n\nУстановите username в настройках Telegram для использования бота.",
@@ -5427,124 +5541,204 @@ async def callback_cmd_myclients(callback_query: types.CallbackQuery, state: FSM
         # AWG-ключи со всех Cascade-серверов
         awg_clients = await _get_user_awg_keys_all_cascades(username)
 
-        # Статистика и панели
-        active_count = sum(1 for c in all_clients if c['status'] == 'active')
-        inactive_count = sum(1 for c in all_clients if c['status'] == 'inactive')
-        expired_count = sum(1 for c in all_clients if c['status'] == 'expired')
-        active_count   += sum(1 for c in awg_clients if c.get('status') == 'active')
-        expired_count  += sum(1 for c in awg_clients if c.get('status') == 'expired')
-        total_count = len(all_clients) + len(awg_clients)
-        # panel_names с локацией: "rus [Москва], yun [Германия]"
-        seen_panels = {}
-        for c in all_clients:
-            pid = c.get('_panel_id', '')
-            if pid not in seen_panels:
-                alias = c.get('_panel_alias', '')
-                loc = c.get('_panel_location', '')
-                seen_panels[pid] = f"{alias} [{loc}]" if loc else alias
-        panel_names = ", ".join(seen_panels.values()) if seen_panels else "—"
-        offline_warn = (
-            f"\n⚠️ <i>Недоступны: {', '.join(offline_panels)} — ключи не загружены</i>"
-            if offline_panels else ""
+        # Сохраняем в кеш для категорийных хендлеров
+        _myclients_cache[user_id] = {
+            'vless': all_clients,
+            'awg':   awg_clients,
+            'offline_warn': (
+                f"\n⚠️ <i>Недоступны: {', '.join(offline_panels)} — ключи не загружены</i>"
+                if offline_panels else ""
+            ),
+        }
+
+        # Удаляем заглушку и отправляем категорийный выбор
+        await bot.delete_message(callback_query.message.chat.id, wait_msg.message_id)
+        await _send_myclients_category(callback_query.message.chat.id, user_id)
+
+    except Exception as e:
+        logger.error(f"Ошибка получения списка клиентов: {e}")
+        try:
+            await bot.delete_message(callback_query.message.chat.id, wait_msg.message_id)
+        except Exception:
+            pass
+        await bot.send_message(
+            callback_query.message.chat.id,
+            f"❌ Ошибка: {str(e)}",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+            ])
         )
 
-        if not all_clients and not awg_clients:
-            text = f"🔑 <b>Мои ключи (0)</b>\n\n"
-            text += f"✅ Активных: 0\n⏸️ Неактивных: 0\n⏰ Просроченных: 0\n\n"
-            text += "📭 <i>У вас пока нет ключей.</i>"
-            text += offline_warn
-            await bot.send_message(
-                callback_query.message.chat.id, text,
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_myclients")],
-                    [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
-                ]),
-                parse_mode="HTML"
-            )
-            return
 
+async def _send_myclients_category(chat_id: int, user_id: int, edit_message=None):
+    """Отправляет (или редактирует) сообщение с выбором категории ключей для пользователя."""
+    cached = _myclients_cache.get(user_id, {})
+    vless  = cached.get('vless', [])
+    awg    = cached.get('awg', [])
+    offline_warn = cached.get('offline_warn', '')
+
+    total = len(vless) + len(awg)
+    if total == 0:
+        text = "🔑 <b>Мои ключи (0)</b>\n\n📭 <i>У вас пока нет ключей.</i>" + offline_warn
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_myclients")],
+            [InlineKeyboardButton(text="🔙 Назад",    callback_data="back_to_start")],
+        ])
+        if edit_message:
+            await edit_message.edit_text(text, parse_mode="HTML", reply_markup=kb)
+        else:
+            await bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=kb)
+        return
+
+    active_v  = sum(1 for c in vless if c.get('status') == 'active')
+    active_a  = sum(1 for c in awg  if c.get('status') == 'active')
+
+    text = (
+        f"🔑 <b>Мои ключи ({total})</b>\n\n"
+        f"Выберите категорию:"
+        + offline_warn
+    )
+    kb_rows = []
+    if vless:
+        kb_rows.append([InlineKeyboardButton(
+            text=f"🌐 VLESS ({len(vless)}, ✅{active_v})",
+            callback_data="myclients_vless"
+        )])
+    if awg:
+        kb_rows.append([InlineKeyboardButton(
+            text=f"🛡 AWG ({len(awg)}, ✅{active_a})",
+            callback_data="myclients_awg"
+        )])
+    kb_rows.append([
+        InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_myclients"),
+        InlineKeyboardButton(text="🔙 Назад",    callback_data="back_to_start"),
+    ])
+
+    kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
+    if edit_message:
+        await edit_message.edit_text(text, parse_mode="HTML", reply_markup=kb)
+    else:
+        await bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=kb)
+
+
+@dp.callback_query(lambda c: c.data in ("myclients_vless", "myclients_awg"))
+async def show_myclients_category(callback_query: types.CallbackQuery):
+    """Показывает список ключей выбранной категории (VLESS или AWG)."""
+    user_id  = callback_query.from_user.id
+    category = callback_query.data  # "myclients_vless" | "myclients_awg"
+
+    cached = _myclients_cache.get(user_id)
+    if not cached:
+        await callback_query.answer("⏳ Сессия устарела — обновите список", show_alert=True)
+        return
+
+    await callback_query.answer()
+
+    if category == "myclients_vless":
+        keys = cached.get('vless', [])
+        title = "🌐 VLESS ключи"
         buttons = []
-        for client in all_clients:
+        for client in keys:
             comment = client.get('comment', '')
-            status = client['status']
+            status  = client['status']
             panel_alias = client.get('_panel_alias', '')
-            panel_loc = client.get('_panel_location', '')
-            pid = client.get('_panel_id', '')
+            panel_loc   = client.get('_panel_location', '')
+            pid         = client.get('_panel_id', '')
             display_text = (comment.replace('Временный ', '') if comment else client['email'])[:20]
             icon = "✅" if status == 'active' else ("⏸️" if status == 'inactive' else "⏰")
             panel_tag = f"{panel_alias} [{panel_loc}]" if panel_loc else panel_alias
             label = f"{icon} {display_text} · {panel_tag}" if panel_tag else f"{icon} {display_text}"
-            cb = f"showqr_{pid}:{client['uuid']}" if pid else f"showqr_{client['uuid']}"
+            cb    = f"showqr_{pid}:{client['uuid']}" if pid else f"showqr_{client['uuid']}"
             buttons.append([InlineKeyboardButton(text=label, callback_data=cb)])
-
-        for awg in awg_clients:
-            status = awg.get('status', 'active')
-            icon   = "✅" if status == 'active' else "⏰"
-            name   = (awg.get('name') or awg.get('id', ''))[:20]
+    else:
+        keys = cached.get('awg', [])
+        title = "🛡 AWG ключи"
+        buttons = []
+        for awg in keys:
+            status    = awg.get('status', 'active')
+            icon      = "✅" if status == 'active' else "⏰"
+            name      = (awg.get('name') or awg.get('id', ''))[:20]
             label_tag = awg.get('_cascade_label') or awg.get('_cascade_id', '')
-            label  = f"{icon} {name} · {label_tag}" if label_tag else f"{icon} {name}"
-            cb     = f"awg_showqr:{awg['_cascade_id']}:{awg['_iface_id']}:{awg['id']}"
+            label     = f"{icon} {name} · {label_tag}" if label_tag else f"{icon} {name}"
+            cb        = f"awg_showqr:{awg['_cascade_id']}:{awg['_iface_id']}:{awg['id']}"
             buttons.append([InlineKeyboardButton(text=label, callback_data=cb)])
 
-        buttons.append([
-            InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_myclients"),
-            InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")
-        ])
+    if not keys:
+        await callback_query.answer("Ключей этой категории нет", show_alert=True)
+        return
 
-        text = f"🔑 <b>Мои ключи ({total_count})</b>\n"
-        text += f"📡 {panel_names}\n\n"
-        text += f"✅ Активных: {active_count}\n"
-        text += f"⏸️ Неактивных: {inactive_count}\n"
-        text += f"⏰ Просроченных: {expired_count}\n"
-        text += offline_warn + "\n"
-        text += "\nВыберите ключ для просмотра:"
+    buttons.append([InlineKeyboardButton(text="🔙 Назад к категориям", callback_data="myclients_back")])
 
-        await bot.send_message(
-            callback_query.message.chat.id, text,
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
-            parse_mode="HTML"
+    text = f"🔑 <b>{title} ({len(keys)})</b>\n\nВыберите ключ:"
+    await bot.send_message(
+        callback_query.message.chat.id, text,
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
+    )
+
+
+@dp.callback_query(lambda c: c.data == "myclients_back")
+async def myclients_back_to_category(callback_query: types.CallbackQuery):
+    """Возврат к выбору категории ключей (без перезагрузки)."""
+    user_id = callback_query.from_user.id
+    if user_id not in _myclients_cache:
+        # Кеш протух — инициируем перезагрузку
+        await callback_query.answer()
+        await callback_query.message.edit_text(
+            "⏳ <i>Формирую список ключей...</i>", parse_mode="HTML"
         )
-        
-    except Exception as e:
-        logger.error(f"Ошибка получения списка клиентов: {e}")
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
-        ])
-        # Всегда отправляем новое сообщение для навигации
-        await bot.send_message(
-            callback_query.message.chat.id,
-            f"❌ Ошибка: {str(e)}",
-            reply_markup=keyboard
-        )
+        # Сбрасываем на refresh
+        await callback_query.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔄 Загрузить", callback_data="refresh_myclients")]
+        ]))
+        return
+    await callback_query.answer()
+    await _send_myclients_category(callback_query.message.chat.id, user_id)
+
 
 @dp.callback_query(lambda c: c.data == "refresh_myclients")
 async def refresh_myclients(callback_query: types.CallbackQuery, state: FSMContext):
     """Обновить список моих ключей"""
     user_id = callback_query.from_user.id
-    
+
     # Проверка доступа
     if not is_allowed(user_id):
         await callback_query.answer("⛔ Доступ запрещен", show_alert=True)
         return
-    
+
     if is_blocked_by_admin(user_id):
         await callback_query.answer("⛔ Вы заблокированы администратором", show_alert=True)
         return
-    
-    # Очищаем состояние
+
+    # Очищаем состояние и кеши
     await state.clear()
-    
-    # Очищаем кеш "Все ключи" при обновлении "Мои ключи"
     if user_id in allclients_cache:
         del allclients_cache[user_id]
-    
+    _myclients_cache.pop(user_id, None)
+
+    await callback_query.answer("⏳ Обновляю...")
+
+    # Редактируем текущее сообщение как индикатор загрузки
+    try:
+        await callback_query.message.edit_text(
+            "⏳ <i>Формирую список ключей...</i>", parse_mode="HTML",
+            reply_markup=None
+        )
+    except Exception:
+        pass
+
     # Живая проверка перед сбором ключей
     await _refresh_panel_states_now()
 
     try:
         username = callback_query.from_user.username
         if not username:
-            await callback_query.answer("❌ У вас не установлен username", show_alert=True)
+            await callback_query.message.edit_text(
+                "❌ У вас не установлен username в Telegram.",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
+                ])
+            )
             return
 
         all_clients = []
@@ -5567,91 +5761,25 @@ async def refresh_myclients(callback_query: types.CallbackQuery, state: FSMConte
                 offline_panels.append(panel_cfg.alias or panel_id)
                 logger.warning(f"Не удалось получить ключи с панели {panel_id}: {pe}")
 
-        # AWG-ключи со всех Cascade-серверов
         awg_clients = await _get_user_awg_keys_all_cascades(username)
 
-        active_count = sum(1 for c in all_clients if c['status'] == 'active')
-        inactive_count = sum(1 for c in all_clients if c['status'] == 'inactive')
-        expired_count = sum(1 for c in all_clients if c['status'] == 'expired')
-        active_count  += sum(1 for c in awg_clients if c.get('status') == 'active')
-        expired_count += sum(1 for c in awg_clients if c.get('status') == 'expired')
-        total_count = len(all_clients) + len(awg_clients)
-        offline_warn = (
-            f"\n⚠️ <i>Недоступны: {', '.join(offline_panels)} — ключи не загружены</i>"
-            if offline_panels else ""
+        _myclients_cache[user_id] = {
+            'vless': all_clients,
+            'awg':   awg_clients,
+            'offline_warn': (
+                f"\n⚠️ <i>Недоступны: {', '.join(offline_panels)} — ключи не загружены</i>"
+                if offline_panels else ""
+            ),
+        }
+
+        await _send_myclients_category(
+            callback_query.message.chat.id, user_id,
+            edit_message=callback_query.message
         )
-        seen_panels = {}
-        for c in all_clients:
-            pid = c.get('_panel_id', '')
-            if pid not in seen_panels:
-                alias = c.get('_panel_alias', '')
-                loc = c.get('_panel_location', '')
-                seen_panels[pid] = f"{alias} [{loc}]" if loc else alias
-        panel_names = ", ".join(seen_panels.values()) if seen_panels else "—"
 
-        if not all_clients and not awg_clients:
-            text = f"🔑 <b>Мои ключи (0)</b>\n\n"
-            text += f"✅ Активных: 0\n⏸️ Неактивных: 0\n⏰ Просроченных: 0\n\n"
-            text += "📭 <i>У вас пока нет ключей.</i>"
-            text += offline_warn
-            await callback_query.message.edit_text(
-                text,
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_myclients")],
-                    [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")]
-                ]),
-                parse_mode="HTML"
-            )
-            await callback_query.answer("✅ Обновлено", show_alert=False)
-            return
-
-        buttons = []
-        for client in all_clients:
-            comment = client.get('comment', '')
-            status = client['status']
-            panel_alias = client.get('_panel_alias', '')
-            panel_loc = client.get('_panel_location', '')
-            pid = client.get('_panel_id', '')
-            display_text = (comment.replace('Временный ', '') if comment else client['email'])[:20]
-            icon = "✅" if status == 'active' else ("⏸️" if status == 'inactive' else "⏰")
-            panel_tag = f"{panel_alias} [{panel_loc}]" if panel_loc else panel_alias
-            label = f"{icon} {display_text} · {panel_tag}" if panel_tag else f"{icon} {display_text}"
-            cb = f"showqr_{pid}:{client['uuid']}" if pid else f"showqr_{client['uuid']}"
-            buttons.append([InlineKeyboardButton(text=label, callback_data=cb)])
-
-        for awg in awg_clients:
-            status = awg.get('status', 'active')
-            icon   = "✅" if status == 'active' else "⏰"
-            name   = (awg.get('name') or awg.get('id', ''))[:20]
-            label_tag = awg.get('_cascade_label') or awg.get('_cascade_id', '')
-            label  = f"{icon} {name} · {label_tag}" if label_tag else f"{icon} {name}"
-            cb     = f"awg_showqr:{awg['_cascade_id']}:{awg['_iface_id']}:{awg['id']}"
-            buttons.append([InlineKeyboardButton(text=label, callback_data=cb)])
-
-        buttons.append([
-            InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_myclients"),
-            InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_start")
-        ])
-
-        text = f"🔑 <b>Мои ключи ({total_count})</b>\n"
-        text += f"📡 {panel_names}\n\n"
-        text += f"✅ Активных: {active_count}\n"
-        text += f"⏸️ Неактивных: {inactive_count}\n"
-        text += f"⏰ Просроченных: {expired_count}\n"
-        text += offline_warn + "\n"
-        text += "\nВыберите ключ для просмотра:"
-
-        await callback_query.message.edit_text(
-            text,
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
-            parse_mode="HTML"
-        )
-        await callback_query.answer("✅ Обновлено", show_alert=False)
-        
     except Exception as e:
-        # Проверяем, не является ли ошибка "message is not modified"
         if "message is not modified" in str(e):
-            await callback_query.answer("✅ Данные актуальны", show_alert=False)
+            pass
         else:
             logger.error(f"Ошибка обновления моих ключей: {e}")
             await callback_query.answer(f"❌ Ошибка: {str(e)}", show_alert=True)
