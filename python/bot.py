@@ -184,62 +184,52 @@ def get_available_panels() -> list:
 
 
 def _build_panels_block() -> str:
-    """Компактный список всех панелей: алиас, локация, доступность."""
+    """Компактный список панелей для обычного пользователя (без URL)."""
     panels = config.panel_manager.get_all_panels()
     if not panels:
         return ""
     lines = []
     for panel_id, p in panels.items():
-        status = "🟢" if get_panel_online_status(panel_id) else "🔴"
+        online = get_panel_online_status(panel_id)
+        dot = "🟢" if online else "🔴"
         location = p.location_label or ''
-        loc_part = f" · <code>{location}</code>" if location else ""
-        lines.append(f"{status} <b>{p.alias}</b>{loc_part}")
+        loc_part = f" ({location})" if location else ""
+        lines.append(f"{dot} <b>{p.alias}</b>{loc_part}")
     return "\n".join(lines) + "\n\n"
 
 
 def _build_panels_block_admin() -> str:
-    """Список панелей для главного меню администратора — формат как в окне Панели 3xui."""
+    """Компактный список панелей для администратора: ✅🟢 alias (location) (url)."""
     panels = config.panel_manager.get_all_panels()
     if not panels:
         return ""
     current_panel_id = config.panel_manager.get_current_panel_id()
     lines = []
     for panel_id, p in panels.items():
-        online_icon = "🟢 Онлайн" if get_panel_online_status(panel_id) else "🔴 Оффлайн"
+        online = get_panel_online_status(panel_id)
+        dot = "🟢" if online else "🔴"
         is_current = panel_id == current_panel_id
-        panel_icon = "✅" if is_current else "⏸️"
+        cur = "✅" if is_current else ""
         location = p.location_label or ''
-        location_str = f" ({location})" if location else ""
+        loc_part = f" ({location})" if location else ""
         url = getattr(p, 'xui_url', '') or ''
-        panel_id_str = (
-            f"<a href=\"{url}\">{panel_id}</a>" if url else f"<code>{panel_id}</code>"
-        )
-        line = (
-            f"{panel_icon} <b>{p.alias}</b>{location_str}\n"
-            f"   {online_icon}  |  🆔 {panel_id_str}"
-        )
-        lines.append(line)
+        url_part = f" (<a href=\"{url}\">{url}</a>)" if url else ""
+        lines.append(f"{cur}{dot} <b>{p.alias}</b>{loc_part}{url_part}")
     return "\n".join(lines) + "\n\n"
 
 
 def _build_cascade_block_admin() -> str:
-    """Список Cascade-серверов для главного меню администратора."""
+    """Компактный список Cascade-серверов для администратора: 🟢 label (location) (url)."""
     cascade_servers = config.get_cascade_servers()
     if not cascade_servers:
         return ""
     lines = []
     for srv in cascade_servers:
         online = _cascade_online.get(srv.cascade_id, True)
-        online_icon = "🟢 Онлайн" if online else "🔴 Оффлайн"
+        dot = "🟢" if online else "🔴"
         url = srv.url or ''
-        id_str = (
-            f"<a href=\"{url}\">{srv.cascade_id}</a>" if url else f"<code>{srv.cascade_id}</code>"
-        )
-        line = (
-            f"⏸️ <b>{srv.label}</b>\n"
-            f"   {online_icon}  |  🆔 {id_str}"
-        )
-        lines.append(line)
+        url_part = f" (<a href=\"{url}\">{url}</a>)" if url else ""
+        lines.append(f"{dot} <b>{srv.label}</b>{url_part}")
     return "\n".join(lines) + "\n\n"
 
 
