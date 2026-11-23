@@ -6832,30 +6832,34 @@ safe_cleanup_inline() {
     df -h / | awk 'NR==2 {printf "   Использовано: %s (%s)\n   Свободно: %s\n", $3, $5, $4}'
 }
 
-# ── Подменю: Обслуживание ─────────────────────────────────────
+# ── Подменю: Services ─────────────────────────────────────────
 menu_maintenance() {
     while true; do
         echo -e "\n${BLUE}========================================${NC}"
-        echo -e "${BLUE}   Обслуживание${NC}"
+        echo -e "${BLUE}   Services${NC}"
         echo -e "${BLUE}========================================${NC}"
-        echo -e "${GREEN}1)${NC} Анализ диска и памяти"
-        echo -e "${GREEN}2)${NC} Безопасная очистка (автоматическая)"
-        echo -e "${GREEN}3)${NC} Настройка обратного каскада 3x-ui"
-        echo -e "${GREEN}4)${NC} CASCADE Forwarder (iptables проброс портов)"
+        echo -e "${GREEN}1)${NC} AWG"
+        echo -e "${GREEN}2)${NC} AWGBOT"
+        echo -e "${GREEN}3)${NC} Анализ диска и памяти"
+        echo -e "${GREEN}4)${NC} Безопасная очистка (автоматическая)"
+        echo -e "${GREEN}5)${NC} Настройка обратного каскада 3x-ui"
+        echo -e "${GREEN}6)${NC} CASCADE Forwarder (iptables проброс портов)"
         echo -e "${RED}99)${NC} Удалить ВСЁ (AWG + Боты + 3x-ui + Cascade)"
         echo -e "${GREEN}0)${NC} Назад"
         echo -e "${BLUE}========================================${NC}"
         read -p "Введите номер: " sub
         case $sub in
-            1)
+            1) run_with_sync && menu_awg ;;
+            2) run_with_sync && menu_awgbot ;;
+            3)
                 if [ -f "disk_analyzer.sh" ]; then
                     bash disk_analyzer.sh
                 else
                     echo -e "${RED}❌ Файл disk_analyzer.sh не найден!${NC}"
                 fi
                 ;;
-            2) safe_cleanup_inline ;;
-            3)
+            4) safe_cleanup_inline ;;
+            5)
                 local _cascade_script=""
                 if [ -f "${WORK_DIR}/setup_reverse_cascade.sh" ]; then
                     _cascade_script="${WORK_DIR}/setup_reverse_cascade.sh"
@@ -6944,7 +6948,7 @@ menu_maintenance() {
                 CAMOUFLAGE_TARGET="$_camouf" \
                 bash "$_cascade_script"
                 ;;
-            4)
+            6)
                 # Ищем скрипт: сначала в PATH, затем рядом с install.sh
                 local _cf_script=""
                 if command -v cascade &>/dev/null; then
@@ -6988,14 +6992,12 @@ show_menu() {
     echo -e "\n${BLUE}========================================${NC}"
     echo -e "${BLUE}   AWGXUI install:${NC}"
     echo -e "${BLUE}========================================${NC}"
-    echo -e "${GREEN}1)${NC} Показать статус системы"
+    echo -e "${GREEN}1)${NC} Status"
     echo -e "${GREEN}2)${NC} 3X-UI"
     echo -e "${GREEN}3)${NC} CASCADE WEB UI"
-    echo -e "${GREEN}4)${NC} AWG"
-    echo -e "${GREEN}5)${NC} XUIBOT"
-    echo -e "${GREEN}6)${NC} AWGBOT"
-    echo -e "${GREEN}7)${NC} Обслуживание"
-    echo -e "${RED}0)${NC} Выход"
+    echo -e "${GREEN}4)${NC} XUIBOT"
+    echo -e "${GREEN}5)${NC} Services"
+    echo -e "${RED}0)${NC} Exit"
     echo -e "${BLUE}========================================${NC}"
 }
 
@@ -7015,10 +7017,8 @@ while true; do
             ;;
         2) menu_3xui ;;
         3) menu_cascade ;;
-        4) menu_awg ;;
-        5) menu_xuibot ;;
-        6) menu_awgbot ;;
-        7) menu_maintenance ;;
+        4) menu_xuibot ;;
+        5) menu_maintenance ;;
         0)
             echo -e "\n${YELLOW}Переустановка скрипта:${NC}"
             echo -e "  git clone https://github.com/4539617/awgxuibot.git /opt/awgxuibot"
