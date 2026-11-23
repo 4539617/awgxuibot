@@ -1246,7 +1246,7 @@ async def cmd_start(message: Message, state: FSMContext):
     current_state = await state.get_state()
     if current_state:
         await state.clear()
-        await message.answer("✅ Редактирование отменено.")
+        await message.answer("✅ Действие отменено.")
 
     # Проверка на блокировку администратором
     if is_blocked_by_admin(user_id):
