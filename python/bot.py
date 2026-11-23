@@ -199,7 +199,7 @@ def _build_panels_block() -> str:
 
 
 def _build_panels_block_admin() -> str:
-    """Компактный список панелей для администратора: ✅🟢 alias (location) (url)."""
+    """Компактный список панелей для администратора: ✅🟢 alias(link) (location)."""
     panels = config.panel_manager.get_all_panels()
     if not panels:
         return ""
@@ -213,13 +213,13 @@ def _build_panels_block_admin() -> str:
         location = p.location_label or ''
         loc_part = f" ({location})" if location else ""
         url = getattr(p, 'xui_url', '') or ''
-        url_part = f" (<a href=\"{url}\">{url}</a>)" if url else ""
-        lines.append(f"{cur}{dot} <b>{p.alias}</b>{loc_part}{url_part}")
+        name = f"<a href=\"{url}\">{p.alias}</a>" if url else f"<b>{p.alias}</b>"
+        lines.append(f"{cur}{dot} {name}{loc_part}")
     return "\n".join(lines) + "\n\n"
 
 
 def _build_cascade_block_admin() -> str:
-    """Компактный список Cascade-серверов для администратора: 🟢 label (location) (url)."""
+    """Компактный список Cascade-серверов для администратора: 🟢 label(link)."""
     cascade_servers = config.get_cascade_servers()
     if not cascade_servers:
         return ""
@@ -228,8 +228,8 @@ def _build_cascade_block_admin() -> str:
         online = _cascade_online.get(srv.cascade_id, True)
         dot = "🟢" if online else "🔴"
         url = srv.url or ''
-        url_part = f" (<a href=\"{url}\">{url}</a>)" if url else ""
-        lines.append(f"{dot} <b>{srv.label}</b>{url_part}")
+        name = f"<a href=\"{url}\">{srv.label}</a>" if url else f"<b>{srv.label}</b>"
+        lines.append(f"{dot} {name}")
     return "\n".join(lines) + "\n\n"
 
 
