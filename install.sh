@@ -3215,10 +3215,10 @@ show_status() {
             # Выводим данные подключения если они есть (и не null)
             if [ -n "$xui_url" ] && [ "$xui_url" != "null" ]; then
                 echo -e "\n  ${BOLD}Данные подключения:${NC}"
-                echo -e "    xui_url: ${xui_url}"
-                [ -n "$xui_username" ] && [ "$xui_username" != "null" ] && echo -e "    xui_username: ${xui_username}"
-                [ -n "$xui_password" ] && [ "$xui_password" != "null" ] && echo -e "    xui_password: ${xui_password}"
-                [ -n "$xui_api_token" ] && [ "$xui_api_token" != "null" ] && echo -e "    xui_api_token: ${xui_api_token}"
+                echo -e "  xui_url: ${xui_url}"
+                [ -n "$xui_username" ] && [ "$xui_username" != "null" ] && echo -e "  xui_username: ${xui_username}"
+                [ -n "$xui_password" ] && [ "$xui_password" != "null" ] && echo -e "  xui_password: ${xui_password}"
+                [ -n "$xui_api_token" ] && [ "$xui_api_token" != "null" ] && echo -e "  xui_api_token: ${xui_api_token}"
             fi
         else
             echo -e "  ${GREEN}✅ Установлена${NC}"
