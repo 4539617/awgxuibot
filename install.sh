@@ -6994,7 +6994,7 @@ show_menu() {
     echo -e "${BLUE}========================================${NC}"
     echo -e "${GREEN}1)${NC} Status"
     echo -e "${GREEN}2)${NC} 3X-UI"
-    echo -e "${GREEN}3)${NC} CASCADE WEB UI"
+    echo -e "${GREEN}3)${NC} CASCADE-UI"
     echo -e "${GREEN}4)${NC} XUIBOT"
     echo -e "${GREEN}5)${NC} Services"
     echo -e "${RED}0)${NC} Exit"
