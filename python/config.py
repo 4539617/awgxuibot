@@ -939,6 +939,12 @@ class UserDatabase:
                 conn.execute("ALTER TABLE panel_outages ADD COLUMN ended_at TIMESTAMP")
             except Exception:
                 pass  # колонка уже есть
+
+            # Миграция: добавить alias в allowed_users если его нет
+            try:
+                conn.execute("ALTER TABLE allowed_users ADD COLUMN alias TEXT")
+            except Exception:
+                pass  # колонка уже есть
             
             # Добавляем главного админа
             main_admin = self.get_main_admin()
@@ -1037,13 +1043,30 @@ class UserDatabase:
             return False
     
     def list_users(self) -> list:
+        """Возвращает список (user_id, username, added_at, alias)."""
         main_admin = self.get_main_admin()
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute(
-                "SELECT user_id, username, added_at FROM allowed_users WHERE user_id != ? ORDER BY added_at DESC",
+                "SELECT user_id, username, added_at, alias FROM allowed_users WHERE user_id != ? ORDER BY added_at DESC",
                 (main_admin,)
             )
             return cursor.fetchall()
+
+    def get_user_alias(self, user_id: int) -> str:
+        """Возвращает алиас пользователя или пустую строку."""
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT alias FROM allowed_users WHERE user_id = ?", (user_id,)
+            ).fetchone()
+        return (row[0] or '') if row else ''
+
+    def set_user_alias(self, user_id: int, alias: str) -> None:
+        """Устанавливает алиас пользователя."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "UPDATE allowed_users SET alias = ? WHERE user_id = ?",
+                (alias.strip() or None, user_id)
+            )
     
     def delete_user_client(self, client_id: int) -> bool:
         try:
